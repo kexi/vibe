@@ -4,13 +4,38 @@ Git Worktreeを簡単に管理するCLIツール。
 
 ## インストール
 
-### Homebrew
+### Homebrew (macOS)
 
 ```bash
 brew install kexi/tap/vibe
 ```
 
-### 手動
+### Linux
+
+```bash
+# x64
+curl -L https://github.com/kexi/vibe/releases/latest/download/vibe-linux-x64 -o vibe
+chmod +x vibe
+sudo mv vibe /usr/local/bin/
+
+# ARM64
+curl -L https://github.com/kexi/vibe/releases/latest/download/vibe-linux-arm64 -o vibe
+chmod +x vibe
+sudo mv vibe /usr/local/bin/
+```
+
+### Windows
+
+```powershell
+# ダウンロード
+Invoke-WebRequest -Uri "https://github.com/kexi/vibe/releases/latest/download/vibe-windows-x64.exe" -OutFile "$env:LOCALAPPDATA\vibe.exe"
+
+# PATHに追加（初回のみ）
+$path = [Environment]::GetEnvironmentVariable("Path", "User")
+[Environment]::SetEnvironmentVariable("Path", "$path;$env:LOCALAPPDATA", "User")
+```
+
+### 手動ビルド
 
 ```bash
 deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts
@@ -18,10 +43,24 @@ deno compile --allow-run --allow-read --allow-write --allow-env --output vibe ma
 
 ## セットアップ
 
-`.zshrc`に以下を追加:
+シェルに以下を追加:
+
+### Zsh (.zshrc)
 
 ```bash
 vibe() { eval "$(command vibe "$@")" }
+```
+
+### Bash (.bashrc)
+
+```bash
+vibe() { eval "$(command vibe "$@")"; }
+```
+
+### PowerShell ($PROFILE)
+
+```powershell
+function vibe { Invoke-Expression (& vibe.exe $args) }
 ```
 
 ## 使い方
