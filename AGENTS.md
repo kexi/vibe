@@ -20,3 +20,28 @@ develop ─┴──●──●──●──●─────┴────
              ↑  ↑
             feat/a feat/b
 ```
+
+## 開発環境
+
+- ランタイム: Deno v2.x（`mise install`でセットアップ）
+- 実行: `deno run --allow-run --allow-read --allow-write --allow-env main.ts`
+- コンパイル: `deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts`
+
+## テスト
+
+- リントチェック: `deno lint`
+- フォーマットチェック: `deno fmt --check`
+- 型チェック: `deno check main.ts`
+- コミット前に上記をすべてパスすること
+
+## PR規約
+
+- タイトル形式: `<type>: <description>`
+  - type: feat, fix, docs, refactor, test, chore
+- `deno lint`と`deno fmt --check`を通すこと
+- 変更したコードにはテストを追加・更新すること
+
+## リリース
+
+- `main`にマージ後、`v*`タグをpushするとGitHub Actionsでビルド・リリースされる
+- 例: `git tag v0.1.0 && git push origin v0.1.0`
