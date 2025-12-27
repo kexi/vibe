@@ -57,6 +57,14 @@ vibe() { eval "$(command vibe "$@")" }
 vibe() { eval "$(command vibe "$@")"; }
 ```
 
+### Fish (~/.config/fish/config.fish)
+
+```fish
+function vibe
+    eval (command vibe $argv)
+end
+```
+
 ### PowerShell ($PROFILE)
 
 ```powershell
