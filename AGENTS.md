@@ -46,5 +46,5 @@ develop ─┴──●──●──●──●─────┴────
 - `main`にマージ後、GitHubでリリースを作成・公開するとGitHub Actionsでビルドされる
 - 手順:
   1. GitHub → Releases → Draft a new release
-  2. タグを作成（例: `v0.1.0`）
+  2. タグを作成（例: `release/v0.1.0`）
   3. リリースノートを記入し「Publish release」
