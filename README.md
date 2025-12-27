@@ -65,6 +65,14 @@ function vibe
 end
 ```
 
+### Nushell (~/.config/nushell/config.nu)
+
+```nu
+def --env vibe [...args] {
+    ^vibe ...$args | lines | each { |line| nu -c $line }
+}
+```
+
 ### PowerShell ($PROFILE)
 
 ```powershell
