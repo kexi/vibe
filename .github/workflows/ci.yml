@@ -35,7 +35,7 @@ jobs:
       - name: Generate version.ts
         run: deno run --allow-run --allow-read --allow-write scripts/build.ts --generate-version-only
       - name: Run tests
-        run: deno test --allow-read --allow-env
+        run: deno test --allow-read --allow-env --allow-write
 
   build-binaries:
     strategy:

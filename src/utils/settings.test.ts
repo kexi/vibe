@@ -4,25 +4,7 @@ import {
   isTrusted,
   loadUserSettings,
   removeTrustedPath,
-  saveUserSettings,
-  type VibeSettings,
 } from "./settings.ts";
-import { join } from "@std/path";
-
-const TEST_CONFIG_DIR = join(
-  Deno.env.get("HOME") ?? "",
-  ".config",
-  "vibe-test",
-);
-const TEST_SETTINGS_FILE = join(TEST_CONFIG_DIR, "settings.json");
-
-async function cleanupTestDir(): Promise<void> {
-  try {
-    await Deno.remove(TEST_CONFIG_DIR, { recursive: true });
-  } catch {
-    // ignore if not exists
-  }
-}
 
 Deno.test("loadUserSettings returns default settings when file not exists", async () => {
   const settings = await loadUserSettings();
