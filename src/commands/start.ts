@@ -60,21 +60,7 @@ export async function startCommand(
       await runVibeConfig(config, repoRoot, worktreePath);
     }
 
-    const useShell = config?.shell === true;
-    if (useShell) {
-      const shellPath = Deno.env.get("SHELL") ?? "/bin/sh";
-      const command = new Deno.Command(shellPath, {
-        cwd: worktreePath,
-        stdin: "inherit",
-        stdout: "inherit",
-        stderr: "inherit",
-      });
-      const process = command.spawn();
-      const status = await process.status;
-      Deno.exit(status.code);
-    } else {
-      console.log(`cd '${worktreePath}'`);
-    }
+    console.log(`cd '${worktreePath}'`);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${errorMessage}`);

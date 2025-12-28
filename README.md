@@ -61,19 +61,7 @@ deno compile --allow-run --allow-read --allow-write --allow-env --output vibe ma
 
 ## Setup
 
-### Option A: Using `shell = true` (Recommended)
-
-Add `shell = true` to your `.vibe.toml`:
-
-```toml
-shell = true
-```
-
-This spawns your `$SHELL` directly in the worktree directory. No shell configuration needed.
-
-### Option B: Using shell wrapper
-
-If you don't use `shell = true`, add the following to your shell configuration:
+Add the following to your shell configuration:
 
 <details>
 <summary>Zsh (.zshrc)</summary>
@@ -150,9 +138,6 @@ Place a `.vibe.toml` file in the repository root to automatically run tasks on
 `vibe start`. This file is typically committed to git and shared with the team.
 
 ```toml
-# Spawn user's $SHELL in worktree (no eval wrapper needed)
-shell = true
-
 # Copy files from origin repository to worktree
 [copy]
 files = [".env"]
@@ -250,12 +235,6 @@ post_start_append = ["npm run dev"]
 
 # Result: ["echo 'local setup'", "npm install", "npm run build", "npm run dev"]
 ```
-
-### Configuration Options
-
-| Option  | Type    | Description                                           |
-| ------- | ------- | ----------------------------------------------------- |
-| `shell` | boolean | If `true`, spawns `$SHELL` in the worktree directory  |
 
 ### Available Hooks
 
