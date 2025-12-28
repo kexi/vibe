@@ -14,6 +14,22 @@ brew install kexi/tap/vibe
 
 ### Linux
 
+> **注意**: WSL2ユーザーは、使用しているディストリビューションに応じて以下のLinuxインストール方法を使用できます。
+
+#### Ubuntu/Debian (.debパッケージ)
+
+```bash
+# x64
+curl -LO https://github.com/kexi/vibe/releases/latest/download/vibe_amd64.deb
+sudo apt install ./vibe_amd64.deb
+
+# ARM64
+curl -LO https://github.com/kexi/vibe/releases/latest/download/vibe_arm64.deb
+sudo apt install ./vibe_arm64.deb
+```
+
+#### その他のLinuxディストリビューション
+
 ```bash
 # x64
 curl -L https://github.com/kexi/vibe/releases/latest/download/vibe-linux-x64 -o vibe
