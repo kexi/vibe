@@ -340,7 +340,8 @@ deno task ci
 deno task fmt:check    # コードフォーマットをチェック
 deno task lint         # Linterを実行
 deno task check        # 型チェック
-deno task test         # テスト実行
+deno task test         # ユニットテスト実行
+deno task test:e2e     # E2Eテスト実行
 
 # フォーマット自動修正
 deno task fmt
@@ -349,6 +350,39 @@ deno task fmt
 deno task dev          # 開発モードで実行
 deno task compile      # 全プラットフォーム向けにビルド
 ```
+
+### E2Eテストの実行
+
+E2Eテストは、Node.jsとVitest、`node-pty`を使用して、インタラクティブなプロンプトを含むvibeコマンドの完全なワークフローをテストします：
+
+```bash
+# 最初にvibeバイナリをビルド
+deno task generate-version
+deno task compile:e2e
+
+# Node.js依存関係をインストール
+pnpm install
+
+# E2Eテストを実行
+pnpm run test:e2e
+
+# ウォッチモードでE2Eテストを実行
+pnpm run test:e2e:watch
+```
+
+E2Eテストは以下を実行します：
+- 分離のために一時的なGitリポジトリを作成
+- すべてのコマンド（start、clean、trust、untrust、verify、config）をテスト
+- PTYを使用してプロンプトとのユーザーインタラクションをシミュレート
+- コマンドの出力と動作を検証
+
+**必要要件**：
+- Node.js 20.x（node-ptyとの互換性のため推奨）
+- pnpm 10.x
+- node-ptyのビルドツール（ソースからリビルドする場合のみ必要）：
+  - Linux: `python3`、`make`、`g++`
+  - macOS: Xcode Command Line Tools
+  - Windows: Visual Studio Build Tools
 
 ### ローカルでCIチェックを実行
 

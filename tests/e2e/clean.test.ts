@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { dirname } from "path";
 import { afterEach, describe, test } from "vitest";
 import { getVibePath, VibeCommandRunner } from "./helpers/pty.js";
@@ -21,19 +21,19 @@ describe("clean command", () => {
 
     const vibePath = getVibePath();
 
+    // Create a worktree first
+    const parentDir = dirname(repoPath);
+    const repoName = repoPath.split("/").pop()!;
+    const worktreePath = `${parentDir}/${repoName}-feat-clean`;
+
+    execFileSync("git", ["worktree", "add", "-b", "feat/clean", worktreePath], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    // Run vibe clean from the worktree
+    const runner = new VibeCommandRunner(vibePath, worktreePath);
     try {
-      // Create a worktree first
-      const parentDir = dirname(repoPath);
-      const repoName = repoPath.split("/").pop()!;
-      const worktreePath = `${parentDir}/${repoName}-feat-clean`;
-
-      execSync(`git worktree add -b feat/clean "${worktreePath}"`, {
-        cwd: repoPath,
-        stdio: "pipe",
-      });
-
-      // Run vibe clean from the worktree
-      const runner = new VibeCommandRunner(vibePath, worktreePath);
       await runner.spawn(["clean"]);
       await runner.waitForExit();
 
@@ -45,10 +45,8 @@ describe("clean command", () => {
       // Verify output contains cd command to main repo
       assertOutputContains(output, "cd");
       assertOutputContains(output, repoPath);
-
+    } finally {
       runner.dispose();
-    } catch (error) {
-      throw error;
     }
   });
 

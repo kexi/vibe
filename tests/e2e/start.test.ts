@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { dirname } from "path";
 import { afterEach, describe, test } from "vitest";
 import { getVibePath, VibeCommandRunner } from "./helpers/pty.js";
@@ -56,19 +56,19 @@ describe("start command", () => {
 
     const vibePath = getVibePath();
 
-    try {
-      // Create an existing branch
-      execSync("git checkout -b existing-branch", {
-        cwd: repoPath,
-        stdio: "pipe",
-      });
-      execSync("git checkout main", {
-        cwd: repoPath,
-        stdio: "pipe",
-      });
+    // Create an existing branch
+    execFileSync("git", ["checkout", "-b", "existing-branch"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+    execFileSync("git", ["checkout", "main"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
 
-      // Run vibe start existing-branch --reuse
-      const runner = new VibeCommandRunner(vibePath, repoPath);
+    // Run vibe start existing-branch --reuse
+    const runner = new VibeCommandRunner(vibePath, repoPath);
+    try {
       await runner.spawn(["start", "existing-branch", "--reuse"]);
       await runner.waitForExit();
 
@@ -86,10 +86,8 @@ describe("start command", () => {
       const worktreePath = `${parentDir}/${repoName}-existing-branch`;
 
       await assertDirectoryExists(worktreePath);
-
+    } finally {
       runner.dispose();
-    } catch (error) {
-      throw error;
     }
   });
 

@@ -1,5 +1,5 @@
 import { execFileSync } from "child_process";
-import { mkdtempSync, rmSync } from "fs";
+import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -18,8 +18,7 @@ export async function setupTestGitRepo(): Promise<{
   runCommand(["git", "config", "user.name", "Test User"], tempDir);
 
   // Create initial commit
-  const fs = require("fs");
-  fs.writeFileSync(join(tempDir, "README.md"), "# Test Repository\n");
+  writeFileSync(join(tempDir, "README.md"), "# Test Repository\n");
   runCommand(["git", "add", "README.md"], tempDir);
   runCommand(["git", "commit", "-m", "Initial commit"], tempDir);
 

@@ -1,4 +1,5 @@
 import * as pty from "node-pty";
+import { join } from "path";
 
 type IPty = pty.IPty;
 
@@ -114,8 +115,6 @@ export function getVibePath(): string {
   if (process.env.VIBE_BINARY_PATH) {
     return process.env.VIBE_BINARY_PATH;
   }
-
-  const { join } = require("path");
 
   // Use process.cwd() which will be the repo root when tests run
   return join(process.cwd(), "vibe-e2e");

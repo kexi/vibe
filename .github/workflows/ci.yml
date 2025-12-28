@@ -95,11 +95,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
 
-      # Setup Node.js for E2E tests
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
       # Install build dependencies for node-pty (Linux only)
       - name: Install build dependencies (Ubuntu)
         if: runner.os == 'Linux'
