@@ -16,6 +16,10 @@ Installation:
   # Deno (Cross-platform)
   deno install -A --global jsr:@kexi/vibe
 
+  # mise (.mise.toml)
+  [tools]
+  "vibe:jsr" = "@kexi/vibe"
+
   # Manual build
   deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts
 

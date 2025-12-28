@@ -24,6 +24,19 @@ deno install -A --global jsr:@kexi/vibe
 deno install --global --allow-run --allow-read --allow-write --allow-env jsr:@kexi/vibe
 ```
 
+**miseを使う場合**: `.mise.toml`に追加:
+
+```toml
+[tools]
+"vibe:jsr" = "@kexi/vibe"
+```
+
+その後、インストール:
+
+```bash
+mise install
+```
+
 ### Linux
 
 ```bash
