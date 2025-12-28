@@ -37,8 +37,8 @@ develop ─┴──●──●──●──●─────┴────
 
 ## Documentation
 
-- README.md: English
-- README.ja.md: Japanese
+- Source code comments and documentation: English
+- `*.ja.md` files: Japanese
 
 ## PR Guidelines
 
