@@ -81,7 +81,7 @@ export async function startCommand(
           );
           Deno.exit(1);
         }
-        await Deno.remove(worktreePath, { recursive: true });
+        await runGitCommand(["worktree", "remove", worktreePath, "--force"]);
       } else {
         const shouldReuse = choice === 1;
         if (shouldReuse) {

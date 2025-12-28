@@ -83,8 +83,49 @@ jobs:
         run: deno compile --allow-run --allow-read --allow-write --allow-env --target ${{ matrix.target }} --output vibe-test main.ts
       - name: Build .deb package
         run: |
-          VERSION=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('deno.json')).version)")
+          VERSION=$(deno task get-version)
           deno task build:deb "$VERSION" ${{ matrix.arch }} vibe-test
+
+  e2e-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+
+      # Install build dependencies for node-pty (Linux only)
+      - name: Install build dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y build-essential
+
+      # Generate version.ts for vibe
+      - name: Generate version.ts
+        run: deno task generate-version
+
+      # Build vibe binary for E2E tests
+      - name: Build vibe binary for E2E tests
+        run: deno task compile:e2e
+
+      # Setup pnpm
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      # Install Node.js dependencies for E2E tests
+      - name: Install E2E test dependencies
+        run: pnpm install
+
+      # Build node-pty native addon
+      - name: Build node-pty
+        run: pnpm rebuild node-pty
+
+      # Run E2E tests with Vitest
+      - name: Run E2E tests
+        run: pnpm run test:e2e
+        env:
+          VIBE_BINARY_PATH: ${{ github.workspace }}/vibe-e2e
 
   build:
     needs: [build-binaries, build-deb]
