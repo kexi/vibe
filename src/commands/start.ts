@@ -4,6 +4,7 @@ import {
   findWorktreeByBranch,
   getRepoName,
   getRepoRoot,
+  getWorktreeList,
   runGitCommand,
   sanitizeBranchName,
 } from "../utils/git.ts";
@@ -64,6 +65,15 @@ export async function startCommand(
 
       const shouldOverwrite = choice === 0;
       if (shouldOverwrite) {
+        // Safety check: verify the directory is actually a git worktree before deletion
+        const worktrees = await getWorktreeList();
+        const isGitWorktree = worktrees.some((w) => w.path === worktreePath);
+        if (!isGitWorktree) {
+          console.error(
+            `Error: Directory '${worktreePath}' is not a git worktree. Cannot delete for safety.`,
+          );
+          Deno.exit(1);
+        }
         await Deno.remove(worktreePath, { recursive: true });
       } else {
         const shouldReuse = choice === 1;
@@ -71,14 +81,7 @@ export async function startCommand(
           // Reuse existing directory: skip git worktree add
 
           // Run pre_start hooks
-          const preStartHooks = config?.hooks?.pre_start;
-          const hasPreStartHooks = preStartHooks !== undefined;
-          if (hasPreStartHooks) {
-            await runHooks(preStartHooks, repoRoot, {
-              worktreePath,
-              originPath: repoRoot,
-            });
-          }
+          await runPreStartHooksIfNeeded(config, repoRoot, worktreePath);
 
           // Run config
           const hasConfig = config !== undefined;
@@ -128,13 +131,7 @@ export async function startCommand(
     }
 
     // Run pre_start hooks
-    const preStartHooks = config?.hooks?.pre_start;
-    if (preStartHooks !== undefined) {
-      await runHooks(preStartHooks, repoRoot, {
-        worktreePath,
-        originPath: repoRoot,
-      });
-    }
+    await runPreStartHooksIfNeeded(config, repoRoot, worktreePath);
 
     // Continue with existing process (post_start hooks are executed in runVibeConfig)
     if (config !== undefined) {
@@ -167,6 +164,20 @@ async function runVibeConfig(
   const postStartHooks = config.hooks?.post_start;
   if (postStartHooks !== undefined) {
     await runHooks(postStartHooks, worktreePath, {
+      worktreePath,
+      originPath: repoRoot,
+    });
+  }
+}
+
+async function runPreStartHooksIfNeeded(
+  config: VibeConfig | undefined,
+  repoRoot: string,
+  worktreePath: string,
+): Promise<void> {
+  const preStartHooks = config?.hooks?.pre_start;
+  if (preStartHooks !== undefined) {
+    await runHooks(preStartHooks, repoRoot, {
       worktreePath,
       originPath: repoRoot,
     });

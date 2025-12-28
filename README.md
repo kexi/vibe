@@ -133,6 +133,23 @@ vibe start feat/existing-branch --reuse
 vibe clean
 ```
 
+### Interactive Prompts
+
+`vibe start` handles the following situations interactively:
+
+- **When a branch is already in use by another worktree**: Confirms whether to navigate to the existing worktree
+- **When a directory already exists**: You can choose from the following options
+  - Overwrite (delete and recreate)
+  - Reuse (use existing)
+  - Cancel
+
+```bash
+# Example when branch is already in use
+$ vibe start feat/new-feature
+Branch 'feat/new-feature' is already in use by worktree '/path/to/repo-feat-new-feature'.
+Navigate to the existing worktree? (Y/n)
+```
+
 ## Configuration
 
 ### .vibe.toml

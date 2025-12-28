@@ -133,6 +133,23 @@ vibe start feat/existing-branch --reuse
 vibe clean
 ```
 
+### インタラクティブプロンプト
+
+`vibe start`は以下の状況でインタラクティブに対応します：
+
+- **ブランチが既に他のworktreeで使用中の場合**: 既存のworktreeに移動するか確認します
+- **ディレクトリが既に存在する場合**: 以下の選択肢から選べます
+  - 上書き（削除して再作成）
+  - 再利用（既存を使用）
+  - キャンセル
+
+```bash
+# ブランチが既に使用中の場合の例
+$ vibe start feat/new-feature
+ブランチ 'feat/new-feature' は既にworktree '/path/to/repo-feat-new-feature' で使用中です。
+既存のworktreeに移動しますか? (Y/n)
+```
+
 ## 設定
 
 ### .vibe.toml
