@@ -10,7 +10,7 @@ import {
 } from "../utils/git.ts";
 import type { VibeConfig } from "../types/config.ts";
 import { loadVibeConfig } from "../utils/config.ts";
-import { runHooks, type HookTrackerInfo } from "../utils/hooks.ts";
+import { type HookTrackerInfo, runHooks } from "../utils/hooks.ts";
 import { confirm, select } from "../utils/prompt.ts";
 import { expandCopyPatterns } from "../utils/glob.ts";
 import { ProgressTracker } from "../utils/progress.ts";
@@ -90,8 +90,8 @@ export async function startCommand(
           // Start progress tracking
           const hasOperations = config !== undefined &&
             (config.hooks?.pre_start?.length ?? 0) +
-            (config.copy?.files?.length ?? 0) +
-            (config.hooks?.post_start?.length ?? 0) > 0;
+                  (config.copy?.files?.length ?? 0) +
+                  (config.hooks?.post_start?.length ?? 0) > 0;
           if (hasOperations) {
             tracker.start();
           }
@@ -139,8 +139,8 @@ export async function startCommand(
     // Start progress tracking
     const hasOperations = config !== undefined &&
       (config.hooks?.pre_start?.length ?? 0) +
-      (config.copy?.files?.length ?? 0) +
-      (config.hooks?.post_start?.length ?? 0) > 0;
+            (config.copy?.files?.length ?? 0) +
+            (config.hooks?.post_start?.length ?? 0) > 0;
     if (hasOperations) {
       tracker.start();
     }

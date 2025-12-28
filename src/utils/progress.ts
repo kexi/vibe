@@ -341,8 +341,7 @@ export class ProgressTracker {
 
     // Start spinner animation loop
     this.spinnerInterval = setInterval(() => {
-      this.spinnerFrameIndex =
-        (this.spinnerFrameIndex + 1) % this.spinnerFrames.length;
+      this.spinnerFrameIndex = (this.spinnerFrameIndex + 1) % this.spinnerFrames.length;
       this.render();
     }, this.updateInterval);
 
@@ -422,9 +421,7 @@ export class ProgressTracker {
       this.stream.writeSync(this.textEncoder.encode(text));
     } catch (error) {
       // Ignore write errors (might happen if stderr is closed)
-      const errorMessage = error instanceof Error
-        ? error.message
-        : String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(`Progress write error: ${errorMessage}`);
     }
   }

@@ -5,7 +5,7 @@ import {
   isMainWorktree,
 } from "../utils/git.ts";
 import { loadVibeConfig } from "../utils/config.ts";
-import { runHooks, type HookTrackerInfo } from "../utils/hooks.ts";
+import { type HookTrackerInfo, runHooks } from "../utils/hooks.ts";
 import { confirm } from "../utils/prompt.ts";
 import { ProgressTracker } from "../utils/progress.ts";
 
