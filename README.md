@@ -45,7 +45,7 @@ chmod +x vibe
 sudo mv vibe /usr/local/bin/
 ```
 
-### Windows
+### Windows (PowerShell)
 
 ```powershell
 # Download
