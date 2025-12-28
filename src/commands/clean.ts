@@ -19,9 +19,9 @@ export async function cleanCommand(): Promise<void> {
     const config = await loadVibeConfig(currentWorktreePath);
 
     // Run pre_clean hooks
-    const hasPreCleanHooks = config?.hooks?.pre_clean !== undefined;
-    if (hasPreCleanHooks) {
-      await runHooks(config!.hooks!.pre_clean!, currentWorktreePath, {
+    const preCleanHooks = config?.hooks?.pre_clean;
+    if (preCleanHooks !== undefined) {
+      await runHooks(preCleanHooks, currentWorktreePath, {
         worktreePath: currentWorktreePath,
         originPath: mainPath,
       });
@@ -31,9 +31,9 @@ export async function cleanCommand(): Promise<void> {
     let removeCommand = `cd '${mainPath}' && git worktree remove '${currentWorktreePath}'`;
 
     // Append post_clean hooks to remove command
-    const hasPostCleanHooks = config?.hooks?.post_clean !== undefined;
-    if (hasPostCleanHooks) {
-      for (const cmd of config!.hooks!.post_clean!) {
+    const postCleanHooks = config?.hooks?.post_clean;
+    if (postCleanHooks !== undefined) {
+      for (const cmd of postCleanHooks) {
         removeCommand += ` && ${cmd}`;
       }
     }

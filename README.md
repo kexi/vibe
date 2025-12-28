@@ -202,12 +202,14 @@ post_start_append = ["npm run dev"]
 
 ### Available Hooks
 
-| Hook         | When                       | Environment Variables Available           |
-| ------------ | -------------------------- | ----------------------------------------- |
-| `pre_start`  | Before worktree creation   | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`  |
-| `post_start` | After worktree creation    | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`  |
-| `pre_clean`  | Before worktree removal    | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`  |
-| `post_clean` | After worktree removal     | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`  |
+| Hook         | When                                              | Environment Variables Available           |
+| ------------ | ------------------------------------------------- | ----------------------------------------- |
+| `pre_start`  | Before worktree creation                          | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`  |
+| `post_start` | After worktree creation                           | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`  |
+| `pre_clean`  | Before worktree removal (in current worktree)     | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`  |
+| `post_clean` | After worktree removal (in main repository)       | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`  |
+
+**Note**: `post_clean` hooks are appended to the removal command with `&&`, executing in the main repository directory after the `git worktree remove` command completes.
 
 ### Environment Variables
 

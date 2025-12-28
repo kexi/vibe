@@ -21,18 +21,15 @@ export function mergeArrayField(
   prepend: string[] | undefined,
   append: string[] | undefined,
 ): string[] | undefined {
-  // 完全上書きが指定されている場合
-  const hasOverride = override !== undefined;
-  if (hasOverride) {
+  // Complete override if specified
+  if (override !== undefined) {
     return override;
   }
 
-  // ベース配列がない場合
-  const hasBase = base !== undefined;
-  if (!hasBase) {
-    // prepend/appendのみの場合
-    const hasPrependOrAppend = prepend !== undefined || append !== undefined;
-    if (hasPrependOrAppend) {
+  // If no base array exists
+  if (base === undefined) {
+    // Return prepend/append only if specified
+    if (prepend !== undefined || append !== undefined) {
       return [
         ...(prepend ?? []),
         ...(append ?? []),
@@ -41,7 +38,7 @@ export function mergeArrayField(
     return undefined;
   }
 
-  // ベース配列にprepend/appendを適用
+  // Apply prepend/append to base array
   return [
     ...(prepend ?? []),
     ...base,
@@ -55,22 +52,21 @@ export function mergeConfigs(
 ): VibeConfig {
   const mergedConfig: VibeConfig = {};
 
-  // shellフィールドのマージ
+  // Merge shell field
   mergedConfig.shell = localConfig.shell ?? baseConfig.shell;
 
-  // copyフィールドのマージ
+  // Merge copy field
   const mergedFiles = mergeArrayField(
     baseConfig.copy?.files,
     localConfig.copy?.files,
     localConfig.copy?.files_prepend,
     localConfig.copy?.files_append,
   );
-  const hasMergedFiles = mergedFiles !== undefined;
-  if (hasMergedFiles) {
+  if (mergedFiles !== undefined) {
     mergedConfig.copy = { files: mergedFiles };
   }
 
-  // hooksフィールドのマージ
+  // Merge hooks field
   const hooks: VibeConfig["hooks"] = {};
 
   const mergedPreStart = mergeArrayField(
@@ -79,8 +75,7 @@ export function mergeConfigs(
     localConfig.hooks?.pre_start_prepend,
     localConfig.hooks?.pre_start_append,
   );
-  const hasMergedPreStart = mergedPreStart !== undefined;
-  if (hasMergedPreStart) {
+  if (mergedPreStart !== undefined) {
     hooks.pre_start = mergedPreStart;
   }
 
@@ -90,8 +85,7 @@ export function mergeConfigs(
     localConfig.hooks?.post_start_prepend,
     localConfig.hooks?.post_start_append,
   );
-  const hasMergedPostStart = mergedPostStart !== undefined;
-  if (hasMergedPostStart) {
+  if (mergedPostStart !== undefined) {
     hooks.post_start = mergedPostStart;
   }
 
@@ -101,8 +95,7 @@ export function mergeConfigs(
     localConfig.hooks?.pre_clean_prepend,
     localConfig.hooks?.pre_clean_append,
   );
-  const hasMergedPreClean = mergedPreClean !== undefined;
-  if (hasMergedPreClean) {
+  if (mergedPreClean !== undefined) {
     hooks.pre_clean = mergedPreClean;
   }
 
@@ -112,13 +105,11 @@ export function mergeConfigs(
     localConfig.hooks?.post_clean_prepend,
     localConfig.hooks?.post_clean_append,
   );
-  const hasMergedPostClean = mergedPostClean !== undefined;
-  if (hasMergedPostClean) {
+  if (mergedPostClean !== undefined) {
     hooks.post_clean = mergedPostClean;
   }
 
-  const hasHooks = Object.keys(hooks).length > 0;
-  if (hasHooks) {
+  if (Object.keys(hooks).length > 0) {
     mergedConfig.hooks = hooks;
   }
 

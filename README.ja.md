@@ -201,12 +201,14 @@ post_start_append = ["npm run dev"]
 
 ### 利用可能なフック
 
-| フック       | 実行タイミング          | 利用可能な環境変数                           |
-| ------------ | ----------------------- | -------------------------------------------- |
-| `pre_start`  | worktree作成前          | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`     |
-| `post_start` | worktree作成後          | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`     |
-| `pre_clean`  | worktree削除前          | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`     |
-| `post_clean` | worktree削除後          | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`     |
+| フック       | 実行タイミング                              | 利用可能な環境変数                           |
+| ------------ | ------------------------------------------- | -------------------------------------------- |
+| `pre_start`  | worktree作成前                              | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`     |
+| `post_start` | worktree作成後                              | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`     |
+| `pre_clean`  | worktree削除前（現在のworktreeで実行）      | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`     |
+| `post_clean` | worktree削除後（メインリポジトリで実行）    | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`     |
+
+**注意**: `post_clean`フックは削除コマンドに`&&`で連結され、`git worktree remove`コマンド完了後にメインリポジトリディレクトリで実行されます。
 
 ### 環境変数
 

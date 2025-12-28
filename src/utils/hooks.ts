@@ -22,6 +22,9 @@ export async function runHooks(
       stdout: "inherit",
       stderr: "inherit",
     });
-    await proc.output();
+    const result = await proc.output();
+    if (!result.success) {
+      throw new Error(`Hook failed with exit code ${result.code}: ${cmd}`);
+    }
   }
 }

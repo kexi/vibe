@@ -47,17 +47,16 @@ export async function startCommand(
     const config = await loadVibeConfig(repoRoot);
 
     // Run pre_start hooks
-    const hasPreStartHooks = config?.hooks?.pre_start !== undefined;
-    if (hasPreStartHooks) {
-      await runHooks(config!.hooks!.pre_start!, repoRoot, {
+    const preStartHooks = config?.hooks?.pre_start;
+    if (preStartHooks !== undefined) {
+      await runHooks(preStartHooks, repoRoot, {
         worktreePath,
         originPath: repoRoot,
       });
     }
 
     // Continue with existing process (post_start hooks are executed in runVibeConfig)
-    const hasConfig = config !== undefined;
-    if (hasConfig) {
+    if (config !== undefined) {
       await runVibeConfig(config, repoRoot, worktreePath);
     }
 
@@ -92,23 +91,17 @@ async function runVibeConfig(
   for (const file of config.copy?.files ?? []) {
     const src = join(repoRoot, file);
     const dest = join(worktreePath, file);
-    await Deno.copyFile(src, dest).catch(() => {});
+    await Deno.copyFile(src, dest).catch((err) => {
+      console.error(`Warning: Failed to copy ${file}: ${err.message}`);
+    });
   }
 
   // Run post_start hooks
-  const env = {
-    ...Deno.env.toObject(),
-    VIBE_WORKTREE_PATH: worktreePath,
-    VIBE_ORIGIN_PATH: repoRoot,
-  };
-  for (const cmd of config.hooks?.post_start ?? []) {
-    const proc = new Deno.Command("sh", {
-      args: ["-c", cmd],
-      cwd: worktreePath,
-      env,
-      stdout: "inherit",
-      stderr: "inherit",
+  const postStartHooks = config.hooks?.post_start;
+  if (postStartHooks !== undefined) {
+    await runHooks(postStartHooks, worktreePath, {
+      worktreePath,
+      originPath: repoRoot,
     });
-    await proc.output();
   }
 }
