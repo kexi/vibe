@@ -57,8 +57,12 @@ Priority: optional
   console.log(`Successfully created ${packageName}.deb`);
 
   // Clean up temporary directory
-  await Deno.remove(packageDir, { recursive: true });
-  console.log(`Cleaned up temporary directory: ${packageDir}`);
+  try {
+    await Deno.remove(packageDir, { recursive: true });
+    console.log(`Cleaned up temporary directory: ${packageDir}`);
+  } catch (error) {
+    console.warn(`Failed to clean up temporary directory: ${error.message}`);
+  }
 }
 
 async function main(): Promise<void> {
@@ -73,7 +77,8 @@ async function main(): Promise<void> {
 
   // Validate arch
   const validArchs = ["amd64", "arm64"];
-  if (!validArchs.includes(arch)) {
+  const isValidArch = validArchs.includes(arch);
+  if (!isValidArch) {
     console.error(`Invalid architecture: ${arch}. Must be 'amd64' or 'arm64'`);
     Deno.exit(1);
   }
