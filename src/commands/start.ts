@@ -12,6 +12,7 @@ import type { VibeConfig } from "../types/config.ts";
 import { loadVibeConfig } from "../utils/config.ts";
 import { runHooks } from "../utils/hooks.ts";
 import { confirm, select } from "../utils/prompt.ts";
+import { expandCopyPatterns } from "../utils/glob.ts";
 
 interface StartOptions {
   reuse?: boolean;
@@ -152,11 +153,24 @@ async function runVibeConfig(
   worktreePath: string,
 ): Promise<void> {
   // Copy files from origin to worktree
-  for (const file of config.copy?.files ?? []) {
+  // Expand glob patterns to actual file paths
+  const filesToCopy = await expandCopyPatterns(
+    config.copy?.files ?? [],
+    repoRoot,
+  );
+
+  for (const file of filesToCopy) {
     const src = join(repoRoot, file);
     const dest = join(worktreePath, file);
+
+    // Ensure parent directory exists
+    const destDir = dirname(dest);
+    // Ignore errors if directory already exists
+    await Deno.mkdir(destDir, { recursive: true }).catch(() => {});
+
+    // Copy the file
     await Deno.copyFile(src, dest).catch((err) => {
-      console.error(`Warning: Failed to copy ${file}: ${err.message}`);
+      console.warn(`Warning: Failed to copy ${file}: ${err.message}`);
     });
   }
 
