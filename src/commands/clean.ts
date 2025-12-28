@@ -24,7 +24,7 @@ export async function cleanCommand(): Promise<void> {
         "Warning: This worktree has uncommitted changes. Do you want to continue? (Y/n)",
       );
       if (!shouldContinue) {
-        console.log("Clean operation cancelled.");
+        console.error("Clean operation cancelled.");
         Deno.exit(0);
       }
     }

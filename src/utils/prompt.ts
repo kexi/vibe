@@ -31,7 +31,7 @@ export async function confirm(message: string): Promise<boolean> {
   }
 
   while (true) {
-    console.log(`${message}`);
+    console.error(`${message}`);
     const input = await readLine();
 
     const isYes = input === "Y" || input === "y" || input === "";
@@ -44,7 +44,7 @@ export async function confirm(message: string): Promise<boolean> {
       return false;
     }
 
-    console.log("Invalid input. Please enter Y/y/n/N.");
+    console.error("Invalid input. Please enter Y/y/n/N.");
   }
 }
 
@@ -59,11 +59,11 @@ export async function select(
   choices: string[],
 ): Promise<number> {
   while (true) {
-    console.log(`${message}`);
+    console.error(`${message}`);
     for (let i = 0; i < choices.length; i++) {
-      console.log(`  ${i + 1}. ${choices[i]}`);
+      console.error(`  ${i + 1}. ${choices[i]}`);
     }
-    console.log("Please select (enter number):");
+    console.error("Please select (enter number):");
 
     const input = await readLine();
     const number = parseInt(input, 10);
@@ -73,6 +73,6 @@ export async function select(
       return number - 1;
     }
 
-    console.log(`Invalid input. Please enter a number between 1 and ${choices.length}.`);
+    console.error(`Invalid input. Please enter a number between 1 and ${choices.length}.`);
   }
 }
