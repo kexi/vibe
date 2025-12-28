@@ -90,23 +90,8 @@ export async function startCommand(
             await runVibeConfig(config, repoRoot, worktreePath);
           }
 
-          // Launch shell or output cd command
-          // @ts-ignore: Type inference issue in CI environment only
-          const useShell = config?.shell === true;
-          if (useShell) {
-            const shellPath = Deno.env.get("SHELL") ?? "/bin/sh";
-            const command = new Deno.Command(shellPath, {
-              cwd: worktreePath,
-              stdin: "inherit",
-              stdout: "inherit",
-              stderr: "inherit",
-            });
-            const process = command.spawn();
-            const status = await process.status;
-            Deno.exit(status.code);
-          } else {
-            console.log(`cd '${worktreePath}'`);
-          }
+          // Output cd command
+          console.log(`cd '${worktreePath}'`);
           return;
         } else {
           // Cancel
