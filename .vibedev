@@ -1,0 +1,2 @@
+# Development helper - source this file: source .vibedev
+vibe() { eval "$(deno task dev "$@")"; }
