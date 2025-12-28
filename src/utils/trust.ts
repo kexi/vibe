@@ -1,4 +1,4 @@
-// 後方互換性のためsettings.tsから再エクスポート
+// Re-export from settings.ts for backwards compatibility
 export {
   addTrustedPath,
   getSettingsPath,

@@ -50,17 +50,65 @@ export async function startCommand(
     }
 
     const vibeTomlPath = join(repoRoot, ".vibe.toml");
+    const vibeLocalTomlPath = join(repoRoot, ".vibe.local.toml");
     const vibeTomlExists = await fileExists(vibeTomlPath);
+    const vibeLocalTomlExists = await fileExists(vibeLocalTomlPath);
     let config: VibeConfig | undefined;
 
+    // Load .vibe.toml
     if (vibeTomlExists) {
       const trusted = await isTrusted(vibeTomlPath);
       if (trusted) {
         config = parse(await Deno.readTextFile(vibeTomlPath)) as VibeConfig;
-        await runVibeConfig(config, repoRoot, worktreePath);
       } else {
-        console.error(".vibe.toml file found but not trusted. Run: vibe trust");
+        console.error(
+          "Error: .vibe.toml file is not trusted or has been modified.\n" +
+            "Please run: vibe trust",
+        );
+        Deno.exit(1);
       }
+    }
+
+    // Load and merge .vibe.local.toml
+    if (vibeLocalTomlExists) {
+      const trusted = await isTrusted(vibeLocalTomlPath);
+      if (trusted) {
+        const localConfig = parse(
+          await Deno.readTextFile(vibeLocalTomlPath),
+        ) as VibeConfig;
+
+        // Merge if config exists, otherwise use localConfig
+        if (config) {
+          config = {
+            shell: localConfig.shell ?? config.shell,
+            copy: {
+              files: [
+                ...(config.copy?.files ?? []),
+                ...(localConfig.copy?.files ?? []),
+              ],
+            },
+            hooks: {
+              post_start: [
+                ...(config.hooks?.post_start ?? []),
+                ...(localConfig.hooks?.post_start ?? []),
+              ],
+            },
+          };
+        } else {
+          config = localConfig;
+        }
+      } else {
+        console.error(
+          "Error: .vibe.local.toml file is not trusted or has been modified.\n" +
+            "Please run: vibe trust",
+        );
+        Deno.exit(1);
+      }
+    }
+
+    // Execute config if present
+    if (config) {
+      await runVibeConfig(config, repoRoot, worktreePath);
     }
 
     const useShell = config?.shell === true;
