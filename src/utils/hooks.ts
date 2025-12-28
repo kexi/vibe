@@ -14,9 +14,15 @@ export async function runHooks(
     VIBE_ORIGIN_PATH: env.originPath,
   };
 
+  // Detect platform and use appropriate shell
+  const isWindows = Deno.build.os === "windows";
+  const shell = isWindows ? "cmd" : "sh";
+
   for (const cmd of commands) {
-    const proc = new Deno.Command("sh", {
-      args: ["-c", cmd],
+    const shellArgs = isWindows ? ["/c", cmd] : ["-c", cmd];
+
+    const proc = new Deno.Command(shell, {
+      args: shellArgs,
       cwd,
       env: hookEnv,
       stdout: "piped",
