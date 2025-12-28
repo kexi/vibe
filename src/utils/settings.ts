@@ -77,9 +77,7 @@ const migrations: Record<number, MigrationFn> = {
           const hash = await calculateFileHash(path);
           return { path, hashes: [hash] };
         } catch (error) {
-          const errorMessage = error instanceof Error
-            ? error.message
-            : String(error);
+          const errorMessage = error instanceof Error ? error.message : String(error);
           console.warn(
             `Warning: Cannot calculate hash for ${path}: ${errorMessage}`,
           );

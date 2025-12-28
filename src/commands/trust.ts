@@ -31,9 +31,7 @@ export async function trustCommand(): Promise<void> {
         await addTrustedPath(vibeTomlPath);
         trustedFiles.push(vibeTomlPath);
       } catch (error) {
-        const errorMessage = error instanceof Error
-          ? error.message
-          : String(error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
         console.error(`Error: Cannot read .vibe.toml file: ${errorMessage}`);
         Deno.exit(1);
       }
@@ -46,9 +44,7 @@ export async function trustCommand(): Promise<void> {
         await addTrustedPath(vibeLocalTomlPath);
         trustedFiles.push(vibeLocalTomlPath);
       } catch (error) {
-        const errorMessage = error instanceof Error
-          ? error.message
-          : String(error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
         console.error(
           `Error: Cannot read .vibe.local.toml file: ${errorMessage}`,
         );
