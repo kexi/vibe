@@ -1,9 +1,9 @@
 /**
- * プロンプト関数のテスト
+ * Prompt function tests
  *
- * 注意: これらのテストは標準入力のモック化が必要なため、
- * 実際のテストケースは手動テストで確認します。
- * ここでは関数が正しくエクスポートされているかのみを確認します。
+ * Note: These tests require mocking stdin, so actual test cases
+ * are verified through manual testing.
+ * Here we only verify that functions are correctly exported.
  */
 
 import { confirm, select } from "./prompt.ts";
@@ -17,4 +17,26 @@ Deno.test("confirm function is exported", () => {
 Deno.test("select function is exported", () => {
   const isSelectFunction = typeof select === "function";
   assertEquals(isSelectFunction, true);
+});
+
+Deno.test({
+  name: "confirm returns false in non-interactive mode",
+  fn: async () => {
+    // This test verifies that confirm handles non-interactive environments
+    // In actual CI/test environments, Deno.stdin.isTerminal() returns false
+    // We can't easily mock isTerminal(), so this is more of a documentation test
+
+    // Skip this test if we're in an interactive terminal
+    const isInteractive = Deno.stdin.isTerminal?.() ?? false;
+    if (isInteractive) {
+      // In interactive mode, we can't test the non-interactive path
+      // without mocking, which is complex with Deno.stdin
+      return;
+    }
+
+    const result = await confirm("Test prompt");
+    assertEquals(result, false);
+  },
+  sanitizeResources: false,
+  sanitizeOps: false,
 });

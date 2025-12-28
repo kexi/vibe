@@ -87,9 +87,19 @@ export async function branchExists(branchName: string): Promise<boolean> {
 }
 
 /**
- * 指定したブランチが使用されているworktreeのパスを検索する
- * @param branchName ブランチ名
- * @returns worktreeのパス。見つからない場合はnull
+ * Check if the worktree has any uncommitted changes
+ * @returns true if there are changes, false otherwise
+ */
+export async function hasUncommittedChanges(): Promise<boolean> {
+  const output = await runGitCommand(["status", "--porcelain"]);
+  const hasChanges = output.trim().length > 0;
+  return hasChanges;
+}
+
+/**
+ * Find the worktree path that is using the specified branch
+ * @param branchName Branch name
+ * @returns Worktree path, or null if not found
  */
 export async function findWorktreeByBranch(
   branchName: string,

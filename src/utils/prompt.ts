@@ -1,9 +1,9 @@
 /**
- * インタラクティブプロンプトユーティリティ
+ * Interactive prompt utilities
  */
 
 /**
- * ユーザーから1行の入力を読み取る
+ * Read a single line of input from the user
  */
 async function readLine(): Promise<string> {
   const buf = new Uint8Array(1024);
@@ -16,11 +16,20 @@ async function readLine(): Promise<string> {
 }
 
 /**
- * Y/n形式の確認プロンプトを表示する
- * @param message 確認メッセージ
- * @returns ユーザーがYesを選択した場合true、それ以外はfalse
+ * Display a Y/n confirmation prompt
+ * @param message Confirmation message
+ * @returns true if user selects Yes, false otherwise
  */
 export async function confirm(message: string): Promise<boolean> {
+  // In non-interactive environments (CI, scripts), automatically return false
+  const isInteractive = Deno.stdin.isTerminal?.() ?? false;
+  if (!isInteractive) {
+    console.error(
+      "Error: Cannot run in non-interactive mode with uncommitted changes.",
+    );
+    return false;
+  }
+
   while (true) {
     console.log(`${message}`);
     const input = await readLine();
@@ -35,15 +44,15 @@ export async function confirm(message: string): Promise<boolean> {
       return false;
     }
 
-    console.log("無効な入力です。Y/y/n/N のいずれかを入力してください。");
+    console.log("Invalid input. Please enter Y/y/n/N.");
   }
 }
 
 /**
- * 選択肢から番号で選択するプロンプトを表示する
- * @param message プロンプトメッセージ
- * @param choices 選択肢の配列
- * @returns 選択されたインデックス(0始まり)
+ * Display a numbered selection prompt
+ * @param message Prompt message
+ * @param choices Array of choices
+ * @returns Selected index (0-based)
  */
 export async function select(
   message: string,
@@ -54,7 +63,7 @@ export async function select(
     for (let i = 0; i < choices.length; i++) {
       console.log(`  ${i + 1}. ${choices[i]}`);
     }
-    console.log("選択してください (番号を入力):");
+    console.log("Please select (enter number):");
 
     const input = await readLine();
     const number = parseInt(input, 10);
@@ -64,6 +73,6 @@ export async function select(
       return number - 1;
     }
 
-    console.log(`無効な入力です。1〜${choices.length} の番号を入力してください。`);
+    console.log(`Invalid input. Please enter a number between 1 and ${choices.length}.`);
   }
 }
