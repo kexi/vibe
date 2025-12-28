@@ -5,9 +5,23 @@ import { trustCommand } from "./src/commands/trust.ts";
 import { untrustCommand } from "./src/commands/untrust.ts";
 import { verifyCommand } from "./src/commands/verify.ts";
 import { configCommand } from "./src/commands/config.ts";
-import { REPOSITORY_URL, VERSION } from "./src/version.ts";
+import { BUILD_INFO } from "./src/version.ts";
 
 const HELP_TEXT = `vibe - git worktree helper
+
+Installation:
+  # Homebrew (macOS)
+  brew install kexi/tap/vibe
+
+  # Deno (Cross-platform)
+  deno install -A --global jsr:@kexi/vibe
+
+  # mise (.mise.toml)
+  [tools]
+  "jsr:@kexi/vibe" = "latest"
+
+  # Manual build
+  deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts
 
 Usage:
   vibe start <branch-name> [--reuse]  Create a new worktree with the given branch
@@ -43,15 +57,21 @@ async function main(): Promise<void> {
   });
 
   if (args.version) {
-    console.log(`vibe ${VERSION}`);
-    console.log(`${REPOSITORY_URL}#readme`);
+    console.log(`vibe ${BUILD_INFO.version}`);
+    console.log(
+      `Platform: ${BUILD_INFO.platform}-${BUILD_INFO.arch} (${BUILD_INFO.target})`,
+    );
+    console.log(`Distribution: ${BUILD_INFO.distribution}`);
+    console.log(`Built: ${BUILD_INFO.buildTime} (${BUILD_INFO.buildEnv})`);
+    console.log();
+    console.log(`${BUILD_INFO.repository}#readme`);
     Deno.exit(0);
   }
 
   const showHelp = args.help || args._.length === 0;
   if (showHelp) {
     console.log(HELP_TEXT);
-    console.log(`${REPOSITORY_URL}#readme`);
+    console.log(`${BUILD_INFO.repository}#readme`);
     Deno.exit(0);
   }
 

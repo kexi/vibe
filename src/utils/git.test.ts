@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { sanitizeBranchName } from "./git.ts";
+import { findWorktreeByBranch, hasUncommittedChanges, sanitizeBranchName } from "./git.ts";
 
 Deno.test("sanitizeBranchName replaces slashes with dashes", () => {
   const result = sanitizeBranchName("feat/new-feature");
@@ -19,4 +19,153 @@ Deno.test("sanitizeBranchName returns unchanged string without slashes", () => {
 Deno.test("sanitizeBranchName handles empty string", () => {
   const result = sanitizeBranchName("");
   assertEquals(result, "");
+});
+
+Deno.test("hasUncommittedChanges returns false when there are no changes", async () => {
+  // This test runs in the current repository
+  // We assume the test environment has a clean working tree or the changes are committed
+  const originalDir = Deno.cwd();
+
+  try {
+    // Create a temporary directory for testing
+    const tempDir = await Deno.makeTempDir();
+    Deno.chdir(tempDir);
+
+    // Initialize a git repository
+    await new Deno.Command("git", {
+      args: ["init"],
+    }).output();
+
+    await new Deno.Command("git", {
+      args: ["config", "user.email", "test@example.com"],
+    }).output();
+
+    await new Deno.Command("git", {
+      args: ["config", "user.name", "Test User"],
+    }).output();
+
+    // Create and commit a file to have a valid repository
+    await Deno.writeTextFile("test.txt", "initial content");
+    await new Deno.Command("git", {
+      args: ["add", "test.txt"],
+    }).output();
+
+    await new Deno.Command("git", {
+      args: ["commit", "-m", "Initial commit"],
+    }).output();
+
+    // Now the repository should have no uncommitted changes
+    const result = await hasUncommittedChanges();
+    assertEquals(result, false);
+
+    // Clean up
+    Deno.chdir(originalDir);
+    await Deno.remove(tempDir, { recursive: true });
+  } catch (error) {
+    Deno.chdir(originalDir);
+    throw error;
+  }
+});
+
+Deno.test("hasUncommittedChanges returns true when there are uncommitted changes", async () => {
+  const originalDir = Deno.cwd();
+
+  try {
+    // Create a temporary directory for testing
+    const tempDir = await Deno.makeTempDir();
+    Deno.chdir(tempDir);
+
+    // Initialize a git repository
+    await new Deno.Command("git", {
+      args: ["init"],
+    }).output();
+
+    await new Deno.Command("git", {
+      args: ["config", "user.email", "test@example.com"],
+    }).output();
+
+    await new Deno.Command("git", {
+      args: ["config", "user.name", "Test User"],
+    }).output();
+
+    // Create and commit a file
+    await Deno.writeTextFile("test.txt", "initial content");
+    await new Deno.Command("git", {
+      args: ["add", "test.txt"],
+    }).output();
+
+    await new Deno.Command("git", {
+      args: ["commit", "-m", "Initial commit"],
+    }).output();
+
+    // Make an uncommitted change
+    await Deno.writeTextFile("test.txt", "modified content");
+
+    // Now the repository should have uncommitted changes
+    const result = await hasUncommittedChanges();
+    assertEquals(result, true);
+
+    // Clean up
+    Deno.chdir(originalDir);
+    await Deno.remove(tempDir, { recursive: true });
+  } catch (error) {
+    Deno.chdir(originalDir);
+    throw error;
+  }
+});
+
+Deno.test("hasUncommittedChanges returns true when there are untracked files", async () => {
+  const originalDir = Deno.cwd();
+
+  try {
+    // Create a temporary directory for testing
+    const tempDir = await Deno.makeTempDir();
+    Deno.chdir(tempDir);
+
+    // Initialize a git repository
+    await new Deno.Command("git", {
+      args: ["init"],
+    }).output();
+
+    await new Deno.Command("git", {
+      args: ["config", "user.email", "test@example.com"],
+    }).output();
+
+    await new Deno.Command("git", {
+      args: ["config", "user.name", "Test User"],
+    }).output();
+
+    // Create and commit a file
+    await Deno.writeTextFile("test.txt", "initial content");
+    await new Deno.Command("git", {
+      args: ["add", "test.txt"],
+    }).output();
+
+    await new Deno.Command("git", {
+      args: ["commit", "-m", "Initial commit"],
+    }).output();
+
+    // Create an untracked file
+    await Deno.writeTextFile("untracked.txt", "untracked content");
+
+    // Now the repository should have untracked files
+    const result = await hasUncommittedChanges();
+    assertEquals(result, true);
+
+    // Clean up
+    Deno.chdir(originalDir);
+    await Deno.remove(tempDir, { recursive: true });
+  } catch (error) {
+    Deno.chdir(originalDir);
+    throw error;
+  }
+});
+
+Deno.test({
+  name: "findWorktreeByBranch returns null when branch is not found",
+  ignore: true, // Requires actual git repository, ignored for automated tests
+  async fn() {
+    const result = await findWorktreeByBranch("non-existent-branch");
+    assertEquals(result, null);
+  },
 });

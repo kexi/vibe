@@ -82,24 +82,6 @@ Deno.test("mergeArrayField: empty arrays", () => {
   assertEquals(result, []);
 });
 
-Deno.test("mergeConfigs: shell field override", () => {
-  const baseConfig: VibeConfig = { shell: true };
-  const localConfig: VibeConfig = { shell: false };
-
-  const result = mergeConfigs(baseConfig, localConfig);
-
-  assertEquals(result.shell, false);
-});
-
-Deno.test("mergeConfigs: shell field from base when local undefined", () => {
-  const baseConfig: VibeConfig = { shell: true };
-  const localConfig: VibeConfig = {};
-
-  const result = mergeConfigs(baseConfig, localConfig);
-
-  assertEquals(result.shell, true);
-});
-
 Deno.test("mergeConfigs: copy files merging with append", () => {
   const baseConfig: VibeConfig = {
     copy: { files: [".env"] },
@@ -214,14 +196,12 @@ Deno.test("mergeConfigs: empty configs", () => {
 
   const result = mergeConfigs(baseConfig, localConfig);
 
-  assertEquals(result.shell, undefined);
   assertEquals(result.copy, undefined);
   assertEquals(result.hooks, undefined);
 });
 
 Deno.test("mergeConfigs: complex scenario", () => {
   const baseConfig: VibeConfig = {
-    shell: true,
     copy: { files: [".env"] },
     hooks: {
       pre_start: ["echo 'preparing'"],
@@ -229,7 +209,6 @@ Deno.test("mergeConfigs: complex scenario", () => {
     },
   };
   const localConfig: VibeConfig = {
-    shell: false,
     copy: { files_append: [".env.local"] },
     hooks: {
       pre_start_prepend: ["echo 'local setup'"],
@@ -240,7 +219,6 @@ Deno.test("mergeConfigs: complex scenario", () => {
 
   const result = mergeConfigs(baseConfig, localConfig);
 
-  assertEquals(result.shell, false);
   assertEquals(result.copy?.files, [".env", ".env.local"]);
   assertEquals(result.hooks?.pre_start, [
     "echo 'local setup'",
@@ -257,14 +235,52 @@ Deno.test("mergeConfigs: complex scenario", () => {
 Deno.test("mergeConfigs: local config only", () => {
   const baseConfig: VibeConfig = {};
   const localConfig: VibeConfig = {
-    shell: true,
     copy: { files: [".local"] },
     hooks: { post_start: ["echo 'local'"] },
   };
 
   const result = mergeConfigs(baseConfig, localConfig);
 
-  assertEquals(result.shell, true);
   assertEquals(result.copy?.files, [".local"]);
   assertEquals(result.hooks?.post_start, ["echo 'local'"]);
+});
+
+Deno.test("mergeConfigs: glob patterns in copy files", () => {
+  const baseConfig: VibeConfig = {
+    copy: { files: ["*.env"] },
+  };
+  const localConfig: VibeConfig = {
+    copy: { files_append: ["config/*.json"] },
+  };
+
+  const result = mergeConfigs(baseConfig, localConfig);
+
+  assertEquals(result.copy?.files, ["*.env", "config/*.json"]);
+});
+
+Deno.test("mergeConfigs: glob patterns with override", () => {
+  const baseConfig: VibeConfig = {
+    copy: { files: ["*.env", "*.txt"] },
+  };
+  const localConfig: VibeConfig = {
+    copy: { files: ["**/*.json"] },
+  };
+
+  const result = mergeConfigs(baseConfig, localConfig);
+
+  // Local config should override base config
+  assertEquals(result.copy?.files, ["**/*.json"]);
+});
+
+Deno.test("mergeConfigs: mix of exact paths and glob patterns", () => {
+  const baseConfig: VibeConfig = {
+    copy: { files: [".env", "*.config.js"] },
+  };
+  const localConfig: VibeConfig = {
+    copy: { files_prepend: ["**/*.local.env"] },
+  };
+
+  const result = mergeConfigs(baseConfig, localConfig);
+
+  assertEquals(result.copy?.files, ["**/*.local.env", ".env", "*.config.js"]);
 });

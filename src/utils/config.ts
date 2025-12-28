@@ -52,9 +52,6 @@ export function mergeConfigs(
 ): VibeConfig {
   const mergedConfig: VibeConfig = {};
 
-  // Merge shell field
-  mergedConfig.shell = localConfig.shell ?? baseConfig.shell;
-
   // Merge copy field
   const mergedFiles = mergeArrayField(
     baseConfig.copy?.files,
