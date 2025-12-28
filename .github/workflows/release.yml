@@ -36,12 +36,7 @@ jobs:
       - uses: jdx/mise-action@v2
 
       - name: Generate build info
-        shell: bash
-        run: |
-          deno run --allow-read --allow-write --allow-run --allow-env scripts/build.ts \
-            --target ${{ matrix.target }} \
-            --distribution binary \
-            --generate-version-only
+        run: deno task generate-version --target ${{ matrix.target }} --distribution binary
 
       - name: Compile
         run: deno compile --allow-run --allow-read --allow-write --allow-env --target ${{ matrix.target }} --output ${{ matrix.artifact }} main.ts
@@ -77,10 +72,7 @@ jobs:
       - name: Regenerate build info for deb
         run: |
           TARGET="${{ matrix.arch == 'amd64' && 'x86_64-unknown-linux-gnu' || 'aarch64-unknown-linux-gnu' }}"
-          deno run --allow-read --allow-write --allow-run --allow-env scripts/build.ts \
-            --target "$TARGET" \
-            --distribution deb \
-            --generate-version-only
+          deno task generate-version --target "$TARGET" --distribution deb
           # Recompile with deb distribution metadata
           deno compile --allow-run --allow-read --allow-write --allow-env \
             --target "$TARGET" \
