@@ -159,7 +159,7 @@ export class ProgressTracker {
   private nextId = 0;
 
   private lastRenderLineCount = 0;
-  private spinnerInterval?: number;
+  private spinnerInterval?: ReturnType<typeof setInterval>;
   private spinnerFrameIndex = 0;
   private finished = false;
 

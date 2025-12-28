@@ -10,6 +10,22 @@ export interface HookTrackerInfo {
   taskIds: string[];
 }
 
+/**
+ * Execute hook commands sequentially with optional progress tracking.
+ *
+ * Output Behavior:
+ * - When trackerInfo is NOT provided: Hook stdout is written to stderr to avoid
+ *   interfering with shell wrapper eval (for commands like `cd` output).
+ * - When trackerInfo IS provided: Hook stdout is suppressed to keep the progress
+ *   display clean and avoid visual clutter.
+ * - Failed hooks ALWAYS show stderr output regardless of trackerInfo, to aid debugging.
+ *
+ * @param commands - Array of shell commands to execute
+ * @param cwd - Working directory for command execution
+ * @param env - Hook environment variables (VIBE_WORKTREE_PATH, VIBE_ORIGIN_PATH)
+ * @param trackerInfo - Optional progress tracker with task IDs for each command
+ * @throws {Error} If any hook command fails (non-zero exit code)
+ */
 export async function runHooks(
   commands: string[],
   cwd: string,
