@@ -1,6 +1,7 @@
 import { dirname, join } from "@std/path";
 import {
   branchExists,
+  findWorktreeByBranch,
   getRepoName,
   getRepoRoot,
   runGitCommand,
@@ -9,6 +10,7 @@ import {
 import type { VibeConfig } from "../types/config.ts";
 import { loadVibeConfig } from "../utils/config.ts";
 import { runHooks } from "../utils/hooks.ts";
+import { confirm, select } from "../utils/prompt.ts";
 
 interface StartOptions {
   reuse?: boolean;
@@ -31,6 +33,87 @@ export async function startCommand(
     const parentDir = dirname(repoRoot);
     const worktreePath = join(parentDir, `${repoName}-${sanitizedBranch}`);
 
+    // Check if branch is already in use by another worktree
+    const existingWorktreePath = await findWorktreeByBranch(branchName);
+    const isBranchUsedInWorktree = existingWorktreePath !== null;
+    if (isBranchUsedInWorktree) {
+      const shouldNavigate = await confirm(
+        `ブランチ '${branchName}' は既にworktree '${existingWorktreePath}' で使用中です。\n既存のworktreeに移動しますか? (Y/n)`,
+      );
+
+      if (shouldNavigate) {
+        console.log(`cd '${existingWorktreePath}'`);
+        Deno.exit(0);
+      } else {
+        console.log("キャンセルしました");
+        Deno.exit(0);
+      }
+    }
+
+    // Load config and verify trust before creating worktree
+    const config: VibeConfig | undefined = await loadVibeConfig(repoRoot);
+
+    // Check if directory already exists
+    try {
+      await Deno.stat(worktreePath);
+
+      const choice = await select(
+        `ディレクトリ '${worktreePath}' は既に存在します:`,
+        ["上書き(削除して再作成)", "再利用(既存を使用)", "キャンセル"],
+      );
+
+      const shouldOverwrite = choice === 0;
+      if (shouldOverwrite) {
+        await Deno.remove(worktreePath, { recursive: true });
+      } else {
+        const shouldReuse = choice === 1;
+        if (shouldReuse) {
+          // Reuse existing directory: skip git worktree add
+
+          // Run pre_start hooks
+          const preStartHooks = config?.hooks?.pre_start;
+          const hasPreStartHooks = preStartHooks !== undefined;
+          if (hasPreStartHooks) {
+            await runHooks(preStartHooks, repoRoot, {
+              worktreePath,
+              originPath: repoRoot,
+            });
+          }
+
+          // Run config
+          const hasConfig = config !== undefined;
+          if (hasConfig) {
+            await runVibeConfig(config, repoRoot, worktreePath);
+          }
+
+          // Launch shell or output cd command
+          // @ts-ignore: Type inference issue in CI environment only
+          const useShell = config?.shell === true;
+          if (useShell) {
+            const shellPath = Deno.env.get("SHELL") ?? "/bin/sh";
+            const command = new Deno.Command(shellPath, {
+              cwd: worktreePath,
+              stdin: "inherit",
+              stdout: "inherit",
+              stderr: "inherit",
+            });
+            const process = command.spawn();
+            const status = await process.status;
+            Deno.exit(status.code);
+          } else {
+            console.log(`cd '${worktreePath}'`);
+          }
+          return;
+        } else {
+          // Cancel
+          console.log("キャンセルしました");
+          Deno.exit(0);
+        }
+      }
+    } catch {
+      // Directory doesn't exist, continue with normal flow
+    }
+
     const branchAlreadyExists = await branchExists(branchName);
     if (branchAlreadyExists) {
       if (!options.reuse) {
@@ -43,8 +126,6 @@ export async function startCommand(
     } else {
       await runGitCommand(["worktree", "add", "-b", branchName, worktreePath]);
     }
-
-    const config = await loadVibeConfig(repoRoot);
 
     // Run pre_start hooks
     const preStartHooks = config?.hooks?.pre_start;

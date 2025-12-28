@@ -85,3 +85,20 @@ export async function branchExists(branchName: string): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * 指定したブランチが使用されているworktreeのパスを検索する
+ * @param branchName ブランチ名
+ * @returns worktreeのパス。見つからない場合はnull
+ */
+export async function findWorktreeByBranch(
+  branchName: string,
+): Promise<string | null> {
+  const worktrees = await getWorktreeList();
+  const found = worktrees.find((w) => w.branch === branchName);
+  const isWorktreeFound = found !== undefined;
+  if (isWorktreeFound) {
+    return found.path;
+  }
+  return null;
+}
