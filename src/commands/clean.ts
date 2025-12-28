@@ -1,8 +1,4 @@
-import {
-  getMainWorktreePath,
-  getRepoRoot,
-  isMainWorktree,
-} from "../utils/git.ts";
+import { getMainWorktreePath, getRepoRoot, isMainWorktree } from "../utils/git.ts";
 
 export async function cleanCommand(): Promise<void> {
   try {
