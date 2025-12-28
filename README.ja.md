@@ -224,14 +224,14 @@ files = [".env.local", ".secrets"]
 ```toml
 # .vibe.toml（共有）
 [hooks]
-post_start = ["mise trust", "mise install"]
+post_start = ["npm install", "npm run build"]
 
 # .vibe.local.toml（ローカル）
 [hooks]
 post_start_prepend = ["echo 'ローカルセットアップ'"]
 post_start_append = ["npm run dev"]
 
-# 結果: ["echo 'ローカルセットアップ'", "mise trust", "mise install", "npm run dev"]
+# 結果: ["echo 'ローカルセットアップ'", "npm install", "npm run build", "npm run dev"]
 ```
 
 ### 設定オプション

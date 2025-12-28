@@ -225,14 +225,14 @@ When both `.vibe.toml` and `.vibe.local.toml` exist:
 ```toml
 # .vibe.toml (shared)
 [hooks]
-post_start = ["mise trust", "mise install"]
+post_start = ["npm install", "npm run build"]
 
 # .vibe.local.toml (local)
 [hooks]
 post_start_prepend = ["echo 'local setup'"]
 post_start_append = ["npm run dev"]
 
-# Result: ["echo 'local setup'", "mise trust", "mise install", "npm run dev"]
+# Result: ["echo 'local setup'", "npm install", "npm run build", "npm run dev"]
 ```
 
 ### Configuration Options
