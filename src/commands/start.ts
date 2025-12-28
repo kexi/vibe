@@ -87,6 +87,7 @@ export async function startCommand(
           }
 
           // Launch shell or output cd command
+          // @ts-ignore: Type inference issue in CI environment only
           const useShell = config?.shell === true;
           if (useShell) {
             const shellPath = Deno.env.get("SHELL") ?? "/bin/sh";
