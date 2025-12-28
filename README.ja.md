@@ -44,54 +44,6 @@ $ vibe start feat/new-feature
 既存のworktreeに移動しますか? (Y/n)
 ```
 
-## セットアップ
-
-シェルに以下を追加:
-
-<details>
-<summary>Zsh (.zshrc)</summary>
-
-```bash
-vibe() { eval "$(command vibe "$@")" }
-```
-</details>
-
-<details>
-<summary>Bash (.bashrc)</summary>
-
-```bash
-vibe() { eval "$(command vibe "$@")"; }
-```
-</details>
-
-<details>
-<summary>Fish (~/.config/fish/config.fish)</summary>
-
-```fish
-function vibe
-    eval (command vibe $argv)
-end
-```
-</details>
-
-<details>
-<summary>Nushell (~/.config/nushell/config.nu)</summary>
-
-```nu
-def --env vibe [...args] {
-    ^vibe ...$args | lines | each { |line| nu -c $line }
-}
-```
-</details>
-
-<details>
-<summary>PowerShell ($PROFILE)</summary>
-
-```powershell
-function vibe { Invoke-Expression (& vibe.exe $args) }
-```
-</details>
-
 ## インストール
 
 ### Homebrew (macOS)
@@ -174,6 +126,54 @@ $path = [Environment]::GetEnvironmentVariable("Path", "User")
 ```bash
 deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts
 ```
+
+## セットアップ
+
+シェルに以下を追加:
+
+<details>
+<summary>Zsh (.zshrc)</summary>
+
+```bash
+vibe() { eval "$(command vibe "$@")" }
+```
+</details>
+
+<details>
+<summary>Bash (.bashrc)</summary>
+
+```bash
+vibe() { eval "$(command vibe "$@")"; }
+```
+</details>
+
+<details>
+<summary>Fish (~/.config/fish/config.fish)</summary>
+
+```fish
+function vibe
+    eval (command vibe $argv)
+end
+```
+</details>
+
+<details>
+<summary>Nushell (~/.config/nushell/config.nu)</summary>
+
+```nu
+def --env vibe [...args] {
+    ^vibe ...$args | lines | each { |line| nu -c $line }
+}
+```
+</details>
+
+<details>
+<summary>PowerShell ($PROFILE)</summary>
+
+```powershell
+function vibe { Invoke-Expression (& vibe.exe $args) }
+```
+</details>
 
 ## 設定
 

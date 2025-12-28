@@ -44,54 +44,6 @@ Branch 'feat/new-feature' is already in use by worktree '/path/to/repo-feat-new-
 Navigate to the existing worktree? (Y/n)
 ```
 
-## Setup
-
-Add the following to your shell configuration:
-
-<details>
-<summary>Zsh (.zshrc)</summary>
-
-```bash
-vibe() { eval "$(command vibe "$@")" }
-```
-</details>
-
-<details>
-<summary>Bash (.bashrc)</summary>
-
-```bash
-vibe() { eval "$(command vibe "$@")"; }
-```
-</details>
-
-<details>
-<summary>Fish (~/.config/fish/config.fish)</summary>
-
-```fish
-function vibe
-    eval (command vibe $argv)
-end
-```
-</details>
-
-<details>
-<summary>Nushell (~/.config/nushell/config.nu)</summary>
-
-```nu
-def --env vibe [...args] {
-    ^vibe ...$args | lines | each { |line| nu -c $line }
-}
-```
-</details>
-
-<details>
-<summary>PowerShell ($PROFILE)</summary>
-
-```powershell
-function vibe { Invoke-Expression (& vibe.exe $args) }
-```
-</details>
-
 ## Installation
 
 ### Homebrew (macOS)
@@ -174,6 +126,54 @@ $path = [Environment]::GetEnvironmentVariable("Path", "User")
 ```bash
 deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts
 ```
+
+## Setup
+
+Add the following to your shell configuration:
+
+<details>
+<summary>Zsh (.zshrc)</summary>
+
+```bash
+vibe() { eval "$(command vibe "$@")" }
+```
+</details>
+
+<details>
+<summary>Bash (.bashrc)</summary>
+
+```bash
+vibe() { eval "$(command vibe "$@")"; }
+```
+</details>
+
+<details>
+<summary>Fish (~/.config/fish/config.fish)</summary>
+
+```fish
+function vibe
+    eval (command vibe $argv)
+end
+```
+</details>
+
+<details>
+<summary>Nushell (~/.config/nushell/config.nu)</summary>
+
+```nu
+def --env vibe [...args] {
+    ^vibe ...$args | lines | each { |line| nu -c $line }
+}
+```
+</details>
+
+<details>
+<summary>PowerShell ($PROFILE)</summary>
+
+```powershell
+function vibe { Invoke-Expression (& vibe.exe $args) }
+```
+</details>
 
 ## Configuration
 
