@@ -120,7 +120,7 @@ jobs:
 
       # Install Node.js dependencies for E2E tests
       - name: Install E2E test dependencies
-        run: pnpm install
+        run: pnpm install --shamefully-hoist
 
       # Run E2E tests with Vitest
       - name: Run E2E tests
