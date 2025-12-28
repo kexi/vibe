@@ -9,7 +9,7 @@ export async function cleanCommand(): Promise<void> {
     const isMain = await isMainWorktree();
     if (isMain) {
       console.error(
-        "echo 'Error: Cannot clean main worktree. Use this command from a secondary worktree.'",
+        "Error: Cannot clean main worktree. Use this command from a secondary worktree.",
       );
       Deno.exit(1);
     }
@@ -22,7 +22,7 @@ export async function cleanCommand(): Promise<void> {
     );
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`echo 'Error: ${errorMessage.replace(/'/g, "'\\''")}'`);
+    console.error(`Error: ${errorMessage}`);
     Deno.exit(1);
   }
 }

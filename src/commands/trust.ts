@@ -9,15 +9,15 @@ export async function trustCommand(): Promise<void> {
 
     const fileExists = await checkFileExists(vibeTomlPath);
     if (!fileExists) {
-      console.error(`echo 'Error: .vibe.toml file not found in ${repoRoot}'`);
+      console.error(`Error: .vibe.toml file not found in ${repoRoot}`);
       Deno.exit(1);
     }
 
     await addTrustedPath(vibeTomlPath);
-    console.error(`echo 'Trusted: ${vibeTomlPath}'`);
+    console.error(`Trusted: ${vibeTomlPath}`);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`echo 'Error: ${errorMessage.replace(/'/g, "'\\''")}'`);
+    console.error(`Error: ${errorMessage}`);
     Deno.exit(1);
   }
 }

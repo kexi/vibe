@@ -6,9 +6,12 @@ import { trustCommand } from "./src/commands/trust.ts";
 const HELP_TEXT = `vibe - git worktree helper
 
 Usage:
-  vibe start <branch-name>  Create a new worktree with the given branch
-  vibe clean                Remove current worktree and return to main
-  vibe trust                Trust .vibe file in current repository
+  vibe start <branch-name> [--reuse]  Create a new worktree with the given branch
+  vibe clean                          Remove current worktree and return to main
+  vibe trust                          Trust .vibe file in current repository
+
+Options:
+  --reuse  Use existing branch instead of creating a new one
 
 Setup:
   Add this to your .zshrc:
@@ -17,12 +20,13 @@ Setup:
 Examples:
   vibe trust
   vibe start feat/new-feature
+  vibe start feat/existing --reuse
   vibe clean
 `;
 
 async function main(): Promise<void> {
   const args = parseArgs(Deno.args, {
-    boolean: ["help"],
+    boolean: ["help", "reuse"],
     alias: { h: "help" },
   });
 
@@ -37,7 +41,8 @@ async function main(): Promise<void> {
   switch (command) {
     case "start": {
       const branchName = String(args._[1] ?? "");
-      await startCommand(branchName);
+      const reuse = args.reuse;
+      await startCommand(branchName, { reuse });
       break;
     }
     case "clean":
@@ -47,7 +52,7 @@ async function main(): Promise<void> {
       await trustCommand();
       break;
     default:
-      console.error(`echo 'Unknown command: ${command}'`);
+      console.error(`Unknown command: ${command}`);
       Deno.exit(1);
   }
 }
