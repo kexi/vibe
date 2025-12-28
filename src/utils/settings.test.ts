@@ -1,10 +1,5 @@
 import { assertEquals } from "@std/assert";
-import {
-  addTrustedPath,
-  isTrusted,
-  loadUserSettings,
-  removeTrustedPath,
-} from "./settings.ts";
+import { addTrustedPath, isTrusted, loadUserSettings, removeTrustedPath } from "./settings.ts";
 
 Deno.test("loadUserSettings returns default settings when file not exists", async () => {
   const settings = await loadUserSettings();
