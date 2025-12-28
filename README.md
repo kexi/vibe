@@ -341,7 +341,8 @@ deno task ci
 deno task fmt:check    # Check code formatting
 deno task lint         # Run linter
 deno task check        # Type check
-deno task test         # Run tests
+deno task test         # Run unit tests
+deno task test:e2e     # Run E2E tests
 
 # Auto-fix formatting
 deno task fmt
@@ -350,6 +351,25 @@ deno task fmt
 deno task dev          # Run in development mode
 deno task compile      # Build binaries for all platforms
 ```
+
+### Running E2E Tests
+
+E2E tests use `node-pty` to test the full vibe command workflow with interactive prompts:
+
+```bash
+# Build the vibe binary first
+deno task generate-version
+deno task compile:e2e
+
+# Run E2E tests
+deno task test:e2e
+```
+
+The E2E tests will:
+- Create temporary Git repositories for isolation
+- Test all commands (start, clean, trust, untrust, verify, config)
+- Simulate user interactions with prompts
+- Verify command output and behavior
 
 ### Running CI Checks Locally
 
