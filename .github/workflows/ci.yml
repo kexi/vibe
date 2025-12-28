@@ -32,3 +32,11 @@ jobs:
       - uses: jdx/mise-action@v2
       - name: Run tests
         run: deno test --allow-read --allow-env
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - name: Compile binary
+        run: deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts
