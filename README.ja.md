@@ -141,7 +141,7 @@ function vibe { Invoke-Expression (& vibe.exe $args) }
 | ------------------------------ | ----------------------------------------------------- |
 | `vibe start <branch>`          | 新しいブランチでworktreeを作成                        |
 | `vibe start <branch> --reuse`  | 既存ブランチを使用してworktreeを作成                  |
-| `vibe clean`                   | 現在のworktreeを削除してメインに戻る                  |
+| `vibe clean`                   | 現在のworktreeを削除してメインに戻る（未コミットの変更がある場合は確認）                  |
 | `vibe trust`                   | `.vibe.toml`と`.vibe.local.toml`ファイルを信頼登録    |
 | `vibe untrust`                 | `.vibe.toml`と`.vibe.local.toml`ファイルの信頼を解除  |
 
