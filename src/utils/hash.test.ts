@@ -1,4 +1,4 @@
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertRejects } from "@std/assert";
 import { calculateFileHash, verifyFileHash } from "./hash.ts";
 
 Deno.test("calculateFileHash returns consistent hash for same content", async () => {
@@ -56,7 +56,11 @@ Deno.test("verifyFileHash returns false for non-matching hash", async () => {
   await Deno.remove(tempFile);
 });
 
-Deno.test("verifyFileHash returns false for non-existent file", async () => {
-  const isValid = await verifyFileHash("/non/existent/file", "hash");
-  assertEquals(isValid, false);
+Deno.test("verifyFileHash throws error for non-existent file", async () => {
+  await assertRejects(
+    async () => {
+      await verifyFileHash("/non/existent/file", "hash");
+    },
+    Deno.errors.NotFound,
+  );
 });

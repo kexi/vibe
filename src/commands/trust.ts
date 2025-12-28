@@ -27,12 +27,11 @@ export async function trustCommand(): Promise<void> {
     // Trust .vibe.toml
     if (vibeTomlExists) {
       try {
-        await Deno.readFile(vibeTomlPath);
         await addTrustedPath(vibeTomlPath);
         trustedFiles.push(vibeTomlPath);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        console.error(`Error: Cannot read .vibe.toml file: ${errorMessage}`);
+        console.error(`Error: Cannot trust .vibe.toml file: ${errorMessage}`);
         Deno.exit(1);
       }
     }
@@ -40,13 +39,12 @@ export async function trustCommand(): Promise<void> {
     // Trust .vibe.local.toml
     if (vibeLocalTomlExists) {
       try {
-        await Deno.readFile(vibeLocalTomlPath);
         await addTrustedPath(vibeLocalTomlPath);
         trustedFiles.push(vibeLocalTomlPath);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         console.error(
-          `Error: Cannot read .vibe.local.toml file: ${errorMessage}`,
+          `Error: Cannot trust .vibe.local.toml file: ${errorMessage}`,
         );
         Deno.exit(1);
       }

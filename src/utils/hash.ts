@@ -1,11 +1,12 @@
 /**
- * ファイルのSHA-256ハッシュを計算
- * @param filePath ファイルパス
- * @returns ハッシュ値 (hex形式、64文字)
+ * Calculate SHA-256 hash from file content
+ * @param content File content as BufferSource
+ * @returns Hash value (hex format, 64 characters)
  */
-export async function calculateFileHash(filePath: string): Promise<string> {
-  const fileContent = await Deno.readFile(filePath);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", fileContent);
+export async function calculateHashFromContent(
+  content: BufferSource,
+): Promise<string> {
+  const hashBuffer = await crypto.subtle.digest("SHA-256", content);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   const hashHex = hashArray
     .map((b) => b.toString(16).padStart(2, "0"))
@@ -14,19 +15,26 @@ export async function calculateFileHash(filePath: string): Promise<string> {
 }
 
 /**
- * ファイルのハッシュが一致するか検証
+ * ファイルのSHA-256ハッシュを計算
  * @param filePath ファイルパス
- * @param expectedHash 期待されるハッシュ値
- * @returns 一致すればtrue
+ * @returns ハッシュ値 (hex形式、64文字)
+ */
+export async function calculateFileHash(filePath: string): Promise<string> {
+  const fileContent = await Deno.readFile(filePath);
+  return await calculateHashFromContent(fileContent);
+}
+
+/**
+ * Verify if file hash matches expected hash
+ * @param filePath File path
+ * @param expectedHash Expected hash value
+ * @returns true if hash matches
+ * @throws Error if file cannot be read
  */
 export async function verifyFileHash(
   filePath: string,
   expectedHash: string,
 ): Promise<boolean> {
-  try {
-    const actualHash = await calculateFileHash(filePath);
-    return actualHash === expectedHash;
-  } catch {
-    return false;
-  }
+  const actualHash = await calculateFileHash(filePath);
+  return actualHash === expectedHash;
 }

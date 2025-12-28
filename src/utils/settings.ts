@@ -1,6 +1,6 @@
 import { join } from "@std/path";
 import { z } from "zod";
-import { calculateFileHash } from "./hash.ts";
+import { calculateFileHash, calculateHashFromContent } from "./hash.ts";
 
 // Settings file path
 const CONFIG_DIR = join(Deno.env.get("HOME") ?? "", ".config", "vibe");
@@ -82,9 +82,11 @@ const migrations: Record<number, MigrationFn> = {
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           console.warn(
-            `Warning: Cannot calculate hash for ${path}: ${errorMessage}`,
+            `Warning: Cannot calculate hash for ${path}: ${errorMessage}\n` +
+              `The path will be kept with hash checking disabled (skipHashCheck: true)`,
           );
-          return null;
+          // Keep the path but disable hash checking instead of removing it
+          return { path, hashes: [], skipHashCheck: true };
         }
       }),
     );
@@ -93,7 +95,7 @@ const migrations: Record<number, MigrationFn> = {
       version: 2,
       skipHashCheck: false,
       permissions: {
-        allow: allowWithHashes.filter((item) => item !== null),
+        allow: allowWithHashes,
         deny: v1.data.permissions.deny,
       },
     };
@@ -187,6 +189,14 @@ export async function loadUserSettings(): Promise<VibeSettings> {
 }
 
 export async function saveUserSettings(settings: VibeSettings): Promise<void> {
+  // Validate settings before saving
+  const result = CurrentSettingsSchema.safeParse(settings);
+  if (!result.success) {
+    throw new Error(
+      `Invalid settings schema: ${result.error.message}`,
+    );
+  }
+
   await ensureConfigDir();
   const content = JSON.stringify(settings, null, 2) + "\n";
   await Deno.writeTextFile(USER_SETTINGS_FILE, content);
@@ -278,6 +288,56 @@ export async function isTrusted(vibeFilePath: string): Promise<boolean> {
   // Check if hash matches any stored hash
   const hashMatches = entry.hashes.includes(fileHash);
   return hashMatches;
+}
+
+/**
+ * Atomically read file and verify trust to prevent TOCTOU attacks
+ * @param vibeFilePath Path to the vibe config file
+ * @returns Object with trusted flag and file content if trusted
+ */
+export async function verifyTrustAndRead(
+  vibeFilePath: string,
+): Promise<{ trusted: boolean; content?: string }> {
+  const settings = await loadUserSettings();
+
+  // Deny if in deny list
+  const isDenied = settings.permissions.deny.includes(vibeFilePath);
+  if (isDenied) {
+    return { trusted: false };
+  }
+
+  // Find entry in allow list
+  const entry = settings.permissions.allow.find(
+    (item) => item.path === vibeFilePath,
+  );
+  const isNotInAllowList = !entry;
+  if (isNotInAllowList) {
+    return { trusted: false };
+  }
+
+  // Read file once (atomically)
+  const fileContent = await Deno.readTextFile(vibeFilePath);
+
+  // Determine whether to skip hash check
+  // Priority: per-path setting > global setting > default (false)
+  const shouldSkipHashCheck = entry.skipHashCheck ??
+    settings.skipHashCheck ?? false;
+  if (shouldSkipHashCheck) {
+    return { trusted: true, content: fileContent };
+  }
+
+  // Calculate hash from the already-read content
+  const encoder = new TextEncoder();
+  const contentBytes = encoder.encode(fileContent);
+  const fileHash = await calculateHashFromContent(contentBytes);
+
+  // Check if hash matches any stored hash
+  const hashMatches = entry.hashes.includes(fileHash);
+  if (hashMatches) {
+    return { trusted: true, content: fileContent };
+  }
+
+  return { trusted: false };
 }
 
 export function getSettingsPath(): string {

@@ -1,7 +1,7 @@
 import { parse } from "@std/toml";
 import { join } from "@std/path";
 import type { VibeConfig } from "../types/config.ts";
-import { isTrusted } from "./trust.ts";
+import { verifyTrustAndRead } from "./settings.ts";
 
 const VIBE_TOML = ".vibe.toml";
 const VIBE_LOCAL_TOML = ".vibe.local.toml";
@@ -129,9 +129,9 @@ export async function loadVibeConfig(
 
   // Load .vibe.toml
   if (vibeTomlExists) {
-    const trusted = await isTrusted(vibeTomlPath);
-    if (trusted) {
-      config = parse(await Deno.readTextFile(vibeTomlPath)) as VibeConfig;
+    const result = await verifyTrustAndRead(vibeTomlPath);
+    if (result.trusted && result.content) {
+      config = parse(result.content) as VibeConfig;
     } else {
       console.error(
         "Error: .vibe.toml file is not trusted or has been modified.\n" +
@@ -143,11 +143,9 @@ export async function loadVibeConfig(
 
   // Load and merge .vibe.local.toml
   if (vibeLocalTomlExists) {
-    const localTrusted = await isTrusted(vibeLocalTomlPath);
-    if (localTrusted) {
-      const localConfig = parse(
-        await Deno.readTextFile(vibeLocalTomlPath),
-      ) as VibeConfig;
+    const localResult = await verifyTrustAndRead(vibeLocalTomlPath);
+    if (localResult.trusted && localResult.content) {
+      const localConfig = parse(localResult.content) as VibeConfig;
 
       if (config !== undefined) {
         config = mergeConfigs(config, localConfig);
