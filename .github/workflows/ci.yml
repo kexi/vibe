@@ -65,8 +65,30 @@ jobs:
       - name: Compile binary (${{ matrix.name }})
         run: deno compile --allow-run --allow-read --allow-write --allow-env --target ${{ matrix.target }} --output vibe-${{ matrix.name }} main.ts
 
-  build:
+  build-deb:
     needs: build-binaries
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            target: x86_64-unknown-linux-gnu
+          - arch: arm64
+            target: aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - name: Generate version.ts
+        run: deno run --allow-run --allow-read --allow-write scripts/build.ts --generate-version-only
+      - name: Compile Linux binary
+        run: deno compile --allow-run --allow-read --allow-write --allow-env --target ${{ matrix.target }} --output vibe-test main.ts
+      - name: Build .deb package
+        run: |
+          VERSION=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('deno.json')).version)")
+          deno run --allow-read --allow-write --allow-run scripts/build-deb.ts "$VERSION" ${{ matrix.arch }} vibe-test
+
+  build:
+    needs: [build-binaries, build-deb]
     runs-on: ubuntu-latest
     steps:
       - run: echo "All builds completed successfully"
