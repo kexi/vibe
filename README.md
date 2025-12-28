@@ -81,11 +81,11 @@ function vibe { Invoke-Expression (& vibe.exe $args) }
 
 ## 使い方
 
-| コマンド | 説明 |
-|---------|------|
-| `vibe start <branch>` | 新しいワーカーツリーを作成 |
-| `vibe clean` | 現在のワーカーツリーを削除してメインに戻る |
-| `vibe trust` | `.vibe`ファイルを信頼登録 |
+| コマンド              | 説明                                       |
+| --------------------- | ------------------------------------------ |
+| `vibe start <branch>` | 新しいワーカーツリーを作成                 |
+| `vibe clean`          | 現在のワーカーツリーを削除してメインに戻る |
+| `vibe trust`          | `.vibe.toml`ファイルを信頼登録             |
 
 ### 例
 
@@ -97,25 +97,33 @@ vibe start feat/new-feature
 vibe clean
 ```
 
-## .vibeファイル
+## .vibe.toml
 
-リポジトリルートに`.vibe`ファイルを配置すると、`vibe start`時に自動実行されます。
+リポジトリルートに`.vibe.toml`ファイルを配置すると、`vibe start`時に自動実行されます。
 
-```bash
-# .vibe の例
-# 元リポジトリから.envをコピー
-cp "$VIBE_ORIGIN_PATH/.env" "$VIBE_WORKTREE_PATH/" 2>/dev/null || true
-pnpm install
+```toml
+# ファイルを元リポジトリからworktreeへコピー
+[copy]
+files = [".env", ".env.local"]
+
+# worktree作成後に実行するコマンド
+[hooks]
+post_start = [
+  "pnpm install",
+  "pnpm db:migrate"
+]
 ```
 
 初回は`vibe trust`で信頼登録が必要です。
 
 ### 利用可能な環境変数
 
-| 変数名 | 説明 |
-|--------|------|
+`hooks.post_start`のコマンド内で以下の環境変数が使えます：
+
+| 変数名               | 説明                         |
+| -------------------- | ---------------------------- |
 | `VIBE_WORKTREE_PATH` | 作成されたworktreeの絶対パス |
-| `VIBE_ORIGIN_PATH` | 元リポジトリの絶対パス |
+| `VIBE_ORIGIN_PATH`   | 元リポジトリの絶対パス       |
 
 ## ライセンス
 

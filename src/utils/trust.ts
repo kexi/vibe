@@ -1,4 +1,4 @@
-import { dirname, join } from "@std/path";
+import { join } from "@std/path";
 
 const CONFIG_DIR = join(Deno.env.get("HOME") ?? "", ".config", "vibe");
 const TRUSTED_FILE = join(CONFIG_DIR, "trusted");
