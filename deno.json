@@ -47,7 +47,8 @@
     "include": ["src/", "main.ts"]
   },
   "test": {
-    "include": ["src/", "tests/"]
+    "include": ["src/"],
+    "exclude": ["tests/e2e/"]
   },
   "nodeModulesDir": "auto"
 }

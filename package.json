@@ -5,7 +5,7 @@
   "private": true,
   "description": "E2E tests for vibe CLI",
   "scripts": {
-    "postinstall": "chmod +x node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper 2>/dev/null || true",
+    "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true",
     "test:e2e": "vitest run",
     "test:e2e:watch": "vitest"
   },
