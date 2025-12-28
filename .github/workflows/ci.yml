@@ -33,7 +33,7 @@ jobs:
       - name: Run tests
         run: deno test --allow-read --allow-env
 
-  build:
+  build-binaries:
     strategy:
       matrix:
         include:
@@ -58,3 +58,9 @@ jobs:
       - uses: jdx/mise-action@v2
       - name: Compile binary (${{ matrix.name }})
         run: deno compile --allow-run --allow-read --allow-write --allow-env --target ${{ matrix.target }} --output vibe-${{ matrix.name }} main.ts
+
+  build:
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "All builds completed successfully"
