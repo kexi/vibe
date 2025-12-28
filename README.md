@@ -103,10 +103,19 @@ vibe clean
 
 ```bash
 # .vibe の例
+# 元リポジトリから.envをコピー
+cp "$VIBE_ORIGIN_PATH/.env" "$VIBE_WORKTREE_PATH/" 2>/dev/null || true
 pnpm install
 ```
 
 初回は`vibe trust`で信頼登録が必要です。
+
+### 利用可能な環境変数
+
+| 変数名 | 説明 |
+|--------|------|
+| `VIBE_WORKTREE_PATH` | 作成されたworktreeの絶対パス |
+| `VIBE_ORIGIN_PATH` | 元リポジトリの絶対パス |
 
 ## ライセンス
 

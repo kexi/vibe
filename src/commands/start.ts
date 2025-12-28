@@ -31,6 +31,11 @@ export async function startCommand(branchName: string): Promise<void> {
         const runVibeCommand = new Deno.Command("zsh", {
           args: [vibeFilePath],
           cwd: worktreePath,
+          env: {
+            ...Deno.env.toObject(),
+            VIBE_WORKTREE_PATH: worktreePath,
+            VIBE_ORIGIN_PATH: repoRoot,
+          },
           stdout: "inherit",
           stderr: "inherit",
         });
