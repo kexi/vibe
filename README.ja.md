@@ -4,6 +4,94 @@ Git Worktreeを簡単に管理するCLIツール。
 
 [English](README.md)
 
+## 使い方
+
+| コマンド                       | 説明                                                  |
+| ------------------------------ | ----------------------------------------------------- |
+| `vibe start <branch>`          | 新しいブランチでworktreeを作成                        |
+| `vibe start <branch> --reuse`  | 既存ブランチを使用してworktreeを作成                  |
+| `vibe clean`                   | 現在のworktreeを削除してメインに戻る（未コミットの変更がある場合は確認）                  |
+| `vibe trust`                   | `.vibe.toml`と`.vibe.local.toml`ファイルを信頼登録    |
+| `vibe untrust`                 | `.vibe.toml`と`.vibe.local.toml`ファイルの信頼を解除  |
+
+### 例
+
+```bash
+# 新しいブランチでworktreeを作成
+vibe start feat/new-feature
+
+# 既存ブランチを使用
+vibe start feat/existing-branch --reuse
+
+# 作業完了後、worktreeを削除
+vibe clean
+```
+
+### インタラクティブプロンプト
+
+`vibe start`は以下の状況でインタラクティブに対応します：
+
+- **ブランチが既に他のworktreeで使用中の場合**: 既存のworktreeに移動するか確認します
+- **ディレクトリが既に存在する場合**: 以下の選択肢から選べます
+  - 上書き（削除して再作成）
+  - 再利用（既存を使用）
+  - キャンセル
+
+```bash
+# ブランチが既に使用中の場合の例
+$ vibe start feat/new-feature
+ブランチ 'feat/new-feature' は既にworktree '/path/to/repo-feat-new-feature' で使用中です。
+既存のworktreeに移動しますか? (Y/n)
+```
+
+## セットアップ
+
+シェルに以下を追加:
+
+<details>
+<summary>Zsh (.zshrc)</summary>
+
+```bash
+vibe() { eval "$(command vibe "$@")" }
+```
+</details>
+
+<details>
+<summary>Bash (.bashrc)</summary>
+
+```bash
+vibe() { eval "$(command vibe "$@")"; }
+```
+</details>
+
+<details>
+<summary>Fish (~/.config/fish/config.fish)</summary>
+
+```fish
+function vibe
+    eval (command vibe $argv)
+end
+```
+</details>
+
+<details>
+<summary>Nushell (~/.config/nushell/config.nu)</summary>
+
+```nu
+def --env vibe [...args] {
+    ^vibe ...$args | lines | each { |line| nu -c $line }
+}
+```
+</details>
+
+<details>
+<summary>PowerShell ($PROFILE)</summary>
+
+```powershell
+function vibe { Invoke-Expression (& vibe.exe $args) }
+```
+</details>
+
 ## インストール
 
 ### Homebrew (macOS)
@@ -85,94 +173,6 @@ $path = [Environment]::GetEnvironmentVariable("Path", "User")
 
 ```bash
 deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts
-```
-
-## セットアップ
-
-シェルに以下を追加:
-
-<details>
-<summary>Zsh (.zshrc)</summary>
-
-```bash
-vibe() { eval "$(command vibe "$@")" }
-```
-</details>
-
-<details>
-<summary>Bash (.bashrc)</summary>
-
-```bash
-vibe() { eval "$(command vibe "$@")"; }
-```
-</details>
-
-<details>
-<summary>Fish (~/.config/fish/config.fish)</summary>
-
-```fish
-function vibe
-    eval (command vibe $argv)
-end
-```
-</details>
-
-<details>
-<summary>Nushell (~/.config/nushell/config.nu)</summary>
-
-```nu
-def --env vibe [...args] {
-    ^vibe ...$args | lines | each { |line| nu -c $line }
-}
-```
-</details>
-
-<details>
-<summary>PowerShell ($PROFILE)</summary>
-
-```powershell
-function vibe { Invoke-Expression (& vibe.exe $args) }
-```
-</details>
-
-## 使い方
-
-| コマンド                       | 説明                                                  |
-| ------------------------------ | ----------------------------------------------------- |
-| `vibe start <branch>`          | 新しいブランチでworktreeを作成                        |
-| `vibe start <branch> --reuse`  | 既存ブランチを使用してworktreeを作成                  |
-| `vibe clean`                   | 現在のworktreeを削除してメインに戻る（未コミットの変更がある場合は確認）                  |
-| `vibe trust`                   | `.vibe.toml`と`.vibe.local.toml`ファイルを信頼登録    |
-| `vibe untrust`                 | `.vibe.toml`と`.vibe.local.toml`ファイルの信頼を解除  |
-
-### 例
-
-```bash
-# 新しいブランチでworktreeを作成
-vibe start feat/new-feature
-
-# 既存ブランチを使用
-vibe start feat/existing-branch --reuse
-
-# 作業完了後、worktreeを削除
-vibe clean
-```
-
-### インタラクティブプロンプト
-
-`vibe start`は以下の状況でインタラクティブに対応します：
-
-- **ブランチが既に他のworktreeで使用中の場合**: 既存のworktreeに移動するか確認します
-- **ディレクトリが既に存在する場合**: 以下の選択肢から選べます
-  - 上書き（削除して再作成）
-  - 再利用（既存を使用）
-  - キャンセル
-
-```bash
-# ブランチが既に使用中の場合の例
-$ vibe start feat/new-feature
-ブランチ 'feat/new-feature' は既にworktree '/path/to/repo-feat-new-feature' で使用中です。
-既存のworktreeに移動しますか? (Y/n)
 ```
 
 ## 設定
