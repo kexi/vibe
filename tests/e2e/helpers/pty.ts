@@ -25,7 +25,7 @@ export class VibeCommandRunner {
 
     this.pty = pty.spawn(this.vibePath, args, {
       cwd: this.cwd,
-      env: { ...Deno.env.toObject(), TERM: "xterm-256color" },
+      env: { ...process.env, TERM: "xterm-256color" },
       cols: 80,
       rows: 30,
     });
@@ -108,8 +108,15 @@ export class VibeCommandRunner {
 
 /**
  * Get the path to the vibe binary for testing
- * Defaults to the VIBE_BINARY_PATH environment variable or './vibe-e2e'
+ * Defaults to the VIBE_BINARY_PATH environment variable or '<repo-root>/vibe-e2e'
  */
 export function getVibePath(): string {
-  return Deno.env.get("VIBE_BINARY_PATH") || "./vibe-e2e";
+  if (process.env.VIBE_BINARY_PATH) {
+    return process.env.VIBE_BINARY_PATH;
+  }
+
+  const { join } = require("path");
+
+  // Use process.cwd() which will be the repo root when tests run
+  return join(process.cwd(), "vibe-e2e");
 }

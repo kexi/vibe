@@ -354,22 +354,36 @@ deno task compile      # Build binaries for all platforms
 
 ### Running E2E Tests
 
-E2E tests use `node-pty` to test the full vibe command workflow with interactive prompts:
+E2E tests use Node.js with Vitest and `node-pty` to test the full vibe command workflow with interactive prompts:
 
 ```bash
 # Build the vibe binary first
 deno task generate-version
 deno task compile:e2e
 
+# Install Node.js dependencies
+pnpm install
+
 # Run E2E tests
-deno task test:e2e
+pnpm run test:e2e
+
+# Run E2E tests in watch mode
+pnpm run test:e2e:watch
 ```
 
 The E2E tests will:
 - Create temporary Git repositories for isolation
 - Test all commands (start, clean, trust, untrust, verify, config)
-- Simulate user interactions with prompts
+- Simulate user interactions with prompts using PTY
 - Verify command output and behavior
+
+**Requirements**:
+- Node.js 20.x (recommended for compatibility with node-pty)
+- pnpm 10.x
+- Build tools for node-pty (only needed if rebuilding from source):
+  - Linux: `python3`, `make`, `g++`
+  - macOS: Xcode Command Line Tools
+  - Windows: Visual Studio Build Tools
 
 ### Running CI Checks Locally
 

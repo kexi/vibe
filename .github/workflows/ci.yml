@@ -95,12 +95,17 @@ jobs:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
 
+      # Setup Node.js for E2E tests
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       # Install build dependencies for node-pty (Linux only)
       - name: Install build dependencies (Ubuntu)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y python3 make g++
 
-      # Generate version.ts
+      # Generate version.ts for vibe
       - name: Generate version.ts
         run: deno task generate-version
 
@@ -108,9 +113,18 @@ jobs:
       - name: Build vibe binary for E2E tests
         run: deno task compile:e2e
 
-      # Run E2E tests
+      # Setup pnpm
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      # Install Node.js dependencies for E2E tests
+      - name: Install E2E test dependencies
+        run: pnpm install
+
+      # Run E2E tests with Vitest
       - name: Run E2E tests
-        run: deno task test:e2e
+        run: pnpm run test:e2e
         env:
           VIBE_BINARY_PATH: ${{ github.workspace }}/vibe-e2e
 

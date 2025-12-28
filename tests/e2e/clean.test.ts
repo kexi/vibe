@@ -1,12 +1,24 @@
-import { dirname } from "@std/path";
-import { getVibePath, VibeCommandRunner } from "./helpers/pty.ts";
-import { setupTestGitRepo } from "./helpers/git-setup.ts";
-import { assertExitCode, assertOutputContains } from "./helpers/assertions.ts";
+import { execSync } from "child_process";
+import { dirname } from "path";
+import { afterEach, describe, test } from "vitest";
+import { getVibePath, VibeCommandRunner } from "./helpers/pty.js";
+import { setupTestGitRepo } from "./helpers/git-setup.js";
+import { assertExitCode, assertOutputContains } from "./helpers/assertions.js";
 
-Deno.test({
-  name: "clean: Remove worktree when no uncommitted changes",
-  async fn() {
-    const { repoPath, cleanup } = await setupTestGitRepo();
+describe("clean command", () => {
+  let cleanup: (() => Promise<void>) | null = null;
+
+  afterEach(async () => {
+    if (cleanup) {
+      await cleanup();
+      cleanup = null;
+    }
+  });
+
+  test("Remove worktree when no uncommitted changes", async () => {
+    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
     const vibePath = getVibePath();
 
     try {
@@ -15,13 +27,10 @@ Deno.test({
       const repoName = repoPath.split("/").pop()!;
       const worktreePath = `${parentDir}/${repoName}-feat-clean`;
 
-      const createWorktree = new Deno.Command("git", {
-        args: ["worktree", "add", "-b", "feat/clean", worktreePath],
+      execSync(`git worktree add -b feat/clean "${worktreePath}"`, {
         cwd: repoPath,
-        stdout: "null",
-        stderr: "null",
+        stdio: "pipe",
       });
-      await createWorktree.output();
 
       // Run vibe clean from the worktree
       const runner = new VibeCommandRunner(vibePath, worktreePath);
@@ -38,18 +47,15 @@ Deno.test({
       assertOutputContains(output, repoPath);
 
       runner.dispose();
-    } finally {
-      await cleanup();
+    } catch (error) {
+      throw error;
     }
-  },
-  sanitizeResources: false,
-  sanitizeOps: false,
-});
+  });
 
-Deno.test({
-  name: "clean: Error when run from main worktree",
-  async fn() {
-    const { repoPath, cleanup } = await setupTestGitRepo();
+  test("Error when run from main worktree", async () => {
+    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
     const vibePath = getVibePath();
     const runner = new VibeCommandRunner(vibePath, repoPath);
 
@@ -72,9 +78,6 @@ Deno.test({
       assertOutputContains(output, "Error");
     } finally {
       runner.dispose();
-      await cleanup();
     }
-  },
-  sanitizeResources: false,
-  sanitizeOps: false,
+  });
 });

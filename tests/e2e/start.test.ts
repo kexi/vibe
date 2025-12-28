@@ -1,16 +1,28 @@
-import { dirname } from "@std/path";
-import { getVibePath, VibeCommandRunner } from "./helpers/pty.ts";
-import { setupTestGitRepo } from "./helpers/git-setup.ts";
+import { execSync } from "child_process";
+import { dirname } from "path";
+import { afterEach, describe, test } from "vitest";
+import { getVibePath, VibeCommandRunner } from "./helpers/pty.js";
+import { setupTestGitRepo } from "./helpers/git-setup.js";
 import {
   assertDirectoryExists,
   assertExitCode,
   assertOutputContains,
-} from "./helpers/assertions.ts";
+} from "./helpers/assertions.js";
 
-Deno.test({
-  name: "start: Create worktree with new branch",
-  async fn() {
-    const { repoPath, cleanup } = await setupTestGitRepo();
+describe("start command", () => {
+  let cleanup: (() => Promise<void>) | null = null;
+
+  afterEach(async () => {
+    if (cleanup) {
+      await cleanup();
+      cleanup = null;
+    }
+  });
+
+  test("Create worktree with new branch", async () => {
+    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
     const vibePath = getVibePath();
     const runner = new VibeCommandRunner(vibePath, repoPath);
 
@@ -35,36 +47,25 @@ Deno.test({
       await assertDirectoryExists(worktreePath);
     } finally {
       runner.dispose();
-      await cleanup();
     }
-  },
-  sanitizeResources: false,
-  sanitizeOps: false,
-});
+  });
 
-Deno.test({
-  name: "start: Use --reuse flag with existing branch",
-  async fn() {
-    const { repoPath, cleanup } = await setupTestGitRepo();
+  test("Use --reuse flag with existing branch", async () => {
+    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
     const vibePath = getVibePath();
 
     try {
       // Create an existing branch
-      const cmd = new Deno.Command("git", {
-        args: ["checkout", "-b", "existing-branch"],
+      execSync("git checkout -b existing-branch", {
         cwd: repoPath,
-        stdout: "null",
-        stderr: "null",
+        stdio: "pipe",
       });
-      await cmd.output();
-
-      const checkoutMain = new Deno.Command("git", {
-        args: ["checkout", "main"],
+      execSync("git checkout main", {
         cwd: repoPath,
-        stdout: "null",
-        stderr: "null",
+        stdio: "pipe",
       });
-      await checkoutMain.output();
 
       // Run vibe start existing-branch --reuse
       const runner = new VibeCommandRunner(vibePath, repoPath);
@@ -87,18 +88,15 @@ Deno.test({
       await assertDirectoryExists(worktreePath);
 
       runner.dispose();
-    } finally {
-      await cleanup();
+    } catch (error) {
+      throw error;
     }
-  },
-  sanitizeResources: false,
-  sanitizeOps: false,
-});
+  });
 
-Deno.test({
-  name: "start: Error when branch name is missing",
-  async fn() {
-    const { repoPath, cleanup } = await setupTestGitRepo();
+  test("Error when branch name is missing", async () => {
+    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
     const vibePath = getVibePath();
     const runner = new VibeCommandRunner(vibePath, repoPath);
 
@@ -110,7 +108,9 @@ Deno.test({
       // Verify exit code is non-zero
       const exitCode = runner.getExitCode();
       if (exitCode === 0) {
-        throw new Error("Expected non-zero exit code when branch name is missing");
+        throw new Error(
+          "Expected non-zero exit code when branch name is missing",
+        );
       }
 
       const output = runner.getOutput();
@@ -119,9 +119,6 @@ Deno.test({
       assertOutputContains(output, "Error");
     } finally {
       runner.dispose();
-      await cleanup();
     }
-  },
-  sanitizeResources: false,
-  sanitizeOps: false,
+  });
 });

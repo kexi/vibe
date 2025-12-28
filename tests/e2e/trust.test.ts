@@ -1,18 +1,31 @@
-import { getVibePath, VibeCommandRunner } from "./helpers/pty.ts";
-import { setupTestGitRepo } from "./helpers/git-setup.ts";
-import { assertExitCode, assertOutputContains } from "./helpers/assertions.ts";
+import { writeFileSync } from "fs";
+import { join } from "path";
+import { afterEach, describe, test } from "vitest";
+import { getVibePath, VibeCommandRunner } from "./helpers/pty.js";
+import { setupTestGitRepo } from "./helpers/git-setup.js";
+import { assertExitCode, assertOutputContains } from "./helpers/assertions.js";
 
-Deno.test({
-  name: "trust: Add .vibe.toml to trusted list",
-  async fn() {
-    const { repoPath, cleanup } = await setupTestGitRepo();
+describe("trust/untrust/verify commands", () => {
+  let cleanup: (() => Promise<void>) | null = null;
+
+  afterEach(async () => {
+    if (cleanup) {
+      await cleanup();
+      cleanup = null;
+    }
+  });
+
+  test("trust: Add .vibe.toml to trusted list", async () => {
+    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
     const vibePath = getVibePath();
     const runner = new VibeCommandRunner(vibePath, repoPath);
 
     try {
       // Create .vibe.toml
-      await Deno.writeTextFile(
-        `${repoPath}/.vibe.toml`,
+      writeFileSync(
+        join(repoPath, ".vibe.toml"),
         '[hooks]\npost_start = ["echo test"]\n',
       );
 
@@ -30,23 +43,19 @@ Deno.test({
       assertOutputContains(output, ".vibe.toml");
     } finally {
       runner.dispose();
-      await cleanup();
     }
-  },
-  sanitizeResources: false,
-  sanitizeOps: false,
-});
+  });
 
-Deno.test({
-  name: "verify: Display trust status and hash history",
-  async fn() {
-    const { repoPath, cleanup } = await setupTestGitRepo();
+  test("verify: Display trust status and hash history", async () => {
+    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
     const vibePath = getVibePath();
 
     try {
       // Create and trust .vibe.toml
-      await Deno.writeTextFile(
-        `${repoPath}/.vibe.toml`,
+      writeFileSync(
+        join(repoPath, ".vibe.toml"),
         '[hooks]\npost_start = ["echo test"]\n',
       );
 
@@ -70,24 +79,21 @@ Deno.test({
       assertOutputContains(output, "Hash History");
 
       verifyRunner.dispose();
-    } finally {
-      await cleanup();
+    } catch (error) {
+      throw error;
     }
-  },
-  sanitizeResources: false,
-  sanitizeOps: false,
-});
+  });
 
-Deno.test({
-  name: "untrust: Remove from trusted list",
-  async fn() {
-    const { repoPath, cleanup } = await setupTestGitRepo();
+  test("untrust: Remove from trusted list", async () => {
+    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
     const vibePath = getVibePath();
 
     try {
       // Create and trust .vibe.toml
-      await Deno.writeTextFile(
-        `${repoPath}/.vibe.toml`,
+      writeFileSync(
+        join(repoPath, ".vibe.toml"),
         '[hooks]\npost_start = ["echo test"]\n',
       );
 
@@ -111,25 +117,22 @@ Deno.test({
       assertOutputContains(output, ".vibe.toml");
 
       untrustRunner.dispose();
-    } finally {
-      await cleanup();
+    } catch (error) {
+      throw error;
     }
-  },
-  sanitizeResources: false,
-  sanitizeOps: false,
-});
+  });
 
-Deno.test({
-  name: "trust: Handle .vibe.local.toml",
-  async fn() {
-    const { repoPath, cleanup } = await setupTestGitRepo();
+  test("trust: Handle .vibe.local.toml", async () => {
+    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
     const vibePath = getVibePath();
     const runner = new VibeCommandRunner(vibePath, repoPath);
 
     try {
       // Create .vibe.local.toml
-      await Deno.writeTextFile(
-        `${repoPath}/.vibe.local.toml`,
+      writeFileSync(
+        join(repoPath, ".vibe.local.toml"),
         '[hooks]\npost_start = ["echo local test"]\n',
       );
 
@@ -147,9 +150,6 @@ Deno.test({
       assertOutputContains(output, ".vibe.local.toml");
     } finally {
       runner.dispose();
-      await cleanup();
     }
-  },
-  sanitizeResources: false,
-  sanitizeOps: false,
+  });
 });
