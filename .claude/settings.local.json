@@ -10,7 +10,9 @@
       "Bash(git checkout:*)",
       "Bash(gh pr create:*)",
       "Bash(gh pr view:*)",
-      "Bash(deno lint:*)"
+      "Bash(deno lint:*)",
+      "Bash(deno task:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

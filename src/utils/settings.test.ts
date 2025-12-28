@@ -254,3 +254,44 @@ Deno.test("path-level skipHashCheck overrides global skipHashCheck", async () =>
   await removeTrustedPath(tempFile);
   await Deno.remove(tempFile);
 });
+
+Deno.test("Hash history follows FIFO when exceeding MAX_HASH_HISTORY", async () => {
+  const tempFile = await Deno.makeTempFile();
+
+  // Add 101 different hashes (exceeding MAX_HASH_HISTORY of 100)
+  const hashes: string[] = [];
+  for (let i = 0; i < 101; i++) {
+    await Deno.writeTextFile(tempFile, `content ${i}`);
+    await addTrustedPath(tempFile);
+
+    const hash = await isTrusted(tempFile);
+    assertEquals(hash, true);
+
+    // Record the hash for later verification
+    const settings = await loadUserSettings();
+    const entry = settings.permissions.allow.find((e) => e.path === tempFile);
+    if (entry && entry.hashes.length > 0) {
+      hashes.push(entry.hashes[entry.hashes.length - 1]);
+    }
+  }
+
+  // Verify that only 100 hashes are kept
+  const settings = await loadUserSettings();
+  const entry = settings.permissions.allow.find((e) => e.path === tempFile);
+  assertEquals(entry !== undefined, true);
+  assertEquals(entry!.hashes.length, 100);
+
+  // Verify that the first hash was removed (FIFO)
+  const firstHashRemoved = !entry!.hashes.includes(hashes[0]);
+  assertEquals(firstHashRemoved, true);
+
+  // Verify that the last 100 hashes are kept
+  for (let i = 1; i <= 100; i++) {
+    const hashPresent = entry!.hashes.includes(hashes[i]);
+    assertEquals(hashPresent, true);
+  }
+
+  // Cleanup
+  await removeTrustedPath(tempFile);
+  await Deno.remove(tempFile);
+});

@@ -9,6 +9,9 @@ const USER_SETTINGS_FILE = join(CONFIG_DIR, "settings.json");
 // Current schema version
 const CURRENT_SCHEMA_VERSION = 2;
 
+// Maximum number of hashes to keep per file (FIFO)
+const MAX_HASH_HISTORY = 100;
+
 // ===== Schema Definitions =====
 
 // v1 schema
@@ -211,11 +214,15 @@ export async function addTrustedPath(path: string): Promise<void> {
   const isAlreadyAllowed = existingIndex !== -1;
 
   if (isAlreadyAllowed) {
-    // Add hash to existing entry (with duplicate check)
+    // Add hash to existing entry (with duplicate check and FIFO)
     const entry = settings.permissions.allow[existingIndex];
     const hashAlreadyExists = entry.hashes.includes(hash);
     if (!hashAlreadyExists) {
       entry.hashes.push(hash);
+      // Apply FIFO: remove oldest hash if limit exceeded
+      if (entry.hashes.length > MAX_HASH_HISTORY) {
+        entry.hashes.shift(); // Remove first (oldest) element
+      }
     }
   } else {
     // Create new entry
