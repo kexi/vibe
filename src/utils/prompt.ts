@@ -37,7 +37,8 @@ export async function confirm(message: string): Promise<boolean> {
   }
 
   while (true) {
-    console.error(`${message}`);
+    // Use writeSync to ensure immediate output in PTY environments (bypasses buffering)
+    Deno.stderr.writeSync(new TextEncoder().encode(`${message}\n`));
     const input = await readLine();
 
     const isYes = input === "Y" || input === "y" || input === "";
@@ -50,7 +51,7 @@ export async function confirm(message: string): Promise<boolean> {
       return false;
     }
 
-    console.error("Invalid input. Please enter Y/y/n/N.");
+    Deno.stderr.writeSync(new TextEncoder().encode("Invalid input. Please enter Y/y/n/N.\n"));
   }
 }
 
@@ -77,11 +78,12 @@ export async function select(
   }
 
   while (true) {
-    console.error(`${message}`);
+    // Use writeSync to ensure immediate output in PTY environments (bypasses buffering)
+    Deno.stderr.writeSync(new TextEncoder().encode(`${message}\n`));
     for (let i = 0; i < choices.length; i++) {
-      console.error(`  ${i + 1}. ${choices[i]}`);
+      Deno.stderr.writeSync(new TextEncoder().encode(`  ${i + 1}. ${choices[i]}\n`));
     }
-    console.error("Please select (enter number):");
+    Deno.stderr.writeSync(new TextEncoder().encode("Please select (enter number):\n"));
 
     const input = await readLine();
     const number = parseInt(input, 10);
@@ -91,6 +93,6 @@ export async function select(
       return number - 1;
     }
 
-    console.error(`Invalid input. Please enter a number between 1 and ${choices.length}.`);
+    Deno.stderr.writeSync(new TextEncoder().encode(`Invalid input. Please enter a number between 1 and ${choices.length}.\n`));
   }
 }

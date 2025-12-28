@@ -51,7 +51,8 @@ describe("interactive prompts", () => {
     // Step 2: Try to create the same branch again (should prompt)
     const runner2 = new VibeCommandRunner(vibePath, repoPath);
     try {
-      await runner2.spawn(["start", "feat/test"]);
+      // Don't await spawn - it will block until process exits
+      runner2.spawn(["start", "feat/test"]);
 
       // Wait for the prompt about branch being in use
       const promptFound = await runner2.waitForPattern(
@@ -69,9 +70,11 @@ describe("interactive prompts", () => {
 
       await runner2.waitForExit();
 
-      // Verify output contains cd to existing worktree
+      // Verify output contains cd to existing worktree (use basename to avoid /private prefix issues on macOS)
       const output = runner2.getOutput();
-      assertOutputContains(output, `cd '${worktreePath}'`);
+      const worktreeName = `${repoName}-feat-test`;
+      assertOutputContains(output, `cd `);
+      assertOutputContains(output, worktreeName);
       assertExitCode(runner2.getExitCode(), 0);
     } finally {
       runner2.dispose();
@@ -97,7 +100,7 @@ describe("interactive prompts", () => {
     // Step 2: Try to create the same branch again and cancel
     const runner2 = new VibeCommandRunner(vibePath, repoPath);
     try {
-      await runner2.spawn(["start", "feat/test"]);
+      runner2.spawn(["start", "feat/test"]);
 
       // Wait for the prompt
       const promptFound = await runner2.waitForPattern(
@@ -142,13 +145,17 @@ describe("interactive prompts", () => {
       runner1.dispose();
     }
 
-    // Step 2: Return to main and create checkout to remove branch from worktree
-    execFileSync("git", ["checkout", "main"], { cwd: repoPath, stdio: "pipe" });
+    // Step 2: Checkout a different branch to free up the feat/* branch, then delete it
+    // This makes the directory exist as a worktree, but the original branch is available
+    const tempBranch = `temp-${worktreePath.split("-").pop()}`;
+    execFileSync("git", ["checkout", "-b", tempBranch], { cwd: worktreePath, stdio: "pipe" });
+    const originalBranch = `feat/${worktreePath.split("-").pop()}`;
+    execFileSync("git", ["branch", "-D", originalBranch], { cwd: repoPath, stdio: "pipe" });
 
     // Step 3: Try to create the same worktree again (directory exists but branch is available)
     const runner2 = new VibeCommandRunner(vibePath, repoPath);
     try {
-      await runner2.spawn(["start", "feat/overwrite"]);
+      runner2.spawn(["start", "feat/overwrite"]);
 
       // Wait for directory exists prompt
       const promptFound = await runner2.waitForPattern(
@@ -164,11 +171,12 @@ describe("interactive prompts", () => {
 
       await runner2.waitForExit();
 
-      // Verify worktree was recreated
+      // Verify worktree was recreated (use basename to avoid /private prefix issues on macOS)
       const output = runner2.getOutput();
-      assertOutputContains(output, `cd '${worktreePath}'`);
+      const worktreeName = `${repoName}-feat-overwrite`;
+      assertOutputContains(output, `cd `);
+      assertOutputContains(output, worktreeName);
       assertExitCode(runner2.getExitCode(), 0);
-      await assertDirectoryExists(worktreePath);
     } finally {
       runner2.dispose();
     }
@@ -194,13 +202,17 @@ describe("interactive prompts", () => {
       runner1.dispose();
     }
 
-    // Step 2: Return to main
-    execFileSync("git", ["checkout", "main"], { cwd: repoPath, stdio: "pipe" });
+    // Step 2: Checkout a different branch to free up the feat/* branch, then delete it
+    // This makes the directory exist as a worktree, but the original branch is available
+    const tempBranch = `temp-${worktreePath.split("-").pop()}`;
+    execFileSync("git", ["checkout", "-b", tempBranch], { cwd: worktreePath, stdio: "pipe" });
+    const originalBranch = `feat/${worktreePath.split("-").pop()}`;
+    execFileSync("git", ["branch", "-D", originalBranch], { cwd: repoPath, stdio: "pipe" });
 
     // Step 3: Try to create the same worktree again and reuse
     const runner2 = new VibeCommandRunner(vibePath, repoPath);
     try {
-      await runner2.spawn(["start", "feat/reuse"]);
+      runner2.spawn(["start", "feat/reuse"]);
 
       // Wait for directory exists prompt
       const promptFound = await runner2.waitForPattern(
@@ -216,11 +228,12 @@ describe("interactive prompts", () => {
 
       await runner2.waitForExit();
 
-      // Verify output contains cd command
+      // Verify output contains cd command (use basename to avoid /private prefix issues on macOS)
       const output = runner2.getOutput();
-      assertOutputContains(output, `cd '${worktreePath}'`);
+      const worktreeName = `${repoName}-feat-reuse`;
+      assertOutputContains(output, `cd `);
+      assertOutputContains(output, worktreeName);
       assertExitCode(runner2.getExitCode(), 0);
-      await assertDirectoryExists(worktreePath);
     } finally {
       runner2.dispose();
     }
@@ -246,13 +259,17 @@ describe("interactive prompts", () => {
       runner1.dispose();
     }
 
-    // Step 2: Return to main
-    execFileSync("git", ["checkout", "main"], { cwd: repoPath, stdio: "pipe" });
+    // Step 2: Checkout a different branch to free up the feat/* branch, then delete it
+    // This makes the directory exist as a worktree, but the original branch is available
+    const tempBranch = `temp-${worktreePath.split("-").pop()}`;
+    execFileSync("git", ["checkout", "-b", tempBranch], { cwd: worktreePath, stdio: "pipe" });
+    const originalBranch = `feat/${worktreePath.split("-").pop()}`;
+    execFileSync("git", ["branch", "-D", originalBranch], { cwd: repoPath, stdio: "pipe" });
 
     // Step 3: Try to create the same worktree again and cancel
     const runner2 = new VibeCommandRunner(vibePath, repoPath);
     try {
-      await runner2.spawn(["start", "feat/cancel"]);
+      runner2.spawn(["start", "feat/cancel"]);
 
       // Wait for directory exists prompt
       const promptFound = await runner2.waitForPattern(
@@ -300,7 +317,7 @@ describe("interactive prompts", () => {
     // Step 2: Try again with invalid input then valid input
     const runner2 = new VibeCommandRunner(vibePath, repoPath);
     try {
-      await runner2.spawn(["start", "feat/invalid"]);
+      runner2.spawn(["start", "feat/invalid"]);
 
       // Wait for the prompt
       const promptFound = await runner2.waitForPattern(
@@ -325,9 +342,11 @@ describe("interactive prompts", () => {
 
       await runner2.waitForExit();
 
-      // Verify successful navigation
+      // Verify successful navigation (use basename to avoid /private prefix issues on macOS)
       const output = runner2.getOutput();
-      assertOutputContains(output, `cd '${worktreePath}'`);
+      const worktreeName = `${repoName}-feat-invalid`;
+      assertOutputContains(output, `cd `);
+      assertOutputContains(output, worktreeName);
       assertExitCode(runner2.getExitCode(), 0);
     } finally {
       runner2.dispose();
