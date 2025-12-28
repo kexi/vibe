@@ -19,6 +19,7 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+.vibe.local.toml
 
 # Logs
 *.log

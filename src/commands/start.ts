@@ -1,5 +1,4 @@
 import { dirname, join } from "@std/path";
-import { parse } from "@std/toml";
 import {
   branchExists,
   getRepoName,
@@ -7,13 +6,8 @@ import {
   runGitCommand,
   sanitizeBranchName,
 } from "../utils/git.ts";
-import { isTrusted } from "../utils/trust.ts";
-
-interface VibeConfig {
-  shell?: boolean;
-  copy?: { files?: string[] };
-  hooks?: { post_start?: string[] };
-}
+import type { VibeConfig } from "../types/config.ts";
+import { loadVibeConfig } from "../utils/config.ts";
 
 interface StartOptions {
   reuse?: boolean;
@@ -49,18 +43,18 @@ export async function startCommand(
       await runGitCommand(["worktree", "add", "-b", branchName, worktreePath]);
     }
 
-    const vibeTomlPath = join(repoRoot, ".vibe.toml");
-    const vibeTomlExists = await fileExists(vibeTomlPath);
-    let config: VibeConfig | undefined;
+    const config = await loadVibeConfig(repoRoot);
 
-    if (vibeTomlExists) {
-      const trusted = await isTrusted(vibeTomlPath);
-      if (trusted) {
-        config = parse(await Deno.readTextFile(vibeTomlPath)) as VibeConfig;
-        await runVibeConfig(config, repoRoot, worktreePath);
-      } else {
-        console.error(".vibe.toml file found but not trusted. Run: vibe trust");
-      }
+    // pre_startフックの実行
+    const hasPreStartHooks = config?.hooks?.pre_start !== undefined;
+    if (hasPreStartHooks) {
+      await runHooks(config!.hooks!.pre_start!, repoRoot, { repoRoot, worktreePath });
+    }
+
+    // 既存の処理は続行される（runVibeConfigでpost_startフックを実行）
+    const hasConfig = config !== undefined;
+    if (hasConfig) {
+      await runVibeConfig(config, repoRoot, worktreePath);
     }
 
     const useShell = config?.shell === true;
@@ -82,6 +76,29 @@ export async function startCommand(
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${errorMessage}`);
     Deno.exit(1);
+  }
+}
+
+async function runHooks(
+  commands: string[],
+  cwd: string,
+  env: { repoRoot: string; worktreePath: string },
+): Promise<void> {
+  const hookEnv = {
+    ...Deno.env.toObject(),
+    VIBE_WORKTREE_PATH: env.worktreePath,
+    VIBE_ORIGIN_PATH: env.repoRoot,
+  };
+
+  for (const cmd of commands) {
+    const proc = new Deno.Command("sh", {
+      args: ["-c", cmd],
+      cwd,
+      env: hookEnv,
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    await proc.output();
   }
 }
 
@@ -112,14 +129,5 @@ async function runVibeConfig(
       stderr: "inherit",
     });
     await proc.output();
-  }
-}
-
-async function fileExists(path: string): Promise<boolean> {
-  try {
-    await Deno.stat(path);
-    return true;
-  } catch {
-    return false;
   }
 }
