@@ -14,6 +14,20 @@ brew install kexi/tap/vibe
 
 ### Linux
 
+#### Ubuntu/Debian (.deb package)
+
+```bash
+# x64
+curl -LO https://github.com/kexi/vibe/releases/latest/download/vibe_amd64.deb
+sudo apt install ./vibe_amd64.deb
+
+# ARM64
+curl -LO https://github.com/kexi/vibe/releases/latest/download/vibe_arm64.deb
+sudo apt install ./vibe_arm64.deb
+```
+
+#### Other Linux distributions
+
 ```bash
 # x64
 curl -L https://github.com/kexi/vibe/releases/latest/download/vibe-linux-x64 -o vibe
