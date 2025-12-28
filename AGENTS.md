@@ -35,6 +35,11 @@ develop ─┴──●──●──●──●─────┴────
 - 型チェック: `deno check main.ts`
 - コミット前に上記をすべてパスすること
 
+## ドキュメント
+
+- README.md: 英語
+- README.ja.md: 日本語
+
 ## PR規約
 
 - タイトル形式: `<type>: <description>`

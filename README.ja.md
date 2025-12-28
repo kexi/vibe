@@ -1,10 +1,10 @@
 # vibe
 
-A CLI tool for easy Git Worktree management.
+Git Worktreeを簡単に管理するCLIツール。
 
-[日本語](README.ja.md)
+[English](README.md)
 
-## Installation
+## インストール
 
 ### Homebrew (macOS)
 
@@ -29,23 +29,23 @@ sudo mv vibe /usr/local/bin/
 ### Windows
 
 ```powershell
-# Download
+# ダウンロード
 Invoke-WebRequest -Uri "https://github.com/kexi/vibe/releases/latest/download/vibe-windows-x64.exe" -OutFile "$env:LOCALAPPDATA\vibe.exe"
 
-# Add to PATH (first time only)
+# PATHに追加（初回のみ）
 $path = [Environment]::GetEnvironmentVariable("Path", "User")
 [Environment]::SetEnvironmentVariable("Path", "$path;$env:LOCALAPPDATA", "User")
 ```
 
-### Manual Build
+### 手動ビルド
 
 ```bash
 deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts
 ```
 
-## Setup
+## セットアップ
 
-Add the following to your shell configuration:
+シェルに以下を追加:
 
 ### Zsh (.zshrc)
 
@@ -81,35 +81,34 @@ def --env vibe [...args] {
 function vibe { Invoke-Expression (& vibe.exe $args) }
 ```
 
-## Usage
+## 使い方
 
-| Command               | Description                                |
+| コマンド              | 説明                                       |
 | --------------------- | ------------------------------------------ |
-| `vibe start <branch>` | Create a new worktree                      |
-| `vibe clean`          | Delete current worktree and return to main |
-| `vibe trust`          | Trust the `.vibe.toml` file                |
+| `vibe start <branch>` | 新しいワーカーツリーを作成                 |
+| `vibe clean`          | 現在のワーカーツリーを削除してメインに戻る |
+| `vibe trust`          | `.vibe.toml`ファイルを信頼登録             |
 
-### Examples
+### 例
 
 ```bash
-# Create a worktree with a new branch
+# 新しいブランチでワーカーツリーを作成
 vibe start feat/new-feature
 
-# After work is done, delete the worktree
+# 作業完了後、ワーカーツリーを削除
 vibe clean
 ```
 
 ## .vibe.toml
 
-Place a `.vibe.toml` file in the repository root to automatically run tasks on
-`vibe start`.
+リポジトリルートに`.vibe.toml`ファイルを配置すると、`vibe start`時に自動実行されます。
 
 ```toml
-# Copy files from origin repository to worktree
+# ファイルを元リポジトリからworktreeへコピー
 [copy]
 files = [".env", ".env.local"]
 
-# Commands to run after worktree creation
+# worktree作成後に実行するコマンド
 [hooks]
 post_start = [
   "pnpm install",
@@ -117,18 +116,17 @@ post_start = [
 ]
 ```
 
-Trust registration is required on first use with `vibe trust`.
+初回は`vibe trust`で信頼登録が必要です。
 
-### Available Environment Variables
+### 利用可能な環境変数
 
-The following environment variables are available in `hooks.post_start`
-commands:
+`hooks.post_start`のコマンド内で以下の環境変数が使えます：
 
-| Variable             | Description                              |
-| -------------------- | ---------------------------------------- |
-| `VIBE_WORKTREE_PATH` | Absolute path to the created worktree    |
-| `VIBE_ORIGIN_PATH`   | Absolute path to the original repository |
+| 変数名               | 説明                         |
+| -------------------- | ---------------------------- |
+| `VIBE_WORKTREE_PATH` | 作成されたworktreeの絶対パス |
+| `VIBE_ORIGIN_PATH`   | 元リポジトリの絶対パス       |
 
-## License
+## ライセンス
 
 MIT
