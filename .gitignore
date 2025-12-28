@@ -1,9 +1,6 @@
 # Compiled binary
 vibe
 
-# Generated files
-src/version.ts
-
 # OS
 .DS_Store
 Thumbs.db

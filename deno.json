@@ -4,9 +4,6 @@
   "license": "Apache-2.0",
   "repository": "https://github.com/kexi/vibe",
   "exports": "./main.ts",
-  "publish": {
-    "exclude": ["!src/version.ts"]
-  },
   "tasks": {
     "dev": "deno run --allow-run --allow-read --allow-write --allow-env main.ts",
     "compile": "deno run --allow-run --allow-read --allow-write scripts/build.ts",
