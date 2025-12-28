@@ -31,8 +31,14 @@ export async function expandGlobPattern(
         files.push(relativePath);
       }
     }
-  } catch (_error) {
-    // If pattern doesn't match anything or has an error, return empty array
+  } catch (error) {
+    // Warn on actual errors (permission issues, invalid patterns, etc.)
+    // but return empty array to allow continuation
+    if (error instanceof Error) {
+      console.warn(
+        `Warning: Failed to expand glob pattern "${pattern}": ${error.message}`,
+      );
+    }
     return [];
   }
 

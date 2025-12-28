@@ -220,7 +220,9 @@ files = [
 - `?` - Matches any single character
 - `[abc]` - Matches any character in brackets
 
-**Note:** Directory structure is preserved when copying matched files.
+**Notes:**
+- Directory structure is preserved when copying matched files
+- Recursive patterns (`**/*`) may be slower in large repositories
 
 ### Security: Hash Verification
 

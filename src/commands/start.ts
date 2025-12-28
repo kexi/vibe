@@ -165,6 +165,7 @@ async function runVibeConfig(
 
     // Ensure parent directory exists
     const destDir = dirname(dest);
+    // Ignore errors if directory already exists
     await Deno.mkdir(destDir, { recursive: true }).catch(() => {});
 
     // Copy the file
