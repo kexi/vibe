@@ -2,6 +2,8 @@ import { parseArgs } from "@std/cli/parse-args";
 import { startCommand } from "./src/commands/start.ts";
 import { cleanCommand } from "./src/commands/clean.ts";
 import { trustCommand } from "./src/commands/trust.ts";
+import { untrustCommand } from "./src/commands/untrust.ts";
+import { configCommand } from "./src/commands/config.ts";
 import { REPOSITORY_URL, VERSION } from "./src/version.ts";
 
 const HELP_TEXT = `vibe - git worktree helper
@@ -9,7 +11,9 @@ const HELP_TEXT = `vibe - git worktree helper
 Usage:
   vibe start <branch-name> [--reuse]  Create a new worktree with the given branch
   vibe clean                          Remove current worktree and return to main
-  vibe trust                          Trust .vibe file in current repository
+  vibe trust                          Trust .vibe.toml in current repository
+  vibe untrust                        Remove trust for .vibe.toml in current repository
+  vibe config                         Show current settings
 
 Options:
   -h, --help     Show this help message
@@ -22,6 +26,8 @@ Setup:
 
 Examples:
   vibe trust
+  vibe untrust
+  vibe config
   vibe start feat/new-feature
   vibe start feat/existing --reuse
   vibe clean
@@ -60,6 +66,12 @@ async function main(): Promise<void> {
       break;
     case "trust":
       await trustCommand();
+      break;
+    case "untrust":
+      await untrustCommand();
+      break;
+    case "config":
+      await configCommand();
       break;
     default:
       console.error(`Unknown command: ${command}`);

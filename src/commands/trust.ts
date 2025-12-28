@@ -1,6 +1,6 @@
 import { join } from "@std/path";
 import { getRepoRoot } from "../utils/git.ts";
-import { addTrustedPath } from "../utils/trust.ts";
+import { addTrustedPath, getSettingsPath } from "../utils/trust.ts";
 
 export async function trustCommand(): Promise<void> {
   try {
@@ -15,6 +15,7 @@ export async function trustCommand(): Promise<void> {
 
     await addTrustedPath(vibeTomlPath);
     console.error(`Trusted: ${vibeTomlPath}`);
+    console.error(`Settings: ${getSettingsPath()}`);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${errorMessage}`);
