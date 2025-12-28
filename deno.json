@@ -6,7 +6,8 @@
   "exports": "./main.ts",
   "tasks": {
     "dev": "deno run --allow-run --allow-read --allow-write --allow-env main.ts",
-    "compile": "deno run --allow-run --allow-read --allow-write scripts/build.ts",
+    "compile": "deno run --allow-run --allow-read --allow-write --allow-env scripts/build.ts --distribution dev",
+    "generate-version": "deno run --allow-run --allow-read --allow-write --allow-env scripts/build.ts --generate-version-only",
     "build:deb": "deno run --allow-read --allow-write --allow-run scripts/build-deb.ts",
     "setup:dev": "echo 'Run: source .vibedev'",
     "test": "deno test --allow-read --allow-env --allow-write --allow-run",
