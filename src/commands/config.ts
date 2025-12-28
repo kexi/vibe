@@ -5,9 +5,9 @@ export async function configCommand(): Promise<void> {
     const settingsPath = getSettingsPath();
     const settings = await loadUserSettings();
 
-    console.log(`Settings file: ${settingsPath}`);
-    console.log("");
-    console.log(JSON.stringify(settings, null, 2));
+    console.error(`Settings file: ${settingsPath}`);
+    console.error("");
+    console.error(JSON.stringify(settings, null, 2));
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${errorMessage}`);
