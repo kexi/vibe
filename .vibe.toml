@@ -1,3 +1,5 @@
+shell = true
+
 [hooks]
 post_start = [
   "mise trust",
