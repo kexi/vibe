@@ -12,6 +12,18 @@ A CLI tool for easy Git Worktree management.
 brew install kexi/tap/vibe
 ```
 
+### Deno (JSR)
+
+```bash
+deno install -A --global jsr:@kexi/vibe
+```
+
+**Permissions**: For more security, you can specify exact permissions instead of `-A`:
+
+```bash
+deno install --global --allow-run --allow-read --allow-write --allow-env jsr:@kexi/vibe
+```
+
 ### Linux
 
 ```bash
