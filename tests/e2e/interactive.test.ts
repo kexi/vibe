@@ -13,15 +13,10 @@ import {
 /**
  * Interactive prompt tests
  *
- * These tests validate the interactive prompts in the vibe CLI using PTY infrastructure.
- *
- * Solution for PTY testing:
- * - The VIBE_FORCE_INTERACTIVE environment variable is set in pty.ts
- * - This bypasses the isTerminal() check in src/utils/prompt.ts
- * - Allows PTY-based tests to exercise interactive prompts
- *
- * The PTY infrastructure (waitForPattern, write) enables full E2E testing
- * of user interactions without requiring an actual terminal.
+ * These tests exercise the PTY infrastructure (waitForPattern, write) by testing
+ * interactive prompts. The VIBE_FORCE_INTERACTIVE environment variable is set in
+ * pty.ts to bypass Deno.stdin.isTerminal() checks, allowing prompts to work in
+ * the PTY environment.
  */
 describe("interactive prompts", () => {
   let cleanup: (() => Promise<void>) | null = null;
