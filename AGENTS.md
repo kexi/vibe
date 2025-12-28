@@ -2,9 +2,9 @@
 
 ## ブランチ戦略
 
-| ブランチ | 用途 |
-|---------|------|
-| `main` | リリース用。安定版のみ。 |
+| ブランチ  | 用途                                 |
+| --------- | ------------------------------------ |
+| `main`    | リリース用。安定版のみ。             |
 | `develop` | 開発用。トピックブランチのマージ先。 |
 
 ### ワークフロー
@@ -25,7 +25,8 @@ develop ─┴──●──●──●──●─────┴────
 
 - ランタイム: Deno v2.x（`mise install`でセットアップ）
 - 実行: `deno run --allow-run --allow-read --allow-write --allow-env main.ts`
-- コンパイル: `deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts`
+- コンパイル:
+  `deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts`
 
 ## テスト
 
@@ -33,6 +34,11 @@ develop ─┴──●──●──●──●─────┴────
 - フォーマットチェック: `deno fmt --check`
 - 型チェック: `deno check main.ts`
 - コミット前に上記をすべてパスすること
+
+## ドキュメント
+
+- README.md: 英語
+- README.ja.md: 日本語
 
 ## PR規約
 
@@ -43,5 +49,9 @@ develop ─┴──●──●──●──●─────┴────
 
 ## リリース
 
-- `main`にマージ後、`v*`タグをpushするとGitHub Actionsでビルド・リリースされる
-- 例: `git tag v0.1.0 && git push origin v0.1.0`
+- `main`にマージ後、GitHubでリリースを作成・公開するとGitHub
+  Actionsでビルドされる
+- 手順:
+  1. GitHub → Releases → Draft a new release
+  2. タグを作成（例: `v0.1.0`）
+  3. リリースノートを記入し「Publish release」

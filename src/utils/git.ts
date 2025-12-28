@@ -33,7 +33,9 @@ export async function isInsideWorktree(): Promise<boolean> {
   }
 }
 
-export async function getWorktreeList(): Promise<{ path: string; branch: string }[]> {
+export async function getWorktreeList(): Promise<
+  { path: string; branch: string }[]
+> {
   const output = await runGitCommand(["worktree", "list", "--porcelain"]);
   const lines = output.split("\n");
   const worktrees: { path: string; branch: string }[] = [];

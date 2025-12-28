@@ -1,9 +1,8 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [released]
 
 permissions:
   contents: write
@@ -34,9 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
+      - uses: jdx/mise-action@v2
 
       - name: Compile
         run: deno compile --allow-run --allow-read --allow-write --allow-env --target ${{ matrix.target }} --output ${{ matrix.artifact }} main.ts
