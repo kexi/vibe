@@ -295,3 +295,102 @@ Deno.test("Hash history follows FIFO when exceeding MAX_HASH_HISTORY", async () 
   await removeTrustedPath(tempFile);
   await Deno.remove(tempFile);
 });
+
+// ===== Additional Test Coverage =====
+
+Deno.test("Concurrent addTrustedPath calls handle race conditions", async () => {
+  const tempFile = await Deno.makeTempFile();
+  await Deno.writeTextFile(tempFile, "test content");
+
+  // Execute 10 concurrent addTrustedPath calls
+  const promises = Array.from({ length: 10 }, () =>
+    addTrustedPath(tempFile)
+  );
+  await Promise.all(promises);
+
+  // Should have only one hash (duplicate prevention works)
+  const settings = await loadUserSettings();
+  const entry = settings.permissions.allow.find((e) => e.path === tempFile);
+  assertEquals(entry !== undefined, true);
+  assertEquals(entry!.hashes.length, 1);
+
+  await removeTrustedPath(tempFile);
+  await Deno.remove(tempFile);
+});
+
+Deno.test("loadUserSettings handles corrupted JSON gracefully", async () => {
+  const tempSettingsPath = await Deno.makeTempFile({ suffix: ".json" });
+
+  // Write corrupted JSON
+  await Deno.writeTextFile(tempSettingsPath, "{ invalid json ");
+
+  // Override USER_SETTINGS_FILE temporarily using environment
+  const originalHome = Deno.env.get("HOME");
+  const tempDir = await Deno.makeTempDir();
+  Deno.env.set("HOME", tempDir);
+
+  try {
+    const configDir = `${tempDir}/.config/vibe`;
+    await Deno.mkdir(configDir, { recursive: true });
+    const corruptedFile = `${configDir}/settings.json`;
+    await Deno.writeTextFile(corruptedFile, "{ invalid json ");
+
+    // Should return default settings instead of crashing
+    const settings = await loadUserSettings();
+    assertEquals(settings.version, _internal.CURRENT_SCHEMA_VERSION);
+    assertEquals(Array.isArray(settings.permissions.allow), true);
+    assertEquals(Array.isArray(settings.permissions.deny), true);
+  } finally {
+    // Restore original HOME
+    if (originalHome) {
+      Deno.env.set("HOME", originalHome);
+    } else {
+      Deno.env.delete("HOME");
+    }
+    await Deno.remove(tempDir, { recursive: true });
+  }
+
+  await Deno.remove(tempSettingsPath);
+});
+
+Deno.test("saveUserSettings handles directory permission errors", async () => {
+  // This test is platform-specific and may not work on all systems
+  // Skip on Windows and macOS where permission model is different
+  if (Deno.build.os === "windows" || Deno.build.os === "darwin") {
+    return;
+  }
+
+  const originalHome = Deno.env.get("HOME");
+  const tempDir = await Deno.makeTempDir();
+  Deno.env.set("HOME", tempDir);
+
+  try {
+    const configDir = `${tempDir}/.config/vibe`;
+    await Deno.mkdir(configDir, { recursive: true });
+
+    // Make directory read-only
+    await Deno.chmod(configDir, 0o444);
+
+    const settings = _internal.createDefaultSettings();
+
+    // Should throw an error when trying to save
+    let errorThrown = false;
+    try {
+      await saveUserSettings(settings);
+    } catch {
+      errorThrown = true;
+    }
+
+    assertEquals(errorThrown, true);
+
+    // Restore permissions for cleanup
+    await Deno.chmod(configDir, 0o755);
+  } finally {
+    if (originalHome) {
+      Deno.env.set("HOME", originalHome);
+    } else {
+      Deno.env.delete("HOME");
+    }
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});

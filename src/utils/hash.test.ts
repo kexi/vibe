@@ -80,3 +80,26 @@ Deno.test("calculateFileHash handles empty files", async () => {
 
   await Deno.remove(tempFile);
 });
+
+Deno.test("calculateFileHash handles large files efficiently", async () => {
+  const tempFile = await Deno.makeTempFile();
+
+  // Create a 1MB file
+  const oneMB = 1024 * 1024;
+  const content = "a".repeat(oneMB);
+  await Deno.writeTextFile(tempFile, content);
+
+  const start = performance.now();
+  const hash = await calculateFileHash(tempFile);
+  const elapsed = performance.now() - start;
+
+  // Verify hash is calculated correctly
+  assertEquals(hash.length, 64);
+  assertEquals(typeof hash, "string");
+
+  // Performance check: should complete within 1 second on modern hardware
+  // This is a generous threshold to avoid flaky tests
+  assertEquals(elapsed < 1000, true, `Hash calculation took ${elapsed}ms, expected < 1000ms`);
+
+  await Deno.remove(tempFile);
+});
