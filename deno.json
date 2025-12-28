@@ -4,7 +4,8 @@
   "exports": "./main.ts",
   "tasks": {
     "dev": "deno run --allow-run --allow-read --allow-write --allow-env main.ts",
-    "compile": "deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts"
+    "compile": "deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts",
+    "setup:dev": "echo 'Run: source .vibedev'"
   },
   "imports": {
     "@std/cli": "jsr:@std/cli@^1.0.0",
