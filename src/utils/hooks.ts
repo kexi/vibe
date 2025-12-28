@@ -26,7 +26,13 @@ export async function runHooks(
 
     // Write hook stdout to stderr so it doesn't interfere with shell wrapper eval
     if (result.stdout.length > 0) {
-      await Deno.stderr.write(result.stdout);
+      try {
+        await Deno.stderr.write(result.stdout);
+      } catch (error) {
+        // Fallback: if stderr write fails, at least don't crash the hook execution
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error(`Warning: Failed to write hook output to stderr: ${errorMessage}`);
+      }
     }
 
     if (!result.success) {
