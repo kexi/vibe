@@ -32,17 +32,41 @@ jobs:
 
           echo "Version validation passed: $TAG_VERSION"
 
-      - name: Generate version.ts
+      - name: Generate version.ts for JSR
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           REPOSITORY=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('deno.json')).repository)")
+          BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
           cat > src/version.ts << EOF
-          // This file is auto-generated during release
-          export const VERSION = "$VERSION";
-          export const REPOSITORY_URL = "$REPOSITORY";
+          // This file is auto-generated during JSR publishing
+          export interface BuildInfo {
+            version: string;
+            repository: string;
+            platform: string;
+            arch: string;
+            target: string;
+            distribution: string;
+            buildTime: string;
+            buildEnv: string;
+          }
+
+          export const BUILD_INFO: BuildInfo = {
+            version: "$VERSION",
+            repository: "$REPOSITORY",
+            platform: "jsr",
+            arch: "jsr",
+            target: "jsr",
+            distribution: "jsr",
+            buildTime: "$BUILD_TIME",
+            buildEnv: "github-actions",
+          };
+
+          // Backwards compatibility
+          export const VERSION = BUILD_INFO.version;
+          export const REPOSITORY_URL = BUILD_INFO.repository;
           EOF
-          echo "Generated src/version.ts with VERSION = \"$VERSION\""
+          echo "Generated src/version.ts with VERSION = \"$VERSION\" for JSR distribution"
 
       - name: Validate JSR package
         run: deno publish --dry-run --allow-dirty
