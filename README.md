@@ -200,6 +200,28 @@ post_clean = ["echo 'Cleanup complete'"]
 
 Trust registration is required on first use with `vibe trust`.
 
+#### Glob Patterns in Copy Configuration
+
+The `files` array supports glob patterns for flexible file selection:
+
+```toml
+[copy]
+files = [
+  "*.env",              # All .env files in root
+  "**/*.json",          # All JSON files recursively
+  "config/*.txt",       # All .txt files in config/
+  ".env.production"     # Exact paths still work
+]
+```
+
+**Supported patterns:**
+- `*` - Matches any characters except `/`
+- `**` - Matches any characters including `/` (recursive)
+- `?` - Matches any single character
+- `[abc]` - Matches any character in brackets
+
+**Note:** Directory structure is preserved when copying matched files.
+
 ### Security: Hash Verification
 
 Vibe automatically verifies the integrity of `.vibe.toml` and `.vibe.local.toml` files using SHA-256 hashes. This prevents unauthorized modifications to configuration files.
