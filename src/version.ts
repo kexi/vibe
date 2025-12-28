@@ -11,13 +11,13 @@ export interface BuildInfo {
 }
 
 export const BUILD_INFO: BuildInfo = {
-  version: "0.2.0+e6d5163",
+  version: "0.2.2+2cfb18d",
   repository: "https://github.com/kexi/vibe",
   platform: "darwin",
   arch: "aarch64",
   target: "aarch64-apple-darwin",
   distribution: "dev",
-  buildTime: "2025-12-28T10:23:12.605Z",
+  buildTime: "2025-12-28T15:15:13.299Z",
   buildEnv: "local",
 };
 

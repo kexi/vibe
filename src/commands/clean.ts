@@ -5,8 +5,9 @@ import {
   isMainWorktree,
 } from "../utils/git.ts";
 import { loadVibeConfig } from "../utils/config.ts";
-import { runHooks } from "../utils/hooks.ts";
+import { type HookTrackerInfo, runHooks } from "../utils/hooks.ts";
 import { confirm } from "../utils/prompt.ts";
+import { ProgressTracker } from "../utils/progress.ts";
 
 export async function cleanCommand(): Promise<void> {
   try {
@@ -35,13 +36,29 @@ export async function cleanCommand(): Promise<void> {
     // Load configuration
     const config = await loadVibeConfig(currentWorktreePath);
 
+    // Create progress tracker
+    const tracker = new ProgressTracker({
+      title: "Cleaning up worktree",
+    });
+
     // Run pre_clean hooks
     const preCleanHooks = config?.hooks?.pre_clean;
-    if (preCleanHooks !== undefined) {
+    if (preCleanHooks !== undefined && preCleanHooks.length > 0) {
+      // Start progress tracking
+      tracker.start();
+
+      // Add phase and tasks
+      const phaseId = tracker.addPhase("Pre-clean hooks");
+      const taskIds = preCleanHooks.map((hook) => tracker.addTask(phaseId, hook));
+      const trackerInfo: HookTrackerInfo = { tracker, taskIds };
+
       await runHooks(preCleanHooks, currentWorktreePath, {
         worktreePath: currentWorktreePath,
         originPath: mainPath,
-      });
+      }, trackerInfo);
+
+      // Finish progress tracking
+      tracker.finish();
     }
 
     // Build remove command
