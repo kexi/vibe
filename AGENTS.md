@@ -44,6 +44,7 @@ develop ─┴──●──●──●──●─────┴────
 
 - Title format: `<type>: <description>`
   - type: feat, fix, docs, refactor, test, chore
+- PR title and description must be written in English
 - Must pass `deno lint` and `deno fmt --check`
 - Add or update tests for changed code
 
