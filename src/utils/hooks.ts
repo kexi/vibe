@@ -1,12 +1,20 @@
+import type { ProgressTracker } from "./progress.ts";
+
 export interface HookEnvironment {
   worktreePath: string;
   originPath: string;
+}
+
+export interface HookTrackerInfo {
+  tracker: ProgressTracker;
+  taskIds: string[];
 }
 
 export async function runHooks(
   commands: string[],
   cwd: string,
   env: HookEnvironment,
+  trackerInfo?: HookTrackerInfo,
 ): Promise<void> {
   const hookEnv = {
     ...Deno.env.toObject(),
@@ -18,20 +26,27 @@ export async function runHooks(
   const isWindows = Deno.build.os === "windows";
   const shell = isWindows ? "cmd" : "sh";
 
-  for (const cmd of commands) {
+  for (let i = 0; i < commands.length; i++) {
+    const cmd = commands[i];
     const shellArgs = isWindows ? ["/c", cmd] : ["-c", cmd];
+
+    // Update progress: start task
+    if (trackerInfo) {
+      trackerInfo.tracker.startTask(trackerInfo.taskIds[i]);
+    }
 
     const proc = new Deno.Command(shell, {
       args: shellArgs,
       cwd,
       env: hookEnv,
-      stdout: "piped",
-      stderr: "inherit",
+      stdout: trackerInfo ? "piped" : "piped",
+      stderr: trackerInfo ? "piped" : "inherit",
     });
     const result = await proc.output();
 
     // Write hook stdout to stderr so it doesn't interfere with shell wrapper eval
-    if (result.stdout.length > 0) {
+    // When tracker is enabled, suppress output to avoid interfering with progress display
+    if (!trackerInfo && result.stdout.length > 0) {
       try {
         await Deno.stderr.write(result.stdout);
       } catch (error) {
@@ -42,7 +57,19 @@ export async function runHooks(
     }
 
     if (!result.success) {
+      // Update progress: fail task
+      if (trackerInfo) {
+        trackerInfo.tracker.failTask(
+          trackerInfo.taskIds[i],
+          `Exit code ${result.code}`,
+        );
+      }
       throw new Error(`Hook failed with exit code ${result.code}: ${cmd}`);
+    }
+
+    // Update progress: complete task
+    if (trackerInfo) {
+      trackerInfo.tracker.completeTask(trackerInfo.taskIds[i]);
     }
   }
 }
