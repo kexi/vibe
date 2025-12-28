@@ -4,6 +4,46 @@ A CLI tool for easy Git Worktree management.
 
 [日本語](README.ja.md)
 
+## Usage
+
+| Command                      | Description                                         |
+| ---------------------------- | --------------------------------------------------- |
+| `vibe start <branch>`        | Create a new worktree with a new branch             |
+| `vibe start <branch> --reuse`| Create a worktree using an existing branch          |
+| `vibe clean`                 | Delete current worktree and return to main (prompts if uncommitted changes exist) |
+| `vibe trust`                 | Trust `.vibe.toml` and `.vibe.local.toml` files     |
+| `vibe untrust`               | Untrust `.vibe.toml` and `.vibe.local.toml` files   |
+
+### Examples
+
+```bash
+# Create a worktree with a new branch
+vibe start feat/new-feature
+
+# Use an existing branch
+vibe start feat/existing-branch --reuse
+
+# After work is done, delete the worktree
+vibe clean
+```
+
+### Interactive Prompts
+
+`vibe start` handles the following situations interactively:
+
+- **When a branch is already in use by another worktree**: Confirms whether to navigate to the existing worktree
+- **When a directory already exists**: You can choose from the following options
+  - Overwrite (delete and recreate)
+  - Reuse (use existing)
+  - Cancel
+
+```bash
+# Example when branch is already in use
+$ vibe start feat/new-feature
+Branch 'feat/new-feature' is already in use by worktree '/path/to/repo-feat-new-feature'.
+Navigate to the existing worktree? (Y/n)
+```
+
 ## Installation
 
 ### Homebrew (macOS)
@@ -134,46 +174,6 @@ def --env vibe [...args] {
 function vibe { Invoke-Expression (& vibe.exe $args) }
 ```
 </details>
-
-## Usage
-
-| Command                      | Description                                         |
-| ---------------------------- | --------------------------------------------------- |
-| `vibe start <branch>`        | Create a new worktree with a new branch             |
-| `vibe start <branch> --reuse`| Create a worktree using an existing branch          |
-| `vibe clean`                 | Delete current worktree and return to main (prompts if uncommitted changes exist) |
-| `vibe trust`                 | Trust `.vibe.toml` and `.vibe.local.toml` files     |
-| `vibe untrust`               | Untrust `.vibe.toml` and `.vibe.local.toml` files   |
-
-### Examples
-
-```bash
-# Create a worktree with a new branch
-vibe start feat/new-feature
-
-# Use an existing branch
-vibe start feat/existing-branch --reuse
-
-# After work is done, delete the worktree
-vibe clean
-```
-
-### Interactive Prompts
-
-`vibe start` handles the following situations interactively:
-
-- **When a branch is already in use by another worktree**: Confirms whether to navigate to the existing worktree
-- **When a directory already exists**: You can choose from the following options
-  - Overwrite (delete and recreate)
-  - Reuse (use existing)
-  - Cancel
-
-```bash
-# Example when branch is already in use
-$ vibe start feat/new-feature
-Branch 'feat/new-feature' is already in use by worktree '/path/to/repo-feat-new-feature'.
-Navigate to the existing worktree? (Y/n)
-```
 
 ## Configuration
 
