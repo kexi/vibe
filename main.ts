@@ -5,7 +5,7 @@ import { trustCommand } from "./src/commands/trust.ts";
 import { untrustCommand } from "./src/commands/untrust.ts";
 import { verifyCommand } from "./src/commands/verify.ts";
 import { configCommand } from "./src/commands/config.ts";
-import { REPOSITORY_URL, VERSION } from "./src/version.ts";
+import { BUILD_INFO } from "./src/version.ts";
 
 const HELP_TEXT = `vibe - git worktree helper
 
@@ -57,8 +57,14 @@ async function main(): Promise<void> {
   });
 
   if (args.version) {
-    console.log(`vibe ${VERSION}`);
-    console.log(`${REPOSITORY_URL}#readme`);
+    console.log(`vibe ${BUILD_INFO.version}`);
+    console.log(
+      `Platform: ${BUILD_INFO.platform}-${BUILD_INFO.arch} (${BUILD_INFO.target})`,
+    );
+    console.log(`Distribution: ${BUILD_INFO.distribution}`);
+    console.log(`Built: ${BUILD_INFO.buildTime} (${BUILD_INFO.buildEnv})`);
+    console.log();
+    console.log(`${BUILD_INFO.repository}#readme`);
     Deno.exit(0);
   }
 

@@ -35,17 +35,13 @@ jobs:
 
       - uses: jdx/mise-action@v2
 
-      - name: Generate version.ts
+      - name: Generate build info
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          REPOSITORY=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('deno.json')).repository)")
-          cat > src/version.ts << EOF
-          // This file is auto-generated during release
-          export const VERSION = "$VERSION";
-          export const REPOSITORY_URL = "$REPOSITORY";
-          EOF
-          echo "Generated src/version.ts with VERSION = \"$VERSION\" and REPOSITORY_URL = \"$REPOSITORY\""
+          deno run --allow-read --allow-write --allow-run scripts/build.ts \
+            --target ${{ matrix.target }} \
+            --distribution binary \
+            --generate-version-only
 
       - name: Compile
         run: deno compile --allow-run --allow-read --allow-write --allow-env --target ${{ matrix.target }} --output ${{ matrix.artifact }} main.ts
@@ -78,10 +74,23 @@ jobs:
           name: ${{ matrix.binary }}
           path: .
 
+      - name: Regenerate build info for deb
+        run: |
+          TARGET="${{ matrix.arch == 'amd64' && 'x86_64-unknown-linux-gnu' || 'aarch64-unknown-linux-gnu' }}"
+          deno run --allow-read --allow-write --allow-run scripts/build.ts \
+            --target "$TARGET" \
+            --distribution deb \
+            --generate-version-only
+          # Recompile with deb distribution metadata
+          deno compile --allow-run --allow-read --allow-write --allow-env \
+            --target "$TARGET" \
+            --output vibe-deb \
+            main.ts
+
       - name: Build .deb package
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          deno task build:deb "$VERSION" ${{ matrix.arch }} ${{ matrix.binary }}
+          deno task build:deb "$VERSION" ${{ matrix.arch }} vibe-deb
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
