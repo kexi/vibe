@@ -164,4 +164,4 @@ post_start = [
 
 ## ライセンス
 
-MIT
+Apache-2.0
