@@ -1,5 +1,4 @@
 import { dirname, join } from "@std/path";
-import { parse } from "@std/toml";
 import {
   branchExists,
   getRepoName,
@@ -7,13 +6,9 @@ import {
   runGitCommand,
   sanitizeBranchName,
 } from "../utils/git.ts";
-import { isTrusted } from "../utils/trust.ts";
-
-interface VibeConfig {
-  shell?: boolean;
-  copy?: { files?: string[] };
-  hooks?: { post_start?: string[] };
-}
+import type { VibeConfig } from "../types/config.ts";
+import { loadVibeConfig } from "../utils/config.ts";
+import { runHooks } from "../utils/hooks.ts";
 
 interface StartOptions {
   reuse?: boolean;
@@ -49,18 +44,20 @@ export async function startCommand(
       await runGitCommand(["worktree", "add", "-b", branchName, worktreePath]);
     }
 
-    const vibeTomlPath = join(repoRoot, ".vibe.toml");
-    const vibeTomlExists = await fileExists(vibeTomlPath);
-    let config: VibeConfig | undefined;
+    const config = await loadVibeConfig(repoRoot);
 
-    if (vibeTomlExists) {
-      const trusted = await isTrusted(vibeTomlPath);
-      if (trusted) {
-        config = parse(await Deno.readTextFile(vibeTomlPath)) as VibeConfig;
-        await runVibeConfig(config, repoRoot, worktreePath);
-      } else {
-        console.error(".vibe.toml file found but not trusted. Run: vibe trust");
-      }
+    // Run pre_start hooks
+    const preStartHooks = config?.hooks?.pre_start;
+    if (preStartHooks !== undefined) {
+      await runHooks(preStartHooks, repoRoot, {
+        worktreePath,
+        originPath: repoRoot,
+      });
+    }
+
+    // Continue with existing process (post_start hooks are executed in runVibeConfig)
+    if (config !== undefined) {
+      await runVibeConfig(config, repoRoot, worktreePath);
     }
 
     const useShell = config?.shell === true;
@@ -94,32 +91,17 @@ async function runVibeConfig(
   for (const file of config.copy?.files ?? []) {
     const src = join(repoRoot, file);
     const dest = join(worktreePath, file);
-    await Deno.copyFile(src, dest).catch(() => {});
+    await Deno.copyFile(src, dest).catch((err) => {
+      console.error(`Warning: Failed to copy ${file}: ${err.message}`);
+    });
   }
 
   // Run post_start hooks
-  const env = {
-    ...Deno.env.toObject(),
-    VIBE_WORKTREE_PATH: worktreePath,
-    VIBE_ORIGIN_PATH: repoRoot,
-  };
-  for (const cmd of config.hooks?.post_start ?? []) {
-    const proc = new Deno.Command("sh", {
-      args: ["-c", cmd],
-      cwd: worktreePath,
-      env,
-      stdout: "inherit",
-      stderr: "inherit",
+  const postStartHooks = config.hooks?.post_start;
+  if (postStartHooks !== undefined) {
+    await runHooks(postStartHooks, worktreePath, {
+      worktreePath,
+      originPath: repoRoot,
     });
-    await proc.output();
-  }
-}
-
-async function fileExists(path: string): Promise<boolean> {
-  try {
-    await Deno.stat(path);
-    return true;
-  } catch {
-    return false;
   }
 }
