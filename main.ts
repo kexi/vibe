@@ -2,6 +2,7 @@ import { parseArgs } from "@std/cli/parse-args";
 import { startCommand } from "./src/commands/start.ts";
 import { cleanCommand } from "./src/commands/clean.ts";
 import { trustCommand } from "./src/commands/trust.ts";
+import { REPOSITORY_URL, VERSION } from "./src/version.ts";
 
 const HELP_TEXT = `vibe - git worktree helper
 
@@ -11,7 +12,9 @@ Usage:
   vibe trust                          Trust .vibe file in current repository
 
 Options:
-  --reuse  Use existing branch instead of creating a new one
+  -h, --help     Show this help message
+  -v, --version  Show version information
+  --reuse        Use existing branch instead of creating a new one
 
 Setup:
   Add this to your .zshrc:
@@ -26,13 +29,20 @@ Examples:
 
 async function main(): Promise<void> {
   const args = parseArgs(Deno.args, {
-    boolean: ["help", "reuse"],
-    alias: { h: "help" },
+    boolean: ["help", "version", "reuse"],
+    alias: { h: "help", v: "version" },
   });
+
+  if (args.version) {
+    console.log(`vibe ${VERSION}`);
+    console.log(`${REPOSITORY_URL}#readme`);
+    Deno.exit(0);
+  }
 
   const showHelp = args.help || args._.length === 0;
   if (showHelp) {
     console.log(HELP_TEXT);
+    console.log(`${REPOSITORY_URL}#readme`);
     Deno.exit(0);
   }
 
