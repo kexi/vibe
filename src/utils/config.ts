@@ -1,7 +1,7 @@
 import { parse } from "@std/toml";
 import { join } from "@std/path";
 import type { VibeConfig } from "../types/config.ts";
-import { isTrusted } from "./settings.ts";
+import { isTrusted } from "./trust.ts";
 
 const VIBE_TOML = ".vibe.toml";
 const VIBE_LOCAL_TOML = ".vibe.local.toml";

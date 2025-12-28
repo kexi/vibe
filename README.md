@@ -105,12 +105,13 @@ function vibe { Invoke-Expression (& vibe.exe $args) }
 
 ## Usage
 
-| Command                      | Description                                |
-| ---------------------------- | ------------------------------------------ |
-| `vibe start <branch>`        | Create a new worktree with a new branch    |
-| `vibe start <branch> --reuse`| Create a worktree using an existing branch |
-| `vibe clean`                 | Delete current worktree and return to main |
-| `vibe trust`                 | Trust the `.vibe.toml` file                |
+| Command                      | Description                                         |
+| ---------------------------- | --------------------------------------------------- |
+| `vibe start <branch>`        | Create a new worktree with a new branch             |
+| `vibe start <branch> --reuse`| Create a worktree using an existing branch          |
+| `vibe clean`                 | Delete current worktree and return to main          |
+| `vibe trust`                 | Trust `.vibe.toml` and `.vibe.local.toml` files     |
+| `vibe untrust`               | Untrust `.vibe.toml` and `.vibe.local.toml` files   |
 
 ### Examples
 
@@ -125,10 +126,12 @@ vibe start feat/existing-branch --reuse
 vibe clean
 ```
 
-## .vibe.toml
+## Configuration
+
+### .vibe.toml
 
 Place a `.vibe.toml` file in the repository root to automatically run tasks on
-`vibe start`.
+`vibe start`. This file is typically committed to git and shared with the team.
 
 ```toml
 # Spawn user's $SHELL in worktree (no eval wrapper needed)
@@ -136,28 +139,79 @@ shell = true
 
 # Copy files from origin repository to worktree
 [copy]
-files = [".env", ".env.local"]
+files = [".env"]
 
 # Commands to run after worktree creation
 [hooks]
+pre_start = ["echo 'Preparing worktree...'"]
 post_start = [
   "pnpm install",
   "pnpm db:migrate"
 ]
+pre_clean = ["git stash"]
+post_clean = ["echo 'Cleanup complete'"]
 ```
 
 Trust registration is required on first use with `vibe trust`.
 
+### .vibe.local.toml
+
+Create a `.vibe.local.toml` file for local-only configuration overrides that
+won't be committed to git (automatically gitignored). This is useful for
+developer-specific settings.
+
+```toml
+# Override or extend shared hooks with local commands
+[hooks]
+post_start_prepend = ["echo 'Local setup starting'"]
+post_start_append = ["npm run dev"]
+
+# Override files to copy
+[copy]
+files = [".env.local", ".secrets"]
+```
+
+### Configuration Merging
+
+When both `.vibe.toml` and `.vibe.local.toml` exist:
+
+- **Complete override**: Use the field name directly (e.g., `post_start = [...]`)
+- **Prepend items**: Use `_prepend` suffix (e.g., `post_start_prepend = [...]`)
+- **Append items**: Use `_append` suffix (e.g., `post_start_append = [...]`)
+
+**Example:**
+
+```toml
+# .vibe.toml (shared)
+[hooks]
+post_start = ["mise trust", "mise install"]
+
+# .vibe.local.toml (local)
+[hooks]
+post_start_prepend = ["echo 'local setup'"]
+post_start_append = ["npm run dev"]
+
+# Result: ["echo 'local setup'", "mise trust", "mise install", "npm run dev"]
+```
+
 ### Configuration Options
 
-| Option  | Type    | Description                                      |
-| ------- | ------- | ------------------------------------------------ |
-| `shell` | boolean | If `true`, spawns `$SHELL` in the worktree directory |
+| Option  | Type    | Description                                           |
+| ------- | ------- | ----------------------------------------------------- |
+| `shell` | boolean | If `true`, spawns `$SHELL` in the worktree directory  |
 
-### Available Environment Variables
+### Available Hooks
 
-The following environment variables are available in `hooks.post_start`
-commands:
+| Hook         | When                       | Environment Variables Available           |
+| ------------ | -------------------------- | ----------------------------------------- |
+| `pre_start`  | Before worktree creation   | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`  |
+| `post_start` | After worktree creation    | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`  |
+| `pre_clean`  | Before worktree removal    | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`  |
+| `post_clean` | After worktree removal     | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`  |
+
+### Environment Variables
+
+The following environment variables are available in all hook commands:
 
 | Variable             | Description                              |
 | -------------------- | ---------------------------------------- |

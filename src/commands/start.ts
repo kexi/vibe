@@ -8,6 +8,7 @@ import {
 } from "../utils/git.ts";
 import type { VibeConfig } from "../types/config.ts";
 import { loadVibeConfig } from "../utils/config.ts";
+import { runHooks } from "../utils/hooks.ts";
 
 interface StartOptions {
   reuse?: boolean;
@@ -45,13 +46,16 @@ export async function startCommand(
 
     const config = await loadVibeConfig(repoRoot);
 
-    // pre_startフックの実行
+    // Run pre_start hooks
     const hasPreStartHooks = config?.hooks?.pre_start !== undefined;
     if (hasPreStartHooks) {
-      await runHooks(config!.hooks!.pre_start!, repoRoot, { repoRoot, worktreePath });
+      await runHooks(config!.hooks!.pre_start!, repoRoot, {
+        worktreePath,
+        originPath: repoRoot,
+      });
     }
 
-    // 既存の処理は続行される（runVibeConfigでpost_startフックを実行）
+    // Continue with existing process (post_start hooks are executed in runVibeConfig)
     const hasConfig = config !== undefined;
     if (hasConfig) {
       await runVibeConfig(config, repoRoot, worktreePath);
@@ -76,29 +80,6 @@ export async function startCommand(
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${errorMessage}`);
     Deno.exit(1);
-  }
-}
-
-async function runHooks(
-  commands: string[],
-  cwd: string,
-  env: { repoRoot: string; worktreePath: string },
-): Promise<void> {
-  const hookEnv = {
-    ...Deno.env.toObject(),
-    VIBE_WORKTREE_PATH: env.worktreePath,
-    VIBE_ORIGIN_PATH: env.repoRoot,
-  };
-
-  for (const cmd of commands) {
-    const proc = new Deno.Command("sh", {
-      args: ["-c", cmd],
-      cwd,
-      env: hookEnv,
-      stdout: "inherit",
-      stderr: "inherit",
-    });
-    await proc.output();
   }
 }
 

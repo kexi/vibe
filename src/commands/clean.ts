@@ -1,28 +1,6 @@
 import { getMainWorktreePath, getRepoRoot, isMainWorktree } from "../utils/git.ts";
 import { loadVibeConfig } from "../utils/config.ts";
-
-async function runHooks(
-  commands: string[],
-  cwd: string,
-  env: { currentWorktreePath: string; mainPath: string },
-): Promise<void> {
-  const hookEnv = {
-    ...Deno.env.toObject(),
-    VIBE_WORKTREE_PATH: env.currentWorktreePath,
-    VIBE_ORIGIN_PATH: env.mainPath,
-  };
-
-  for (const cmd of commands) {
-    const proc = new Deno.Command("sh", {
-      args: ["-c", cmd],
-      cwd,
-      env: hookEnv,
-      stdout: "inherit",
-      stderr: "inherit",
-    });
-    await proc.output();
-  }
-}
+import { runHooks } from "../utils/hooks.ts";
 
 export async function cleanCommand(): Promise<void> {
   try {
@@ -37,22 +15,22 @@ export async function cleanCommand(): Promise<void> {
     const currentWorktreePath = await getRepoRoot();
     const mainPath = await getMainWorktreePath();
 
-    // 設定の読み込み
+    // Load configuration
     const config = await loadVibeConfig(currentWorktreePath);
 
-    // pre_cleanフックの実行
+    // Run pre_clean hooks
     const hasPreCleanHooks = config?.hooks?.pre_clean !== undefined;
     if (hasPreCleanHooks) {
       await runHooks(config!.hooks!.pre_clean!, currentWorktreePath, {
-        currentWorktreePath,
-        mainPath,
+        worktreePath: currentWorktreePath,
+        originPath: mainPath,
       });
     }
 
-    // 削除コマンドの構築
+    // Build remove command
     let removeCommand = `cd '${mainPath}' && git worktree remove '${currentWorktreePath}'`;
 
-    // post_cleanフックを削除コマンドに追加
+    // Append post_clean hooks to remove command
     const hasPostCleanHooks = config?.hooks?.post_clean !== undefined;
     if (hasPostCleanHooks) {
       for (const cmd of config!.hooks!.post_clean!) {
