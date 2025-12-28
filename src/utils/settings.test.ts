@@ -303,9 +303,7 @@ Deno.test("Concurrent addTrustedPath calls handle race conditions", async () => 
   await Deno.writeTextFile(tempFile, "test content");
 
   // Execute 10 concurrent addTrustedPath calls
-  const promises = Array.from({ length: 10 }, () =>
-    addTrustedPath(tempFile)
-  );
+  const promises = Array.from({ length: 10 }, () => addTrustedPath(tempFile));
   await Promise.all(promises);
 
   // Should have only one hash (duplicate prevention works)
