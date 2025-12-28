@@ -59,3 +59,97 @@ jobs:
         with:
           files: artifacts/*
           generate_release_notes: true
+
+  update-homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Calculate SHA256
+        id: sha256
+        run: |
+          echo "darwin_arm64=$(sha256sum artifacts/vibe-darwin-arm64 | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
+          echo "darwin_x64=$(sha256sum artifacts/vibe-darwin-x64 | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
+          echo "linux_arm64=$(sha256sum artifacts/vibe-linux-arm64 | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
+          echo "linux_x64=$(sha256sum artifacts/vibe-linux-x64 | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
+
+      - name: Update Homebrew formula
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          gh repo clone kexi/homebrew-tap homebrew-tap
+          cd homebrew-tap
+
+          cat > Formula/vibe.rb << 'EOF'
+          class Vibe < Formula
+            desc "Git worktree helper CLI"
+            homepage "https://github.com/kexi/vibe"
+            version "VERSION_PLACEHOLDER"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/kexi/vibe/releases/download/vVERSION_PLACEHOLDER/vibe-darwin-arm64"
+                sha256 "SHA256_DARWIN_ARM64"
+              end
+              on_intel do
+                url "https://github.com/kexi/vibe/releases/download/vVERSION_PLACEHOLDER/vibe-darwin-x64"
+                sha256 "SHA256_DARWIN_X64"
+              end
+            end
+
+            on_linux do
+              on_arm do
+                url "https://github.com/kexi/vibe/releases/download/vVERSION_PLACEHOLDER/vibe-linux-arm64"
+                sha256 "SHA256_LINUX_ARM64"
+              end
+              on_intel do
+                url "https://github.com/kexi/vibe/releases/download/vVERSION_PLACEHOLDER/vibe-linux-x64"
+                sha256 "SHA256_LINUX_X64"
+              end
+            end
+
+            def install
+              binary_name = "vibe-darwin-arm64" if OS.mac? && Hardware::CPU.arm?
+              binary_name = "vibe-darwin-x64" if OS.mac? && Hardware::CPU.intel?
+              binary_name = "vibe-linux-arm64" if OS.linux? && Hardware::CPU.arm?
+              binary_name = "vibe-linux-x64" if OS.linux? && Hardware::CPU.intel?
+
+              bin.install binary_name => "vibe"
+            end
+
+            def caveats
+              <<~EOS
+                Add this to your .zshrc:
+                  vibe() { eval "$(command vibe "$@")" }
+              EOS
+            end
+
+            test do
+              system "#{bin}/vibe", "--help"
+            end
+          end
+          EOF
+
+          # Remove leading spaces from heredoc
+          sed -i 's/^          //' Formula/vibe.rb
+
+          sed -i "s/VERSION_PLACEHOLDER/$VERSION/g" Formula/vibe.rb
+          sed -i "s/SHA256_DARWIN_ARM64/${{ steps.sha256.outputs.darwin_arm64 }}/g" Formula/vibe.rb
+          sed -i "s/SHA256_DARWIN_X64/${{ steps.sha256.outputs.darwin_x64 }}/g" Formula/vibe.rb
+          sed -i "s/SHA256_LINUX_ARM64/${{ steps.sha256.outputs.linux_arm64 }}/g" Formula/vibe.rb
+          sed -i "s/SHA256_LINUX_X64/${{ steps.sha256.outputs.linux_x64 }}/g" Formula/vibe.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/vibe.rb
+          git commit -m "Update vibe to $VERSION"
+          git push
