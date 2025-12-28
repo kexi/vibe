@@ -7,22 +7,28 @@ on:
     branches: [develop]
 
 jobs:
-  check:
+  lint:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: jdx/mise-action@v2
-
       - name: Verify formatting
         run: deno fmt --check
-
       - name: Run linter
         run: deno lint
 
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
       - name: Type check
         run: deno check main.ts src/**/*.ts
 
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
       - name: Run tests
         run: deno test --allow-read --allow-env
