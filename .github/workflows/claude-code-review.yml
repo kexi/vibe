@@ -46,6 +46,8 @@ jobs:
             - Performance considerations
             - Security concerns
             - Test coverage
+            - Documentation updates: Check if README.md and README.ja.md need to be updated based on code changes
+            - License compatibility: Ensure no GPL-licensed dependencies are introduced that could cause license contamination
 
             Use the repository's CLAUDE.md for guidance on style and conventions. Be constructive and helpful in your feedback.
 
