@@ -45,7 +45,7 @@ jobs:
           echo "Generated src/version.ts with VERSION = \"$VERSION\""
 
       - name: Validate JSR package
-        run: deno publish --dry-run --allow-dirty
+        run: npx jsr publish --dry-run --allow-dirty
 
       - name: Publish to JSR
-        run: deno publish --allow-dirty
+        run: npx jsr publish --allow-dirty
