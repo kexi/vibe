@@ -3,6 +3,7 @@ import { startCommand } from "./src/commands/start.ts";
 import { cleanCommand } from "./src/commands/clean.ts";
 import { trustCommand } from "./src/commands/trust.ts";
 import { untrustCommand } from "./src/commands/untrust.ts";
+import { verifyCommand } from "./src/commands/verify.ts";
 import { configCommand } from "./src/commands/config.ts";
 import { REPOSITORY_URL, VERSION } from "./src/version.ts";
 
@@ -13,6 +14,7 @@ Usage:
   vibe clean                          Remove current worktree and return to main
   vibe trust                          Trust .vibe.toml in current repository
   vibe untrust                        Remove trust for .vibe.toml in current repository
+  vibe verify                         Verify trust status and hash history
   vibe config                         Show current settings
 
 Options:
@@ -27,6 +29,7 @@ Setup:
 Examples:
   vibe trust
   vibe untrust
+  vibe verify
   vibe config
   vibe start feat/new-feature
   vibe start feat/existing --reuse
@@ -69,6 +72,9 @@ async function main(): Promise<void> {
       break;
     case "untrust":
       await untrustCommand();
+      break;
+    case "verify":
+      await verifyCommand();
       break;
     case "config":
       await configCommand();

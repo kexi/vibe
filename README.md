@@ -154,6 +154,47 @@ post_clean = ["echo 'Cleanup complete'"]
 
 Trust registration is required on first use with `vibe trust`.
 
+### Security: Hash Verification
+
+Vibe automatically verifies the integrity of `.vibe.toml` and `.vibe.local.toml` files using SHA-256 hashes. This prevents unauthorized modifications to configuration files.
+
+#### How it works
+- When you run `vibe trust`, Vibe calculates and stores the SHA-256 hash of the configuration files
+- When you run `vibe start`, Vibe verifies the file hasn't been modified by checking the hash
+- If the hash doesn't match, Vibe exits with an error and asks you to run `vibe trust` again
+
+#### Skip hash check (for development)
+You can disable hash verification in your settings file (`~/.config/vibe/settings.json`):
+
+**Global setting:**
+```json
+{
+  "version": 2,
+  "skipHashCheck": true,
+  "permissions": { "allow": [], "deny": [] }
+}
+```
+
+**Per-file setting:**
+```json
+{
+  "version": 2,
+  "permissions": {
+    "allow": [
+      {
+        "path": "/path/to/.vibe.toml",
+        "hashes": ["abc123..."],
+        "skipHashCheck": true
+      }
+    ],
+    "deny": []
+  }
+}
+```
+
+#### Branch switching
+Vibe stores multiple hashes per file (up to 100), so you can switch between branches without needing to re-trust files (as long as you've trusted each branch's version at least once).
+
 ### .vibe.local.toml
 
 Create a `.vibe.local.toml` file for local-only configuration overrides that
@@ -219,6 +260,44 @@ The following environment variables are available in all hook commands:
 | -------------------- | ---------------------------------------- |
 | `VIBE_WORKTREE_PATH` | Absolute path to the created worktree    |
 | `VIBE_ORIGIN_PATH`   | Absolute path to the original repository |
+
+## Development
+
+### Available Tasks
+
+All tasks are defined in `deno.json` to ensure consistency between local development and CI:
+
+```bash
+# Run all CI checks (same as CI runs)
+deno task ci
+
+# Individual checks
+deno task fmt:check    # Check code formatting
+deno task lint         # Run linter
+deno task check        # Type check
+deno task test         # Run tests
+
+# Auto-fix formatting
+deno task fmt
+
+# Development
+deno task dev          # Run in development mode
+deno task compile      # Build binaries for all platforms
+```
+
+### Running CI Checks Locally
+
+Before pushing, run the same checks that CI will run:
+
+```bash
+deno task ci
+```
+
+This runs:
+1. Format check (`deno task fmt:check`)
+2. Linter (`deno task lint`)
+3. Type check (`deno task check`)
+4. Tests (`deno task test`)
 
 ## License
 

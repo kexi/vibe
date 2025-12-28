@@ -22,16 +22,44 @@ export async function trustCommand(): Promise<void> {
       Deno.exit(1);
     }
 
+    const trustedFiles: string[] = [];
+    const errors: Array<{ file: string; error: string }> = [];
+
+    // Trust .vibe.toml
     if (vibeTomlExists) {
-      await addTrustedPath(vibeTomlPath);
-      console.error(`Trusted: ${vibeTomlPath}`);
+      try {
+        await addTrustedPath(vibeTomlPath);
+        trustedFiles.push(vibeTomlPath);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        errors.push({ file: ".vibe.toml", error: errorMessage });
+      }
     }
 
+    // Trust .vibe.local.toml
     if (vibeLocalTomlExists) {
-      await addTrustedPath(vibeLocalTomlPath);
-      console.error(`Trusted: ${vibeLocalTomlPath}`);
+      try {
+        await addTrustedPath(vibeLocalTomlPath);
+        trustedFiles.push(vibeLocalTomlPath);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        errors.push({ file: ".vibe.local.toml", error: errorMessage });
+      }
     }
 
+    // Report errors if any
+    if (errors.length > 0) {
+      console.error("Failed to trust the following files:");
+      for (const { file, error } of errors) {
+        console.error(`  ${file}: ${error}`);
+      }
+      Deno.exit(1);
+    }
+
+    // Display results
+    for (const file of trustedFiles) {
+      console.error(`Trusted: ${file}`);
+    }
     console.error(`Settings: ${getSettingsPath()}`);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

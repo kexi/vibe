@@ -154,6 +154,47 @@ post_clean = ["echo 'クリーンアップ完了'"]
 
 初回は`vibe trust`で信頼登録が必要です。
 
+### セキュリティ: ハッシュ検証
+
+Vibeは`.vibe.toml`と`.vibe.local.toml`ファイルの整合性をSHA-256ハッシュを使って自動的に検証します。これにより、設定ファイルへの不正な変更を防ぎます。
+
+#### 仕組み
+- `vibe trust`を実行すると、Vibeは設定ファイルのSHA-256ハッシュを計算して保存します
+- `vibe start`を実行すると、Vibeはハッシュをチェックしてファイルが変更されていないか検証します
+- ハッシュが一致しない場合、Vibeはエラーで終了し、再度`vibe trust`を実行するよう求めます
+
+#### ハッシュチェックのスキップ（開発用）
+設定ファイル（`~/.config/vibe/settings.json`）でハッシュ検証を無効化できます:
+
+**グローバル設定:**
+```json
+{
+  "version": 2,
+  "skipHashCheck": true,
+  "permissions": { "allow": [], "deny": [] }
+}
+```
+
+**ファイルごとの設定:**
+```json
+{
+  "version": 2,
+  "permissions": {
+    "allow": [
+      {
+        "path": "/path/to/.vibe.toml",
+        "hashes": ["abc123..."],
+        "skipHashCheck": true
+      }
+    ],
+    "deny": []
+  }
+}
+```
+
+#### ブランチ切り替え
+Vibeはファイルごとに複数のハッシュ（最大100個）を保存するため、各ブランチのバージョンを一度信頼すれば、ブランチを切り替えても再度信頼登録する必要はありません。
+
 ### .vibe.local.toml
 
 `.vibe.local.toml`ファイルを作成すると、Gitにコミットされないローカル専用の設定上書きができます（自動的にgitignoreされます）。
@@ -218,6 +259,44 @@ post_start_append = ["npm run dev"]
 | -------------------- | ---------------------------- |
 | `VIBE_WORKTREE_PATH` | 作成されたworktreeの絶対パス |
 | `VIBE_ORIGIN_PATH`   | 元リポジトリの絶対パス       |
+
+## 開発
+
+### 利用可能なタスク
+
+すべてのタスクは`deno.json`に定義されており、ローカル開発とCIで同じチェックを実行できます：
+
+```bash
+# CIと同じチェックを実行
+deno task ci
+
+# 個別のチェック
+deno task fmt:check    # コードフォーマットをチェック
+deno task lint         # Linterを実行
+deno task check        # 型チェック
+deno task test         # テスト実行
+
+# フォーマット自動修正
+deno task fmt
+
+# 開発
+deno task dev          # 開発モードで実行
+deno task compile      # 全プラットフォーム向けにビルド
+```
+
+### ローカルでCIチェックを実行
+
+プッシュ前に、CIと同じチェックを実行できます：
+
+```bash
+deno task ci
+```
+
+以下を実行します：
+1. フォーマットチェック (`deno task fmt:check`)
+2. Linter (`deno task lint`)
+3. 型チェック (`deno task check`)
+4. テスト (`deno task test`)
 
 ## ライセンス
 

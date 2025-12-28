@@ -15,6 +15,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# Claude
+.claude/settings.local.json
+
 # Environment
 .env
 .env.local

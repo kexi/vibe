@@ -30,9 +30,11 @@ develop ─┴──●──●──●──●─────┴────
 
 ## Testing
 
-- Lint check: `deno lint`
-- Format check: `deno fmt --check`
-- Type check: `deno check main.ts`
+- Lint check: `deno task lint` or `deno lint`
+- Format check: `deno task fmt:check` or `deno fmt --check`
+- Type check: `deno task check` or `deno check main.ts`
+- Run tests: `deno task test`
+- Run all checks: `deno task ci` (runs fmt:check, lint, check, and test)
 - All checks must pass before committing
 
 ## Documentation

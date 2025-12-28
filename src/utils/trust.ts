@@ -1,10 +1,10 @@
-// 後方互換性のためsettings.tsから再エクスポート
+// Re-export from settings.ts
 export {
   addTrustedPath,
   getSettingsPath,
-  isTrusted,
   loadUserSettings,
   removeTrustedPath,
   saveUserSettings,
+  verifyTrustAndRead,
 } from "./settings.ts";
 export type { VibeSettings } from "./settings.ts";

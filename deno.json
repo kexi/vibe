@@ -8,13 +8,14 @@
     "dev": "deno run --allow-run --allow-read --allow-write --allow-env main.ts",
     "compile": "deno run --allow-run --allow-read --allow-write scripts/build.ts",
     "setup:dev": "echo 'Run: source .vibedev'",
-    "test": "deno test --allow-read --allow-env",
-    "test:coverage": "deno test --allow-read --allow-env --coverage=coverage",
+    "test": "deno test --allow-read --allow-env --allow-write",
+    "test:coverage": "deno test --allow-read --allow-env --allow-write --coverage=coverage",
     "lint": "deno lint",
     "fmt": "deno fmt",
     "fmt:check": "deno fmt --check",
     "check": "deno check main.ts src/**/*.ts",
-    "check:all": "deno task lint && deno task fmt:check && deno task check && deno task test"
+    "ci": "deno task fmt:check && deno task lint && deno task check && deno task test",
+    "check:all": "deno task ci"
   },
   "imports": {
     "@std/cli": "jsr:@std/cli@^1.0.0",
