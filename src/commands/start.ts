@@ -87,8 +87,7 @@ export async function startCommand(
           }
 
           // Launch shell or output cd command
-          const useShell = (config as VibeConfig | undefined)?.shell === true;
-          if (useShell) {
+          if (config && config.shell) {
             const shellPath = Deno.env.get("SHELL") ?? "/bin/sh";
             const command = new Deno.Command(shellPath, {
               cwd: worktreePath,
