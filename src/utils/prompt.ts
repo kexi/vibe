@@ -21,8 +21,10 @@ async function readLine(): Promise<string> {
  * @returns true if user selects Yes, false otherwise
  */
 export async function confirm(message: string): Promise<boolean> {
-  // Check for VIBE_FORCE_INTERACTIVE environment variable (used in tests)
-  // This bypasses the isTerminal() check for PTY-based testing
+  // VIBE_FORCE_INTERACTIVE: When set to "1", forces the CLI to treat stdin as interactive.
+  // This is necessary for E2E testing with node-pty, which creates a pseudo-terminal (PTY)
+  // that Deno.stdin.isTerminal() doesn't recognize as a true TTY. Without this flag,
+  // interactive prompts would fail in E2E tests even though they're running in a PTY.
   const forceInteractive = Deno.env.get("VIBE_FORCE_INTERACTIVE") === "1";
   const isInteractive = forceInteractive || (Deno.stdin.isTerminal?.() ?? false);
 
@@ -62,7 +64,10 @@ export async function select(
   message: string,
   choices: string[],
 ): Promise<number> {
-  // Check for VIBE_FORCE_INTERACTIVE environment variable (used in tests)
+  // VIBE_FORCE_INTERACTIVE: When set to "1", forces the CLI to treat stdin as interactive.
+  // This is necessary for E2E testing with node-pty, which creates a pseudo-terminal (PTY)
+  // that Deno.stdin.isTerminal() doesn't recognize as a true TTY. Without this flag,
+  // interactive prompts would fail in E2E tests even though they're running in a PTY.
   const forceInteractive = Deno.env.get("VIBE_FORCE_INTERACTIVE") === "1";
   const isInteractive = forceInteractive || (Deno.stdin.isTerminal?.() ?? false);
 

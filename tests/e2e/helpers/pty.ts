@@ -40,7 +40,11 @@ export class VibeCommandRunner {
     });
 
     this.exitPromise = new Promise((resolve) => {
-      this.pty!.onExit(({ exitCode }: { exitCode: number }) => {
+      if (!this.pty) {
+        resolve();
+        return;
+      }
+      this.pty.onExit(({ exitCode }: { exitCode: number }) => {
         this.exitCode = exitCode;
         resolve();
       });
