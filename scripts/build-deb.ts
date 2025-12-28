@@ -55,11 +55,15 @@ Priority: optional
   }
 
   console.log(`Successfully created ${packageName}.deb`);
+
+  // Clean up temporary directory
+  await Deno.remove(packageDir, { recursive: true });
+  console.log(`Cleaned up temporary directory: ${packageDir}`);
 }
 
 async function main(): Promise<void> {
-  const isVersionArg = Deno.args.length >= 3;
-  if (!isVersionArg) {
+  const hasRequiredArgs = Deno.args.length >= 3;
+  if (!hasRequiredArgs) {
     console.error("Usage: deno run --allow-read --allow-write --allow-run scripts/build-deb.ts <version> <arch> <binary-path>");
     console.error("Example: deno run --allow-read --allow-write --allow-run scripts/build-deb.ts 0.1.5 amd64 vibe-linux-x64");
     Deno.exit(1);
@@ -68,8 +72,8 @@ async function main(): Promise<void> {
   const [version, arch, binaryPath] = Deno.args;
 
   // Validate arch
-  const isArchValid = arch === "amd64" || arch === "arm64";
-  if (!isArchValid) {
+  const validArchs = ["amd64", "arm64"];
+  if (!validArchs.includes(arch)) {
     console.error(`Invalid architecture: ${arch}. Must be 'amd64' or 'arm64'`);
     Deno.exit(1);
   }
