@@ -164,4 +164,4 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/vibe.rb
           git commit -m "Update vibe to $VERSION"
-          git push
+          git push https://x-access-token:${GH_TOKEN}@github.com/kexi/homebrew-tap.git HEAD:main
