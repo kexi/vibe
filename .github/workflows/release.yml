@@ -81,7 +81,7 @@ jobs:
       - name: Build .deb package
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          deno run --allow-read --allow-write --allow-run scripts/build-deb.ts "$VERSION" ${{ matrix.arch }} ${{ matrix.binary }}
+          deno task build:deb "$VERSION" ${{ matrix.arch }} ${{ matrix.binary }}
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4

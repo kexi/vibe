@@ -85,7 +85,7 @@ jobs:
       - name: Build .deb package
         run: |
           VERSION=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('deno.json')).version)")
-          deno run --allow-read --allow-write --allow-run scripts/build-deb.ts "$VERSION" ${{ matrix.arch }} vibe-test
+          deno task build:deb "$VERSION" ${{ matrix.arch }} vibe-test
 
   build:
     needs: [build-binaries, build-deb]
