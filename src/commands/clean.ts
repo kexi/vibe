@@ -1,6 +1,12 @@
-import { getMainWorktreePath, getRepoRoot, isMainWorktree } from "../utils/git.ts";
+import {
+  getMainWorktreePath,
+  getRepoRoot,
+  hasUncommittedChanges,
+  isMainWorktree,
+} from "../utils/git.ts";
 import { loadVibeConfig } from "../utils/config.ts";
 import { runHooks } from "../utils/hooks.ts";
+import { confirmPrompt } from "../utils/input.ts";
 
 export async function cleanCommand(): Promise<void> {
   try {
@@ -10,6 +16,18 @@ export async function cleanCommand(): Promise<void> {
         "Error: Cannot clean main worktree. Use this command from a secondary worktree.",
       );
       Deno.exit(1);
+    }
+
+    const hasChanges = await hasUncommittedChanges();
+    if (hasChanges) {
+      const shouldContinue = await confirmPrompt(
+        "Warning: This worktree has uncommitted changes. Do you want to continue?",
+      );
+      const userAborted = !shouldContinue;
+      if (userAborted) {
+        console.log("Clean operation cancelled.");
+        Deno.exit(0);
+      }
     }
 
     const currentWorktreePath = await getRepoRoot();
