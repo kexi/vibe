@@ -69,12 +69,18 @@ async function compile(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  const generateVersionOnly = Deno.args.includes("--generate-version-only");
+
   const { version, repository } = await getDenoJsonInfo();
   const commitHash = await getGitCommitHash();
 
   await generateVersionFile(version, commitHash, repository);
-  await compile();
 
+  if (generateVersionOnly) {
+    return;
+  }
+
+  await compile();
   console.log("Build completed successfully");
 }
 
