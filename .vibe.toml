@@ -1,0 +1,6 @@
+[hooks]
+post_start = [
+  "mise trust",
+  "mise install"
+]
+
