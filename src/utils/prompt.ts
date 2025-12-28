@@ -93,6 +93,10 @@ export async function select(
       return number - 1;
     }
 
-    Deno.stderr.writeSync(new TextEncoder().encode(`Invalid input. Please enter a number between 1 and ${choices.length}.\n`));
+    Deno.stderr.writeSync(
+      new TextEncoder().encode(
+        `Invalid input. Please enter a number between 1 and ${choices.length}.\n`,
+      ),
+    );
   }
 }
