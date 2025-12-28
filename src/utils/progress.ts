@@ -10,6 +10,7 @@ export interface ProgressNode {
   parent?: ProgressNode;
   startTime?: number;
   endTime?: number;
+  error?: string;
 }
 
 // Simple writer interface for compatibility
@@ -103,7 +104,8 @@ class TreeFormatter {
   ): string {
     const symbol = TreeFormatter.getStateSymbol(node.state, spinnerFrame);
     const style = TreeFormatter.getStateStyle(node.state);
-    const label = TreeFormatter.truncateLabel(node.label);
+    const labelText = node.error ? `${node.label} (${node.error})` : node.label;
+    const label = TreeFormatter.truncateLabel(labelText);
 
     return `${prefix}${style}${symbol} ${label}${AnsiRenderer.RESET}`;
   }
@@ -159,13 +161,17 @@ export class ProgressTracker {
   private lastRenderLineCount = 0;
   private spinnerInterval?: number;
   private spinnerFrameIndex = 0;
+  private finished = false;
 
   private textEncoder = new TextEncoder();
+  private cleanupHandler?: () => void;
 
   constructor(options: ProgressOptions = {}) {
     this.enabled = options.enabled ?? Deno.stderr.isTerminal();
     this.stream = options.stream ?? Deno.stderr;
-    this.spinnerFrames = options.spinnerFrames ?? [
+
+    // Validate spinner frames
+    const spinnerFrames = options.spinnerFrames ?? [
       "⠋",
       "⠙",
       "⠹",
@@ -177,7 +183,20 @@ export class ProgressTracker {
       "⠇",
       "⠏",
     ];
-    this.updateInterval = options.updateInterval ?? 80;
+    if (spinnerFrames.length === 0) {
+      throw new Error("spinnerFrames must contain at least one frame");
+    }
+    this.spinnerFrames = spinnerFrames;
+
+    // Validate update interval (min 16ms for 60fps, max 1000ms for 1fps)
+    const updateInterval = options.updateInterval ?? 80;
+    if (updateInterval < 16 || updateInterval > 1000) {
+      throw new Error(
+        "updateInterval must be between 16ms and 1000ms",
+      );
+    }
+    this.updateInterval = updateInterval;
+
     this.title = options.title ?? "Processing";
 
     // Create root node (not rendered, just holds phases)
@@ -197,17 +216,29 @@ export class ProgressTracker {
   private setupSignalHandlers(): void {
     if (!this.enabled) return;
 
-    const cleanup = () => {
+    this.cleanupHandler = () => {
       this.finish();
       Deno.exit(0);
     };
 
     try {
-      Deno.addSignalListener("SIGINT", cleanup);
-      Deno.addSignalListener("SIGTERM", cleanup);
+      Deno.addSignalListener("SIGINT", this.cleanupHandler);
+      Deno.addSignalListener("SIGTERM", this.cleanupHandler);
     } catch {
       // Signal handlers might not be available in all environments
     }
+  }
+
+  private removeSignalHandlers(): void {
+    if (!this.cleanupHandler) return;
+
+    try {
+      Deno.removeSignalListener("SIGINT", this.cleanupHandler);
+      Deno.removeSignalListener("SIGTERM", this.cleanupHandler);
+    } catch {
+      // Signal handlers might not be available in all environments
+    }
+    this.cleanupHandler = undefined;
   }
 
   private generateId(): string {
@@ -317,9 +348,7 @@ export class ProgressTracker {
 
     task.state = "failed";
     task.endTime = Date.now();
-    if (error) {
-      task.label = `${task.label} (${error})`;
-    }
+    task.error = error;
 
     // Auto-cascade: fail parent phase
     if (task.parent) {
@@ -353,7 +382,8 @@ export class ProgressTracker {
    * Stop the progress animation and show final state
    */
   finish(): void {
-    if (!this.enabled) return;
+    if (!this.enabled || this.finished) return;
+    this.finished = true;
 
     // Stop animation
     if (this.spinnerInterval !== undefined) {
@@ -369,6 +399,9 @@ export class ProgressTracker {
 
     // Add newline after progress
     this.write("\n");
+
+    // Remove signal handlers
+    this.removeSignalHandlers();
   }
 
   /**

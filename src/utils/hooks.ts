@@ -39,8 +39,8 @@ export async function runHooks(
       args: shellArgs,
       cwd,
       env: hookEnv,
-      stdout: trackerInfo ? "piped" : "piped",
-      stderr: trackerInfo ? "piped" : "inherit",
+      stdout: "piped",
+      stderr: "piped",
     });
     const result = await proc.output();
 
@@ -52,7 +52,9 @@ export async function runHooks(
       } catch (error) {
         // Fallback: if stderr write fails, at least don't crash the hook execution
         const errorMessage = error instanceof Error ? error.message : String(error);
-        console.error(`Warning: Failed to write hook output to stderr: ${errorMessage}`);
+        console.error(
+          `Warning: Failed to write hook output to stderr: ${errorMessage}`,
+        );
       }
     }
 
@@ -64,6 +66,19 @@ export async function runHooks(
           `Exit code ${result.code}`,
         );
       }
+
+      // Show stderr output for failed hooks to help with debugging
+      if (result.stderr.length > 0) {
+        try {
+          await Deno.stderr.write(result.stderr);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error(
+            `Warning: Failed to write hook stderr: ${errorMessage}`,
+          );
+        }
+      }
+
       throw new Error(`Hook failed with exit code ${result.code}: ${cmd}`);
     }
 
