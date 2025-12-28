@@ -117,6 +117,10 @@ jobs:
       - name: Install E2E test dependencies
         run: pnpm install
 
+      # Build node-pty native addon
+      - name: Build node-pty
+        run: pnpm rebuild node-pty
+
       # Run E2E tests with Vitest
       - name: Run E2E tests
         run: pnpm run test:e2e
