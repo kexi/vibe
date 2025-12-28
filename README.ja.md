@@ -45,19 +45,7 @@ deno compile --allow-run --allow-read --allow-write --allow-env --output vibe ma
 
 ## セットアップ
 
-### 方法A: `shell = true` を使用（推奨）
-
-`.vibe.toml` に `shell = true` を追加:
-
-```toml
-shell = true
-```
-
-worktreeディレクトリで `$SHELL` を直接起動します。シェル設定は不要です。
-
-### 方法B: シェルラッパーを使用
-
-`shell = true` を使わない場合、シェルに以下を追加:
+シェルに以下を追加:
 
 <details>
 <summary>Zsh (.zshrc)</summary>
@@ -134,9 +122,6 @@ vibe clean
 このファイルは通常Gitにコミットされ、チームで共有されます。
 
 ```toml
-# worktreeで$SHELLを起動（evalラッパー不要）
-shell = true
-
 # ファイルを元リポジトリからworktreeへコピー
 [copy]
 files = [".env"]
@@ -233,12 +218,6 @@ post_start_append = ["npm run dev"]
 
 # 結果: ["echo 'ローカルセットアップ'", "npm install", "npm run build", "npm run dev"]
 ```
-
-### 設定オプション
-
-| オプション | 型      | 説明                                           |
-| ---------- | ------- | ---------------------------------------------- |
-| `shell`    | boolean | `true`の場合、worktreeで`$SHELL`を起動         |
 
 ### 利用可能なフック
 
