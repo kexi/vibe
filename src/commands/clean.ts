@@ -1,4 +1,6 @@
 import { getMainWorktreePath, getRepoRoot, isMainWorktree } from "../utils/git.ts";
+import { loadVibeConfig } from "../utils/config.ts";
+import { runHooks } from "../utils/hooks.ts";
 
 export async function cleanCommand(): Promise<void> {
   try {
@@ -13,9 +15,30 @@ export async function cleanCommand(): Promise<void> {
     const currentWorktreePath = await getRepoRoot();
     const mainPath = await getMainWorktreePath();
 
-    console.log(
-      `cd '${mainPath}' && git worktree remove '${currentWorktreePath}'`,
-    );
+    // Load configuration
+    const config = await loadVibeConfig(currentWorktreePath);
+
+    // Run pre_clean hooks
+    const preCleanHooks = config?.hooks?.pre_clean;
+    if (preCleanHooks !== undefined) {
+      await runHooks(preCleanHooks, currentWorktreePath, {
+        worktreePath: currentWorktreePath,
+        originPath: mainPath,
+      });
+    }
+
+    // Build remove command
+    let removeCommand = `cd '${mainPath}' && git worktree remove '${currentWorktreePath}'`;
+
+    // Append post_clean hooks to remove command
+    const postCleanHooks = config?.hooks?.post_clean;
+    if (postCleanHooks !== undefined) {
+      for (const cmd of postCleanHooks) {
+        removeCommand += ` && ${cmd}`;
+      }
+    }
+
+    console.log(removeCommand);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${errorMessage}`);

@@ -1,5 +1,4 @@
 import { dirname, join } from "@std/path";
-import { parse } from "@std/toml";
 import {
   branchExists,
   getRepoName,
@@ -7,13 +6,9 @@ import {
   runGitCommand,
   sanitizeBranchName,
 } from "../utils/git.ts";
-import { isTrusted } from "../utils/trust.ts";
-
-interface VibeConfig {
-  shell?: boolean;
-  copy?: { files?: string[] };
-  hooks?: { post_start?: string[] };
-}
+import type { VibeConfig } from "../types/config.ts";
+import { loadVibeConfig } from "../utils/config.ts";
+import { runHooks } from "../utils/hooks.ts";
 
 interface StartOptions {
   reuse?: boolean;
@@ -49,65 +44,19 @@ export async function startCommand(
       await runGitCommand(["worktree", "add", "-b", branchName, worktreePath]);
     }
 
-    const vibeTomlPath = join(repoRoot, ".vibe.toml");
-    const vibeLocalTomlPath = join(repoRoot, ".vibe.local.toml");
-    const vibeTomlExists = await fileExists(vibeTomlPath);
-    const vibeLocalTomlExists = await fileExists(vibeLocalTomlPath);
-    let config: VibeConfig | undefined;
+    const config = await loadVibeConfig(repoRoot);
 
-    // Load .vibe.toml
-    if (vibeTomlExists) {
-      const trusted = await isTrusted(vibeTomlPath);
-      if (trusted) {
-        config = parse(await Deno.readTextFile(vibeTomlPath)) as VibeConfig;
-      } else {
-        console.error(
-          "Error: .vibe.toml file is not trusted or has been modified.\n" +
-            "Please run: vibe trust",
-        );
-        Deno.exit(1);
-      }
+    // Run pre_start hooks
+    const preStartHooks = config?.hooks?.pre_start;
+    if (preStartHooks !== undefined) {
+      await runHooks(preStartHooks, repoRoot, {
+        worktreePath,
+        originPath: repoRoot,
+      });
     }
 
-    // Load and merge .vibe.local.toml
-    if (vibeLocalTomlExists) {
-      const trusted = await isTrusted(vibeLocalTomlPath);
-      if (trusted) {
-        const localConfig = parse(
-          await Deno.readTextFile(vibeLocalTomlPath),
-        ) as VibeConfig;
-
-        // Merge if config exists, otherwise use localConfig
-        if (config) {
-          config = {
-            shell: localConfig.shell ?? config.shell,
-            copy: {
-              files: [
-                ...(config.copy?.files ?? []),
-                ...(localConfig.copy?.files ?? []),
-              ],
-            },
-            hooks: {
-              post_start: [
-                ...(config.hooks?.post_start ?? []),
-                ...(localConfig.hooks?.post_start ?? []),
-              ],
-            },
-          };
-        } else {
-          config = localConfig;
-        }
-      } else {
-        console.error(
-          "Error: .vibe.local.toml file is not trusted or has been modified.\n" +
-            "Please run: vibe trust",
-        );
-        Deno.exit(1);
-      }
-    }
-
-    // Execute config if present
-    if (config) {
+    // Continue with existing process (post_start hooks are executed in runVibeConfig)
+    if (config !== undefined) {
       await runVibeConfig(config, repoRoot, worktreePath);
     }
 
@@ -142,32 +91,17 @@ async function runVibeConfig(
   for (const file of config.copy?.files ?? []) {
     const src = join(repoRoot, file);
     const dest = join(worktreePath, file);
-    await Deno.copyFile(src, dest).catch(() => {});
+    await Deno.copyFile(src, dest).catch((err) => {
+      console.error(`Warning: Failed to copy ${file}: ${err.message}`);
+    });
   }
 
   // Run post_start hooks
-  const env = {
-    ...Deno.env.toObject(),
-    VIBE_WORKTREE_PATH: worktreePath,
-    VIBE_ORIGIN_PATH: repoRoot,
-  };
-  for (const cmd of config.hooks?.post_start ?? []) {
-    const proc = new Deno.Command("sh", {
-      args: ["-c", cmd],
-      cwd: worktreePath,
-      env,
-      stdout: "inherit",
-      stderr: "inherit",
+  const postStartHooks = config.hooks?.post_start;
+  if (postStartHooks !== undefined) {
+    await runHooks(postStartHooks, worktreePath, {
+      worktreePath,
+      originPath: repoRoot,
     });
-    await proc.output();
-  }
-}
-
-async function fileExists(path: string): Promise<boolean> {
-  try {
-    await Deno.stat(path);
-    return true;
-  } catch {
-    return false;
   }
 }

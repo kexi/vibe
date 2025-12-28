@@ -2,19 +2,22 @@ import { join } from "@std/path";
 import { getRepoRoot } from "../utils/git.ts";
 import { getSettingsPath, removeTrustedPath } from "../utils/trust.ts";
 
+const VIBE_TOML = ".vibe.toml";
+const VIBE_LOCAL_TOML = ".vibe.local.toml";
+
 export async function untrustCommand(): Promise<void> {
   try {
     const repoRoot = await getRepoRoot();
-    const vibeTomlPath = join(repoRoot, ".vibe.toml");
-    const vibeLocalTomlPath = join(repoRoot, ".vibe.local.toml");
+    const vibeTomlPath = join(repoRoot, VIBE_TOML);
+    const vibeLocalTomlPath = join(repoRoot, VIBE_LOCAL_TOML);
 
     const vibeTomlExists = await checkFileExists(vibeTomlPath);
     const vibeLocalTomlExists = await checkFileExists(vibeLocalTomlPath);
 
-    const noFilesFound = !vibeTomlExists && !vibeLocalTomlExists;
-    if (noFilesFound) {
+    const hasAnyFile = vibeTomlExists || vibeLocalTomlExists;
+    if (!hasAnyFile) {
       console.error(
-        `Error: .vibe.toml or .vibe.local.toml file not found in ${repoRoot}`,
+        `Error: Neither .vibe.toml nor .vibe.local.toml found in ${repoRoot}`,
       );
       Deno.exit(1);
     }
