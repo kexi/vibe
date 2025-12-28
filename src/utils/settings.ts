@@ -256,6 +256,17 @@ export async function removeTrustedPath(path: string): Promise<void> {
   await saveUserSettings(settings);
 }
 
+/**
+ * Check if a file is trusted (internal use only)
+ *
+ * @deprecated For internal use only. Use `verifyTrustAndRead()` instead to prevent TOCTOU vulnerabilities.
+ * This function only checks trust status without reading the file, which creates a race condition
+ * between verification and file read. Use `verifyTrustAndRead()` for atomic read-and-verify operations.
+ *
+ * @param vibeFilePath Path to the vibe config file
+ * @returns true if the file is trusted
+ * @internal
+ */
 export async function isTrusted(vibeFilePath: string): Promise<boolean> {
   const settings = await loadUserSettings();
 
@@ -279,6 +290,9 @@ export async function isTrusted(vibeFilePath: string): Promise<boolean> {
   const shouldSkipHashCheck = entry.skipHashCheck ??
     settings.skipHashCheck ?? false;
   if (shouldSkipHashCheck) {
+    console.warn(
+      `Warning: Hash verification is disabled for ${vibeFilePath}`,
+    );
     return true; // Trust unconditionally if skip is enabled
   }
 
@@ -323,6 +337,9 @@ export async function verifyTrustAndRead(
   const shouldSkipHashCheck = entry.skipHashCheck ??
     settings.skipHashCheck ?? false;
   if (shouldSkipHashCheck) {
+    console.warn(
+      `Warning: Hash verification is disabled for ${vibeFilePath}`,
+    );
     return { trusted: true, content: fileContent };
   }
 

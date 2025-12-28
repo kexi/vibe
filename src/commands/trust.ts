@@ -23,6 +23,7 @@ export async function trustCommand(): Promise<void> {
     }
 
     const trustedFiles: string[] = [];
+    const errors: Array<{ file: string; error: string }> = [];
 
     // Trust .vibe.toml
     if (vibeTomlExists) {
@@ -31,8 +32,7 @@ export async function trustCommand(): Promise<void> {
         trustedFiles.push(vibeTomlPath);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        console.error(`Error: Cannot trust .vibe.toml file: ${errorMessage}`);
-        Deno.exit(1);
+        errors.push({ file: ".vibe.toml", error: errorMessage });
       }
     }
 
@@ -43,11 +43,17 @@ export async function trustCommand(): Promise<void> {
         trustedFiles.push(vibeLocalTomlPath);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        console.error(
-          `Error: Cannot trust .vibe.local.toml file: ${errorMessage}`,
-        );
-        Deno.exit(1);
+        errors.push({ file: ".vibe.local.toml", error: errorMessage });
       }
+    }
+
+    // Report errors if any
+    if (errors.length > 0) {
+      console.error("Failed to trust the following files:");
+      for (const { file, error } of errors) {
+        console.error(`  ${file}: ${error}`);
+      }
+      Deno.exit(1);
     }
 
     // Display results

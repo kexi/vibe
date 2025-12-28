@@ -15,9 +15,9 @@ export async function calculateHashFromContent(
 }
 
 /**
- * ファイルのSHA-256ハッシュを計算
- * @param filePath ファイルパス
- * @returns ハッシュ値 (hex形式、64文字)
+ * Calculate SHA-256 hash of a file
+ * @param filePath File path
+ * @returns Hash value (hex format, 64 characters)
  */
 export async function calculateFileHash(filePath: string): Promise<string> {
   const fileContent = await Deno.readFile(filePath);

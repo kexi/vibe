@@ -64,3 +64,19 @@ Deno.test("verifyFileHash throws error for non-existent file", async () => {
     Deno.errors.NotFound,
   );
 });
+
+Deno.test("calculateFileHash handles empty files", async () => {
+  const tempFile = await Deno.makeTempFile();
+  await Deno.writeTextFile(tempFile, "");
+
+  const hash = await calculateFileHash(tempFile);
+
+  assertEquals(hash.length, 64); // SHA-256 = 64 hex chars
+  // SHA-256 hash of empty string
+  assertEquals(
+    hash,
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  );
+
+  await Deno.remove(tempFile);
+});
