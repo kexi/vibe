@@ -51,7 +51,7 @@ export async function startCommand(
     }
 
     // Load config and verify trust before creating worktree
-    const config = await loadVibeConfig(repoRoot);
+    const config: VibeConfig | undefined = await loadVibeConfig(repoRoot);
 
     // Check if directory already exists
     try {
@@ -87,7 +87,8 @@ export async function startCommand(
           }
 
           // Launch shell or output cd command
-          if (config && config.shell) {
+          const useShell = config?.shell === true;
+          if (useShell) {
             const shellPath = Deno.env.get("SHELL") ?? "/bin/sh";
             const command = new Deno.Command(shellPath, {
               cwd: worktreePath,
