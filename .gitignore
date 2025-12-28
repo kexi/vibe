@@ -2,6 +2,9 @@
 vibe
 vibe-e2e
 
+# Auto-generated files
+src/version.ts
+
 # OS
 .DS_Store
 Thumbs.db
