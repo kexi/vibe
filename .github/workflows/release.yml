@@ -35,6 +35,18 @@ jobs:
 
       - uses: jdx/mise-action@v2
 
+      - name: Generate version.ts
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          REPOSITORY=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('deno.json')).repository)")
+          cat > src/version.ts << EOF
+          // This file is auto-generated during release
+          export const VERSION = "$VERSION";
+          export const REPOSITORY_URL = "$REPOSITORY";
+          EOF
+          echo "Generated src/version.ts with VERSION = \"$VERSION\" and REPOSITORY_URL = \"$REPOSITORY\""
+
       - name: Compile
         run: deno compile --allow-run --allow-read --allow-write --allow-env --target ${{ matrix.target }} --output ${{ matrix.artifact }} main.ts
 
