@@ -262,13 +262,13 @@ export async function removeTrustedPath(path: string): Promise<void> {
 /**
  * Check if a file is trusted (internal use only)
  *
- * @deprecated For internal use only. Use `verifyTrustAndRead()` instead to prevent TOCTOU vulnerabilities.
+ * @internal This function is for internal use and testing only.
+ * Do not use in production code - use `verifyTrustAndRead()` instead to prevent TOCTOU vulnerabilities.
  * This function only checks trust status without reading the file, which creates a race condition
- * between verification and file read. Use `verifyTrustAndRead()` for atomic read-and-verify operations.
+ * between verification and file read.
  *
  * @param vibeFilePath Path to the vibe config file
  * @returns true if the file is trusted
- * @internal
  */
 export async function isTrusted(vibeFilePath: string): Promise<boolean> {
   const settings = await loadUserSettings();
