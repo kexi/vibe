@@ -217,3 +217,63 @@ Deno.test("expandCopyPatterns: handles pattern with no matches", async () => {
     await Deno.remove(tempDir, { recursive: true });
   }
 });
+
+Deno.test("expandGlobPattern: prevents path traversal attacks", async () => {
+  const tempDir = await Deno.makeTempDir();
+
+  try {
+    // Create a file outside the temp directory to test path traversal
+    const parentDir = join(tempDir, "..");
+    const outsideFile = join(parentDir, "outside.txt");
+    await Deno.writeTextFile(outsideFile, "sensitive data");
+
+    // Try to access file outside repoRoot using path traversal
+    const result = await expandGlobPattern("../*.txt", tempDir);
+
+    // Should return empty array (files outside repoRoot are filtered)
+    assertEquals(result, []);
+
+    // Clean up
+    await Deno.remove(outsideFile);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test("expandGlobPattern: handles absolute paths safely", async () => {
+  const tempDir = await Deno.makeTempDir();
+
+  try {
+    // Absolute path patterns should not match or should be handled safely
+    const result = await expandGlobPattern("/etc/passwd", tempDir);
+
+    // Should return empty array
+    assertEquals(result, []);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test("expandGlobPattern: handles symlinks", async () => {
+  const tempDir = await Deno.makeTempDir();
+
+  try {
+    // Create a real file
+    await Deno.writeTextFile(join(tempDir, "real.txt"), "content");
+
+    // Create a symlink to it
+    await Deno.symlink(
+      join(tempDir, "real.txt"),
+      join(tempDir, "link.txt"),
+    );
+
+    // Glob should include real files (symlinks may or may not be followed)
+    const result = await expandGlobPattern("*.txt", tempDir);
+
+    // Should at minimum include the real file
+    // Note: expandGlob behavior with symlinks follows Deno's default behavior
+    assertEquals(result.includes("real.txt"), true);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});

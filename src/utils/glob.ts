@@ -28,6 +28,15 @@ export async function expandGlobPattern(
       if (entry.isFile) {
         // Convert to relative path from repoRoot
         const relativePath = relative(repoRoot, entry.path);
+
+        // Security: Ensure the path does not escape repoRoot
+        if (relativePath.startsWith("..")) {
+          console.warn(
+            `Warning: Skipping file outside repository: ${relativePath}`,
+          );
+          continue;
+        }
+
         files.push(relativePath);
       }
     }

@@ -170,7 +170,7 @@ async function runVibeConfig(
 
     // Copy the file
     await Deno.copyFile(src, dest).catch((err) => {
-      console.error(`Warning: Failed to copy ${file}: ${err.message}`);
+      console.warn(`Warning: Failed to copy ${file}: ${err.message}`);
     });
   }
 

@@ -223,6 +223,8 @@ files = [
 **Notes:**
 - Directory structure is preserved when copying matched files
 - Recursive patterns (`**/*`) may be slower in large repositories
+  - Use specific patterns when possible (e.g., `config/**/*.json` instead of `**/*.json`)
+  - Pattern expansion happens once during worktree creation, not on every command
 
 ### Security: Hash Verification
 
