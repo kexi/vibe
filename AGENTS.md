@@ -1,17 +1,17 @@
 # AGENTS.md
 
-## ブランチ戦略
+## Branch Strategy
 
-| ブランチ  | 用途                                 |
-| --------- | ------------------------------------ |
-| `main`    | リリース用。安定版のみ。             |
-| `develop` | 開発用。トピックブランチのマージ先。 |
+| Branch    | Purpose                                        |
+| --------- | ---------------------------------------------- |
+| `main`    | For releases. Stable versions only.            |
+| `develop` | For development. Merge target for topic branches. |
 
-### ワークフロー
+### Workflow
 
-1. `develop`からトピックブランチを作成
-2. 作業完了後、`develop`にマージ
-3. リリース時に`develop`を`main`にマージ
+1. Create a topic branch from `develop`
+2. After completing work, merge into `develop`
+3. When releasing, merge `develop` into `main`
 
 ```
 main ────●─────────────────●────
@@ -21,37 +21,37 @@ develop ─┴──●──●──●──●─────┴────
             feat/a feat/b
 ```
 
-## 開発環境
+## Development Environment
 
-- ランタイム: Deno v2.x（`mise install`でセットアップ）
-- 実行: `deno run --allow-run --allow-read --allow-write --allow-env main.ts`
-- コンパイル:
+- Runtime: Deno v2.x (setup with `mise install`)
+- Run: `deno run --allow-run --allow-read --allow-write --allow-env main.ts`
+- Compile:
   `deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts`
 
-## テスト
+## Testing
 
-- リントチェック: `deno lint`
-- フォーマットチェック: `deno fmt --check`
-- 型チェック: `deno check main.ts`
-- コミット前に上記をすべてパスすること
+- Lint check: `deno lint`
+- Format check: `deno fmt --check`
+- Type check: `deno check main.ts`
+- All checks must pass before committing
 
-## ドキュメント
+## Documentation
 
-- README.md: 英語
-- README.ja.md: 日本語
+- README.md: English
+- README.ja.md: Japanese
 
-## PR規約
+## PR Guidelines
 
-- タイトル形式: `<type>: <description>`
+- Title format: `<type>: <description>`
   - type: feat, fix, docs, refactor, test, chore
-- `deno lint`と`deno fmt --check`を通すこと
-- 変更したコードにはテストを追加・更新すること
+- Must pass `deno lint` and `deno fmt --check`
+- Add or update tests for changed code
 
-## リリース
+## Release
 
-- `main`にマージ後、GitHubでリリースを作成・公開するとGitHub
-  Actionsでビルドされる
-- 手順:
+- After merging to `main`, create and publish a release on GitHub to trigger
+  GitHub Actions build
+- Steps:
   1. GitHub → Releases → Draft a new release
-  2. タグを作成（例: `v0.1.0`）
-  3. リリースノートを記入し「Publish release」
+  2. Create a tag (e.g., `v0.1.0`)
+  3. Write release notes and click "Publish release"
