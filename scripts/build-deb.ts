@@ -15,18 +15,19 @@ async function createDebPackage(config: DebConfig): Promise<void> {
   const packageName = `vibe_${version}_${arch}`;
   const packageDir = packageName;
 
-  // Create directory structure
-  await Deno.mkdir(`${packageDir}/DEBIAN`, { recursive: true });
-  await Deno.mkdir(`${packageDir}/usr/bin`, { recursive: true });
+  try {
+    // Create directory structure
+    await Deno.mkdir(`${packageDir}/DEBIAN`, { recursive: true });
+    await Deno.mkdir(`${packageDir}/usr/bin`, { recursive: true });
 
-  // Copy binary
-  await Deno.copyFile(binaryPath, `${packageDir}/usr/bin/vibe`);
+    // Copy binary
+    await Deno.copyFile(binaryPath, `${packageDir}/usr/bin/vibe`);
 
-  // Set executable permissions
-  await Deno.chmod(`${packageDir}/usr/bin/vibe`, 0o755);
+    // Set executable permissions
+    await Deno.chmod(`${packageDir}/usr/bin/vibe`, 0o755);
 
-  // Create control file
-  const controlContent = `Package: vibe
+    // Create control file
+    const controlContent = `Package: vibe
 Version: ${version}
 Architecture: ${arch}
 Maintainer: kexi <https://github.com/kexi>
@@ -40,28 +41,29 @@ Section: devel
 Priority: optional
 `;
 
-  await Deno.writeTextFile(`${packageDir}/DEBIAN/control`, controlContent);
+    await Deno.writeTextFile(`${packageDir}/DEBIAN/control`, controlContent);
 
-  // Build .deb package
-  const buildCommand = new Deno.Command("dpkg-deb", {
-    args: ["--build", "--root-owner-group", packageDir],
-    stdout: "inherit",
-    stderr: "inherit",
-  });
+    // Build .deb package
+    const buildCommand = new Deno.Command("dpkg-deb", {
+      args: ["--build", "--root-owner-group", packageDir],
+      stdout: "inherit",
+      stderr: "inherit",
+    });
 
-  const { success } = await buildCommand.output();
-  if (!success) {
-    throw new Error("Failed to build .deb package");
-  }
+    const { success } = await buildCommand.output();
+    if (!success) {
+      throw new Error("Failed to build .deb package");
+    }
 
-  console.log(`Successfully created ${packageName}.deb`);
-
-  // Clean up temporary directory
-  try {
-    await Deno.remove(packageDir, { recursive: true });
-    console.log(`Cleaned up temporary directory: ${packageDir}`);
-  } catch (error) {
-    console.warn(`Failed to clean up temporary directory: ${error.message}`);
+    console.log(`Successfully created ${packageName}.deb`);
+  } finally {
+    // Clean up temporary directory
+    try {
+      await Deno.remove(packageDir, { recursive: true });
+      console.log(`Cleaned up temporary directory: ${packageDir}`);
+    } catch (error) {
+      console.warn(`Failed to clean up temporary directory: ${error.message}`);
+    }
   }
 }
 
