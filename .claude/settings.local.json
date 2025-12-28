@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(deno check:*)",
+      "Bash(deno test:*)",
+      "Bash(deno run:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: Improve trust settings with JSON format like Claude Code\n\n- Store settings in ~/.config/vibe/settings.json \\(JSON format\\)\n- Add untrust command to remove trust\n- Add config command to show current settings\n- Support allow/deny permissions structure for future extensibility\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)",
+      "Bash(git checkout:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr view:*)",
+      "Bash(deno lint:*)"
+    ]
+  }
+}

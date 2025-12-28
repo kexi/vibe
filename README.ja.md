@@ -219,6 +219,44 @@ post_start_append = ["npm run dev"]
 | `VIBE_WORKTREE_PATH` | 作成されたworktreeの絶対パス |
 | `VIBE_ORIGIN_PATH`   | 元リポジトリの絶対パス       |
 
+## 開発
+
+### 利用可能なタスク
+
+すべてのタスクは`deno.json`に定義されており、ローカル開発とCIで同じチェックを実行できます：
+
+```bash
+# CIと同じチェックを実行
+deno task ci
+
+# 個別のチェック
+deno task fmt:check    # コードフォーマットをチェック
+deno task lint         # Linterを実行
+deno task check        # 型チェック
+deno task test         # テスト実行
+
+# フォーマット自動修正
+deno task fmt
+
+# 開発
+deno task dev          # 開発モードで実行
+deno task compile      # 全プラットフォーム向けにビルド
+```
+
+### ローカルでCIチェックを実行
+
+プッシュ前に、CIと同じチェックを実行できます：
+
+```bash
+deno task ci
+```
+
+以下を実行します：
+1. フォーマットチェック (`deno task fmt:check`)
+2. Linter (`deno task lint`)
+3. 型チェック (`deno task check`)
+4. テスト (`deno task test`)
+
 ## ライセンス
 
 Apache-2.0

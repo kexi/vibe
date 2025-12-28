@@ -220,6 +220,44 @@ The following environment variables are available in all hook commands:
 | `VIBE_WORKTREE_PATH` | Absolute path to the created worktree    |
 | `VIBE_ORIGIN_PATH`   | Absolute path to the original repository |
 
+## Development
+
+### Available Tasks
+
+All tasks are defined in `deno.json` to ensure consistency between local development and CI:
+
+```bash
+# Run all CI checks (same as CI runs)
+deno task ci
+
+# Individual checks
+deno task fmt:check    # Check code formatting
+deno task lint         # Run linter
+deno task check        # Type check
+deno task test         # Run tests
+
+# Auto-fix formatting
+deno task fmt
+
+# Development
+deno task dev          # Run in development mode
+deno task compile      # Build binaries for all platforms
+```
+
+### Running CI Checks Locally
+
+Before pushing, run the same checks that CI will run:
+
+```bash
+deno task ci
+```
+
+This runs:
+1. Format check (`deno task fmt:check`)
+2. Linter (`deno task lint`)
+3. Type check (`deno task check`)
+4. Tests (`deno task test`)
+
 ## License
 
 Apache-2.0
