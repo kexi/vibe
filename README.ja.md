@@ -4,6 +4,46 @@ Git Worktreeを簡単に管理するCLIツール。
 
 [English](README.md)
 
+## 使い方
+
+| コマンド                       | 説明                                                  |
+| ------------------------------ | ----------------------------------------------------- |
+| `vibe start <branch>`          | 新しいブランチでworktreeを作成                        |
+| `vibe start <branch> --reuse`  | 既存ブランチを使用してworktreeを作成                  |
+| `vibe clean`                   | 現在のworktreeを削除してメインに戻る（未コミットの変更がある場合は確認）                  |
+| `vibe trust`                   | `.vibe.toml`と`.vibe.local.toml`ファイルを信頼登録    |
+| `vibe untrust`                 | `.vibe.toml`と`.vibe.local.toml`ファイルの信頼を解除  |
+
+### 例
+
+```bash
+# 新しいブランチでworktreeを作成
+vibe start feat/new-feature
+
+# 既存ブランチを使用
+vibe start feat/existing-branch --reuse
+
+# 作業完了後、worktreeを削除
+vibe clean
+```
+
+### インタラクティブプロンプト
+
+`vibe start`は以下の状況でインタラクティブに対応します：
+
+- **ブランチが既に他のworktreeで使用中の場合**: 既存のworktreeに移動するか確認します
+- **ディレクトリが既に存在する場合**: 以下の選択肢から選べます
+  - 上書き（削除して再作成）
+  - 再利用（既存を使用）
+  - キャンセル
+
+```bash
+# ブランチが既に使用中の場合の例
+$ vibe start feat/new-feature
+ブランチ 'feat/new-feature' は既にworktree '/path/to/repo-feat-new-feature' で使用中です。
+既存のworktreeに移動しますか? (Y/n)
+```
+
 ## インストール
 
 ### Homebrew (macOS)
@@ -134,46 +174,6 @@ def --env vibe [...args] {
 function vibe { Invoke-Expression (& vibe.exe $args) }
 ```
 </details>
-
-## 使い方
-
-| コマンド                       | 説明                                                  |
-| ------------------------------ | ----------------------------------------------------- |
-| `vibe start <branch>`          | 新しいブランチでworktreeを作成                        |
-| `vibe start <branch> --reuse`  | 既存ブランチを使用してworktreeを作成                  |
-| `vibe clean`                   | 現在のworktreeを削除してメインに戻る（未コミットの変更がある場合は確認）                  |
-| `vibe trust`                   | `.vibe.toml`と`.vibe.local.toml`ファイルを信頼登録    |
-| `vibe untrust`                 | `.vibe.toml`と`.vibe.local.toml`ファイルの信頼を解除  |
-
-### 例
-
-```bash
-# 新しいブランチでworktreeを作成
-vibe start feat/new-feature
-
-# 既存ブランチを使用
-vibe start feat/existing-branch --reuse
-
-# 作業完了後、worktreeを削除
-vibe clean
-```
-
-### インタラクティブプロンプト
-
-`vibe start`は以下の状況でインタラクティブに対応します：
-
-- **ブランチが既に他のworktreeで使用中の場合**: 既存のworktreeに移動するか確認します
-- **ディレクトリが既に存在する場合**: 以下の選択肢から選べます
-  - 上書き（削除して再作成）
-  - 再利用（既存を使用）
-  - キャンセル
-
-```bash
-# ブランチが既に使用中の場合の例
-$ vibe start feat/new-feature
-ブランチ 'feat/new-feature' は既にworktree '/path/to/repo-feat-new-feature' で使用中です。
-既存のworktreeに移動しますか? (Y/n)
-```
 
 ## 設定
 
@@ -326,77 +326,9 @@ post_start_append = ["npm run dev"]
 | `VIBE_WORKTREE_PATH` | 作成されたworktreeの絶対パス |
 | `VIBE_ORIGIN_PATH`   | 元リポジトリの絶対パス       |
 
-## 開発
+## 開発への参加
 
-### 利用可能なタスク
-
-すべてのタスクは`deno.json`に定義されており、ローカル開発とCIで同じチェックを実行できます：
-
-```bash
-# CIと同じチェックを実行
-deno task ci
-
-# 個別のチェック
-deno task fmt:check    # コードフォーマットをチェック
-deno task lint         # Linterを実行
-deno task check        # 型チェック
-deno task test         # ユニットテスト実行
-deno task test:e2e     # E2Eテスト実行
-
-# フォーマット自動修正
-deno task fmt
-
-# 開発
-deno task dev          # 開発モードで実行
-deno task compile      # 全プラットフォーム向けにビルド
-```
-
-### E2Eテストの実行
-
-E2Eテストは、Node.jsとVitest、`node-pty`を使用して、インタラクティブなプロンプトを含むvibeコマンドの完全なワークフローをテストします：
-
-```bash
-# 最初にvibeバイナリをビルド
-deno task generate-version
-deno task compile:e2e
-
-# Node.js依存関係をインストール
-pnpm install
-
-# E2Eテストを実行
-pnpm run test:e2e
-
-# ウォッチモードでE2Eテストを実行
-pnpm run test:e2e:watch
-```
-
-E2Eテストは以下を実行します：
-- 分離のために一時的なGitリポジトリを作成
-- すべてのコマンド（start、clean、trust、untrust、verify、config）をテスト
-- PTYを使用してプロンプトとのユーザーインタラクションをシミュレート
-- コマンドの出力と動作を検証
-
-**必要要件**：
-- Node.js 20.x（node-ptyとの互換性のため推奨）
-- pnpm 10.x
-- node-ptyのビルドツール（ソースからリビルドする場合のみ必要）：
-  - Linux: `python3`、`make`、`g++`
-  - macOS: Xcode Command Line Tools
-  - Windows: Visual Studio Build Tools
-
-### ローカルでCIチェックを実行
-
-プッシュ前に、CIと同じチェックを実行できます：
-
-```bash
-deno task ci
-```
-
-以下を実行します：
-1. フォーマットチェック (`deno task fmt:check`)
-2. Linter (`deno task lint`)
-3. 型チェック (`deno task check`)
-4. テスト (`deno task test`)
+開発環境のセットアップとガイドラインについては [CONTRIBUTING.md](CONTRIBUTING.md) を参照してください。
 
 ## ライセンス
 

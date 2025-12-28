@@ -47,7 +47,7 @@ export async function startCommand(
         console.log(`cd '${existingWorktreePath}'`);
         Deno.exit(0);
       } else {
-        console.log("キャンセルしました");
+        console.error("キャンセルしました");
         Deno.exit(0);
       }
     }
@@ -95,7 +95,7 @@ export async function startCommand(
           return;
         } else {
           // Cancel
-          console.log("キャンセルしました");
+          console.error("キャンセルしました");
           Deno.exit(0);
         }
       }

@@ -4,6 +4,46 @@ A CLI tool for easy Git Worktree management.
 
 [日本語](README.ja.md)
 
+## Usage
+
+| Command                      | Description                                         |
+| ---------------------------- | --------------------------------------------------- |
+| `vibe start <branch>`        | Create a new worktree with a new branch             |
+| `vibe start <branch> --reuse`| Create a worktree using an existing branch          |
+| `vibe clean`                 | Delete current worktree and return to main (prompts if uncommitted changes exist) |
+| `vibe trust`                 | Trust `.vibe.toml` and `.vibe.local.toml` files     |
+| `vibe untrust`               | Untrust `.vibe.toml` and `.vibe.local.toml` files   |
+
+### Examples
+
+```bash
+# Create a worktree with a new branch
+vibe start feat/new-feature
+
+# Use an existing branch
+vibe start feat/existing-branch --reuse
+
+# After work is done, delete the worktree
+vibe clean
+```
+
+### Interactive Prompts
+
+`vibe start` handles the following situations interactively:
+
+- **When a branch is already in use by another worktree**: Confirms whether to navigate to the existing worktree
+- **When a directory already exists**: You can choose from the following options
+  - Overwrite (delete and recreate)
+  - Reuse (use existing)
+  - Cancel
+
+```bash
+# Example when branch is already in use
+$ vibe start feat/new-feature
+Branch 'feat/new-feature' is already in use by worktree '/path/to/repo-feat-new-feature'.
+Navigate to the existing worktree? (Y/n)
+```
+
 ## Installation
 
 ### Homebrew (macOS)
@@ -134,46 +174,6 @@ def --env vibe [...args] {
 function vibe { Invoke-Expression (& vibe.exe $args) }
 ```
 </details>
-
-## Usage
-
-| Command                      | Description                                         |
-| ---------------------------- | --------------------------------------------------- |
-| `vibe start <branch>`        | Create a new worktree with a new branch             |
-| `vibe start <branch> --reuse`| Create a worktree using an existing branch          |
-| `vibe clean`                 | Delete current worktree and return to main (prompts if uncommitted changes exist) |
-| `vibe trust`                 | Trust `.vibe.toml` and `.vibe.local.toml` files     |
-| `vibe untrust`               | Untrust `.vibe.toml` and `.vibe.local.toml` files   |
-
-### Examples
-
-```bash
-# Create a worktree with a new branch
-vibe start feat/new-feature
-
-# Use an existing branch
-vibe start feat/existing-branch --reuse
-
-# After work is done, delete the worktree
-vibe clean
-```
-
-### Interactive Prompts
-
-`vibe start` handles the following situations interactively:
-
-- **When a branch is already in use by another worktree**: Confirms whether to navigate to the existing worktree
-- **When a directory already exists**: You can choose from the following options
-  - Overwrite (delete and recreate)
-  - Reuse (use existing)
-  - Cancel
-
-```bash
-# Example when branch is already in use
-$ vibe start feat/new-feature
-Branch 'feat/new-feature' is already in use by worktree '/path/to/repo-feat-new-feature'.
-Navigate to the existing worktree? (Y/n)
-```
 
 ## Configuration
 
@@ -327,77 +327,9 @@ The following environment variables are available in all hook commands:
 | `VIBE_WORKTREE_PATH` | Absolute path to the created worktree    |
 | `VIBE_ORIGIN_PATH`   | Absolute path to the original repository |
 
-## Development
+## Contributing
 
-### Available Tasks
-
-All tasks are defined in `deno.json` to ensure consistency between local development and CI:
-
-```bash
-# Run all CI checks (same as CI runs)
-deno task ci
-
-# Individual checks
-deno task fmt:check    # Check code formatting
-deno task lint         # Run linter
-deno task check        # Type check
-deno task test         # Run unit tests
-deno task test:e2e     # Run E2E tests
-
-# Auto-fix formatting
-deno task fmt
-
-# Development
-deno task dev          # Run in development mode
-deno task compile      # Build binaries for all platforms
-```
-
-### Running E2E Tests
-
-E2E tests use Node.js with Vitest and `node-pty` to test the full vibe command workflow with interactive prompts:
-
-```bash
-# Build the vibe binary first
-deno task generate-version
-deno task compile:e2e
-
-# Install Node.js dependencies
-pnpm install
-
-# Run E2E tests
-pnpm run test:e2e
-
-# Run E2E tests in watch mode
-pnpm run test:e2e:watch
-```
-
-The E2E tests will:
-- Create temporary Git repositories for isolation
-- Test all commands (start, clean, trust, untrust, verify, config)
-- Simulate user interactions with prompts using PTY
-- Verify command output and behavior
-
-**Requirements**:
-- Node.js 20.x (recommended for compatibility with node-pty)
-- pnpm 10.x
-- Build tools for node-pty (only needed if rebuilding from source):
-  - Linux: `python3`, `make`, `g++`
-  - macOS: Xcode Command Line Tools
-  - Windows: Visual Studio Build Tools
-
-### Running CI Checks Locally
-
-Before pushing, run the same checks that CI will run:
-
-```bash
-deno task ci
-```
-
-This runs:
-1. Format check (`deno task fmt:check`)
-2. Linter (`deno task lint`)
-3. Type check (`deno task check`)
-4. Tests (`deno task test`)
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
 ## License
 

@@ -57,21 +57,21 @@ async function main(): Promise<void> {
   });
 
   if (args.version) {
-    console.log(`vibe ${BUILD_INFO.version}`);
-    console.log(
+    console.error(`vibe ${BUILD_INFO.version}`);
+    console.error(
       `Platform: ${BUILD_INFO.platform}-${BUILD_INFO.arch} (${BUILD_INFO.target})`,
     );
-    console.log(`Distribution: ${BUILD_INFO.distribution}`);
-    console.log(`Built: ${BUILD_INFO.buildTime} (${BUILD_INFO.buildEnv})`);
-    console.log();
-    console.log(`${BUILD_INFO.repository}#readme`);
+    console.error(`Distribution: ${BUILD_INFO.distribution}`);
+    console.error(`Built: ${BUILD_INFO.buildTime} (${BUILD_INFO.buildEnv})`);
+    console.error();
+    console.error(`${BUILD_INFO.repository}#readme`);
     Deno.exit(0);
   }
 
   const showHelp = args.help || args._.length === 0;
   if (showHelp) {
-    console.log(HELP_TEXT);
-    console.log(`${BUILD_INFO.repository}#readme`);
+    console.error(HELP_TEXT);
+    console.error(`${BUILD_INFO.repository}#readme`);
     Deno.exit(0);
   }
 
