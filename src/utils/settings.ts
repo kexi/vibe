@@ -10,6 +10,9 @@ const USER_SETTINGS_FILE = join(CONFIG_DIR, "settings.json");
 const CURRENT_SCHEMA_VERSION = 2;
 
 // Maximum number of hashes to keep per file (FIFO)
+// 100 hashes × 64 bytes (SHA-256 hex) = ~6.4KB per file
+// This limit prevents unbounded growth while supporting extensive branch switching
+// and configuration changes. In practice, most projects will use far fewer hashes.
 const MAX_HASH_HISTORY = 100;
 
 // ===== Schema Definitions =====
