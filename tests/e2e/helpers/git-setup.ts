@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -49,12 +49,13 @@ export async function setupTestGitRepo(): Promise<{
 }
 
 /**
- * Run a git command and throw an error if it fails
+ * Run a command and throw an error if it fails
+ * Uses execFileSync for better security (no shell injection)
  */
 function runCommand(args: string[], cwd: string): void {
   try {
     const [cmd, ...cmdArgs] = args;
-    execSync(`${cmd} ${cmdArgs.map((arg) => JSON.stringify(arg)).join(" ")}`, {
+    execFileSync(cmd, cmdArgs, {
       cwd,
       stdio: "pipe",
     });
@@ -72,7 +73,7 @@ function getWorktreeList(
   repoPath: string,
 ): { path: string; branch: string }[] {
   try {
-    const output = execSync("git worktree list --porcelain", {
+    const output = execFileSync("git", ["worktree", "list", "--porcelain"], {
       cwd: repoPath,
       encoding: "utf-8",
     });
