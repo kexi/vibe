@@ -21,8 +21,12 @@ async function readLine(): Promise<string> {
  * @returns true if user selects Yes, false otherwise
  */
 export async function confirm(message: string): Promise<boolean> {
+  // Check for VIBE_FORCE_INTERACTIVE environment variable (used in tests)
+  // This bypasses the isTerminal() check for PTY-based testing
+  const forceInteractive = Deno.env.get("VIBE_FORCE_INTERACTIVE") === "1";
+  const isInteractive = forceInteractive || (Deno.stdin.isTerminal?.() ?? false);
+
   // In non-interactive environments (CI, scripts), automatically return false
-  const isInteractive = Deno.stdin.isTerminal?.() ?? false;
   if (!isInteractive) {
     console.error(
       "Error: Cannot run in non-interactive mode with uncommitted changes.",
@@ -58,6 +62,15 @@ export async function select(
   message: string,
   choices: string[],
 ): Promise<number> {
+  // Check for VIBE_FORCE_INTERACTIVE environment variable (used in tests)
+  const forceInteractive = Deno.env.get("VIBE_FORCE_INTERACTIVE") === "1";
+  const isInteractive = forceInteractive || (Deno.stdin.isTerminal?.() ?? false);
+
+  // In non-interactive environments, throw an error (select() requires interaction)
+  if (!isInteractive) {
+    throw new Error("Cannot run select() in non-interactive mode");
+  }
+
   while (true) {
     console.log(`${message}`);
     for (let i = 0; i < choices.length; i++) {

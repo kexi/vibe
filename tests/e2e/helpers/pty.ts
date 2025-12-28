@@ -26,7 +26,11 @@ export class VibeCommandRunner {
 
     this.pty = pty.spawn(this.vibePath, args, {
       cwd: this.cwd,
-      env: { ...process.env, TERM: "xterm-256color" },
+      env: {
+        ...process.env,
+        TERM: "xterm-256color",
+        VIBE_FORCE_INTERACTIVE: "1", // Force interactive mode for testing
+      },
       cols: 80,
       rows: 30,
     });

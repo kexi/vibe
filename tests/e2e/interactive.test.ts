@@ -13,21 +13,17 @@ import {
 /**
  * Interactive prompt tests
  *
- * NOTE: These tests are currently skipped because the Deno binary's
- * isTerminal() check returns false when run through node-pty in tests,
- * which causes the confirm() and select() functions to exit early
- * (see src/utils/prompt.ts lines 25-31).
+ * These tests validate the interactive prompts in the vibe CLI using PTY infrastructure.
  *
- * The PTY infrastructure (waitForPattern, write) is working correctly,
- * but we cannot test interactive prompts end-to-end without the
- * Deno binary detecting stdin as a terminal.
+ * Solution for PTY testing:
+ * - The VIBE_FORCE_INTERACTIVE environment variable is set in pty.ts
+ * - This bypasses the isTerminal() check in src/utils/prompt.ts
+ * - Allows PTY-based tests to exercise interactive prompts
  *
- * Future improvements:
- * - Add a --force-interactive flag to bypass isTerminal() check
- * - Mock the isTerminal() function in tests
- * - Test prompts through manual QA
+ * The PTY infrastructure (waitForPattern, write) enables full E2E testing
+ * of user interactions without requiring an actual terminal.
  */
-describe.skip("interactive prompts", () => {
+describe("interactive prompts", () => {
   let cleanup: (() => Promise<void>) | null = null;
 
   afterEach(async () => {
