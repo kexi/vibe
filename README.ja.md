@@ -28,7 +28,7 @@ deno install --global --allow-run --allow-read --allow-write --allow-env jsr:@ke
 
 ```toml
 [tools]
-"vibe:jsr" = "@kexi/vibe"
+"jsr:@kexi/vibe" = "latest"
 ```
 
 その後、インストール:

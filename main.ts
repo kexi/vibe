@@ -18,7 +18,7 @@ Installation:
 
   # mise (.mise.toml)
   [tools]
-  "vibe:jsr" = "@kexi/vibe"
+  "jsr:@kexi/vibe" = "latest"
 
   # Manual build
   deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts
