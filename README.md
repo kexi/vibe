@@ -45,55 +45,81 @@ deno compile --allow-run --allow-read --allow-write --allow-env --output vibe ma
 
 ## Setup
 
-Add the following to your shell configuration:
+### Option A: Using `shell = true` (Recommended)
 
-### Zsh (.zshrc)
+Add `shell = true` to your `.vibe.toml`:
+
+```toml
+shell = true
+```
+
+This spawns your `$SHELL` directly in the worktree directory. No shell configuration needed.
+
+### Option B: Using shell wrapper
+
+If you don't use `shell = true`, add the following to your shell configuration:
+
+<details>
+<summary>Zsh (.zshrc)</summary>
 
 ```bash
 vibe() { eval "$(command vibe "$@")" }
 ```
+</details>
 
-### Bash (.bashrc)
+<details>
+<summary>Bash (.bashrc)</summary>
 
 ```bash
 vibe() { eval "$(command vibe "$@")"; }
 ```
+</details>
 
-### Fish (~/.config/fish/config.fish)
+<details>
+<summary>Fish (~/.config/fish/config.fish)</summary>
 
 ```fish
 function vibe
     eval (command vibe $argv)
 end
 ```
+</details>
 
-### Nushell (~/.config/nushell/config.nu)
+<details>
+<summary>Nushell (~/.config/nushell/config.nu)</summary>
 
 ```nu
 def --env vibe [...args] {
     ^vibe ...$args | lines | each { |line| nu -c $line }
 }
 ```
+</details>
 
-### PowerShell ($PROFILE)
+<details>
+<summary>PowerShell ($PROFILE)</summary>
 
 ```powershell
 function vibe { Invoke-Expression (& vibe.exe $args) }
 ```
+</details>
 
 ## Usage
 
-| Command               | Description                                |
-| --------------------- | ------------------------------------------ |
-| `vibe start <branch>` | Create a new worktree                      |
-| `vibe clean`          | Delete current worktree and return to main |
-| `vibe trust`          | Trust the `.vibe.toml` file                |
+| Command                      | Description                                |
+| ---------------------------- | ------------------------------------------ |
+| `vibe start <branch>`        | Create a new worktree with a new branch    |
+| `vibe start <branch> --reuse`| Create a worktree using an existing branch |
+| `vibe clean`                 | Delete current worktree and return to main |
+| `vibe trust`                 | Trust the `.vibe.toml` file                |
 
 ### Examples
 
 ```bash
 # Create a worktree with a new branch
 vibe start feat/new-feature
+
+# Use an existing branch
+vibe start feat/existing-branch --reuse
 
 # After work is done, delete the worktree
 vibe clean
@@ -105,6 +131,9 @@ Place a `.vibe.toml` file in the repository root to automatically run tasks on
 `vibe start`.
 
 ```toml
+# Spawn user's $SHELL in worktree (no eval wrapper needed)
+shell = true
+
 # Copy files from origin repository to worktree
 [copy]
 files = [".env", ".env.local"]
@@ -118,6 +147,12 @@ post_start = [
 ```
 
 Trust registration is required on first use with `vibe trust`.
+
+### Configuration Options
+
+| Option  | Type    | Description                                      |
+| ------- | ------- | ------------------------------------------------ |
+| `shell` | boolean | If `true`, spawns `$SHELL` in the worktree directory |
 
 ### Available Environment Variables
 
