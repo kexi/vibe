@@ -154,6 +154,47 @@ post_clean = ["echo 'Cleanup complete'"]
 
 Trust registration is required on first use with `vibe trust`.
 
+### Security: Hash Verification
+
+Vibe automatically verifies the integrity of `.vibe.toml` and `.vibe.local.toml` files using SHA-256 hashes. This prevents unauthorized modifications to configuration files.
+
+#### How it works
+- When you run `vibe trust`, Vibe calculates and stores the SHA-256 hash of the configuration files
+- When you run `vibe start`, Vibe verifies the file hasn't been modified by checking the hash
+- If the hash doesn't match, Vibe exits with an error and asks you to run `vibe trust` again
+
+#### Skip hash check (for development)
+You can disable hash verification in your settings file (`~/.config/vibe/settings.json`):
+
+**Global setting:**
+```json
+{
+  "version": 2,
+  "skipHashCheck": true,
+  "permissions": { "allow": [], "deny": [] }
+}
+```
+
+**Per-file setting:**
+```json
+{
+  "version": 2,
+  "permissions": {
+    "allow": [
+      {
+        "path": "/path/to/.vibe.toml",
+        "hashes": ["abc123..."],
+        "skipHashCheck": true
+      }
+    ],
+    "deny": []
+  }
+}
+```
+
+#### Branch switching
+Vibe stores multiple hashes per file (up to 100), so you can switch between branches without needing to re-trust files (as long as you've trusted each branch's version at least once).
+
 ### .vibe.local.toml
 
 Create a `.vibe.local.toml` file for local-only configuration overrides that
