@@ -14,6 +14,8 @@ brew install kexi/tap/vibe
 
 ### Linux
 
+> **注意**: WSL2ユーザーは、使用しているディストリビューションに応じて以下のLinuxインストール方法を使用できます。
+
 #### Ubuntu/Debian (.debパッケージ)
 
 ```bash
