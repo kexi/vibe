@@ -1,6 +1,6 @@
 import { execFileSync } from "child_process";
 import { mkdirSync } from "fs";
-import { dirname } from "path";
+import { basename, dirname } from "path";
 import { afterEach, describe, test } from "vitest";
 import { getVibePath, VibeCommandRunner } from "./helpers/pty.js";
 import { setupTestGitRepo } from "./helpers/git-setup.js";
@@ -36,7 +36,7 @@ describe("interactive prompts", () => {
 
     // Step 1: Create a worktree with branch "feat/test"
     const parentDir = dirname(repoPath);
-    const repoName = repoPath.split("/").pop()!;
+    const repoName = basename(repoPath);
     const worktreePath = `${parentDir}/${repoName}-feat-test`;
 
     const runner1 = new VibeCommandRunner(vibePath, repoPath);
@@ -133,7 +133,7 @@ describe("interactive prompts", () => {
 
     // Step 1: Create a worktree
     const parentDir = dirname(repoPath);
-    const repoName = repoPath.split("/").pop()!;
+    const repoName = basename(repoPath);
     const worktreePath = `${parentDir}/${repoName}-feat-overwrite`;
 
     const runner1 = new VibeCommandRunner(vibePath, repoPath);
@@ -190,7 +190,7 @@ describe("interactive prompts", () => {
 
     // Step 1: Create a worktree
     const parentDir = dirname(repoPath);
-    const repoName = repoPath.split("/").pop()!;
+    const repoName = basename(repoPath);
     const worktreePath = `${parentDir}/${repoName}-feat-reuse`;
 
     const runner1 = new VibeCommandRunner(vibePath, repoPath);
@@ -247,7 +247,7 @@ describe("interactive prompts", () => {
 
     // Step 1: Create a worktree
     const parentDir = dirname(repoPath);
-    const repoName = repoPath.split("/").pop()!;
+    const repoName = basename(repoPath);
     const worktreePath = `${parentDir}/${repoName}-feat-cancel`;
 
     const runner1 = new VibeCommandRunner(vibePath, repoPath);
@@ -302,7 +302,7 @@ describe("interactive prompts", () => {
 
     // Step 1: Create a worktree
     const parentDir = dirname(repoPath);
-    const repoName = repoPath.split("/").pop()!;
+    const repoName = basename(repoPath);
     const worktreePath = `${parentDir}/${repoName}-feat-invalid`;
 
     const runner1 = new VibeCommandRunner(vibePath, repoPath);

@@ -1,5 +1,5 @@
 import { execFileSync } from "child_process";
-import { dirname } from "path";
+import { basename, dirname } from "path";
 import { afterEach, describe, test } from "vitest";
 import { getVibePath, VibeCommandRunner } from "./helpers/pty.js";
 import { setupTestGitRepo } from "./helpers/git-setup.js";
@@ -23,7 +23,7 @@ describe("clean command", () => {
 
     // Create a worktree first
     const parentDir = dirname(repoPath);
-    const repoName = repoPath.split("/").pop()!;
+    const repoName = basename(repoPath);
     const worktreePath = `${parentDir}/${repoName}-feat-clean`;
 
     execFileSync("git", ["worktree", "add", "-b", "feat/clean", worktreePath], {

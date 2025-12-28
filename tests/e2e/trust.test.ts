@@ -52,36 +52,32 @@ describe("trust/untrust/verify commands", () => {
 
     const vibePath = getVibePath();
 
-    try {
-      // Create and trust .vibe.toml
-      writeFileSync(
-        join(repoPath, ".vibe.toml"),
-        '[hooks]\npost_start = ["echo test"]\n',
-      );
+    // Create and trust .vibe.toml
+    writeFileSync(
+      join(repoPath, ".vibe.toml"),
+      '[hooks]\npost_start = ["echo test"]\n',
+    );
 
-      const trustRunner = new VibeCommandRunner(vibePath, repoPath);
-      await trustRunner.spawn(["trust"]);
-      await trustRunner.waitForExit();
-      trustRunner.dispose();
+    const trustRunner = new VibeCommandRunner(vibePath, repoPath);
+    await trustRunner.spawn(["trust"]);
+    await trustRunner.waitForExit();
+    trustRunner.dispose();
 
-      // Run vibe verify
-      const verifyRunner = new VibeCommandRunner(vibePath, repoPath);
-      await verifyRunner.spawn(["verify"]);
-      await verifyRunner.waitForExit();
+    // Run vibe verify
+    const verifyRunner = new VibeCommandRunner(vibePath, repoPath);
+    await verifyRunner.spawn(["verify"]);
+    await verifyRunner.waitForExit();
 
-      // Verify exit code
-      assertExitCode(verifyRunner.getExitCode(), 0);
+    // Verify exit code
+    assertExitCode(verifyRunner.getExitCode(), 0);
 
-      const output = verifyRunner.getOutput();
+    const output = verifyRunner.getOutput();
 
-      // Verify output shows trust status
-      assertOutputContains(output, "TRUSTED");
-      assertOutputContains(output, "Hash History");
+    // Verify output shows trust status
+    assertOutputContains(output, "TRUSTED");
+    assertOutputContains(output, "Hash History");
 
-      verifyRunner.dispose();
-    } catch (error) {
-      throw error;
-    }
+    verifyRunner.dispose();
   });
 
   test("untrust: Remove from trusted list", async () => {
@@ -90,36 +86,32 @@ describe("trust/untrust/verify commands", () => {
 
     const vibePath = getVibePath();
 
-    try {
-      // Create and trust .vibe.toml
-      writeFileSync(
-        join(repoPath, ".vibe.toml"),
-        '[hooks]\npost_start = ["echo test"]\n',
-      );
+    // Create and trust .vibe.toml
+    writeFileSync(
+      join(repoPath, ".vibe.toml"),
+      '[hooks]\npost_start = ["echo test"]\n',
+    );
 
-      const trustRunner = new VibeCommandRunner(vibePath, repoPath);
-      await trustRunner.spawn(["trust"]);
-      await trustRunner.waitForExit();
-      trustRunner.dispose();
+    const trustRunner = new VibeCommandRunner(vibePath, repoPath);
+    await trustRunner.spawn(["trust"]);
+    await trustRunner.waitForExit();
+    trustRunner.dispose();
 
-      // Run vibe untrust
-      const untrustRunner = new VibeCommandRunner(vibePath, repoPath);
-      await untrustRunner.spawn(["untrust"]);
-      await untrustRunner.waitForExit();
+    // Run vibe untrust
+    const untrustRunner = new VibeCommandRunner(vibePath, repoPath);
+    await untrustRunner.spawn(["untrust"]);
+    await untrustRunner.waitForExit();
 
-      // Verify exit code
-      assertExitCode(untrustRunner.getExitCode(), 0);
+    // Verify exit code
+    assertExitCode(untrustRunner.getExitCode(), 0);
 
-      const output = untrustRunner.getOutput();
+    const output = untrustRunner.getOutput();
 
-      // Verify output confirms untrust
-      assertOutputContains(output, "Untrusted:");
-      assertOutputContains(output, ".vibe.toml");
+    // Verify output confirms untrust
+    assertOutputContains(output, "Untrusted:");
+    assertOutputContains(output, ".vibe.toml");
 
-      untrustRunner.dispose();
-    } catch (error) {
-      throw error;
-    }
+    untrustRunner.dispose();
   });
 
   test("trust: Handle .vibe.local.toml", async () => {

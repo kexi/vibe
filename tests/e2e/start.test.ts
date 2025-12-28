@@ -1,5 +1,5 @@
 import { execFileSync } from "child_process";
-import { dirname } from "path";
+import { basename, dirname } from "path";
 import { afterEach, describe, test } from "vitest";
 import { getVibePath, VibeCommandRunner } from "./helpers/pty.js";
 import { setupTestGitRepo } from "./helpers/git-setup.js";
@@ -41,7 +41,7 @@ describe("start command", () => {
 
       // Verify worktree was created
       const parentDir = dirname(repoPath);
-      const repoName = repoPath.split("/").pop()!;
+      const repoName = basename(repoPath);
       const worktreePath = `${parentDir}/${repoName}-feat-new-feature`;
 
       await assertDirectoryExists(worktreePath);
@@ -82,7 +82,7 @@ describe("start command", () => {
 
       // Verify worktree was created
       const parentDir = dirname(repoPath);
-      const repoName = repoPath.split("/").pop()!;
+      const repoName = basename(repoPath);
       const worktreePath = `${parentDir}/${repoName}-existing-branch`;
 
       await assertDirectoryExists(worktreePath);
