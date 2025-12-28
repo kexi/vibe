@@ -1,12 +1,13 @@
 {
   "name": "@kexi/vibe",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "license": "Apache-2.0",
   "repository": "https://github.com/kexi/vibe",
   "exports": "./main.ts",
   "tasks": {
     "dev": "deno run --allow-run --allow-read --allow-write --allow-env main.ts",
     "compile": "deno run --allow-run --allow-read --allow-write scripts/build.ts",
+    "build:deb": "deno run --allow-read --allow-write --allow-run scripts/build-deb.ts",
     "setup:dev": "echo 'Run: source .vibedev'",
     "test": "deno test --allow-read --allow-env --allow-write --allow-run",
     "test:coverage": "deno test --allow-read --allow-env --allow-write --allow-run --coverage=coverage",

@@ -9,6 +9,20 @@ import { REPOSITORY_URL, VERSION } from "./src/version.ts";
 
 const HELP_TEXT = `vibe - git worktree helper
 
+Installation:
+  # Homebrew (macOS)
+  brew install kexi/tap/vibe
+
+  # Deno (Cross-platform)
+  deno install -A --global jsr:@kexi/vibe
+
+  # mise (.mise.toml)
+  [tools]
+  "jsr:@kexi/vibe" = "latest"
+
+  # Manual build
+  deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts
+
 Usage:
   vibe start <branch-name> [--reuse]  Create a new worktree with the given branch
   vibe clean                          Remove current worktree and return to main

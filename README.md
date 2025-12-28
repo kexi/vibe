@@ -12,7 +12,51 @@ A CLI tool for easy Git Worktree management.
 brew install kexi/tap/vibe
 ```
 
+### Deno (JSR)
+
+```bash
+deno install -A --global jsr:@kexi/vibe
+```
+
+**Permissions**: For more security, you can specify exact permissions instead of `-A`:
+
+```bash
+deno install --global --allow-run --allow-read --allow-write --allow-env jsr:@kexi/vibe
+```
+
+**Using with mise**: Add to your `.mise.toml`:
+
+```toml
+[tools]
+"jsr:@kexi/vibe" = "latest"
+```
+
+Then run:
+
+```bash
+mise install
+```
+
 ### Linux
+
+> **Note**: WSL2 users can use the Linux installation methods below based on their distribution.
+
+#### Ubuntu/Debian (.deb package)
+
+```bash
+# x64
+curl -LO https://github.com/kexi/vibe/releases/latest/download/vibe_amd64.deb
+sudo apt install ./vibe_amd64.deb
+
+# ARM64
+curl -LO https://github.com/kexi/vibe/releases/latest/download/vibe_arm64.deb
+sudo apt install ./vibe_arm64.deb
+
+# Uninstall
+sudo apt remove vibe
+```
+
+#### Other Linux distributions
 
 ```bash
 # x64
@@ -26,7 +70,7 @@ chmod +x vibe
 sudo mv vibe /usr/local/bin/
 ```
 
-### Windows
+### Windows (PowerShell)
 
 ```powershell
 # Download
@@ -45,19 +89,7 @@ deno compile --allow-run --allow-read --allow-write --allow-env --output vibe ma
 
 ## Setup
 
-### Option A: Using `shell = true` (Recommended)
-
-Add `shell = true` to your `.vibe.toml`:
-
-```toml
-shell = true
-```
-
-This spawns your `$SHELL` directly in the worktree directory. No shell configuration needed.
-
-### Option B: Using shell wrapper
-
-If you don't use `shell = true`, add the following to your shell configuration:
+Add the following to your shell configuration:
 
 <details>
 <summary>Zsh (.zshrc)</summary>
@@ -126,6 +158,23 @@ vibe start feat/existing-branch --reuse
 vibe clean
 ```
 
+### Interactive Prompts
+
+`vibe start` handles the following situations interactively:
+
+- **When a branch is already in use by another worktree**: Confirms whether to navigate to the existing worktree
+- **When a directory already exists**: You can choose from the following options
+  - Overwrite (delete and recreate)
+  - Reuse (use existing)
+  - Cancel
+
+```bash
+# Example when branch is already in use
+$ vibe start feat/new-feature
+Branch 'feat/new-feature' is already in use by worktree '/path/to/repo-feat-new-feature'.
+Navigate to the existing worktree? (Y/n)
+```
+
 ## Configuration
 
 ### .vibe.toml
@@ -134,9 +183,6 @@ Place a `.vibe.toml` file in the repository root to automatically run tasks on
 `vibe start`. This file is typically committed to git and shared with the team.
 
 ```toml
-# Spawn user's $SHELL in worktree (no eval wrapper needed)
-shell = true
-
 # Copy files from origin repository to worktree
 [copy]
 files = [".env"]
@@ -234,12 +280,6 @@ post_start_append = ["npm run dev"]
 
 # Result: ["echo 'local setup'", "npm install", "npm run build", "npm run dev"]
 ```
-
-### Configuration Options
-
-| Option  | Type    | Description                                           |
-| ------- | ------- | ----------------------------------------------------- |
-| `shell` | boolean | If `true`, spawns `$SHELL` in the worktree directory  |
 
 ### Available Hooks
 

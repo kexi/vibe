@@ -12,7 +12,51 @@ Git Worktreeを簡単に管理するCLIツール。
 brew install kexi/tap/vibe
 ```
 
+### Deno (JSR)
+
+```bash
+deno install -A --global jsr:@kexi/vibe
+```
+
+**権限設定**: より安全にするため、`-A`の代わりに必要な権限のみを指定できます:
+
+```bash
+deno install --global --allow-run --allow-read --allow-write --allow-env jsr:@kexi/vibe
+```
+
+**miseを使う場合**: `.mise.toml`に追加:
+
+```toml
+[tools]
+"jsr:@kexi/vibe" = "latest"
+```
+
+その後、インストール:
+
+```bash
+mise install
+```
+
 ### Linux
+
+> **注意**: WSL2ユーザーは、使用しているディストリビューションに応じて以下のLinuxインストール方法を使用できます。
+
+#### Ubuntu/Debian (.debパッケージ)
+
+```bash
+# x64
+curl -LO https://github.com/kexi/vibe/releases/latest/download/vibe_amd64.deb
+sudo apt install ./vibe_amd64.deb
+
+# ARM64
+curl -LO https://github.com/kexi/vibe/releases/latest/download/vibe_arm64.deb
+sudo apt install ./vibe_arm64.deb
+
+# アンインストール
+sudo apt remove vibe
+```
+
+#### その他のLinuxディストリビューション
 
 ```bash
 # x64
@@ -26,7 +70,7 @@ chmod +x vibe
 sudo mv vibe /usr/local/bin/
 ```
 
-### Windows
+### Windows (PowerShell)
 
 ```powershell
 # ダウンロード
@@ -45,19 +89,7 @@ deno compile --allow-run --allow-read --allow-write --allow-env --output vibe ma
 
 ## セットアップ
 
-### 方法A: `shell = true` を使用（推奨）
-
-`.vibe.toml` に `shell = true` を追加:
-
-```toml
-shell = true
-```
-
-worktreeディレクトリで `$SHELL` を直接起動します。シェル設定は不要です。
-
-### 方法B: シェルラッパーを使用
-
-`shell = true` を使わない場合、シェルに以下を追加:
+シェルに以下を追加:
 
 <details>
 <summary>Zsh (.zshrc)</summary>
@@ -126,6 +158,23 @@ vibe start feat/existing-branch --reuse
 vibe clean
 ```
 
+### インタラクティブプロンプト
+
+`vibe start`は以下の状況でインタラクティブに対応します：
+
+- **ブランチが既に他のworktreeで使用中の場合**: 既存のworktreeに移動するか確認します
+- **ディレクトリが既に存在する場合**: 以下の選択肢から選べます
+  - 上書き（削除して再作成）
+  - 再利用（既存を使用）
+  - キャンセル
+
+```bash
+# ブランチが既に使用中の場合の例
+$ vibe start feat/new-feature
+ブランチ 'feat/new-feature' は既にworktree '/path/to/repo-feat-new-feature' で使用中です。
+既存のworktreeに移動しますか? (Y/n)
+```
+
 ## 設定
 
 ### .vibe.toml
@@ -134,9 +183,6 @@ vibe clean
 このファイルは通常Gitにコミットされ、チームで共有されます。
 
 ```toml
-# worktreeで$SHELLを起動（evalラッパー不要）
-shell = true
-
 # ファイルを元リポジトリからworktreeへコピー
 [copy]
 files = [".env"]
@@ -233,12 +279,6 @@ post_start_append = ["npm run dev"]
 
 # 結果: ["echo 'ローカルセットアップ'", "npm install", "npm run build", "npm run dev"]
 ```
-
-### 設定オプション
-
-| オプション | 型      | 説明                                           |
-| ---------- | ------- | ---------------------------------------------- |
-| `shell`    | boolean | `true`の場合、worktreeで`$SHELL`を起動         |
 
 ### 利用可能なフック
 

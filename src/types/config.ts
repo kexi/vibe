@@ -1,5 +1,4 @@
 export interface VibeConfig {
-  shell?: boolean;
   copy?: {
     files?: string[];
     files_prepend?: string[];

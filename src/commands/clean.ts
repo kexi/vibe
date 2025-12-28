@@ -6,7 +6,7 @@ import {
 } from "../utils/git.ts";
 import { loadVibeConfig } from "../utils/config.ts";
 import { runHooks } from "../utils/hooks.ts";
-import { confirmPrompt } from "../utils/input.ts";
+import { confirm } from "../utils/prompt.ts";
 
 export async function cleanCommand(): Promise<void> {
   try {
@@ -20,8 +20,8 @@ export async function cleanCommand(): Promise<void> {
 
     const hasChanges = await hasUncommittedChanges();
     if (hasChanges) {
-      const shouldContinue = await confirmPrompt(
-        "Warning: This worktree has uncommitted changes. Do you want to continue?",
+      const shouldContinue = await confirm(
+        "Warning: This worktree has uncommitted changes. Do you want to continue? (Y/n)",
       );
       if (!shouldContinue) {
         console.log("Clean operation cancelled.");

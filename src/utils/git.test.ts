@@ -1,5 +1,9 @@
 import { assertEquals } from "@std/assert";
-import { hasUncommittedChanges, sanitizeBranchName } from "./git.ts";
+import {
+  findWorktreeByBranch,
+  hasUncommittedChanges,
+  sanitizeBranchName,
+} from "./git.ts";
 
 Deno.test("sanitizeBranchName replaces slashes with dashes", () => {
   const result = sanitizeBranchName("feat/new-feature");
@@ -159,4 +163,13 @@ Deno.test("hasUncommittedChanges returns true when there are untracked files", a
     Deno.chdir(originalDir);
     throw error;
   }
+});
+
+Deno.test({
+  name: "findWorktreeByBranch returns null when branch is not found",
+  ignore: true, // Requires actual git repository, ignored for automated tests
+  async fn() {
+    const result = await findWorktreeByBranch("non-existent-branch");
+    assertEquals(result, null);
+  },
 });

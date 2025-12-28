@@ -1,0 +1,51 @@
+name: Publish to JSR
+
+on:
+  release:
+    types: [released]
+
+permissions:
+  contents: read
+  id-token: write  # JSR OIDC認証に必須
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+
+      - name: Validate version consistency
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          DENO_VERSION=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('deno.json')).version)")
+
+          if [ "$TAG_VERSION" != "$DENO_VERSION" ]; then
+            echo "Error: Version mismatch!"
+            echo "  Git tag version: $TAG_VERSION"
+            echo "  deno.json version: $DENO_VERSION"
+            exit 1
+          fi
+
+          echo "Version validation passed: $TAG_VERSION"
+
+      - name: Generate version.ts
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          REPOSITORY=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('deno.json')).repository)")
+          cat > src/version.ts << EOF
+          // This file is auto-generated during release
+          export const VERSION = "$VERSION";
+          export const REPOSITORY_URL = "$REPOSITORY";
+          EOF
+          echo "Generated src/version.ts with VERSION = \"$VERSION\""
+
+      - name: Validate JSR package
+        run: deno publish --dry-run --allow-dirty
+
+      - name: Publish to JSR
+        run: deno publish --allow-dirty

@@ -95,3 +95,20 @@ export async function hasUncommittedChanges(): Promise<boolean> {
   const hasChanges = output.trim().length > 0;
   return hasChanges;
 }
+
+/**
+ * Find the worktree path that is using the specified branch
+ * @param branchName Branch name
+ * @returns Worktree path, or null if not found
+ */
+export async function findWorktreeByBranch(
+  branchName: string,
+): Promise<string | null> {
+  const worktrees = await getWorktreeList();
+  const found = worktrees.find((w) => w.branch === branchName);
+  const isWorktreeFound = found !== undefined;
+  if (isWorktreeFound) {
+    return found.path;
+  }
+  return null;
+}
