@@ -71,7 +71,7 @@ async function main(): Promise<void> {
   const showHelp = args.help || args._.length === 0;
   if (showHelp) {
     console.log(HELP_TEXT);
-    console.log(`${REPOSITORY_URL}#readme`);
+    console.log(`${BUILD_INFO.repository}#readme`);
     Deno.exit(0);
   }
 
