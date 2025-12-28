@@ -48,10 +48,9 @@ export async function cleanCommand(): Promise<void> {
       tracker.start();
 
       // Add phase and tasks
-      let trackerInfo: HookTrackerInfo | undefined;
       const phaseId = tracker.addPhase("Pre-clean hooks");
       const taskIds = preCleanHooks.map((hook) => tracker.addTask(phaseId, hook));
-      trackerInfo = { tracker, taskIds };
+      const trackerInfo: HookTrackerInfo = { tracker, taskIds };
 
       await runHooks(preCleanHooks, currentWorktreePath, {
         worktreePath: currentWorktreePath,
