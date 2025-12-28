@@ -1,16 +1,26 @@
 import { dirname, join } from "@std/path";
 import {
-  getRepoRoot,
+  branchExists,
   getRepoName,
+  getRepoRoot,
   runGitCommand,
   sanitizeBranchName,
 } from "../utils/git.ts";
-import { isTrusted } from "../utils/trust.ts";
+import type { VibeConfig } from "../types/config.ts";
+import { loadVibeConfig } from "../utils/config.ts";
+import { runHooks } from "../utils/hooks.ts";
 
-export async function startCommand(branchName: string): Promise<void> {
+interface StartOptions {
+  reuse?: boolean;
+}
+
+export async function startCommand(
+  branchName: string,
+  options: StartOptions = {},
+): Promise<void> {
   const isBranchNameEmpty = !branchName;
   if (isBranchNameEmpty) {
-    console.error("echo 'Error: Branch name is required'");
+    console.error("Error: Branch name is required");
     Deno.exit(1);
   }
 
@@ -21,38 +31,77 @@ export async function startCommand(branchName: string): Promise<void> {
     const parentDir = dirname(repoRoot);
     const worktreePath = join(parentDir, `${repoName}-${sanitizedBranch}`);
 
-    await runGitCommand(["worktree", "add", "-b", branchName, worktreePath]);
-
-    const vibeFilePath = join(repoRoot, ".vibe");
-    const vibeFileExists = await fileExists(vibeFilePath);
-    if (vibeFileExists) {
-      const trusted = await isTrusted(vibeFilePath);
-      if (trusted) {
-        const runVibeCommand = new Deno.Command("zsh", {
-          args: [vibeFilePath],
-          cwd: worktreePath,
-          stdout: "inherit",
-          stderr: "inherit",
-        });
-        await runVibeCommand.output();
-      } else {
-        console.error(`echo '.vibe file found but not trusted. Run: vibe trust'`);
+    const branchAlreadyExists = await branchExists(branchName);
+    if (branchAlreadyExists) {
+      if (!options.reuse) {
+        console.error(
+          `Error: Branch '${branchName}' already exists. Use --reuse to use existing branch.`,
+        );
+        Deno.exit(1);
       }
+      await runGitCommand(["worktree", "add", worktreePath, branchName]);
+    } else {
+      await runGitCommand(["worktree", "add", "-b", branchName, worktreePath]);
     }
 
-    console.log(`cd '${worktreePath}'`);
+    const config = await loadVibeConfig(repoRoot);
+
+    // Run pre_start hooks
+    const preStartHooks = config?.hooks?.pre_start;
+    if (preStartHooks !== undefined) {
+      await runHooks(preStartHooks, repoRoot, {
+        worktreePath,
+        originPath: repoRoot,
+      });
+    }
+
+    // Continue with existing process (post_start hooks are executed in runVibeConfig)
+    if (config !== undefined) {
+      await runVibeConfig(config, repoRoot, worktreePath);
+    }
+
+    const useShell = config?.shell === true;
+    if (useShell) {
+      const shellPath = Deno.env.get("SHELL") ?? "/bin/sh";
+      const command = new Deno.Command(shellPath, {
+        cwd: worktreePath,
+        stdin: "inherit",
+        stdout: "inherit",
+        stderr: "inherit",
+      });
+      const process = command.spawn();
+      const status = await process.status;
+      Deno.exit(status.code);
+    } else {
+      console.log(`cd '${worktreePath}'`);
+    }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`echo 'Error: ${errorMessage.replace(/'/g, "'\\''")}'`);
+    console.error(`Error: ${errorMessage}`);
     Deno.exit(1);
   }
 }
 
-async function fileExists(path: string): Promise<boolean> {
-  try {
-    await Deno.stat(path);
-    return true;
-  } catch {
-    return false;
+async function runVibeConfig(
+  config: VibeConfig,
+  repoRoot: string,
+  worktreePath: string,
+): Promise<void> {
+  // Copy files from origin to worktree
+  for (const file of config.copy?.files ?? []) {
+    const src = join(repoRoot, file);
+    const dest = join(worktreePath, file);
+    await Deno.copyFile(src, dest).catch((err) => {
+      console.error(`Warning: Failed to copy ${file}: ${err.message}`);
+    });
+  }
+
+  // Run post_start hooks
+  const postStartHooks = config.hooks?.post_start;
+  if (postStartHooks !== undefined) {
+    await runHooks(postStartHooks, worktreePath, {
+      worktreePath,
+      originPath: repoRoot,
+    });
   }
 }

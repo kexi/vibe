@@ -2,13 +2,25 @@ import { parseArgs } from "@std/cli/parse-args";
 import { startCommand } from "./src/commands/start.ts";
 import { cleanCommand } from "./src/commands/clean.ts";
 import { trustCommand } from "./src/commands/trust.ts";
+import { untrustCommand } from "./src/commands/untrust.ts";
+import { verifyCommand } from "./src/commands/verify.ts";
+import { configCommand } from "./src/commands/config.ts";
+import { REPOSITORY_URL, VERSION } from "./src/version.ts";
 
 const HELP_TEXT = `vibe - git worktree helper
 
 Usage:
-  vibe start <branch-name>  Create a new worktree with the given branch
-  vibe clean                Remove current worktree and return to main
-  vibe trust                Trust .vibe file in current repository
+  vibe start <branch-name> [--reuse]  Create a new worktree with the given branch
+  vibe clean                          Remove current worktree and return to main
+  vibe trust                          Trust .vibe.toml in current repository
+  vibe untrust                        Remove trust for .vibe.toml in current repository
+  vibe verify                         Verify trust status and hash history
+  vibe config                         Show current settings
+
+Options:
+  -h, --help     Show this help message
+  -v, --version  Show version information
+  --reuse        Use existing branch instead of creating a new one
 
 Setup:
   Add this to your .zshrc:
@@ -16,19 +28,30 @@ Setup:
 
 Examples:
   vibe trust
+  vibe untrust
+  vibe verify
+  vibe config
   vibe start feat/new-feature
+  vibe start feat/existing --reuse
   vibe clean
 `;
 
 async function main(): Promise<void> {
   const args = parseArgs(Deno.args, {
-    boolean: ["help"],
-    alias: { h: "help" },
+    boolean: ["help", "version", "reuse"],
+    alias: { h: "help", v: "version" },
   });
+
+  if (args.version) {
+    console.log(`vibe ${VERSION}`);
+    console.log(`${REPOSITORY_URL}#readme`);
+    Deno.exit(0);
+  }
 
   const showHelp = args.help || args._.length === 0;
   if (showHelp) {
     console.log(HELP_TEXT);
+    console.log(`${REPOSITORY_URL}#readme`);
     Deno.exit(0);
   }
 
@@ -37,7 +60,8 @@ async function main(): Promise<void> {
   switch (command) {
     case "start": {
       const branchName = String(args._[1] ?? "");
-      await startCommand(branchName);
+      const reuse = args.reuse;
+      await startCommand(branchName, { reuse });
       break;
     }
     case "clean":
@@ -46,8 +70,17 @@ async function main(): Promise<void> {
     case "trust":
       await trustCommand();
       break;
+    case "untrust":
+      await untrustCommand();
+      break;
+    case "verify":
+      await verifyCommand();
+      break;
+    case "config":
+      await configCommand();
+      break;
     default:
-      console.error(`echo 'Unknown command: ${command}'`);
+      console.error(`Unknown command: ${command}`);
       Deno.exit(1);
   }
 }

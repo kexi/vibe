@@ -1,0 +1,28 @@
+# Compiled binary
+vibe
+
+# Generated files
+src/version.ts
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+.cursor/
+*.swp
+*.swo
+
+# Claude
+.claude/settings.local.json
+
+# Environment
+.env
+.env.local
+.env.*.local
+.vibe.local.toml
+
+# Logs
+*.log

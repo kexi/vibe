@@ -33,7 +33,9 @@ export async function isInsideWorktree(): Promise<boolean> {
   }
 }
 
-export async function getWorktreeList(): Promise<{ path: string; branch: string }[]> {
+export async function getWorktreeList(): Promise<
+  { path: string; branch: string }[]
+> {
   const output = await runGitCommand(["worktree", "list", "--porcelain"]);
   const lines = output.split("\n");
   const worktrees: { path: string; branch: string }[] = [];
@@ -68,4 +70,18 @@ export async function isMainWorktree(): Promise<boolean> {
 
 export function sanitizeBranchName(branchName: string): string {
   return branchName.replace(/\//g, "-");
+}
+
+export async function branchExists(branchName: string): Promise<boolean> {
+  try {
+    await runGitCommand([
+      "show-ref",
+      "--verify",
+      "--quiet",
+      `refs/heads/${branchName}`,
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
 }
