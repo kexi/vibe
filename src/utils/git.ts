@@ -87,8 +87,8 @@ export async function branchExists(branchName: string): Promise<boolean> {
 }
 
 /**
- * worktreeに変更があるかどうかをチェックする
- * @returns true=変更あり、false=変更なし
+ * Check if the worktree has any uncommitted changes
+ * @returns true if there are changes, false otherwise
  */
 export async function hasUncommittedChanges(): Promise<boolean> {
   const output = await runGitCommand(["status", "--porcelain"]);

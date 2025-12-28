@@ -23,8 +23,7 @@ export async function cleanCommand(): Promise<void> {
       const shouldContinue = await confirmPrompt(
         "Warning: This worktree has uncommitted changes. Do you want to continue?",
       );
-      const userAborted = !shouldContinue;
-      if (userAborted) {
+      if (!shouldContinue) {
         console.log("Clean operation cancelled.");
         Deno.exit(0);
       }

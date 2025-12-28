@@ -1,9 +1,18 @@
 /**
- * ユーザーに y/n の確認プロンプトを表示
- * @param message プロンプトメッセージ
- * @returns true=続行、false=中断
+ * Display a y/n confirmation prompt to the user
+ * @param message The prompt message to display
+ * @returns true to continue, false to cancel
  */
 export async function confirmPrompt(message: string): Promise<boolean> {
+  // In non-interactive environments (CI, scripts), automatically return false
+  const isInteractive = Deno.stdin.isTerminal?.() ?? false;
+  if (!isInteractive) {
+    console.error(
+      "Error: Cannot run in non-interactive mode with uncommitted changes.",
+    );
+    return false;
+  }
+
   console.log(`${message} (y/n): `);
 
   const buf = new Uint8Array(1024);
