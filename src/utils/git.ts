@@ -183,36 +183,35 @@ export async function getRepoInfoFromPath(
     const realPath = await Deno.realPath(absolutePath);
     const fileDir = dirname(realPath);
 
-    // Save current directory
-    const originalCwd = Deno.cwd();
+    // Use git -C to run commands in specific directory without changing CWD
+    // This avoids race conditions when multiple calls run concurrently
 
-    try {
-      // Change to the file's directory to run git commands
-      Deno.chdir(fileDir);
+    // Get repository root
+    const repoRoot = await runGitCommand(["-C", fileDir, "rev-parse", "--show-toplevel"]);
 
-      // Get repository root
-      const repoRoot = await getRepoRoot();
+    // Calculate relative path from repo root
+    const relativePath = relative(repoRoot, realPath);
 
-      // Calculate relative path from repo root
-      const relativePath = relative(repoRoot, realPath);
-
-      // Validate that relative path doesn't escape repository
-      if (relativePath.startsWith("..")) {
-        throw new Error("File is outside repository root");
-      }
-
-      // Get remote URL (may be undefined for local-only repos)
-      const remoteUrl = await getRemoteUrl();
-
-      return {
-        remoteUrl,
-        repoRoot,
-        relativePath,
-      };
-    } finally {
-      // Always restore original directory
-      Deno.chdir(originalCwd);
+    // Validate that relative path doesn't escape repository
+    if (relativePath.startsWith("..")) {
+      throw new Error("File is outside repository root");
     }
+
+    // Get remote URL (may be undefined for local-only repos)
+    let remoteUrl: string | undefined;
+    try {
+      const rawUrl = await runGitCommand(["-C", fileDir, "config", "--get", "remote.origin.url"]);
+      remoteUrl = normalizeRemoteUrl(rawUrl);
+    } catch {
+      // No remote configured
+      remoteUrl = undefined;
+    }
+
+    return {
+      remoteUrl,
+      repoRoot,
+      relativePath,
+    };
   } catch {
     // Not in a git repository or path doesn't exist
     return null;

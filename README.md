@@ -241,7 +241,7 @@ You can disable hash verification in your settings file (`~/.config/vibe/setting
 **Global setting:**
 ```json
 {
-  "version": 2,
+  "version": 3,
   "skipHashCheck": true,
   "permissions": { "allow": [], "deny": [] }
 }
@@ -250,11 +250,15 @@ You can disable hash verification in your settings file (`~/.config/vibe/setting
 **Per-file setting:**
 ```json
 {
-  "version": 2,
+  "version": 3,
   "permissions": {
     "allow": [
       {
-        "path": "/path/to/.vibe.toml",
+        "repoId": {
+          "remoteUrl": "github.com/user/repo",
+          "repoRoot": "/path/to/repo"
+        },
+        "relativePath": ".vibe.toml",
         "hashes": ["abc123..."],
         "skipHashCheck": true
       }
@@ -263,6 +267,8 @@ You can disable hash verification in your settings file (`~/.config/vibe/setting
   }
 }
 ```
+
+> **Note**: Version 3 uses repository-based trust identification. Settings are automatically migrated from v2 to v3 on first load. Trust is shared across all worktrees of the same repository.
 
 #### Branch switching
 Vibe stores multiple hashes per file (up to 100), so you can switch between branches without needing to re-trust files (as long as you've trusted each branch's version at least once).
