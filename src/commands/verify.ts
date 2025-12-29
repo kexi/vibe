@@ -1,5 +1,5 @@
 import { join } from "@std/path";
-import { getRepoRoot } from "../utils/git.ts";
+import { getRepoInfoFromPath, getRepoRoot } from "../utils/git.ts";
 import { calculateFileHash } from "../utils/hash.ts";
 import { loadUserSettings } from "../utils/trust.ts";
 
@@ -58,17 +58,34 @@ async function displayFileStatus(
   console.error(`File: ${fileName}`);
   console.error(`Path: ${filePath}`);
 
-  // Check if in deny list
-  const isDenied = settings.permissions.deny.includes(filePath);
-  if (isDenied) {
-    console.error("Status: ❌ DENIED");
+  // Get repository information
+  const repoInfo = await getRepoInfoFromPath(filePath);
+  if (!repoInfo) {
+    console.error("Status: ❌ NOT IN GIT REPOSITORY");
+    console.error(
+      "Action: File must be in a git repository to be trusted",
+    );
     return;
   }
 
-  // Find entry in allow list
-  const entry = settings.permissions.allow.find(
-    (item) => item.path === filePath,
-  );
+  // Display repository info
+  if (repoInfo.remoteUrl) {
+    console.error(`Repository: ${repoInfo.remoteUrl}`);
+  } else {
+    console.error(`Repository: (local) ${repoInfo.repoRoot}`);
+  }
+  console.error(`Relative Path: ${repoInfo.relativePath}`);
+
+  // Find entry in allow list using repository-based matching
+  const entry = settings.permissions.allow.find((item) => {
+    return item.relativePath === repoInfo.relativePath &&
+      (
+        (item.repoId.remoteUrl && repoInfo.remoteUrl &&
+          item.repoId.remoteUrl === repoInfo.remoteUrl) ||
+        (item.repoId.repoRoot && repoInfo.repoRoot &&
+          item.repoId.repoRoot === repoInfo.repoRoot)
+      );
+  });
 
   if (!entry) {
     console.error("Status: ⚠️  NOT TRUSTED");

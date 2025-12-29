@@ -241,7 +241,7 @@ Vibeは`.vibe.toml`と`.vibe.local.toml`ファイルの整合性をSHA-256ハッ
 **グローバル設定:**
 ```json
 {
-  "version": 2,
+  "version": 3,
   "skipHashCheck": true,
   "permissions": { "allow": [], "deny": [] }
 }
@@ -250,11 +250,15 @@ Vibeは`.vibe.toml`と`.vibe.local.toml`ファイルの整合性をSHA-256ハッ
 **ファイルごとの設定:**
 ```json
 {
-  "version": 2,
+  "version": 3,
   "permissions": {
     "allow": [
       {
-        "path": "/path/to/.vibe.toml",
+        "repoId": {
+          "remoteUrl": "github.com/user/repo",
+          "repoRoot": "/path/to/repo"
+        },
+        "relativePath": ".vibe.toml",
         "hashes": ["abc123..."],
         "skipHashCheck": true
       }
@@ -263,6 +267,8 @@ Vibeは`.vibe.toml`と`.vibe.local.toml`ファイルの整合性をSHA-256ハッ
   }
 }
 ```
+
+> **注意**: バージョン3ではリポジトリベースのトラスト識別を使用します。設定は初回ロード時にv2からv3へ自動移行されます。トラストは同じリポジトリのすべてのワークツリー間で共有されます。
 
 #### ブランチ切り替え
 Vibeはファイルごとに複数のハッシュ（最大100個）を保存するため、各ブランチのバージョンを一度信頼すれば、ブランチを切り替えても再度信頼登録する必要はありません。

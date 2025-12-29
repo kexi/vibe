@@ -39,7 +39,7 @@ describe("trust/untrust/verify commands", () => {
       const output = runner.getOutput();
 
       // Verify output confirms trust
-      assertOutputContains(output, "Trusted:");
+      assertOutputContains(output, "Trusted files:");
       assertOutputContains(output, ".vibe.toml");
     } finally {
       runner.dispose();
@@ -138,7 +138,7 @@ describe("trust/untrust/verify commands", () => {
       const output = runner.getOutput();
 
       // Verify output confirms trust
-      assertOutputContains(output, "Trusted:");
+      assertOutputContains(output, "Trusted files:");
       assertOutputContains(output, ".vibe.local.toml");
     } finally {
       runner.dispose();
