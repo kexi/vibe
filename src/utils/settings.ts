@@ -1,4 +1,4 @@
-import { join, dirname, basename } from "@std/path";
+import { join, dirname, basename, isAbsolute } from "@std/path";
 import { z } from "zod";
 import { calculateFileHash, calculateHashFromContent } from "./hash.ts";
 import { getRepoInfoFromPath, type RepoInfo } from "./git.ts";
@@ -299,7 +299,22 @@ export async function saveUserSettings(settings: VibeSettings): Promise<void> {
 
   await ensureConfigDir();
   const content = JSON.stringify(settings, null, 2) + "\n";
-  await Deno.writeTextFile(USER_SETTINGS_FILE, content);
+
+  // Use atomic write via temp file + rename to prevent corruption during concurrent writes
+  // Use crypto.randomUUID() to ensure unique temp files for concurrent operations
+  const tempFile = `${USER_SETTINGS_FILE}.tmp.${Date.now()}.${crypto.randomUUID()}`;
+  try {
+    await Deno.writeTextFile(tempFile, content);
+    await Deno.rename(tempFile, USER_SETTINGS_FILE);
+  } catch (error) {
+    // Clean up temp file if rename fails
+    try {
+      await Deno.remove(tempFile);
+    } catch {
+      // Ignore cleanup errors
+    }
+    throw error;
+  }
 }
 
 // ===== Helper Functions =====
@@ -337,6 +352,14 @@ function findMatchingEntry(
 // ===== Public API =====
 
 export async function addTrustedPath(path: string): Promise<void> {
+  // Validate path is absolute
+  if (!isAbsolute(path)) {
+    throw new Error(
+      `Path must be absolute: ${path}\n` +
+        `Relative paths are not supported for security reasons.`,
+    );
+  }
+
   const settings = await loadUserSettings();
 
   // Get repository information

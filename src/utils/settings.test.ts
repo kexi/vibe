@@ -1,4 +1,5 @@
 import { assertEquals } from "@std/assert";
+import { join } from "@std/path";
 import {
   _internal,
   addTrustedPath,
@@ -56,14 +57,14 @@ Deno.test("getSchemaVersion returns correct version for versioned settings", () 
 
 Deno.test("migrateSettings migrates v1 to v3 (via v2) with repository info", async () => {
   // Create temporary file in git repository
-  const tempFile = `.test-migration-${Date.now()}.tmp`;
+  const tempFile = join(Deno.cwd(), `.test-migration-${Date.now()}.tmp`);
   await Deno.writeTextFile(tempFile, "test content");
 
   try {
     const v1Data = {
       version: 1,
       permissions: {
-        allow: [Deno.cwd() + "/" + tempFile], // Absolute path for v1
+        allow: [tempFile], // Absolute path for v1
         deny: [],
       },
     };
@@ -95,7 +96,7 @@ Deno.test("createDefaultSettings returns settings with current version", () => {
 
 Deno.test("addTrustedPath and isTrusted work correctly", async () => {
   // Create temp file in git repository (current directory)
-  const tempFile = `.test-${Date.now()}.tmp`;
+  const tempFile = join(Deno.cwd(), `.test-${Date.now()}.tmp`);
   await Deno.writeTextFile(tempFile, "test content");
 
   try {
@@ -118,7 +119,7 @@ Deno.test("addTrustedPath and isTrusted work correctly", async () => {
 });
 
 Deno.test("removeTrustedPath removes path from allow list", async () => {
-  const tempFile = `.test-${Date.now()}.tmp`;
+  const tempFile = join(Deno.cwd(), `.test-${Date.now()}.tmp`);
   await Deno.writeTextFile(tempFile, "test content");
 
   try {
@@ -137,7 +138,7 @@ Deno.test("removeTrustedPath removes path from allow list", async () => {
 });
 
 Deno.test("addTrustedPath adds hash to existing path without duplicates", async () => {
-  const tempFile = `.test-${Date.now()}.tmp`;
+  const tempFile = join(Deno.cwd(), `.test-${Date.now()}.tmp`);
   await Deno.writeTextFile(tempFile, "content");
 
   try {
@@ -171,7 +172,7 @@ Deno.test("addTrustedPath adds hash to existing path without duplicates", async 
 });
 
 Deno.test("isTrusted returns true for any matching hash", async () => {
-  const tempFile = `.test-${Date.now()}.tmp`;
+  const tempFile = join(Deno.cwd(), `.test-${Date.now()}.tmp`);
   await Deno.writeTextFile(tempFile, "original content");
 
   try {
@@ -204,7 +205,7 @@ Deno.test("isTrusted returns true for any matching hash", async () => {
 });
 
 Deno.test("isTrusted skips hash check when skipHashCheck is true (path level)", async () => {
-  const tempFile = `.test-${Date.now()}.tmp`;
+  const tempFile = join(Deno.cwd(), `.test-${Date.now()}.tmp`);
   await Deno.writeTextFile(tempFile, "original content");
 
   try {
@@ -233,7 +234,7 @@ Deno.test("isTrusted skips hash check when skipHashCheck is true (path level)", 
 });
 
 Deno.test("isTrusted skips hash check when skipHashCheck is true (global level)", async () => {
-  const tempFile = `.test-${Date.now()}.tmp`;
+  const tempFile = join(Deno.cwd(), `.test-${Date.now()}.tmp`);
   await Deno.writeTextFile(tempFile, "original content");
 
   try {
@@ -262,7 +263,7 @@ Deno.test("isTrusted skips hash check when skipHashCheck is true (global level)"
 });
 
 Deno.test("path-level skipHashCheck overrides global skipHashCheck", async () => {
-  const tempFile = `.test-${Date.now()}.tmp`;
+  const tempFile = join(Deno.cwd(), `.test-${Date.now()}.tmp`);
   await Deno.writeTextFile(tempFile, "original content");
 
   try {
@@ -294,7 +295,7 @@ Deno.test("path-level skipHashCheck overrides global skipHashCheck", async () =>
 });
 
 Deno.test("Hash history follows FIFO when exceeding MAX_HASH_HISTORY", async () => {
-  const tempFile = `.test-fifo-${Date.now()}.tmp`;
+  const tempFile = join(Deno.cwd(), `.test-fifo-${Date.now()}.tmp`);
 
   try {
     // Add 101 different hashes (exceeding MAX_HASH_HISTORY of 100)
@@ -340,7 +341,7 @@ Deno.test("Hash history follows FIFO when exceeding MAX_HASH_HISTORY", async () 
 // ===== Additional Test Coverage =====
 
 Deno.test("Concurrent addTrustedPath calls handle race conditions", async () => {
-  const tempFile = `.test-concurrent-${Date.now()}.tmp`;
+  const tempFile = join(Deno.cwd(), `.test-concurrent-${Date.now()}.tmp`);
   await Deno.writeTextFile(tempFile, "test content");
 
   try {

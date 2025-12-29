@@ -1,4 +1,4 @@
-import { relative, dirname } from "@std/path";
+import { relative, dirname, normalize, isAbsolute, SEPARATOR } from "@std/path";
 
 export async function runGitCommand(args: string[]): Promise<string> {
   const command = new Deno.Command("git", {
@@ -189,12 +189,26 @@ export async function getRepoInfoFromPath(
     // Get repository root
     const repoRoot = await runGitCommand(["-C", fileDir, "rev-parse", "--show-toplevel"]);
 
-    // Calculate relative path from repo root
-    const relativePath = relative(repoRoot, realPath);
+    // Validate that repoRoot is absolute
+    if (!isAbsolute(repoRoot)) {
+      throw new Error("Repository root must be an absolute path");
+    }
 
-    // Validate that relative path doesn't escape repository
-    if (relativePath.startsWith("..")) {
+    // Normalize paths to prevent traversal attacks
+    const normalizedRoot = normalize(repoRoot);
+    const normalizedPath = normalize(realPath);
+
+    // Verify realPath is within repoRoot by checking if it starts with repoRoot + separator
+    if (!normalizedPath.startsWith(normalizedRoot + SEPARATOR) && normalizedPath !== normalizedRoot) {
       throw new Error("File is outside repository root");
+    }
+
+    // Calculate relative path from repo root
+    const relativePath = relative(normalizedRoot, normalizedPath);
+
+    // Additional safety check: ensure relative path doesn't contain ..
+    if (relativePath.includes("..")) {
+      throw new Error("Invalid relative path contains parent directory references");
     }
 
     // Get remote URL (may be undefined for local-only repos)
