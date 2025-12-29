@@ -324,6 +324,27 @@ post_start_append = ["npm run dev"]
 
 **Note**: `post_clean` hooks are appended to the removal command with `&&`, executing in the main repository directory after the `git worktree remove` command completes.
 
+### Hook Output Behavior
+
+Vibe displays a real-time progress tree during hook execution to show task status. Hook output is handled differently depending on the context:
+
+- **When progress display is active**: Hook stdout is suppressed to keep the progress tree clean and avoid visual clutter. Only the progress tree is shown.
+- **When progress display is not active**: Hook stdout is written to stderr (to avoid interfering with shell wrapper `eval`).
+- **Failed hooks**: stderr output is ALWAYS shown regardless of progress display, to help with debugging.
+
+Example progress display:
+```
+✶ Setting up worktree feature/new-ui…
+  ⎿  ☒ Pre-start hooks
+       ⎿  ☒ npm install
+          ☒ cargo build --release
+     ⠋ Copying files
+       ⎿  ⠋ .env.local
+          ☐ node_modules/
+```
+
+**Note**: Progress display auto-disables in non-TTY environments (e.g., CI/CD), and hook output will be shown normally.
+
 ### Environment Variables
 
 The following environment variables are available in all hook commands:
