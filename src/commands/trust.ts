@@ -1,5 +1,5 @@
 import { join } from "@std/path";
-import { getRepoRoot } from "../utils/git.ts";
+import { getRepoRoot, getRepoInfoFromPath } from "../utils/git.ts";
 import { addTrustedPath, getSettingsPath } from "../utils/trust.ts";
 
 const VIBE_TOML = ".vibe.toml";
@@ -22,14 +22,15 @@ export async function trustCommand(): Promise<void> {
       Deno.exit(1);
     }
 
-    const trustedFiles: string[] = [];
+    const trustedFiles: Array<{ path: string; repoInfo: Awaited<ReturnType<typeof getRepoInfoFromPath>> }> = [];
     const errors: Array<{ file: string; error: string }> = [];
 
     // Trust .vibe.toml
     if (vibeTomlExists) {
       try {
         await addTrustedPath(vibeTomlPath);
-        trustedFiles.push(vibeTomlPath);
+        const repoInfo = await getRepoInfoFromPath(vibeTomlPath);
+        trustedFiles.push({ path: vibeTomlPath, repoInfo });
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         errors.push({ file: ".vibe.toml", error: errorMessage });
@@ -40,7 +41,8 @@ export async function trustCommand(): Promise<void> {
     if (vibeLocalTomlExists) {
       try {
         await addTrustedPath(vibeLocalTomlPath);
-        trustedFiles.push(vibeLocalTomlPath);
+        const repoInfo = await getRepoInfoFromPath(vibeLocalTomlPath);
+        trustedFiles.push({ path: vibeLocalTomlPath, repoInfo });
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         errors.push({ file: ".vibe.local.toml", error: errorMessage });
@@ -57,10 +59,18 @@ export async function trustCommand(): Promise<void> {
     }
 
     // Display results
-    for (const file of trustedFiles) {
-      console.error(`Trusted: ${file}`);
+    console.error("Trusted files:");
+    for (const { path, repoInfo } of trustedFiles) {
+      console.error(`  ${path}`);
+      if (repoInfo?.remoteUrl) {
+        console.error(`    Repository: ${repoInfo.remoteUrl}`);
+        console.error(`    Relative Path: ${repoInfo.relativePath}`);
+      } else if (repoInfo?.repoRoot) {
+        console.error(`    Repository: (local) ${repoInfo.repoRoot}`);
+        console.error(`    Relative Path: ${repoInfo.relativePath}`);
+      }
     }
-    console.error(`Settings: ${getSettingsPath()}`);
+    console.error(`\nSettings: ${getSettingsPath()}`);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${errorMessage}`);

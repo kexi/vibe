@@ -1,13 +1,14 @@
-import { join } from "@std/path";
+import { join, dirname, basename } from "@std/path";
 import { z } from "zod";
 import { calculateFileHash, calculateHashFromContent } from "./hash.ts";
+import { getRepoInfoFromPath, type RepoInfo } from "./git.ts";
 
 // Settings file path
 const CONFIG_DIR = join(Deno.env.get("HOME") ?? "", ".config", "vibe");
 const USER_SETTINGS_FILE = join(CONFIG_DIR, "settings.json");
 
 // Current schema version
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 3;
 
 // Maximum number of hashes to keep per file (FIFO)
 // 100 hashes × 64 bytes (SHA-256 hex) = ~6.4KB per file
@@ -48,8 +49,26 @@ const SettingsSchemaV2 = z.object({
   }),
 });
 
+// v3 schema - repository-based trust
+const SettingsSchemaV3 = z.object({
+  version: z.literal(3),
+  skipHashCheck: z.boolean().optional(),
+  permissions: z.object({
+    allow: z.array(z.object({
+      repoId: z.object({
+        remoteUrl: z.string().optional(),
+        repoRoot: z.string().optional(),
+      }),
+      relativePath: z.string(),
+      hashes: z.array(z.string()),
+      skipHashCheck: z.boolean().optional(),
+    })),
+    deny: z.array(z.string()),
+  }),
+});
+
 // Current schema in use
-const CurrentSettingsSchema = SettingsSchemaV2;
+const CurrentSettingsSchema = SettingsSchemaV3;
 export type VibeSettings = z.infer<typeof CurrentSettingsSchema>;
 
 // ===== Migration =====
@@ -100,6 +119,84 @@ const migrations: Record<number, MigrationFn> = {
       permissions: {
         allow: allowWithHashes,
         deny: v1.data.permissions.deny,
+      },
+    };
+  },
+
+  // Migration from v2 to v3 (repository-based trust)
+  2: async (data: unknown) => {
+    const v2 = SettingsSchemaV2.safeParse(data);
+    if (!v2.success) {
+      return data;
+    }
+
+    const migrationWarnings: string[] = [];
+    const allowWithRepoInfo = await Promise.all(
+      v2.data.permissions.allow.map(async (entry) => {
+        try {
+          // Get repository information from the absolute path
+          const repoInfo = await getRepoInfoFromPath(entry.path);
+
+          if (repoInfo) {
+            // Successfully converted to repository-based entry
+            return {
+              repoId: {
+                remoteUrl: repoInfo.remoteUrl,
+                repoRoot: repoInfo.repoRoot,
+              },
+              relativePath: repoInfo.relativePath,
+              hashes: entry.hashes,
+              skipHashCheck: entry.skipHashCheck,
+            };
+          } else {
+            // Not in a git repository - use fallback
+            migrationWarnings.push(
+              `Cannot determine repository for ${entry.path}. ` +
+                `Using directory as fallback.`,
+            );
+            return {
+              repoId: {
+                repoRoot: dirname(entry.path),
+              },
+              relativePath: basename(entry.path),
+              hashes: entry.hashes,
+              skipHashCheck: entry.skipHashCheck,
+            };
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          migrationWarnings.push(
+            `Migration failed for ${entry.path}: ${errorMessage}. ` +
+              `Entry will be preserved with hash checking disabled.`,
+          );
+          // Preserve entry with safe fallback
+          return {
+            repoId: {
+              repoRoot: dirname(entry.path),
+            },
+            relativePath: basename(entry.path),
+            hashes: entry.hashes || [],
+            skipHashCheck: true,
+          };
+        }
+      }),
+    );
+
+    // Display warnings after migration
+    if (migrationWarnings.length > 0) {
+      console.warn("\n⚠️  Migration Warnings:");
+      migrationWarnings.forEach((w) => console.warn(`  - ${w}`));
+      console.warn(
+        "\nRun 'vibe verify' to check trust status and 'vibe trust' to update entries.\n",
+      );
+    }
+
+    return {
+      version: 3,
+      skipHashCheck: v2.data.skipHashCheck,
+      permissions: {
+        allow: allowWithRepoInfo,
+        deny: v2.data.permissions.deny,
       },
     };
   },
@@ -205,41 +302,78 @@ export async function saveUserSettings(settings: VibeSettings): Promise<void> {
   await Deno.writeTextFile(USER_SETTINGS_FILE, content);
 }
 
+// ===== Helper Functions =====
+
+/**
+ * Find a matching entry in the allow list based on repository information
+ * @param allowList List of allowed entries
+ * @param repoInfo Repository information to match
+ * @returns Matching entry or undefined
+ */
+function findMatchingEntry(
+  allowList: VibeSettings["permissions"]["allow"],
+  repoInfo: RepoInfo,
+): VibeSettings["permissions"]["allow"][number] | undefined {
+  return allowList.find((entry) => {
+    // Check relative path match
+    if (entry.relativePath !== repoInfo.relativePath) {
+      return false;
+    }
+
+    // Priority 1: Match by remote URL (if both have it)
+    if (entry.repoId.remoteUrl && repoInfo.remoteUrl) {
+      return entry.repoId.remoteUrl === repoInfo.remoteUrl;
+    }
+
+    // Priority 2: Match by repo root
+    if (entry.repoId.repoRoot && repoInfo.repoRoot) {
+      return entry.repoId.repoRoot === repoInfo.repoRoot;
+    }
+
+    return false;
+  });
+}
+
 // ===== Public API =====
 
 export async function addTrustedPath(path: string): Promise<void> {
   const settings = await loadUserSettings();
 
+  // Get repository information
+  const repoInfo = await getRepoInfoFromPath(path);
+  if (!repoInfo) {
+    throw new Error(
+      `Cannot trust file outside of git repository: ${path}\n` +
+        `Vibe requires configuration files to be within a git repository.`,
+    );
+  }
+
   // Calculate file hash
   const hash = await calculateFileHash(path);
 
-  // Remove from deny list (if present)
-  const denyIndex = settings.permissions.deny.indexOf(path);
-  const isInDenyList = denyIndex !== -1;
-  if (isInDenyList) {
-    settings.permissions.deny.splice(denyIndex, 1);
-  }
-
   // Find existing entry in allow list
-  const existingIndex = settings.permissions.allow.findIndex(
-    (item) => item.path === path,
-  );
-  const isAlreadyAllowed = existingIndex !== -1;
+  const existingEntry = findMatchingEntry(settings.permissions.allow, repoInfo);
 
-  if (isAlreadyAllowed) {
+  if (existingEntry) {
     // Add hash to existing entry (with duplicate check and FIFO)
-    const entry = settings.permissions.allow[existingIndex];
-    const hashAlreadyExists = entry.hashes.includes(hash);
+    const hashAlreadyExists = existingEntry.hashes.includes(hash);
     if (!hashAlreadyExists) {
-      entry.hashes.push(hash);
+      existingEntry.hashes.push(hash);
       // Apply FIFO: remove oldest hash if limit exceeded
-      if (entry.hashes.length > MAX_HASH_HISTORY) {
-        entry.hashes.shift(); // Remove first (oldest) element
+      if (existingEntry.hashes.length > MAX_HASH_HISTORY) {
+        existingEntry.hashes.shift(); // Remove first (oldest) element
       }
     }
   } else {
     // Create new entry
-    settings.permissions.allow.push({ path, hashes: [hash] });
+    settings.permissions.allow.push({
+      repoId: {
+        remoteUrl: repoInfo.remoteUrl,
+        repoRoot: repoInfo.repoRoot,
+      },
+      relativePath: repoInfo.relativePath,
+      hashes: [hash],
+    });
   }
 
   await saveUserSettings(settings);
@@ -248,9 +382,28 @@ export async function addTrustedPath(path: string): Promise<void> {
 export async function removeTrustedPath(path: string): Promise<void> {
   const settings = await loadUserSettings();
 
-  const allowIndex = settings.permissions.allow.findIndex(
-    (item) => item.path === path,
-  );
+  // Get repository information
+  const repoInfo = await getRepoInfoFromPath(path);
+  if (!repoInfo) {
+    // Cannot determine repository, try to remove anyway if path matches
+    console.warn(
+      `Warning: Cannot determine repository for ${path}. ` +
+        `Removal may not work correctly.`,
+    );
+    return;
+  }
+
+  // Find and remove matching entry
+  const allowIndex = settings.permissions.allow.findIndex((entry) => {
+    return entry.relativePath === repoInfo.relativePath &&
+      (
+        (entry.repoId.remoteUrl && repoInfo.remoteUrl &&
+          entry.repoId.remoteUrl === repoInfo.remoteUrl) ||
+        (entry.repoId.repoRoot && repoInfo.repoRoot &&
+          entry.repoId.repoRoot === repoInfo.repoRoot)
+      );
+  });
+
   const isInAllowList = allowIndex !== -1;
   if (isInAllowList) {
     settings.permissions.allow.splice(allowIndex, 1);
@@ -273,18 +426,16 @@ export async function removeTrustedPath(path: string): Promise<void> {
 export async function isTrusted(vibeFilePath: string): Promise<boolean> {
   const settings = await loadUserSettings();
 
-  // Deny if in deny list
-  const isDenied = settings.permissions.deny.includes(vibeFilePath);
-  if (isDenied) {
+  // Get repository information from file path
+  const repoInfo = await getRepoInfoFromPath(vibeFilePath);
+  if (!repoInfo) {
+    // Not in a git repository
     return false;
   }
 
-  // Find entry in allow list
-  const entry = settings.permissions.allow.find(
-    (item) => item.path === vibeFilePath,
-  );
-  const isNotInAllowList = !entry;
-  if (isNotInAllowList) {
+  // Find matching entry in allow list
+  const entry = findMatchingEntry(settings.permissions.allow, repoInfo);
+  if (!entry) {
     return false;
   }
 
@@ -317,18 +468,16 @@ export async function verifyTrustAndRead(
 ): Promise<{ trusted: boolean; content?: string }> {
   const settings = await loadUserSettings();
 
-  // Deny if in deny list
-  const isDenied = settings.permissions.deny.includes(vibeFilePath);
-  if (isDenied) {
+  // Get repository information from file path
+  const repoInfo = await getRepoInfoFromPath(vibeFilePath);
+  if (!repoInfo) {
+    // Not in a git repository
     return { trusted: false };
   }
 
-  // Find entry in allow list
-  const entry = settings.permissions.allow.find(
-    (item) => item.path === vibeFilePath,
-  );
-  const isNotInAllowList = !entry;
-  if (isNotInAllowList) {
+  // Find matching entry in allow list
+  const entry = findMatchingEntry(settings.permissions.allow, repoInfo);
+  if (!entry) {
     return { trusted: false };
   }
 

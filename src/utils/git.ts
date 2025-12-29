@@ -1,3 +1,5 @@
+import { relative, dirname } from "@std/path";
+
 export async function runGitCommand(args: string[]): Promise<string> {
   const command = new Deno.Command("git", {
     args,
@@ -111,4 +113,108 @@ export async function findWorktreeByBranch(
     return found.path;
   }
   return null;
+}
+
+/**
+ * Normalize git remote URL for consistent comparison
+ * Converts various URL formats to a canonical form: host/user/repo
+ *
+ * Examples:
+ * - https://github.com/user/repo.git → github.com/user/repo
+ * - git@github.com:user/repo.git → github.com/user/repo
+ * - ssh://git@github.com/user/repo → github.com/user/repo
+ *
+ * @param url Raw git remote URL
+ * @returns Normalized URL
+ */
+export function normalizeRemoteUrl(url: string): string {
+  let normalized = url.trim();
+
+  // Remove trailing .git suffix
+  normalized = normalized.replace(/\.git$/, "");
+
+  // Convert SSH format (git@host:path) to HTTPS-like (host/path)
+  normalized = normalized.replace(/^git@([^:]+):/, "$1/");
+
+  // Remove protocol (https://, http://, ssh://)
+  normalized = normalized.replace(/^[a-z]+:\/\//, "");
+
+  // Remove credentials if present (user:pass@host)
+  normalized = normalized.replace(/^[^@]+@/, "");
+
+  return normalized;
+}
+
+/**
+ * Get the remote URL for the current repository
+ * @returns Remote URL (normalized), or undefined if no remote exists
+ */
+export async function getRemoteUrl(): Promise<string | undefined> {
+  try {
+    const rawUrl = await runGitCommand(["config", "--get", "remote.origin.url"]);
+    return normalizeRemoteUrl(rawUrl);
+  } catch {
+    // No remote configured
+    return undefined;
+  }
+}
+
+/**
+ * Repository information extracted from a file path
+ */
+export interface RepoInfo {
+  remoteUrl?: string;
+  repoRoot: string;
+  relativePath: string;
+}
+
+/**
+ * Extract repository information from an absolute file path
+ * This function resolves symlinks and determines the git repository containing the file
+ *
+ * @param absolutePath Absolute path to a file
+ * @returns Repository information, or null if not in a git repository
+ */
+export async function getRepoInfoFromPath(
+  absolutePath: string,
+): Promise<RepoInfo | null> {
+  try {
+    // Resolve symlinks to real path for security
+    const realPath = await Deno.realPath(absolutePath);
+    const fileDir = dirname(realPath);
+
+    // Save current directory
+    const originalCwd = Deno.cwd();
+
+    try {
+      // Change to the file's directory to run git commands
+      Deno.chdir(fileDir);
+
+      // Get repository root
+      const repoRoot = await getRepoRoot();
+
+      // Calculate relative path from repo root
+      const relativePath = relative(repoRoot, realPath);
+
+      // Validate that relative path doesn't escape repository
+      if (relativePath.startsWith("..")) {
+        throw new Error("File is outside repository root");
+      }
+
+      // Get remote URL (may be undefined for local-only repos)
+      const remoteUrl = await getRemoteUrl();
+
+      return {
+        remoteUrl,
+        repoRoot,
+        relativePath,
+      };
+    } finally {
+      // Always restore original directory
+      Deno.chdir(originalCwd);
+    }
+  } catch {
+    // Not in a git repository or path doesn't exist
+    return null;
+  }
 }
