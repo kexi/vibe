@@ -1,4 +1,4 @@
-import { relative, dirname, normalize, isAbsolute, SEPARATOR } from "@std/path";
+import { dirname, isAbsolute, normalize, relative, SEPARATOR } from "@std/path";
 
 export async function runGitCommand(args: string[]): Promise<string> {
   const command = new Deno.Command("git", {
@@ -199,7 +199,9 @@ export async function getRepoInfoFromPath(
     const normalizedPath = normalize(realPath);
 
     // Verify realPath is within repoRoot by checking if it starts with repoRoot + separator
-    if (!normalizedPath.startsWith(normalizedRoot + SEPARATOR) && normalizedPath !== normalizedRoot) {
+    if (
+      !normalizedPath.startsWith(normalizedRoot + SEPARATOR) && normalizedPath !== normalizedRoot
+    ) {
       throw new Error("File is outside repository root");
     }
 

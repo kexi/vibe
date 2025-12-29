@@ -1,5 +1,10 @@
 import { assertEquals } from "@std/assert";
-import { findWorktreeByBranch, hasUncommittedChanges, normalizeRemoteUrl, sanitizeBranchName } from "./git.ts";
+import {
+  findWorktreeByBranch,
+  hasUncommittedChanges,
+  normalizeRemoteUrl,
+  sanitizeBranchName,
+} from "./git.ts";
 
 Deno.test("sanitizeBranchName replaces slashes with dashes", () => {
   const result = sanitizeBranchName("feat/new-feature");

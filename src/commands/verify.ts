@@ -1,5 +1,5 @@
 import { join } from "@std/path";
-import { getRepoRoot, getRepoInfoFromPath } from "../utils/git.ts";
+import { getRepoInfoFromPath, getRepoRoot } from "../utils/git.ts";
 import { calculateFileHash } from "../utils/hash.ts";
 import { loadUserSettings } from "../utils/trust.ts";
 

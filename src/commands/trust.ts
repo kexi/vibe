@@ -1,5 +1,5 @@
 import { join } from "@std/path";
-import { getRepoRoot, getRepoInfoFromPath } from "../utils/git.ts";
+import { getRepoInfoFromPath, getRepoRoot } from "../utils/git.ts";
 import { addTrustedPath, getSettingsPath } from "../utils/trust.ts";
 
 const VIBE_TOML = ".vibe.toml";
@@ -22,7 +22,9 @@ export async function trustCommand(): Promise<void> {
       Deno.exit(1);
     }
 
-    const trustedFiles: Array<{ path: string; repoInfo: Awaited<ReturnType<typeof getRepoInfoFromPath>> }> = [];
+    const trustedFiles: Array<
+      { path: string; repoInfo: Awaited<ReturnType<typeof getRepoInfoFromPath>> }
+    > = [];
     const errors: Array<{ file: string; error: string }> = [];
 
     // Trust .vibe.toml

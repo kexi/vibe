@@ -11,7 +11,10 @@ import {
 import { getRepoInfoFromPath } from "./git.ts";
 
 // Helper function to find entry by file path in v3 schema
-async function findEntryByPath(settings: Awaited<ReturnType<typeof loadUserSettings>>, filePath: string) {
+async function findEntryByPath(
+  settings: Awaited<ReturnType<typeof loadUserSettings>>,
+  filePath: string,
+) {
   const repoInfo = await getRepoInfoFromPath(filePath);
   if (!repoInfo) return undefined;
 
@@ -69,7 +72,9 @@ Deno.test("migrateSettings migrates v1 to v3 (via v2) with repository info", asy
       },
     };
 
-    const migrated = await _internal.migrateSettings(v1Data) as Awaited<ReturnType<typeof loadUserSettings>>;
+    const migrated = await _internal.migrateSettings(v1Data) as Awaited<
+      ReturnType<typeof loadUserSettings>
+    >;
 
     assertEquals(migrated.version, _internal.CURRENT_SCHEMA_VERSION);
     assertEquals(migrated.permissions.allow.length, 1);
