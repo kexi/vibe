@@ -99,13 +99,42 @@ export async function startCommand(
       } else {
         // Different branch - offer to overwrite
         const choice = await select(
-          `Directory '${worktreePath}' exists but contains different branch (${existingWorktree.branch}):`,
-          ["上書き(削除して再作成)", "キャンセル"],
+          `ディレクトリ '${worktreePath}' は既に存在します (branch: ${existingWorktree.branch}):`,
+          ["上書き(削除して再作成)", "再利用(既存を使用)", "キャンセル"],
         );
 
         if (choice === 0) {
+          // Overwrite: remove existing worktree
           await runGitCommand(["worktree", "remove", worktreePath, "--force"]);
+        } else if (choice === 1) {
+          // Reuse: skip git worktree creation, run hooks/config, and output cd
+          // Start progress tracking
+          const hasOperations = config !== undefined &&
+            (config.hooks?.pre_start?.length ?? 0) +
+                  (config.copy?.files?.length ?? 0) +
+                  (config.hooks?.post_start?.length ?? 0) > 0;
+          if (hasOperations) {
+            tracker.start();
+          }
+
+          // Run pre_start hooks
+          await runPreStartHooksIfNeeded(config, repoRoot, worktreePath, tracker);
+
+          // Run config
+          if (config !== undefined) {
+            await runVibeConfig(config, repoRoot, worktreePath, tracker);
+          }
+
+          // Finish progress tracking
+          if (hasOperations) {
+            tracker.finish();
+          }
+
+          // Output cd command
+          console.log(`cd '${worktreePath}'`);
+          return;
         } else {
+          // Cancel
           console.error("キャンセルしました");
           Deno.exit(0);
         }
