@@ -55,6 +55,14 @@ export async function getWorktreeList(): Promise<
   return worktrees;
 }
 
+export async function getWorktreeByPath(
+  path: string,
+): Promise<{ path: string; branch: string } | null> {
+  const worktrees = await getWorktreeList();
+  const normalizedPath = normalize(path);
+  return worktrees.find((w) => normalize(w.path) === normalizedPath) ?? null;
+}
+
 export async function getMainWorktreePath(): Promise<string> {
   const worktrees = await getWorktreeList();
   const mainWorktree = worktrees[0];

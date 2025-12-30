@@ -4,7 +4,7 @@ import {
   findWorktreeByBranch,
   getRepoName,
   getRepoRoot,
-  getWorktreeList,
+  getWorktreeByPath,
   runGitCommand,
   sanitizeBranchName,
 } from "../utils/git.ts";
@@ -21,7 +21,7 @@ interface StartOptions {
 
 export async function startCommand(
   branchName: string,
-  options: StartOptions = {},
+  _options: StartOptions = {},
 ): Promise<void> {
   const isBranchNameEmpty = !branchName;
   if (isBranchNameEmpty) {
@@ -61,76 +61,61 @@ export async function startCommand(
       title: `Setting up worktree ${branchName}`,
     });
 
-    // Check if directory already exists
-    try {
-      await Deno.stat(worktreePath);
+    // Check if worktree already exists at the target path
+    const existingWorktree = await getWorktreeByPath(worktreePath);
 
-      const choice = await select(
-        `ディレクトリ '${worktreePath}' は既に存在します:`,
-        ["上書き(削除して再作成)", "再利用(既存を使用)", "キャンセル"],
-      );
+    if (existingWorktree !== null) {
+      // Worktree already exists
+      if (existingWorktree.branch === branchName) {
+        // Same branch - idempotent re-entry
+        console.error(`Note: Worktree already exists at '${worktreePath}'`);
 
-      const shouldOverwrite = choice === 0;
-      if (shouldOverwrite) {
-        // Safety check: verify the directory is actually a git worktree before deletion
-        const worktrees = await getWorktreeList();
-        const isGitWorktree = worktrees.some((w) => w.path === worktreePath);
-        if (!isGitWorktree) {
-          console.error(
-            `Error: Directory '${worktreePath}' is not a git worktree. Cannot delete for safety.`,
-          );
-          Deno.exit(1);
+        // Run hooks and config in case they changed
+        // Start progress tracking
+        const hasOperations = config !== undefined &&
+          (config.hooks?.pre_start?.length ?? 0) +
+                (config.copy?.files?.length ?? 0) +
+                (config.hooks?.post_start?.length ?? 0) > 0;
+        if (hasOperations) {
+          tracker.start();
         }
-        await runGitCommand(["worktree", "remove", worktreePath, "--force"]);
+
+        // Run pre_start hooks
+        await runPreStartHooksIfNeeded(config, repoRoot, worktreePath, tracker);
+
+        // Run config
+        if (config !== undefined) {
+          await runVibeConfig(config, repoRoot, worktreePath, tracker);
+        }
+
+        // Finish progress tracking
+        if (hasOperations) {
+          tracker.finish();
+        }
+
+        // Output cd command
+        console.log(`cd '${worktreePath}'`);
+        return;
       } else {
-        const shouldReuse = choice === 1;
-        if (shouldReuse) {
-          // Reuse existing directory: skip git worktree add
+        // Different branch - offer to overwrite
+        const choice = await select(
+          `Directory '${worktreePath}' exists but contains different branch (${existingWorktree.branch}):`,
+          ["上書き(削除して再作成)", "キャンセル"],
+        );
 
-          // Start progress tracking
-          const hasOperations = config !== undefined &&
-            (config.hooks?.pre_start?.length ?? 0) +
-                  (config.copy?.files?.length ?? 0) +
-                  (config.hooks?.post_start?.length ?? 0) > 0;
-          if (hasOperations) {
-            tracker.start();
-          }
-
-          // Run pre_start hooks
-          await runPreStartHooksIfNeeded(config, repoRoot, worktreePath, tracker);
-
-          // Run config
-          const hasConfig = config !== undefined;
-          if (hasConfig) {
-            await runVibeConfig(config, repoRoot, worktreePath, tracker);
-          }
-
-          // Finish progress tracking
-          if (hasOperations) {
-            tracker.finish();
-          }
-
-          // Output cd command
-          console.log(`cd '${worktreePath}'`);
-          return;
+        if (choice === 0) {
+          await runGitCommand(["worktree", "remove", worktreePath, "--force"]);
         } else {
-          // Cancel
           console.error("キャンセルしました");
           Deno.exit(0);
         }
       }
-    } catch {
-      // Directory doesn't exist, continue with normal flow
     }
 
+    // Path doesn't exist or was overwritten - create worktree
     const branchAlreadyExists = await branchExists(branchName);
     if (branchAlreadyExists) {
-      if (!options.reuse) {
-        console.error(
-          `Error: Branch '${branchName}' already exists. Use --reuse to use existing branch.`,
-        );
-        Deno.exit(1);
-      }
+      // No --reuse flag required anymore
       await runGitCommand(["worktree", "add", worktreePath, branchName]);
     } else {
       await runGitCommand(["worktree", "add", "-b", branchName, worktreePath]);
