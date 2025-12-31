@@ -27,8 +27,8 @@ async function runConfigAndHooks(
 ): Promise<void> {
   const hasOperations = config !== undefined &&
     (config.hooks?.pre_start?.length ?? 0) +
-      (config.copy?.files?.length ?? 0) +
-      (config.hooks?.post_start?.length ?? 0) > 0;
+          (config.copy?.files?.length ?? 0) +
+          (config.hooks?.post_start?.length ?? 0) > 0;
 
   if (hasOperations) {
     tracker.start();
