@@ -8,8 +8,7 @@ A CLI tool for easy Git Worktree management.
 
 | Command                      | Description                                         |
 | ---------------------------- | --------------------------------------------------- |
-| `vibe start <branch>`        | Create a new worktree with a new branch             |
-| `vibe start <branch> --reuse`| Create a worktree using an existing branch          |
+| `vibe start <branch>`        | Create a worktree with a new or existing branch (idempotent) |
 | `vibe clean`                 | Delete current worktree and return to main (prompts if uncommitted changes exist) |
 | `vibe trust`                 | Trust `.vibe.toml` and `.vibe.local.toml` files     |
 | `vibe untrust`               | Untrust `.vibe.toml` and `.vibe.local.toml` files   |
@@ -20,8 +19,8 @@ A CLI tool for easy Git Worktree management.
 # Create a worktree with a new branch
 vibe start feat/new-feature
 
-# Use an existing branch
-vibe start feat/existing-branch --reuse
+# Use an existing branch (or re-run if worktree already exists)
+vibe start feat/existing-branch
 
 # After work is done, delete the worktree
 vibe clean
@@ -29,12 +28,13 @@ vibe clean
 
 ### Interactive Prompts
 
-`vibe start` handles the following situations interactively:
+`vibe start` handles the following situations:
 
 - **When a branch is already in use by another worktree**: Confirms whether to navigate to the existing worktree
-- **When a directory already exists**: You can choose from the following options
+- **When the same worktree already exists**: Automatically re-uses it (idempotent)
+- **When a directory exists with a different branch**: You can choose from the following options
   - Overwrite (delete and recreate)
-  - Reuse (use existing)
+  - Reuse (use existing directory)
   - Cancel
 
 ```bash

@@ -19,9 +19,35 @@ interface StartOptions {
   reuse?: boolean;
 }
 
+async function runConfigAndHooks(
+  config: VibeConfig | undefined,
+  repoRoot: string,
+  worktreePath: string,
+  tracker: ProgressTracker,
+): Promise<void> {
+  const hasOperations = config !== undefined &&
+    (config.hooks?.pre_start?.length ?? 0) +
+      (config.copy?.files?.length ?? 0) +
+      (config.hooks?.post_start?.length ?? 0) > 0;
+
+  if (hasOperations) {
+    tracker.start();
+  }
+
+  await runPreStartHooksIfNeeded(config, repoRoot, worktreePath, tracker);
+
+  if (config !== undefined) {
+    await runVibeConfig(config, repoRoot, worktreePath, tracker);
+  }
+
+  if (hasOperations) {
+    tracker.finish();
+  }
+}
+
 export async function startCommand(
   branchName: string,
-  _options: StartOptions = {},
+  _options: StartOptions = {}, // Kept for backward compatibility, --reuse no longer required
 ): Promise<void> {
   const isBranchNameEmpty = !branchName;
   if (isBranchNameEmpty) {
@@ -71,27 +97,7 @@ export async function startCommand(
         console.error(`Note: Worktree already exists at '${worktreePath}'`);
 
         // Run hooks and config in case they changed
-        // Start progress tracking
-        const hasOperations = config !== undefined &&
-          (config.hooks?.pre_start?.length ?? 0) +
-                (config.copy?.files?.length ?? 0) +
-                (config.hooks?.post_start?.length ?? 0) > 0;
-        if (hasOperations) {
-          tracker.start();
-        }
-
-        // Run pre_start hooks
-        await runPreStartHooksIfNeeded(config, repoRoot, worktreePath, tracker);
-
-        // Run config
-        if (config !== undefined) {
-          await runVibeConfig(config, repoRoot, worktreePath, tracker);
-        }
-
-        // Finish progress tracking
-        if (hasOperations) {
-          tracker.finish();
-        }
+        await runConfigAndHooks(config, repoRoot, worktreePath, tracker);
 
         // Output cd command
         console.log(`cd '${worktreePath}'`);
@@ -108,27 +114,7 @@ export async function startCommand(
           await runGitCommand(["worktree", "remove", worktreePath, "--force"]);
         } else if (choice === 1) {
           // Reuse: skip git worktree creation, run hooks/config, and output cd
-          // Start progress tracking
-          const hasOperations = config !== undefined &&
-            (config.hooks?.pre_start?.length ?? 0) +
-                  (config.copy?.files?.length ?? 0) +
-                  (config.hooks?.post_start?.length ?? 0) > 0;
-          if (hasOperations) {
-            tracker.start();
-          }
-
-          // Run pre_start hooks
-          await runPreStartHooksIfNeeded(config, repoRoot, worktreePath, tracker);
-
-          // Run config
-          if (config !== undefined) {
-            await runVibeConfig(config, repoRoot, worktreePath, tracker);
-          }
-
-          // Finish progress tracking
-          if (hasOperations) {
-            tracker.finish();
-          }
+          await runConfigAndHooks(config, repoRoot, worktreePath, tracker);
 
           // Output cd command
           console.log(`cd '${worktreePath}'`);
@@ -150,27 +136,8 @@ export async function startCommand(
       await runGitCommand(["worktree", "add", "-b", branchName, worktreePath]);
     }
 
-    // Start progress tracking
-    const hasOperations = config !== undefined &&
-      (config.hooks?.pre_start?.length ?? 0) +
-            (config.copy?.files?.length ?? 0) +
-            (config.hooks?.post_start?.length ?? 0) > 0;
-    if (hasOperations) {
-      tracker.start();
-    }
-
-    // Run pre_start hooks
-    await runPreStartHooksIfNeeded(config, repoRoot, worktreePath, tracker);
-
-    // Continue with existing process (post_start hooks are executed in runVibeConfig)
-    if (config !== undefined) {
-      await runVibeConfig(config, repoRoot, worktreePath, tracker);
-    }
-
-    // Finish progress tracking
-    if (hasOperations) {
-      tracker.finish();
-    }
+    // Run hooks and config
+    await runConfigAndHooks(config, repoRoot, worktreePath, tracker);
 
     console.log(`cd '${worktreePath}'`);
   } catch (error) {
