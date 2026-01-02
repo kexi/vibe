@@ -1,28 +1,28 @@
 class Vibe < Formula
   desc "Git worktree helper CLI"
-  homepage "https://github.com/YOUR_USERNAME/vibe"
-  version "0.1.0"
+  homepage "https://github.com/kexi/vibe"
+  version "VERSION_PLACEHOLDER"
   license "MIT"
 
   on_macos do
     on_arm do
-      url "https://github.com/YOUR_USERNAME/vibe/releases/download/v#{version}/vibe-darwin-arm64"
-      sha256 "REPLACE_WITH_ACTUAL_SHA256"
+      url "https://github.com/kexi/vibe/releases/download/vVERSION_PLACEHOLDER/vibe-darwin-arm64"
+      sha256 "SHA256_DARWIN_ARM64"
     end
     on_intel do
-      url "https://github.com/YOUR_USERNAME/vibe/releases/download/v#{version}/vibe-darwin-x64"
-      sha256 "REPLACE_WITH_ACTUAL_SHA256"
+      url "https://github.com/kexi/vibe/releases/download/vVERSION_PLACEHOLDER/vibe-darwin-x64"
+      sha256 "SHA256_DARWIN_X64"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/YOUR_USERNAME/vibe/releases/download/v#{version}/vibe-linux-arm64"
-      sha256 "REPLACE_WITH_ACTUAL_SHA256"
+      url "https://github.com/kexi/vibe/releases/download/vVERSION_PLACEHOLDER/vibe-linux-arm64"
+      sha256 "SHA256_LINUX_ARM64"
     end
     on_intel do
-      url "https://github.com/YOUR_USERNAME/vibe/releases/download/v#{version}/vibe-linux-x64"
-      sha256 "REPLACE_WITH_ACTUAL_SHA256"
+      url "https://github.com/kexi/vibe/releases/download/vVERSION_PLACEHOLDER/vibe-linux-x64"
+      sha256 "SHA256_LINUX_X64"
     end
   end
 

@@ -1,0 +1,75 @@
+name: Publish to JSR
+
+on:
+  release:
+    types: [released]
+
+permissions:
+  contents: read
+  id-token: write  # JSR OIDC認証に必須
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+
+      - name: Validate version consistency
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          DENO_VERSION=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('deno.json')).version)")
+
+          if [ "$TAG_VERSION" != "$DENO_VERSION" ]; then
+            echo "Error: Version mismatch!"
+            echo "  Git tag version: $TAG_VERSION"
+            echo "  deno.json version: $DENO_VERSION"
+            exit 1
+          fi
+
+          echo "Version validation passed: $TAG_VERSION"
+
+      - name: Generate version.ts for JSR
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          REPOSITORY=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('deno.json')).repository)")
+          BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+          cat > src/version.ts << EOF
+          // This file is auto-generated during JSR publishing
+          export interface BuildInfo {
+            version: string;
+            repository: string;
+            platform: string;
+            arch: string;
+            target: string;
+            distribution: string;
+            buildTime: string;
+            buildEnv: string;
+          }
+
+          export const BUILD_INFO: BuildInfo = {
+            version: "$VERSION",
+            repository: "$REPOSITORY",
+            platform: "jsr",
+            arch: "jsr",
+            target: "jsr",
+            distribution: "jsr",
+            buildTime: "$BUILD_TIME",
+            buildEnv: "github-actions",
+          };
+
+          // Backwards compatibility
+          export const VERSION = BUILD_INFO.version;
+          export const REPOSITORY_URL = BUILD_INFO.repository;
+          EOF
+          echo "Generated src/version.ts with VERSION = \"$VERSION\" for JSR distribution"
+
+      - name: Validate JSR package
+        run: npx jsr publish --dry-run --allow-dirty
+
+      - name: Publish to JSR
+        run: npx jsr publish --allow-dirty

@@ -1,0 +1,34 @@
+# Compiled binary
+vibe
+vibe-e2e
+
+# Auto-generated files
+src/version.ts
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+.cursor/
+*.swp
+*.swo
+
+# Claude
+.claude/settings.local.json
+
+# Environment
+.env
+.env.local
+.env.*.local
+.vibe.local.toml
+
+# Logs
+*.log
+
+# Node.js
+node_modules/
+package-lock.json
+pnpm-lock.yaml
