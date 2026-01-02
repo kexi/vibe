@@ -67,14 +67,14 @@ export async function startCommand(
     const isBranchUsedInWorktree = existingWorktreePath !== null;
     if (isBranchUsedInWorktree) {
       const shouldNavigate = await confirm(
-        `ブランチ '${branchName}' は既にworktree '${existingWorktreePath}' で使用中です。\n既存のworktreeに移動しますか? (Y/n)`,
+        `Branch '${branchName}' is already used in worktree '${existingWorktreePath}'.\nNavigate to the existing worktree? (Y/n)`,
       );
 
       if (shouldNavigate) {
         console.log(`cd '${existingWorktreePath}'`);
         Deno.exit(0);
       } else {
-        console.error("キャンセルしました");
+        console.error("Cancelled");
         Deno.exit(0);
       }
     }
@@ -105,8 +105,8 @@ export async function startCommand(
       } else {
         // Different branch - offer to overwrite
         const choice = await select(
-          `ディレクトリ '${worktreePath}' は既に存在します (branch: ${existingWorktree.branch}):`,
-          ["上書き(削除して再作成)", "再利用(既存を使用)", "キャンセル"],
+          `Directory '${worktreePath}' already exists (branch: ${existingWorktree.branch}):`,
+          ["Overwrite (remove and recreate)", "Reuse (use existing)", "Cancel"],
         );
 
         if (choice === 0) {
@@ -121,7 +121,7 @@ export async function startCommand(
           return;
         } else {
           // Cancel
-          console.error("キャンセルしました");
+          console.error("Cancelled");
           Deno.exit(0);
         }
       }
