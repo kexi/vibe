@@ -56,7 +56,7 @@ describe("interactive prompts", () => {
 
       // Wait for the prompt about branch being in use
       const promptFound = await runner2.waitForPattern(
-        /既存のworktreeに移動しますか/,
+        /Navigate to the existing worktree/,
         5000,
       );
       if (!promptFound) {
@@ -104,7 +104,7 @@ describe("interactive prompts", () => {
 
       // Wait for the prompt
       const promptFound = await runner2.waitForPattern(
-        /既存のworktreeに移動しますか/,
+        /Navigate to the existing worktree/,
         5000,
       );
       if (!promptFound) {
@@ -118,7 +118,7 @@ describe("interactive prompts", () => {
 
       // Verify output contains cancellation message
       const output = runner2.getOutput();
-      assertOutputContains(output, "キャンセルしました");
+      assertOutputContains(output, "Cancelled");
       assertExitCode(runner2.getExitCode(), 0);
     } finally {
       runner2.dispose();
@@ -159,7 +159,7 @@ describe("interactive prompts", () => {
 
       // Wait for directory exists prompt
       const promptFound = await runner2.waitForPattern(
-        /ディレクトリ.*は既に存在します/,
+        /Directory.*already exists/,
         5000,
       );
       if (!promptFound) {
@@ -216,7 +216,7 @@ describe("interactive prompts", () => {
 
       // Wait for directory exists prompt
       const promptFound = await runner2.waitForPattern(
-        /ディレクトリ.*は既に存在します/,
+        /Directory.*already exists/,
         5000,
       );
       if (!promptFound) {
@@ -273,7 +273,7 @@ describe("interactive prompts", () => {
 
       // Wait for directory exists prompt
       const promptFound = await runner2.waitForPattern(
-        /ディレクトリ.*は既に存在します/,
+        /Directory.*already exists/,
         5000,
       );
       if (!promptFound) {
@@ -287,7 +287,7 @@ describe("interactive prompts", () => {
 
       // Verify cancellation message
       const output = runner2.getOutput();
-      assertOutputContains(output, "キャンセルしました");
+      assertOutputContains(output, "Cancelled");
       assertExitCode(runner2.getExitCode(), 0);
     } finally {
       runner2.dispose();
@@ -321,7 +321,7 @@ describe("interactive prompts", () => {
 
       // Wait for the prompt
       const promptFound = await runner2.waitForPattern(
-        /既存のworktreeに移動しますか/,
+        /Navigate to the existing worktree/,
         5000,
       );
       if (!promptFound) {

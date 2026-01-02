@@ -46,6 +46,69 @@ This runs:
 
 ## Release Process
 
+### Branching Model
+
+This project follows the git-flow branching model:
+
+- `develop` - Active development branch. All feature branches merge here.
+- `main` - Stable release branch. Only receives merges from develop during releases.
+
+See [AGENTS.md](./AGENTS.md) for detailed branching workflow.
+
+### Releasing a New Version
+
+1. **Prepare the release on develop:**
+   ```bash
+   # Ensure you're on develop and up to date
+   git checkout develop
+   git pull origin develop
+
+   # Update version in deno.json
+   # Update CHANGELOG if you maintain one
+
+   # Commit version bump
+   git add deno.json
+   git commit -m "chore: Bump version to vX.X.X"
+   git push origin develop
+   ```
+
+2. **Sync main with develop:**
+
+   Since main branch has protection rules, you must create a pull request:
+
+   ```bash
+   # Create a sync branch from develop
+   git checkout -b chore/release-vX.X.X
+   git push origin chore/release-vX.X.X
+
+   # Create PR targeting main
+   gh pr create --base main --title "chore: Release vX.X.X" \
+     --body "Sync main with develop for vX.X.X release"
+   ```
+
+   After the PR is merged:
+
+3. **Create and push the tag:**
+   ```bash
+   # Checkout main and pull the merged changes
+   git checkout main
+   git pull origin main
+
+   # Create and push the tag
+   git tag vX.X.X
+   git push origin vX.X.X
+
+   # Return to develop
+   git checkout develop
+   ```
+
+4. **Create the GitHub release:**
+   ```bash
+   gh release create vX.X.X --generate-notes
+   ```
+
+### Automated Release Tasks
+
 When a release is created, GitHub Actions automatically:
 
 1. Builds binaries for each platform
