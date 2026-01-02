@@ -4,6 +4,46 @@ Git Worktreeを簡単に管理するCLIツール。
 
 [English](README.md)
 
+## 使い方
+
+| コマンド                       | 説明                                                  |
+| ------------------------------ | ----------------------------------------------------- |
+| `vibe start <branch>`          | 新規または既存ブランチでworktreeを作成（冪等）        |
+| `vibe clean`                   | 現在のworktreeを削除してメインに戻る（未コミットの変更がある場合は確認）                  |
+| `vibe trust`                   | `.vibe.toml`と`.vibe.local.toml`ファイルを信頼登録    |
+| `vibe untrust`                 | `.vibe.toml`と`.vibe.local.toml`ファイルの信頼を解除  |
+
+### 例
+
+```bash
+# 新しいブランチでworktreeを作成
+vibe start feat/new-feature
+
+# 既存ブランチを使用（またはworktreeが既に存在する場合も再実行可能）
+vibe start feat/existing-branch
+
+# 作業完了後、worktreeを削除
+vibe clean
+```
+
+### インタラクティブプロンプト
+
+`vibe start`は以下の状況に対応します：
+
+- **ブランチが既に他のworktreeで使用中の場合**: 既存のworktreeに移動するか確認します
+- **同じworktreeが既に存在する場合**: 自動的に再利用します（冪等）
+- **異なるブランチのディレクトリが存在する場合**: 以下の選択肢から選べます
+  - 上書き（削除して再作成）
+  - 再利用（既存ディレクトリを使用）
+  - キャンセル
+
+```bash
+# ブランチが既に使用中の場合の例
+$ vibe start feat/new-feature
+ブランチ 'feat/new-feature' は既にworktree '/path/to/repo-feat-new-feature' で使用中です。
+既存のworktreeに移動しますか? (Y/n)
+```
+
 ## インストール
 
 ### Homebrew (macOS)
@@ -135,46 +175,6 @@ function vibe { Invoke-Expression (& vibe.exe $args) }
 ```
 </details>
 
-## 使い方
-
-| コマンド                       | 説明                                                  |
-| ------------------------------ | ----------------------------------------------------- |
-| `vibe start <branch>`          | 新しいブランチでworktreeを作成                        |
-| `vibe start <branch> --reuse`  | 既存ブランチを使用してworktreeを作成                  |
-| `vibe clean`                   | 現在のworktreeを削除してメインに戻る（未コミットの変更がある場合は確認）                  |
-| `vibe trust`                   | `.vibe.toml`と`.vibe.local.toml`ファイルを信頼登録    |
-| `vibe untrust`                 | `.vibe.toml`と`.vibe.local.toml`ファイルの信頼を解除  |
-
-### 例
-
-```bash
-# 新しいブランチでworktreeを作成
-vibe start feat/new-feature
-
-# 既存ブランチを使用
-vibe start feat/existing-branch --reuse
-
-# 作業完了後、worktreeを削除
-vibe clean
-```
-
-### インタラクティブプロンプト
-
-`vibe start`は以下の状況でインタラクティブに対応します：
-
-- **ブランチが既に他のworktreeで使用中の場合**: 既存のworktreeに移動するか確認します
-- **ディレクトリが既に存在する場合**: 以下の選択肢から選べます
-  - 上書き（削除して再作成）
-  - 再利用（既存を使用）
-  - キャンセル
-
-```bash
-# ブランチが既に使用中の場合の例
-$ vibe start feat/new-feature
-ブランチ 'feat/new-feature' は既にworktree '/path/to/repo-feat-new-feature' で使用中です。
-既存のworktreeに移動しますか? (Y/n)
-```
-
 ## 設定
 
 ### .vibe.toml
@@ -241,7 +241,7 @@ Vibeは`.vibe.toml`と`.vibe.local.toml`ファイルの整合性をSHA-256ハッ
 **グローバル設定:**
 ```json
 {
-  "version": 2,
+  "version": 3,
   "skipHashCheck": true,
   "permissions": { "allow": [], "deny": [] }
 }
@@ -250,11 +250,15 @@ Vibeは`.vibe.toml`と`.vibe.local.toml`ファイルの整合性をSHA-256ハッ
 **ファイルごとの設定:**
 ```json
 {
-  "version": 2,
+  "version": 3,
   "permissions": {
     "allow": [
       {
-        "path": "/path/to/.vibe.toml",
+        "repoId": {
+          "remoteUrl": "github.com/user/repo",
+          "repoRoot": "/path/to/repo"
+        },
+        "relativePath": ".vibe.toml",
         "hashes": ["abc123..."],
         "skipHashCheck": true
       }
@@ -263,6 +267,8 @@ Vibeは`.vibe.toml`と`.vibe.local.toml`ファイルの整合性をSHA-256ハッ
   }
 }
 ```
+
+> **注意**: バージョン3ではリポジトリベースのトラスト識別を使用します。設定は初回ロード時にv2からv3へ自動移行されます。トラストは同じリポジトリのすべてのワークツリー間で共有されます。
 
 #### ブランチ切り替え
 Vibeはファイルごとに複数のハッシュ（最大100個）を保存するため、各ブランチのバージョンを一度信頼すれば、ブランチを切り替えても再度信頼登録する必要はありません。
@@ -317,6 +323,27 @@ post_start_append = ["npm run dev"]
 
 **注意**: `post_clean`フックは削除コマンドに`&&`で連結され、`git worktree remove`コマンド完了後にメインリポジトリディレクトリで実行されます。
 
+### フック実行時の出力動作
+
+Vibeはフック実行中にタスクの状態を表示するリアルタイム進捗ツリーを表示します。フックの出力は状況に応じて以下のように処理されます：
+
+- **進捗表示が有効な場合**: フックの標準出力は抑制され、進捗ツリーのみが表示されます。これにより視覚的に見やすくなります。
+- **進捗表示が無効な場合**: フックの標準出力は標準エラー出力に書き込まれます（シェルラッパーの`eval`との干渉を避けるため）。
+- **失敗したフック**: 進捗表示の有無にかかわらず、常に標準エラー出力が表示されます。これはデバッグを支援するためです。
+
+進捗表示の例：
+```
+✶ Setting up worktree feature/new-ui…
+  ⎿  ☒ Pre-start hooks
+       ⎿  ☒ npm install
+          ☒ cargo build --release
+     ⠋ Copying files
+       ⎿  ⠋ .env.local
+          ☐ node_modules/
+```
+
+**注意**: 進捗表示は非TTY環境（CI/CDなど）では自動的に無効になり、フックの出力が通常通り表示されます。
+
 ### 環境変数
 
 すべてのフックコマンド内で以下の環境変数が使えます：
@@ -326,43 +353,9 @@ post_start_append = ["npm run dev"]
 | `VIBE_WORKTREE_PATH` | 作成されたworktreeの絶対パス |
 | `VIBE_ORIGIN_PATH`   | 元リポジトリの絶対パス       |
 
-## 開発
+## 開発への参加
 
-### 利用可能なタスク
-
-すべてのタスクは`deno.json`に定義されており、ローカル開発とCIで同じチェックを実行できます：
-
-```bash
-# CIと同じチェックを実行
-deno task ci
-
-# 個別のチェック
-deno task fmt:check    # コードフォーマットをチェック
-deno task lint         # Linterを実行
-deno task check        # 型チェック
-deno task test         # テスト実行
-
-# フォーマット自動修正
-deno task fmt
-
-# 開発
-deno task dev          # 開発モードで実行
-deno task compile      # 全プラットフォーム向けにビルド
-```
-
-### ローカルでCIチェックを実行
-
-プッシュ前に、CIと同じチェックを実行できます：
-
-```bash
-deno task ci
-```
-
-以下を実行します：
-1. フォーマットチェック (`deno task fmt:check`)
-2. Linter (`deno task lint`)
-3. 型チェック (`deno task check`)
-4. テスト (`deno task test`)
+開発環境のセットアップとガイドラインについては [CONTRIBUTING.md](CONTRIBUTING.md) を参照してください。
 
 ## ライセンス
 

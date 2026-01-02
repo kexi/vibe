@@ -1,5 +1,5 @@
 import { join } from "@std/path";
-import { getRepoRoot } from "../utils/git.ts";
+import { getRepoInfoFromPath, getRepoRoot } from "../utils/git.ts";
 import { calculateFileHash } from "../utils/hash.ts";
 import { loadUserSettings } from "../utils/trust.ts";
 
@@ -25,7 +25,7 @@ export async function verifyCommand(): Promise<void> {
 
     const settings = await loadUserSettings();
 
-    console.log("=== Vibe Configuration Verification ===\n");
+    console.error("=== Vibe Configuration Verification ===\n");
 
     // Verify .vibe.toml
     if (vibeTomlExists) {
@@ -35,14 +35,14 @@ export async function verifyCommand(): Promise<void> {
     // Verify .vibe.local.toml
     if (vibeLocalTomlExists) {
       if (vibeTomlExists) {
-        console.log(); // Add blank line between files
+        console.error(); // Add blank line between files
       }
       await displayFileStatus(vibeLocalTomlPath, VIBE_LOCAL_TOML, settings);
     }
 
     // Display global settings
-    console.log("\n=== Global Settings ===");
-    console.log(`Skip Hash Check: ${settings.skipHashCheck ?? false}`);
+    console.error("\n=== Global Settings ===");
+    console.error(`Skip Hash Check: ${settings.skipHashCheck ?? false}`);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${errorMessage}`);
@@ -55,24 +55,41 @@ async function displayFileStatus(
   fileName: string,
   settings: Awaited<ReturnType<typeof loadUserSettings>>,
 ): Promise<void> {
-  console.log(`File: ${fileName}`);
-  console.log(`Path: ${filePath}`);
+  console.error(`File: ${fileName}`);
+  console.error(`Path: ${filePath}`);
 
-  // Check if in deny list
-  const isDenied = settings.permissions.deny.includes(filePath);
-  if (isDenied) {
-    console.log("Status: ❌ DENIED");
+  // Get repository information
+  const repoInfo = await getRepoInfoFromPath(filePath);
+  if (!repoInfo) {
+    console.error("Status: ❌ NOT IN GIT REPOSITORY");
+    console.error(
+      "Action: File must be in a git repository to be trusted",
+    );
     return;
   }
 
-  // Find entry in allow list
-  const entry = settings.permissions.allow.find(
-    (item) => item.path === filePath,
-  );
+  // Display repository info
+  if (repoInfo.remoteUrl) {
+    console.error(`Repository: ${repoInfo.remoteUrl}`);
+  } else {
+    console.error(`Repository: (local) ${repoInfo.repoRoot}`);
+  }
+  console.error(`Relative Path: ${repoInfo.relativePath}`);
+
+  // Find entry in allow list using repository-based matching
+  const entry = settings.permissions.allow.find((item) => {
+    return item.relativePath === repoInfo.relativePath &&
+      (
+        (item.repoId.remoteUrl && repoInfo.remoteUrl &&
+          item.repoId.remoteUrl === repoInfo.remoteUrl) ||
+        (item.repoId.repoRoot && repoInfo.repoRoot &&
+          item.repoId.repoRoot === repoInfo.repoRoot)
+      );
+  });
 
   if (!entry) {
-    console.log("Status: ⚠️  NOT TRUSTED");
-    console.log(
+    console.error("Status: ⚠️  NOT TRUSTED");
+    console.error(
       "Action: Run 'vibe trust' to add this file to trusted list",
     );
     return;
@@ -84,7 +101,7 @@ async function displayFileStatus(
     currentHash = await calculateFileHash(filePath);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.log(`Status: ❌ ERROR - Cannot read file: ${errorMessage}`);
+    console.error(`Status: ❌ ERROR - Cannot read file: ${errorMessage}`);
     return;
   }
 
@@ -93,30 +110,30 @@ async function displayFileStatus(
   const skipHashCheck = entry.skipHashCheck ?? settings.skipHashCheck ?? false;
 
   if (skipHashCheck) {
-    console.log("Status: ⚠️  TRUSTED (hash check disabled)");
-    console.log("Skip Hash Check: true (path-level or global)");
+    console.error("Status: ⚠️  TRUSTED (hash check disabled)");
+    console.error("Skip Hash Check: true (path-level or global)");
   } else if (hashMatches) {
-    console.log("Status: ✅ TRUSTED");
-    console.log("Current Hash: matches stored hash");
+    console.error("Status: ✅ TRUSTED");
+    console.error("Current Hash: matches stored hash");
   } else {
-    console.log("Status: ❌ HASH MISMATCH");
-    console.log("Current Hash: does NOT match any stored hash");
-    console.log(
+    console.error("Status: ❌ HASH MISMATCH");
+    console.error("Current Hash: does NOT match any stored hash");
+    console.error(
       "Action: Run 'vibe trust' to update hash, or verify file integrity",
     );
   }
 
   // Display hash history
-  console.log(`\nHash History (${entry.hashes.length} stored):`);
+  console.error(`\nHash History (${entry.hashes.length} stored):`);
   entry.hashes.forEach((hash, index) => {
     const isCurrent = hash === currentHash;
     const marker = isCurrent ? "→" : " ";
     const status = isCurrent ? " (current)" : "";
-    console.log(`${marker} ${index + 1}. ${hash.substring(0, 16)}...${status}`);
+    console.error(`${marker} ${index + 1}. ${hash.substring(0, 16)}...${status}`);
   });
 
   if (entry.skipHashCheck !== undefined) {
-    console.log(`\nPath-level Skip Hash Check: ${entry.skipHashCheck}`);
+    console.error(`\nPath-level Skip Hash Check: ${entry.skipHashCheck}`);
   }
 }
 

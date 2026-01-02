@@ -4,6 +4,46 @@ A CLI tool for easy Git Worktree management.
 
 [日本語](README.ja.md)
 
+## Usage
+
+| Command                      | Description                                         |
+| ---------------------------- | --------------------------------------------------- |
+| `vibe start <branch>`        | Create a worktree with a new or existing branch (idempotent) |
+| `vibe clean`                 | Delete current worktree and return to main (prompts if uncommitted changes exist) |
+| `vibe trust`                 | Trust `.vibe.toml` and `.vibe.local.toml` files     |
+| `vibe untrust`               | Untrust `.vibe.toml` and `.vibe.local.toml` files   |
+
+### Examples
+
+```bash
+# Create a worktree with a new branch
+vibe start feat/new-feature
+
+# Use an existing branch (or re-run if worktree already exists)
+vibe start feat/existing-branch
+
+# After work is done, delete the worktree
+vibe clean
+```
+
+### Interactive Prompts
+
+`vibe start` handles the following situations:
+
+- **When a branch is already in use by another worktree**: Confirms whether to navigate to the existing worktree
+- **When the same worktree already exists**: Automatically re-uses it (idempotent)
+- **When a directory exists with a different branch**: You can choose from the following options
+  - Overwrite (delete and recreate)
+  - Reuse (use existing directory)
+  - Cancel
+
+```bash
+# Example when branch is already in use
+$ vibe start feat/new-feature
+Branch 'feat/new-feature' is already in use by worktree '/path/to/repo-feat-new-feature'.
+Navigate to the existing worktree? (Y/n)
+```
+
 ## Installation
 
 ### Homebrew (macOS)
@@ -135,46 +175,6 @@ function vibe { Invoke-Expression (& vibe.exe $args) }
 ```
 </details>
 
-## Usage
-
-| Command                      | Description                                         |
-| ---------------------------- | --------------------------------------------------- |
-| `vibe start <branch>`        | Create a new worktree with a new branch             |
-| `vibe start <branch> --reuse`| Create a worktree using an existing branch          |
-| `vibe clean`                 | Delete current worktree and return to main (prompts if uncommitted changes exist) |
-| `vibe trust`                 | Trust `.vibe.toml` and `.vibe.local.toml` files     |
-| `vibe untrust`               | Untrust `.vibe.toml` and `.vibe.local.toml` files   |
-
-### Examples
-
-```bash
-# Create a worktree with a new branch
-vibe start feat/new-feature
-
-# Use an existing branch
-vibe start feat/existing-branch --reuse
-
-# After work is done, delete the worktree
-vibe clean
-```
-
-### Interactive Prompts
-
-`vibe start` handles the following situations interactively:
-
-- **When a branch is already in use by another worktree**: Confirms whether to navigate to the existing worktree
-- **When a directory already exists**: You can choose from the following options
-  - Overwrite (delete and recreate)
-  - Reuse (use existing)
-  - Cancel
-
-```bash
-# Example when branch is already in use
-$ vibe start feat/new-feature
-Branch 'feat/new-feature' is already in use by worktree '/path/to/repo-feat-new-feature'.
-Navigate to the existing worktree? (Y/n)
-```
-
 ## Configuration
 
 ### .vibe.toml
@@ -241,7 +241,7 @@ You can disable hash verification in your settings file (`~/.config/vibe/setting
 **Global setting:**
 ```json
 {
-  "version": 2,
+  "version": 3,
   "skipHashCheck": true,
   "permissions": { "allow": [], "deny": [] }
 }
@@ -250,11 +250,15 @@ You can disable hash verification in your settings file (`~/.config/vibe/setting
 **Per-file setting:**
 ```json
 {
-  "version": 2,
+  "version": 3,
   "permissions": {
     "allow": [
       {
-        "path": "/path/to/.vibe.toml",
+        "repoId": {
+          "remoteUrl": "github.com/user/repo",
+          "repoRoot": "/path/to/repo"
+        },
+        "relativePath": ".vibe.toml",
         "hashes": ["abc123..."],
         "skipHashCheck": true
       }
@@ -263,6 +267,8 @@ You can disable hash verification in your settings file (`~/.config/vibe/setting
   }
 }
 ```
+
+> **Note**: Version 3 uses repository-based trust identification. Settings are automatically migrated from v2 to v3 on first load. Trust is shared across all worktrees of the same repository.
 
 #### Branch switching
 Vibe stores multiple hashes per file (up to 100), so you can switch between branches without needing to re-trust files (as long as you've trusted each branch's version at least once).
@@ -318,6 +324,27 @@ post_start_append = ["npm run dev"]
 
 **Note**: `post_clean` hooks are appended to the removal command with `&&`, executing in the main repository directory after the `git worktree remove` command completes.
 
+### Hook Output Behavior
+
+Vibe displays a real-time progress tree during hook execution to show task status. Hook output is handled differently depending on the context:
+
+- **When progress display is active**: Hook stdout is suppressed to keep the progress tree clean and avoid visual clutter. Only the progress tree is shown.
+- **When progress display is not active**: Hook stdout is written to stderr (to avoid interfering with shell wrapper `eval`).
+- **Failed hooks**: stderr output is ALWAYS shown regardless of progress display, to help with debugging.
+
+Example progress display:
+```
+✶ Setting up worktree feature/new-ui…
+  ⎿  ☒ Pre-start hooks
+       ⎿  ☒ npm install
+          ☒ cargo build --release
+     ⠋ Copying files
+       ⎿  ⠋ .env.local
+          ☐ node_modules/
+```
+
+**Note**: Progress display auto-disables in non-TTY environments (e.g., CI/CD), and hook output will be shown normally.
+
 ### Environment Variables
 
 The following environment variables are available in all hook commands:
@@ -327,43 +354,9 @@ The following environment variables are available in all hook commands:
 | `VIBE_WORKTREE_PATH` | Absolute path to the created worktree    |
 | `VIBE_ORIGIN_PATH`   | Absolute path to the original repository |
 
-## Development
+## Contributing
 
-### Available Tasks
-
-All tasks are defined in `deno.json` to ensure consistency between local development and CI:
-
-```bash
-# Run all CI checks (same as CI runs)
-deno task ci
-
-# Individual checks
-deno task fmt:check    # Check code formatting
-deno task lint         # Run linter
-deno task check        # Type check
-deno task test         # Run tests
-
-# Auto-fix formatting
-deno task fmt
-
-# Development
-deno task dev          # Run in development mode
-deno task compile      # Build binaries for all platforms
-```
-
-### Running CI Checks Locally
-
-Before pushing, run the same checks that CI will run:
-
-```bash
-deno task ci
-```
-
-This runs:
-1. Format check (`deno task fmt:check`)
-2. Linter (`deno task lint`)
-3. Type check (`deno task check`)
-4. Tests (`deno task test`)
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
 ## License
 

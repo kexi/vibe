@@ -1,5 +1,9 @@
 # Compiled binary
 vibe
+vibe-e2e
+
+# Auto-generated files
+src/version.ts
 
 # OS
 .DS_Store
@@ -23,3 +27,8 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Node.js
+node_modules/
+package-lock.json
+pnpm-lock.yaml

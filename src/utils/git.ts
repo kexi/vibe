@@ -1,3 +1,5 @@
+import { dirname, isAbsolute, normalize, relative, SEPARATOR } from "@std/path";
+
 export async function runGitCommand(args: string[]): Promise<string> {
   const command = new Deno.Command("git", {
     args,
@@ -51,6 +53,14 @@ export async function getWorktreeList(): Promise<
   }
 
   return worktrees;
+}
+
+export async function getWorktreeByPath(
+  path: string,
+): Promise<{ path: string; branch: string } | null> {
+  const worktrees = await getWorktreeList();
+  const normalizedPath = normalize(path);
+  return worktrees.find((w) => normalize(w.path) === normalizedPath) ?? null;
 }
 
 export async function getMainWorktreePath(): Promise<string> {
@@ -111,4 +121,123 @@ export async function findWorktreeByBranch(
     return found.path;
   }
   return null;
+}
+
+/**
+ * Normalize git remote URL for consistent comparison
+ * Converts various URL formats to a canonical form: host/user/repo
+ *
+ * Examples:
+ * - https://github.com/user/repo.git → github.com/user/repo
+ * - git@github.com:user/repo.git → github.com/user/repo
+ * - ssh://git@github.com/user/repo → github.com/user/repo
+ *
+ * @param url Raw git remote URL
+ * @returns Normalized URL
+ */
+export function normalizeRemoteUrl(url: string): string {
+  let normalized = url.trim();
+
+  // Remove trailing .git suffix
+  normalized = normalized.replace(/\.git$/, "");
+
+  // Convert SSH format (git@host:path) to HTTPS-like (host/path)
+  normalized = normalized.replace(/^git@([^:]+):/, "$1/");
+
+  // Remove protocol (https://, http://, ssh://)
+  normalized = normalized.replace(/^[a-z]+:\/\//, "");
+
+  // Remove credentials if present (user:pass@host)
+  normalized = normalized.replace(/^[^@]+@/, "");
+
+  return normalized;
+}
+
+/**
+ * Get the remote URL for the current repository
+ * @returns Remote URL (normalized), or undefined if no remote exists
+ */
+export async function getRemoteUrl(): Promise<string | undefined> {
+  try {
+    const rawUrl = await runGitCommand(["config", "--get", "remote.origin.url"]);
+    return normalizeRemoteUrl(rawUrl);
+  } catch {
+    // No remote configured
+    return undefined;
+  }
+}
+
+/**
+ * Repository information extracted from a file path
+ */
+export interface RepoInfo {
+  remoteUrl?: string;
+  repoRoot: string;
+  relativePath: string;
+}
+
+/**
+ * Extract repository information from an absolute file path
+ * This function resolves symlinks and determines the git repository containing the file
+ *
+ * @param absolutePath Absolute path to a file
+ * @returns Repository information, or null if not in a git repository
+ */
+export async function getRepoInfoFromPath(
+  absolutePath: string,
+): Promise<RepoInfo | null> {
+  try {
+    // Resolve symlinks to real path for security
+    const realPath = await Deno.realPath(absolutePath);
+    const fileDir = dirname(realPath);
+
+    // Use git -C to run commands in specific directory without changing CWD
+    // This avoids race conditions when multiple calls run concurrently
+
+    // Get repository root
+    const repoRoot = await runGitCommand(["-C", fileDir, "rev-parse", "--show-toplevel"]);
+
+    // Validate that repoRoot is absolute
+    if (!isAbsolute(repoRoot)) {
+      throw new Error("Repository root must be an absolute path");
+    }
+
+    // Normalize paths to prevent traversal attacks
+    const normalizedRoot = normalize(repoRoot);
+    const normalizedPath = normalize(realPath);
+
+    // Verify realPath is within repoRoot by checking if it starts with repoRoot + separator
+    if (
+      !normalizedPath.startsWith(normalizedRoot + SEPARATOR) && normalizedPath !== normalizedRoot
+    ) {
+      throw new Error("File is outside repository root");
+    }
+
+    // Calculate relative path from repo root
+    const relativePath = relative(normalizedRoot, normalizedPath);
+
+    // Additional safety check: ensure relative path doesn't contain ..
+    if (relativePath.includes("..")) {
+      throw new Error("Invalid relative path contains parent directory references");
+    }
+
+    // Get remote URL (may be undefined for local-only repos)
+    let remoteUrl: string | undefined;
+    try {
+      const rawUrl = await runGitCommand(["-C", fileDir, "config", "--get", "remote.origin.url"]);
+      remoteUrl = normalizeRemoteUrl(rawUrl);
+    } catch {
+      // No remote configured
+      remoteUrl = undefined;
+    }
+
+    return {
+      remoteUrl,
+      repoRoot: normalizedRoot,
+      relativePath,
+    };
+  } catch {
+    // Not in a git repository or path doesn't exist
+    return null;
+  }
 }

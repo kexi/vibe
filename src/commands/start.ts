@@ -4,23 +4,50 @@ import {
   findWorktreeByBranch,
   getRepoName,
   getRepoRoot,
-  getWorktreeList,
+  getWorktreeByPath,
   runGitCommand,
   sanitizeBranchName,
 } from "../utils/git.ts";
 import type { VibeConfig } from "../types/config.ts";
 import { loadVibeConfig } from "../utils/config.ts";
-import { runHooks } from "../utils/hooks.ts";
+import { type HookTrackerInfo, runHooks } from "../utils/hooks.ts";
 import { confirm, select } from "../utils/prompt.ts";
 import { expandCopyPatterns } from "../utils/glob.ts";
+import { ProgressTracker } from "../utils/progress.ts";
 
 interface StartOptions {
   reuse?: boolean;
 }
 
+async function runConfigAndHooks(
+  config: VibeConfig | undefined,
+  repoRoot: string,
+  worktreePath: string,
+  tracker: ProgressTracker,
+): Promise<void> {
+  const hasOperations = config !== undefined &&
+    (config.hooks?.pre_start?.length ?? 0) +
+          (config.copy?.files?.length ?? 0) +
+          (config.hooks?.post_start?.length ?? 0) > 0;
+
+  if (hasOperations) {
+    tracker.start();
+  }
+
+  await runPreStartHooksIfNeeded(config, repoRoot, worktreePath, tracker);
+
+  if (config !== undefined) {
+    await runVibeConfig(config, repoRoot, worktreePath, tracker);
+  }
+
+  if (hasOperations) {
+    tracker.finish();
+  }
+}
+
 export async function startCommand(
   branchName: string,
-  options: StartOptions = {},
+  _options: StartOptions = {}, // Kept for backward compatibility, --reuse no longer required
 ): Promise<void> {
   const isBranchNameEmpty = !branchName;
   if (isBranchNameEmpty) {
@@ -47,7 +74,7 @@ export async function startCommand(
         console.log(`cd '${existingWorktreePath}'`);
         Deno.exit(0);
       } else {
-        console.log("キャンセルしました");
+        console.error("キャンセルしました");
         Deno.exit(0);
       }
     }
@@ -55,74 +82,62 @@ export async function startCommand(
     // Load config and verify trust before creating worktree
     const config: VibeConfig | undefined = await loadVibeConfig(repoRoot);
 
-    // Check if directory already exists
-    try {
-      await Deno.stat(worktreePath);
+    // Create progress tracker
+    const tracker = new ProgressTracker({
+      title: `Setting up worktree ${branchName}`,
+    });
 
-      const choice = await select(
-        `ディレクトリ '${worktreePath}' は既に存在します:`,
-        ["上書き(削除して再作成)", "再利用(既存を使用)", "キャンセル"],
-      );
+    // Check if worktree already exists at the target path
+    const existingWorktree = await getWorktreeByPath(worktreePath);
 
-      const shouldOverwrite = choice === 0;
-      if (shouldOverwrite) {
-        // Safety check: verify the directory is actually a git worktree before deletion
-        const worktrees = await getWorktreeList();
-        const isGitWorktree = worktrees.some((w) => w.path === worktreePath);
-        if (!isGitWorktree) {
-          console.error(
-            `Error: Directory '${worktreePath}' is not a git worktree. Cannot delete for safety.`,
-          );
-          Deno.exit(1);
-        }
-        await Deno.remove(worktreePath, { recursive: true });
+    if (existingWorktree !== null) {
+      // Worktree already exists
+      if (existingWorktree.branch === branchName) {
+        // Same branch - idempotent re-entry
+        console.error(`Note: Worktree already exists at '${worktreePath}'`);
+
+        // Run hooks and config in case they changed
+        await runConfigAndHooks(config, repoRoot, worktreePath, tracker);
+
+        // Output cd command
+        console.log(`cd '${worktreePath}'`);
+        return;
       } else {
-        const shouldReuse = choice === 1;
-        if (shouldReuse) {
-          // Reuse existing directory: skip git worktree add
+        // Different branch - offer to overwrite
+        const choice = await select(
+          `ディレクトリ '${worktreePath}' は既に存在します (branch: ${existingWorktree.branch}):`,
+          ["上書き(削除して再作成)", "再利用(既存を使用)", "キャンセル"],
+        );
 
-          // Run pre_start hooks
-          await runPreStartHooksIfNeeded(config, repoRoot, worktreePath);
-
-          // Run config
-          const hasConfig = config !== undefined;
-          if (hasConfig) {
-            await runVibeConfig(config, repoRoot, worktreePath);
-          }
+        if (choice === 0) {
+          // Overwrite: remove existing worktree
+          await runGitCommand(["worktree", "remove", worktreePath, "--force"]);
+        } else if (choice === 1) {
+          // Reuse: skip git worktree creation, run hooks/config, and output cd
+          await runConfigAndHooks(config, repoRoot, worktreePath, tracker);
 
           // Output cd command
           console.log(`cd '${worktreePath}'`);
           return;
         } else {
           // Cancel
-          console.log("キャンセルしました");
+          console.error("キャンセルしました");
           Deno.exit(0);
         }
       }
-    } catch {
-      // Directory doesn't exist, continue with normal flow
     }
 
+    // Path doesn't exist or was overwritten - create worktree
     const branchAlreadyExists = await branchExists(branchName);
     if (branchAlreadyExists) {
-      if (!options.reuse) {
-        console.error(
-          `Error: Branch '${branchName}' already exists. Use --reuse to use existing branch.`,
-        );
-        Deno.exit(1);
-      }
+      // No --reuse flag required anymore
       await runGitCommand(["worktree", "add", worktreePath, branchName]);
     } else {
       await runGitCommand(["worktree", "add", "-b", branchName, worktreePath]);
     }
 
-    // Run pre_start hooks
-    await runPreStartHooksIfNeeded(config, repoRoot, worktreePath);
-
-    // Continue with existing process (post_start hooks are executed in runVibeConfig)
-    if (config !== undefined) {
-      await runVibeConfig(config, repoRoot, worktreePath);
-    }
+    // Run hooks and config
+    await runConfigAndHooks(config, repoRoot, worktreePath, tracker);
 
     console.log(`cd '${worktreePath}'`);
   } catch (error) {
@@ -136,6 +151,7 @@ async function runVibeConfig(
   config: VibeConfig,
   repoRoot: string,
   worktreePath: string,
+  tracker?: ProgressTracker,
 ): Promise<void> {
   // Copy files from origin to worktree
   // Expand glob patterns to actual file paths
@@ -144,9 +160,26 @@ async function runVibeConfig(
     repoRoot,
   );
 
-  for (const file of filesToCopy) {
+  // Add file copying phase if there are files to copy
+  let copyPhaseId: string | undefined;
+  const copyTaskIds: string[] = [];
+  if (tracker && filesToCopy.length > 0) {
+    copyPhaseId = tracker.addPhase("Copying files");
+    for (const file of filesToCopy) {
+      const taskId = tracker.addTask(copyPhaseId, file);
+      copyTaskIds.push(taskId);
+    }
+  }
+
+  for (let i = 0; i < filesToCopy.length; i++) {
+    const file = filesToCopy[i];
     const src = join(repoRoot, file);
     const dest = join(worktreePath, file);
+
+    // Update progress: start task
+    if (tracker && copyTaskIds.length > 0) {
+      tracker.startTask(copyTaskIds[i]);
+    }
 
     // Ensure parent directory exists
     const destDir = dirname(dest);
@@ -154,18 +187,36 @@ async function runVibeConfig(
     await Deno.mkdir(destDir, { recursive: true }).catch(() => {});
 
     // Copy the file
-    await Deno.copyFile(src, dest).catch((err) => {
-      console.warn(`Warning: Failed to copy ${file}: ${err.message}`);
-    });
+    try {
+      await Deno.copyFile(src, dest);
+      // Update progress: complete task
+      if (tracker && copyTaskIds.length > 0) {
+        tracker.completeTask(copyTaskIds[i]);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      // Update progress: fail task
+      if (tracker && copyTaskIds.length > 0) {
+        tracker.failTask(copyTaskIds[i], errorMessage);
+      }
+      console.warn(`Warning: Failed to copy ${file}: ${errorMessage}`);
+    }
   }
 
   // Run post_start hooks
   const postStartHooks = config.hooks?.post_start;
-  if (postStartHooks !== undefined) {
+  if (postStartHooks !== undefined && postStartHooks.length > 0) {
+    let trackerInfo: HookTrackerInfo | undefined;
+    if (tracker) {
+      const phaseId = tracker.addPhase("Post-start hooks");
+      const taskIds = postStartHooks.map((hook) => tracker.addTask(phaseId, hook));
+      trackerInfo = { tracker, taskIds };
+    }
+
     await runHooks(postStartHooks, worktreePath, {
       worktreePath,
       originPath: repoRoot,
-    });
+    }, trackerInfo);
   }
 }
 
@@ -173,12 +224,20 @@ async function runPreStartHooksIfNeeded(
   config: VibeConfig | undefined,
   repoRoot: string,
   worktreePath: string,
+  tracker?: ProgressTracker,
 ): Promise<void> {
   const preStartHooks = config?.hooks?.pre_start;
-  if (preStartHooks !== undefined) {
+  if (preStartHooks !== undefined && preStartHooks.length > 0) {
+    let trackerInfo: HookTrackerInfo | undefined;
+    if (tracker) {
+      const phaseId = tracker.addPhase("Pre-start hooks");
+      const taskIds = preStartHooks.map((hook) => tracker.addTask(phaseId, hook));
+      trackerInfo = { tracker, taskIds };
+    }
+
     await runHooks(preStartHooks, repoRoot, {
       worktreePath,
       originPath: repoRoot,
-    });
+    }, trackerInfo);
   }
 }
