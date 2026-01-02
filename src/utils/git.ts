@@ -233,7 +233,7 @@ export async function getRepoInfoFromPath(
 
     return {
       remoteUrl,
-      repoRoot,
+      repoRoot: normalizedRoot,
       relativePath,
     };
   } catch {
