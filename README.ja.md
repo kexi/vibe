@@ -8,8 +8,7 @@ Git Worktreeを簡単に管理するCLIツール。
 
 | コマンド                       | 説明                                                  |
 | ------------------------------ | ----------------------------------------------------- |
-| `vibe start <branch>`          | 新しいブランチでworktreeを作成                        |
-| `vibe start <branch> --reuse`  | 既存ブランチを使用してworktreeを作成                  |
+| `vibe start <branch>`          | 新規または既存ブランチでworktreeを作成（冪等）        |
 | `vibe clean`                   | 現在のworktreeを削除してメインに戻る（未コミットの変更がある場合は確認）                  |
 | `vibe trust`                   | `.vibe.toml`と`.vibe.local.toml`ファイルを信頼登録    |
 | `vibe untrust`                 | `.vibe.toml`と`.vibe.local.toml`ファイルの信頼を解除  |
@@ -20,8 +19,8 @@ Git Worktreeを簡単に管理するCLIツール。
 # 新しいブランチでworktreeを作成
 vibe start feat/new-feature
 
-# 既存ブランチを使用
-vibe start feat/existing-branch --reuse
+# 既存ブランチを使用（またはworktreeが既に存在する場合も再実行可能）
+vibe start feat/existing-branch
 
 # 作業完了後、worktreeを削除
 vibe clean
@@ -29,12 +28,13 @@ vibe clean
 
 ### インタラクティブプロンプト
 
-`vibe start`は以下の状況でインタラクティブに対応します：
+`vibe start`は以下の状況に対応します：
 
 - **ブランチが既に他のworktreeで使用中の場合**: 既存のworktreeに移動するか確認します
-- **ディレクトリが既に存在する場合**: 以下の選択肢から選べます
+- **同じworktreeが既に存在する場合**: 自動的に再利用します（冪等）
+- **異なるブランチのディレクトリが存在する場合**: 以下の選択肢から選べます
   - 上書き（削除して再作成）
-  - 再利用（既存を使用）
+  - 再利用（既存ディレクトリを使用）
   - キャンセル
 
 ```bash
