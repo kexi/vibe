@@ -1,6 +1,7 @@
 import { execFileSync } from "child_process";
+import { existsSync } from "fs";
 import { basename, dirname } from "path";
-import { afterEach, describe, test } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 import { getVibePath, VibeCommandRunner } from "./helpers/pty.js";
 import { setupTestGitRepo } from "./helpers/git-setup.js";
 import { assertExitCode, assertOutputContains } from "./helpers/assertions.js";
@@ -42,9 +43,11 @@ describe("clean command", () => {
 
       const output = runner.getOutput();
 
-      // Verify output contains cd command to main repo
-      assertOutputContains(output, "cd");
-      assertOutputContains(output, repoPath);
+      // Verify output contains success message
+      assertOutputContains(output, "has been removed");
+
+      // Verify worktree directory no longer exists
+      expect(existsSync(worktreePath)).toBe(false);
     } finally {
       runner.dispose();
     }
