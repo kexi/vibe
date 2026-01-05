@@ -50,5 +50,8 @@
     "include": ["src/"],
     "exclude": ["tests/e2e/"]
   },
+  "publish": {
+    "exclude": ["!src/version.ts"]
+  },
   "nodeModulesDir": "auto"
 }
