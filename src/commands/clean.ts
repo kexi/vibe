@@ -3,6 +3,7 @@ import {
   getRepoRoot,
   hasUncommittedChanges,
   isMainWorktree,
+  runGitCommand,
 } from "../utils/git.ts";
 import { loadVibeConfig } from "../utils/config.ts";
 import { type HookTrackerInfo, runHooks } from "../utils/hooks.ts";
@@ -52,27 +53,42 @@ export async function cleanCommand(): Promise<void> {
       const taskIds = preCleanHooks.map((hook) => tracker.addTask(phaseId, hook));
       const trackerInfo: HookTrackerInfo = { tracker, taskIds };
 
-      await runHooks(preCleanHooks, currentWorktreePath, {
-        worktreePath: currentWorktreePath,
-        originPath: mainPath,
-      }, trackerInfo);
+      await runHooks(
+        preCleanHooks,
+        currentWorktreePath,
+        {
+          worktreePath: currentWorktreePath,
+          originPath: mainPath,
+        },
+        trackerInfo,
+      );
 
       // Finish progress tracking
       tracker.finish();
     }
 
-    // Build remove command
-    let removeCommand = `cd '${mainPath}' && git worktree remove '${currentWorktreePath}'`;
+    // Change to main worktree before removing (so cwd remains valid after deletion)
+    Deno.chdir(mainPath);
 
-    // Append post_clean hooks to remove command
+    // Remove worktree
+    await runGitCommand([
+      "-C",
+      mainPath,
+      "worktree",
+      "remove",
+      currentWorktreePath,
+    ]);
+
+    // Run post_clean hooks from main worktree
     const postCleanHooks = config?.hooks?.post_clean;
-    if (postCleanHooks !== undefined) {
-      for (const cmd of postCleanHooks) {
-        removeCommand += ` && ${cmd}`;
-      }
+    if (postCleanHooks !== undefined && postCleanHooks.length > 0) {
+      await runHooks(postCleanHooks, mainPath, {
+        worktreePath: currentWorktreePath,
+        originPath: mainPath,
+      });
     }
 
-    console.log(removeCommand);
+    console.log(`Worktree ${currentWorktreePath} has been removed.`);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${errorMessage}`);
