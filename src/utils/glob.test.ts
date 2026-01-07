@@ -1,5 +1,10 @@
 import { assertEquals } from "@std/assert";
-import { expandCopyPatterns, expandDirectoryPatterns, expandGlobPattern, isGlobPattern } from "./glob.ts";
+import {
+  expandCopyPatterns,
+  expandDirectoryPatterns,
+  expandGlobPattern,
+  isGlobPattern,
+} from "./glob.ts";
 import { join } from "@std/path";
 
 Deno.test("isGlobPattern: detects glob patterns", () => {
