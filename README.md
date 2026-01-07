@@ -354,12 +354,12 @@ Vibe displays a real-time progress tree during hook execution to show task statu
 Example progress display:
 ```
 ✶ Setting up worktree feature/new-ui…
-  ⎿  ☒ Pre-start hooks
-       ⎿  ☒ npm install
-          ☒ cargo build --release
-     ⠋ Copying files
-       ⎿  ⠋ .env.local
-          ☐ node_modules/
+┗ ☒ Pre-start hooks
+   ┗ ☒ npm install
+     ☒ cargo build --release
+  ⠋ Copying files
+   ┗ ⠋ .env.local
+     ☐ node_modules/
 ```
 
 **Note**: Progress display auto-disables in non-TTY environments (e.g., CI/CD), and hook output will be shown normally.
