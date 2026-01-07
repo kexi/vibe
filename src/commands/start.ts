@@ -1,5 +1,4 @@
 import { dirname, join } from "@std/path";
-import { copy } from "@std/fs/copy";
 import {
   branchExists,
   findWorktreeByBranch,
@@ -15,6 +14,7 @@ import { type HookTrackerInfo, runHooks } from "../utils/hooks.ts";
 import { confirm, select } from "../utils/prompt.ts";
 import { expandCopyPatterns, expandDirectoryPatterns } from "../utils/glob.ts";
 import { ProgressTracker } from "../utils/progress.ts";
+import { getCopyService } from "../utils/copy/index.ts";
 
 interface StartOptions {
   reuse?: boolean;
@@ -155,6 +155,9 @@ async function runVibeConfig(
   worktreePath: string,
   tracker?: ProgressTracker,
 ): Promise<void> {
+  // Get the copy service (automatically selects the best strategy)
+  const copyService = getCopyService();
+
   // Copy files from origin to worktree
   // Expand glob patterns to actual file paths
   const filesToCopy = await expandCopyPatterns(
@@ -183,14 +186,9 @@ async function runVibeConfig(
       tracker.startTask(copyTaskIds[i]);
     }
 
-    // Ensure parent directory exists
-    const destDir = dirname(dest);
-    // Ignore errors if directory already exists
-    await Deno.mkdir(destDir, { recursive: true }).catch(() => {});
-
-    // Copy the file
+    // Copy the file using CopyService
     try {
-      await Deno.copyFile(src, dest);
+      await copyService.copyFile(src, dest);
       // Update progress: complete task
       if (tracker && copyTaskIds.length > 0) {
         tracker.completeTask(copyTaskIds[i]);
@@ -233,9 +231,9 @@ async function runVibeConfig(
       tracker.startTask(dirCopyTaskIds[i]);
     }
 
-    // Copy directory using @std/fs/copy
+    // Copy directory using CopyService
     try {
-      await copy(src, dest, { overwrite: true });
+      await copyService.copyDirectory(src, dest);
       // Update progress: complete task
       if (tracker && dirCopyTaskIds.length > 0) {
         tracker.completeTask(dirCopyTaskIds[i]);
