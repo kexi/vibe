@@ -58,7 +58,7 @@ class AnsiRenderer {
 class TreeFormatter {
   // Box-drawing characters for tree structure
   static readonly MAIN_TASK = "✶";
-  static readonly SUB_TASK = "⎿";
+  static readonly SUB_TASK = "┗";
   static readonly INDENT = "   ";
 
   // State symbols
@@ -114,27 +114,28 @@ class TreeFormatter {
     nodes: ProgressNode[],
     depth = 0,
     spinnerFrame?: string,
+    showMarkerOnFirst = false,
   ): string[] {
     const lines: string[] = [];
 
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i];
-      const prefix = depth === 0 ? "" : TreeFormatter.INDENT.repeat(depth);
+      const isFirstWithMarker = i === 0 && showMarkerOnFirst;
+      const basePrefix = depth === 0 ? "" : TreeFormatter.INDENT.repeat(depth);
+      const prefix = isFirstWithMarker
+        ? basePrefix + TreeFormatter.SUB_TASK + " "
+        : basePrefix + "  ";
 
       // Format current node
       lines.push(TreeFormatter.formatNode(node, prefix, spinnerFrame));
 
-      // Format children with SUB_TASK marker
+      // Recursively format children
       if (node.children.length > 0) {
-        const childPrefix = prefix + TreeFormatter.INDENT;
-        const subTaskLine = `${childPrefix}${TreeFormatter.SUB_TASK}`;
-        lines.push(subTaskLine);
-
-        // Recursively format children
         const childLines = TreeFormatter.formatTree(
           node.children,
-          depth + 2,
+          depth + 1,
           spinnerFrame,
+          true,
         );
         lines.push(...childLines);
       }
@@ -427,16 +428,14 @@ export class ProgressTracker {
       `${mainStyle}${TreeFormatter.MAIN_TASK} ${this.title}…${AnsiRenderer.RESET}`,
     );
 
-    // Add sub-task marker
+    // Render phases and their tasks
     if (this.root.children.length > 0) {
-      lines.push(`  ${TreeFormatter.SUB_TASK}`);
-
-      // Render phases and their tasks
       const spinnerFrame = this.spinnerFrames[this.spinnerFrameIndex];
       const phaseLines = TreeFormatter.formatTree(
         this.root.children,
-        1,
+        0,
         spinnerFrame,
+        true,
       );
       lines.push(...phaseLines);
     }

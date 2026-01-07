@@ -353,12 +353,12 @@ Vibeはフック実行中にタスクの状態を表示するリアルタイム�
 進捗表示の例：
 ```
 ✶ Setting up worktree feature/new-ui…
-  ⎿  ☒ Pre-start hooks
-       ⎿  ☒ npm install
-          ☒ cargo build --release
-     ⠋ Copying files
-       ⎿  ⠋ .env.local
-          ☐ node_modules/
+┗ ☒ Pre-start hooks
+   ┗ ☒ npm install
+     ☒ cargo build --release
+  ⠋ Copying files
+   ┗ ⠋ .env.local
+     ☐ node_modules/
 ```
 
 **注意**: 進捗表示は非TTY環境（CI/CDなど）では自動的に無効になり、フックの出力が通常通り表示されます。

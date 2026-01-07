@@ -7,6 +7,14 @@ import { assertOutputContains } from "../helpers/assertions.js";
 import { setupTestGitRepo } from "../helpers/git-setup.js";
 
 /**
+ * Helper to commit .vibe.toml to git so it exists in worktrees
+ */
+function commitVibeToml(repoPath: string): void {
+  execFileSync("git", ["add", ".vibe.toml"], { cwd: repoPath });
+  execFileSync("git", ["commit", "-m", "Add .vibe.toml"], { cwd: repoPath });
+}
+
+/**
  * Disk space error tests
  *
  * Note: True ENOSPC (disk full) errors are difficult to simulate in E2E tests
@@ -37,6 +45,9 @@ describe("disk space errors", () => {
 files = ["this-file-does-not-exist.txt", "another-missing-file.conf"]
 `,
     );
+
+    // Commit .vibe.toml so it exists in the worktree
+    commitVibeToml(repoPath);
 
     // Trust the .vibe.toml file using vibe trust command
     const trustRunner = new VibeCommandRunner(getVibePath(), repoPath);
@@ -91,6 +102,12 @@ files = ["*.txt", "config/*.json"]
 
     // Create some files that will succeed
     writeFileSync(join(repoPath, "test.txt"), "test content");
+
+    // Commit .vibe.toml and test.txt so they exist in the worktree
+    execFileSync("git", ["add", "."], { cwd: repoPath });
+    execFileSync("git", ["commit", "-m", "Add .vibe.toml and test files"], {
+      cwd: repoPath,
+    });
 
     // Trust the .vibe.toml file
     const trustRunner = new VibeCommandRunner(getVibePath(), repoPath);
