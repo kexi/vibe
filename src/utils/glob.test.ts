@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { expandCopyPatterns, expandGlobPattern, isGlobPattern } from "./glob.ts";
+import { expandCopyPatterns, expandDirectoryPatterns, expandGlobPattern, isGlobPattern } from "./glob.ts";
 import { join } from "@std/path";
 
 Deno.test("isGlobPattern: detects glob patterns", () => {
@@ -273,6 +273,159 @@ Deno.test("expandGlobPattern: handles symlinks", async () => {
     // Should at minimum include the real file
     // Note: expandGlob behavior with symlinks follows Deno's default behavior
     assertEquals(result.includes("real.txt"), true);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+// ===== Directory Pattern Tests =====
+
+Deno.test("expandDirectoryPatterns: expands exact directory path", async () => {
+  const tempDir = await Deno.makeTempDir();
+
+  try {
+    await Deno.mkdir(join(tempDir, "node_modules"));
+
+    const result = await expandDirectoryPatterns(["node_modules"], tempDir);
+
+    assertEquals(result, ["node_modules"]);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test("expandDirectoryPatterns: expands glob pattern for directories", async () => {
+  const tempDir = await Deno.makeTempDir();
+
+  try {
+    await Deno.mkdir(join(tempDir, ".cache"));
+    await Deno.mkdir(join(tempDir, ".config"));
+    await Deno.writeTextFile(join(tempDir, ".env"), ""); // File should not be included
+
+    const result = await expandDirectoryPatterns([".*"], tempDir);
+
+    assertEquals(result.sort(), [".cache", ".config"]);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test("expandDirectoryPatterns: skips non-existent directories", async () => {
+  const tempDir = await Deno.makeTempDir();
+
+  try {
+    const result = await expandDirectoryPatterns(["nonexistent"], tempDir);
+
+    assertEquals(result, []);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test("expandDirectoryPatterns: prevents path traversal", async () => {
+  const tempDir = await Deno.makeTempDir();
+
+  try {
+    const result = await expandDirectoryPatterns(["../"], tempDir);
+
+    assertEquals(result, []);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test("expandDirectoryPatterns: rejects absolute paths", async () => {
+  const tempDir = await Deno.makeTempDir();
+
+  try {
+    const result = await expandDirectoryPatterns(["/etc", "/tmp"], tempDir);
+
+    assertEquals(result, []);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test("expandDirectoryPatterns: rejects null byte injection", async () => {
+  const tempDir = await Deno.makeTempDir();
+
+  try {
+    const result = await expandDirectoryPatterns(["dir\0name"], tempDir);
+
+    assertEquals(result, []);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test("expandDirectoryPatterns: deduplicates directories", async () => {
+  const tempDir = await Deno.makeTempDir();
+
+  try {
+    await Deno.mkdir(join(tempDir, "vendor"));
+
+    const result = await expandDirectoryPatterns(["vendor", "vendor"], tempDir);
+
+    assertEquals(result, ["vendor"]);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test("expandDirectoryPatterns: handles nested directories with glob", async () => {
+  const tempDir = await Deno.makeTempDir();
+
+  try {
+    await Deno.mkdir(join(tempDir, "packages/pkg-a"), { recursive: true });
+    await Deno.mkdir(join(tempDir, "packages/pkg-b"), { recursive: true });
+    await Deno.writeTextFile(join(tempDir, "packages/file.txt"), ""); // File should not be included
+
+    const result = await expandDirectoryPatterns(["packages/*"], tempDir);
+
+    assertEquals(result.sort(), ["packages/pkg-a", "packages/pkg-b"]);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test("expandDirectoryPatterns: handles empty array", async () => {
+  const tempDir = await Deno.makeTempDir();
+
+  try {
+    const result = await expandDirectoryPatterns([], tempDir);
+
+    assertEquals(result, []);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test("expandDirectoryPatterns: maintains order", async () => {
+  const tempDir = await Deno.makeTempDir();
+
+  try {
+    await Deno.mkdir(join(tempDir, "aaa"));
+    await Deno.mkdir(join(tempDir, "bbb"));
+    await Deno.mkdir(join(tempDir, "ccc"));
+
+    const result = await expandDirectoryPatterns(["ccc", "aaa", "bbb"], tempDir);
+
+    assertEquals(result, ["ccc", "aaa", "bbb"]);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test("expandDirectoryPatterns: does not include files", async () => {
+  const tempDir = await Deno.makeTempDir();
+
+  try {
+    await Deno.mkdir(join(tempDir, "dir1"));
+    await Deno.writeTextFile(join(tempDir, "file1.txt"), "");
+
+    const result = await expandDirectoryPatterns(["*"], tempDir);
+
+    assertEquals(result, ["dir1"]);
   } finally {
     await Deno.remove(tempDir, { recursive: true });
   }

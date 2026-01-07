@@ -86,3 +86,106 @@ export async function expandCopyPatterns(
 
   return expandedFiles;
 }
+
+/**
+ * Checks if a path is a directory.
+ */
+async function isDir(path: string): Promise<boolean> {
+  try {
+    const stat = await Deno.stat(path);
+    return stat.isDirectory;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Expands a single glob pattern to matching directory paths.
+ * Returns array of relative paths from repoRoot.
+ */
+async function expandGlobPatternForDirectories(
+  pattern: string,
+  repoRoot: string,
+): Promise<string[]> {
+  const dirs: string[] = [];
+
+  try {
+    const absolutePattern = join(repoRoot, pattern);
+
+    for await (const entry of expandGlob(absolutePattern, { root: repoRoot })) {
+      const isDirectory = entry.isDirectory;
+      if (!isDirectory) {
+        continue;
+      }
+
+      const relativePath = relative(repoRoot, entry.path);
+
+      // Security: Ensure the path does not escape repoRoot
+      const isOutsideRepo = relativePath.startsWith("..");
+      if (isOutsideRepo) {
+        console.warn(
+          `Warning: Skipping directory outside repository: ${relativePath}`,
+        );
+        continue;
+      }
+
+      dirs.push(relativePath);
+    }
+  } catch (error) {
+    if (error instanceof Error) {
+      console.warn(
+        `Warning: Failed to expand directory pattern "${pattern}": ${error.message}`,
+      );
+    }
+    return [];
+  }
+
+  return dirs;
+}
+
+/**
+ * Expands directory patterns to actual directory paths.
+ * Returns array of relative paths from repoRoot.
+ * Supports exact paths and glob patterns (e.g., "node_modules", ".cache/*")
+ */
+export async function expandDirectoryPatterns(
+  patterns: string[],
+  repoRoot: string,
+): Promise<string[]> {
+  const expandedDirs: string[] = [];
+  const seen = new Set<string>();
+
+  for (const pattern of patterns) {
+    if (isGlobPattern(pattern)) {
+      const matchedDirs = await expandGlobPatternForDirectories(pattern, repoRoot);
+      for (const dir of matchedDirs) {
+        if (!seen.has(dir)) {
+          seen.add(dir);
+          expandedDirs.push(dir);
+        }
+      }
+    } else {
+      // Security: Validate pattern
+      const isAbsolutePath = pattern.startsWith("/");
+      const hasNullByte = pattern.includes("\0");
+      const isOutsideRepo = pattern.startsWith("..");
+
+      if (isAbsolutePath || hasNullByte || isOutsideRepo) {
+        console.warn(
+          `Warning: Skipping invalid directory pattern: ${pattern}`,
+        );
+        continue;
+      }
+
+      // Treat as exact path - verify it's a directory
+      const absolutePath = join(repoRoot, pattern);
+      const isDirPath = await isDir(absolutePath);
+      if (isDirPath && !seen.has(pattern)) {
+        seen.add(pattern);
+        expandedDirs.push(pattern);
+      }
+    }
+  }
+
+  return expandedDirs;
+}

@@ -52,15 +52,31 @@ export function mergeConfigs(
 ): VibeConfig {
   const mergedConfig: VibeConfig = {};
 
-  // Merge copy field
+  // Merge copy.files field
   const mergedFiles = mergeArrayField(
     baseConfig.copy?.files,
     localConfig.copy?.files,
     localConfig.copy?.files_prepend,
     localConfig.copy?.files_append,
   );
-  if (mergedFiles !== undefined) {
-    mergedConfig.copy = { files: mergedFiles };
+
+  // Merge copy.directories field
+  const mergedDirectories = mergeArrayField(
+    baseConfig.copy?.directories,
+    localConfig.copy?.directories,
+    localConfig.copy?.directories_prepend,
+    localConfig.copy?.directories_append,
+  );
+
+  const hasCopyConfig = mergedFiles !== undefined || mergedDirectories !== undefined;
+  if (hasCopyConfig) {
+    mergedConfig.copy = {};
+    if (mergedFiles !== undefined) {
+      mergedConfig.copy.files = mergedFiles;
+    }
+    if (mergedDirectories !== undefined) {
+      mergedConfig.copy.directories = mergedDirectories;
+    }
   }
 
   // Merge hooks field
