@@ -183,9 +183,10 @@ Place a `.vibe.toml` file in the repository root to automatically run tasks on
 `vibe start`. This file is typically committed to git and shared with the team.
 
 ```toml
-# Copy files from origin repository to worktree
+# Copy files and directories from origin repository to worktree
 [copy]
 files = [".env"]
+dirs = ["node_modules", ".cache"]
 
 # Commands to run after worktree creation
 [hooks]
@@ -225,6 +226,24 @@ files = [
 - Recursive patterns (`**/*`) may be slower in large repositories
   - Use specific patterns when possible (e.g., `config/**/*.json` instead of `**/*.json`)
   - Pattern expansion happens once during worktree creation, not on every command
+
+#### Directory Copy Configuration
+
+The `dirs` array copies entire directories recursively:
+
+```toml
+[copy]
+dirs = [
+  "node_modules",      # Exact directory path
+  ".cache",            # Hidden directories
+  "packages/*"         # Glob pattern for multiple directories
+]
+```
+
+**Notes:**
+- Directories are fully copied (not incrementally synced)
+- Glob patterns work the same as file patterns
+- Large directories like `node_modules` may take time to copy
 
 ### Security: Hash Verification
 

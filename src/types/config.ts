@@ -3,6 +3,9 @@ export interface VibeConfig {
     files?: string[];
     files_prepend?: string[];
     files_append?: string[];
+    dirs?: string[];
+    dirs_prepend?: string[];
+    dirs_append?: string[];
   };
   hooks?: {
     pre_start?: string[];
