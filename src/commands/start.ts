@@ -14,6 +14,7 @@ import { type HookTrackerInfo, runHooks } from "../utils/hooks.ts";
 import { confirm, select } from "../utils/prompt.ts";
 import { expandCopyPatterns } from "../utils/glob.ts";
 import { ProgressTracker } from "../utils/progress.ts";
+import { isRsyncAvailable, runRsync } from "../utils/rsync.ts";
 
 interface StartOptions {
   reuse?: boolean;
@@ -27,6 +28,7 @@ async function runConfigAndHooks(
 ): Promise<void> {
   const hasOperations = config !== undefined &&
     (config.hooks?.pre_start?.length ?? 0) +
+          (config.rsync?.directories?.length ?? 0) +
           (config.copy?.files?.length ?? 0) +
           (config.hooks?.post_start?.length ?? 0) > 0;
 
@@ -153,6 +155,9 @@ async function runVibeConfig(
   worktreePath: string,
   tracker?: ProgressTracker,
 ): Promise<void> {
+  // Sync directories using rsync
+  await runDirectorySync(config, repoRoot, worktreePath, tracker);
+
   // Copy files from origin to worktree
   // Expand glob patterns to actual file paths
   const filesToCopy = await expandCopyPatterns(
@@ -239,5 +244,78 @@ async function runPreStartHooksIfNeeded(
       worktreePath,
       originPath: repoRoot,
     }, trackerInfo);
+  }
+}
+
+async function runDirectorySync(
+  config: VibeConfig,
+  repoRoot: string,
+  worktreePath: string,
+  tracker?: ProgressTracker,
+): Promise<void> {
+  const directories = config.rsync?.directories ?? [];
+  const hasDirectories = directories.length > 0;
+
+  if (!hasDirectories) return;
+
+  // Check if rsync is available
+  const rsyncAvailable = await isRsyncAvailable();
+  if (!rsyncAvailable) {
+    console.warn(
+      "Warning: rsync is not installed. Skipping directory sync.\n" +
+        "Install rsync: brew install rsync (macOS) / apt install rsync (Linux)",
+    );
+    return;
+  }
+
+  // Add sync phase if there are directories to sync
+  let syncPhaseId: string | undefined;
+  const syncTaskIds: string[] = [];
+  if (tracker) {
+    syncPhaseId = tracker.addPhase("Syncing directories");
+    for (const dir of directories) {
+      const taskId = tracker.addTask(syncPhaseId, dir);
+      syncTaskIds.push(taskId);
+    }
+  }
+
+  for (let i = 0; i < directories.length; i++) {
+    const dir = directories[i];
+    const src = join(repoRoot, dir);
+    const dest = join(worktreePath, dir);
+
+    // Update progress: start task
+    if (tracker && syncTaskIds.length > 0) {
+      tracker.startTask(syncTaskIds[i]);
+    }
+
+    // Ensure parent directory exists
+    await Deno.mkdir(dest, { recursive: true }).catch(() => {});
+
+    // Run rsync
+    try {
+      const result = await runRsync(src, dest);
+
+      if (result.success) {
+        // Update progress: complete task
+        if (tracker && syncTaskIds.length > 0) {
+          tracker.completeTask(syncTaskIds[i]);
+        }
+      } else {
+        const errorMessage = result.stderr || `Exit code: ${result.exitCode}`;
+        // Update progress: fail task
+        if (tracker && syncTaskIds.length > 0) {
+          tracker.failTask(syncTaskIds[i], errorMessage);
+        }
+        console.warn(`Warning: Failed to sync ${dir}: ${errorMessage}`);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      // Update progress: fail task
+      if (tracker && syncTaskIds.length > 0) {
+        tracker.failTask(syncTaskIds[i], errorMessage);
+      }
+      console.warn(`Warning: Failed to sync ${dir}: ${errorMessage}`);
+    }
   }
 }

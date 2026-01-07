@@ -63,6 +63,17 @@ export function mergeConfigs(
     mergedConfig.copy = { files: mergedFiles };
   }
 
+  // Merge rsync field
+  const mergedDirectories = mergeArrayField(
+    baseConfig.rsync?.directories,
+    localConfig.rsync?.directories,
+    localConfig.rsync?.directories_prepend,
+    localConfig.rsync?.directories_append,
+  );
+  if (mergedDirectories !== undefined) {
+    mergedConfig.rsync = { directories: mergedDirectories };
+  }
+
   // Merge hooks field
   const hooks: VibeConfig["hooks"] = {};
 

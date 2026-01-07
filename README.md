@@ -187,6 +187,10 @@ Place a `.vibe.toml` file in the repository root to automatically run tasks on
 [copy]
 files = [".env"]
 
+# Sync directories using rsync (fast incremental copy)
+[rsync]
+directories = ["node_modules", ".cache"]
+
 # Commands to run after worktree creation
 [hooks]
 pre_start = ["echo 'Preparing worktree...'"]
@@ -225,6 +229,32 @@ files = [
 - Recursive patterns (`**/*`) may be slower in large repositories
   - Use specific patterns when possible (e.g., `config/**/*.json` instead of `**/*.json`)
   - Pattern expansion happens once during worktree creation, not on every command
+
+#### Directory Sync with rsync
+
+Use the `[rsync]` section to sync entire directories using the external `rsync` command. This is much faster than file-by-file copying for large directories like `node_modules`.
+
+```toml
+[rsync]
+directories = ["node_modules", ".cache", "vendor"]
+```
+
+**Benefits:**
+- **Fast incremental sync**: Only copies changed files
+- **Preserves attributes**: Maintains permissions, symlinks, and timestamps (`-a` archive mode)
+- **Ideal for large directories**: Perfect for `node_modules`, build caches, etc.
+
+**Requirements:**
+- `rsync` must be installed on your system
+  - macOS: `brew install rsync`
+  - Linux: Usually pre-installed, or `apt install rsync`
+- If `rsync` is not available, a warning is shown and the sync is skipped
+
+**Execution order:**
+1. `pre_start` hooks
+2. `rsync` directory sync
+3. `copy` file copy
+4. `post_start` hooks
 
 ### Security: Hash Verification
 
@@ -288,6 +318,10 @@ post_start_append = ["npm run dev"]
 # Override files to copy
 [copy]
 files = [".env.local", ".secrets"]
+
+# Add local directories to sync
+[rsync]
+directories_append = [".local-cache"]
 ```
 
 ### Configuration Merging

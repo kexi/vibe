@@ -187,6 +187,10 @@ function vibe { Invoke-Expression (& vibe.exe $args) }
 [copy]
 files = [".env"]
 
+# rsyncでディレクトリを同期（高速な増分コピー）
+[rsync]
+directories = ["node_modules", ".cache"]
+
 # 実行するコマンド
 [hooks]
 pre_start = ["echo 'Worktreeを準備中...'"]
@@ -225,6 +229,32 @@ files = [
 - 再帰的パターン（`**/*`）は、大規模リポジトリでは処理に時間がかかる場合があります
   - 可能な限り具体的なパターンを使用してください（例: `**/*.json`より`config/**/*.json`）
   - パターン展開はworktree作成時に1回だけ実行され、コマンド実行毎ではありません
+
+#### rsyncによるディレクトリ同期
+
+`[rsync]`セクションを使用すると、外部の`rsync`コマンドでディレクトリ全体を同期できます。`node_modules`のような大きなディレクトリでは、ファイル単位のコピーよりはるかに高速です。
+
+```toml
+[rsync]
+directories = ["node_modules", ".cache", "vendor"]
+```
+
+**メリット:**
+- **高速な増分同期**: 変更されたファイルのみコピー
+- **属性を保持**: パーミッション、シンボリックリンク、タイムスタンプを維持（`-a`アーカイブモード）
+- **大規模ディレクトリに最適**: `node_modules`、ビルドキャッシュなどに最適
+
+**必要条件:**
+- システムに`rsync`がインストールされていること
+  - macOS: `brew install rsync`
+  - Linux: 通常プリインストール済み、または`apt install rsync`
+- `rsync`がない場合は警告を表示してスキップ
+
+**実行順序:**
+1. `pre_start`フック
+2. `rsync`ディレクトリ同期
+3. `copy`ファイルコピー
+4. `post_start`フック
 
 ### セキュリティ: ハッシュ検証
 
@@ -287,6 +317,10 @@ post_start_append = ["npm run dev"]
 # コピーするファイルを上書き
 [copy]
 files = [".env.local", ".secrets"]
+
+# ローカル用のディレクトリ同期を追加
+[rsync]
+directories_append = [".local-cache"]
 ```
 
 ### 設定のマージ

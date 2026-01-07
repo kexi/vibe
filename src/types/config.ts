@@ -4,6 +4,11 @@ export interface VibeConfig {
     files_prepend?: string[];
     files_append?: string[];
   };
+  rsync?: {
+    directories?: string[];
+    directories_prepend?: string[];
+    directories_append?: string[];
+  };
   hooks?: {
     pre_start?: string[];
     pre_start_prepend?: string[];
