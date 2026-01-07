@@ -1,4 +1,4 @@
-import { dirname, join } from "@std/path";
+import { dirname, join, resolve } from "@std/path";
 import {
   branchExists,
   findWorktreeByBranch,
@@ -280,16 +280,49 @@ async function runDirectorySync(
 
   for (let i = 0; i < directories.length; i++) {
     const dir = directories[i];
-    const src = join(repoRoot, dir);
-    const dest = join(worktreePath, dir);
+    const src = resolve(repoRoot, dir);
+    const dest = resolve(worktreePath, dir);
+
+    // Security: Validate path is within repoRoot (prevent path traversal)
+    const isWithinRepoRoot = src.startsWith(repoRoot + "/") ||
+      src === repoRoot;
+    if (!isWithinRepoRoot) {
+      const errorMessage = `Path traversal detected: ${dir}`;
+      if (tracker && syncTaskIds.length > 0) {
+        tracker.failTask(syncTaskIds[i], errorMessage);
+      }
+      console.warn(`Warning: Skipping ${dir}: ${errorMessage}`);
+      continue;
+    }
 
     // Update progress: start task
     if (tracker && syncTaskIds.length > 0) {
       tracker.startTask(syncTaskIds[i]);
     }
 
-    // Ensure parent directory exists
-    await Deno.mkdir(dest, { recursive: true }).catch(() => {});
+    // Check if source directory exists
+    try {
+      const srcStat = await Deno.stat(src);
+      if (!srcStat.isDirectory) {
+        const errorMessage = `Source is not a directory: ${dir}`;
+        if (tracker && syncTaskIds.length > 0) {
+          tracker.failTask(syncTaskIds[i], errorMessage);
+        }
+        console.warn(`Warning: Skipping ${dir}: ${errorMessage}`);
+        continue;
+      }
+    } catch {
+      const errorMessage = `Source directory not found: ${dir}`;
+      if (tracker && syncTaskIds.length > 0) {
+        tracker.failTask(syncTaskIds[i], errorMessage);
+      }
+      console.warn(`Warning: Skipping ${dir}: ${errorMessage}`);
+      continue;
+    }
+
+    // Ensure parent directory of dest exists (rsync creates dest itself)
+    const destParent = dirname(dest);
+    await Deno.mkdir(destParent, { recursive: true }).catch(() => {});
 
     // Run rsync
     try {
@@ -301,7 +334,15 @@ async function runDirectorySync(
           tracker.completeTask(syncTaskIds[i]);
         }
       } else {
-        const errorMessage = result.stderr || `Exit code: ${result.exitCode}`;
+        // Provide more specific error messages
+        let errorMessage = result.stderr.trim();
+        if (result.exitCode === 23) {
+          errorMessage = "Partial transfer (some files could not be copied)";
+        } else if (result.exitCode === 24) {
+          errorMessage = "Source files vanished during transfer";
+        } else if (!errorMessage) {
+          errorMessage = `rsync failed with exit code ${result.exitCode}`;
+        }
         // Update progress: fail task
         if (tracker && syncTaskIds.length > 0) {
           tracker.failTask(syncTaskIds[i], errorMessage);

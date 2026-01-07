@@ -31,6 +31,7 @@ export async function runRsync(
 ): Promise<RsyncResult> {
   const args: string[] = [
     "-a", // archive mode (preserves permissions, symlinks, etc.)
+    "--safe-links", // ignore symlinks that point outside the source tree
   ];
 
   // Ensure src ends with / to copy directory contents
