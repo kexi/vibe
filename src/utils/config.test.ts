@@ -284,3 +284,42 @@ Deno.test("mergeConfigs: mix of exact paths and glob patterns", () => {
 
   assertEquals(result.copy?.files, ["**/*.local.env", ".env", "*.config.js"]);
 });
+
+Deno.test("mergeConfigs: rsync directories merging with append", () => {
+  const baseConfig: VibeConfig = {
+    rsync: { directories: ["node_modules"] },
+  };
+  const localConfig: VibeConfig = {
+    rsync: { directories_append: [".cache"] },
+  };
+
+  const result = mergeConfigs(baseConfig, localConfig);
+
+  assertEquals(result.rsync?.directories, ["node_modules", ".cache"]);
+});
+
+Deno.test("mergeConfigs: rsync directories override", () => {
+  const baseConfig: VibeConfig = {
+    rsync: { directories: ["node_modules"] },
+  };
+  const localConfig: VibeConfig = {
+    rsync: { directories: ["vendor"] },
+  };
+
+  const result = mergeConfigs(baseConfig, localConfig);
+
+  assertEquals(result.rsync?.directories, ["vendor"]);
+});
+
+Deno.test("mergeConfigs: rsync directories prepend", () => {
+  const baseConfig: VibeConfig = {
+    rsync: { directories: ["node_modules", ".cache"] },
+  };
+  const localConfig: VibeConfig = {
+    rsync: { directories_prepend: ["vendor"] },
+  };
+
+  const result = mergeConfigs(baseConfig, localConfig);
+
+  assertEquals(result.rsync?.directories, ["vendor", "node_modules", ".cache"]);
+});

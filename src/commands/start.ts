@@ -269,10 +269,9 @@ async function runDirectorySync(
   }
 
   // Add sync phase if there are directories to sync
-  let syncPhaseId: string | undefined;
   const syncTaskIds: string[] = [];
   if (tracker) {
-    syncPhaseId = tracker.addPhase("Syncing directories");
+    const syncPhaseId = tracker.addPhase("Syncing directories");
     for (const dir of directories) {
       const taskId = tracker.addTask(syncPhaseId, dir);
       syncTaskIds.push(taskId);
