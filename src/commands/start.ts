@@ -29,7 +29,7 @@ async function runConfigAndHooks(
   const hasOperations = config !== undefined &&
     (config.hooks?.pre_start?.length ?? 0) +
           (config.copy?.files?.length ?? 0) +
-          (config.copy?.directories?.length ?? 0) +
+          (config.copy?.dirs?.length ?? 0) +
           (config.hooks?.post_start?.length ?? 0) > 0;
 
   if (hasOperations) {
@@ -207,7 +207,7 @@ async function runVibeConfig(
 
   // Copy directories from origin to worktree
   const directoriesToCopy = await expandDirectoryPatterns(
-    config.copy?.directories ?? [],
+    config.copy?.dirs ?? [],
     repoRoot,
   );
 

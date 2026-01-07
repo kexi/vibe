@@ -60,22 +60,22 @@ export function mergeConfigs(
     localConfig.copy?.files_append,
   );
 
-  // Merge copy.directories field
-  const mergedDirectories = mergeArrayField(
-    baseConfig.copy?.directories,
-    localConfig.copy?.directories,
-    localConfig.copy?.directories_prepend,
-    localConfig.copy?.directories_append,
+  // Merge copy.dirs field
+  const mergedDirs = mergeArrayField(
+    baseConfig.copy?.dirs,
+    localConfig.copy?.dirs,
+    localConfig.copy?.dirs_prepend,
+    localConfig.copy?.dirs_append,
   );
 
-  const hasCopyConfig = mergedFiles !== undefined || mergedDirectories !== undefined;
+  const hasCopyConfig = mergedFiles !== undefined || mergedDirs !== undefined;
   if (hasCopyConfig) {
     mergedConfig.copy = {};
     if (mergedFiles !== undefined) {
       mergedConfig.copy.files = mergedFiles;
     }
-    if (mergedDirectories !== undefined) {
-      mergedConfig.copy.directories = mergedDirectories;
+    if (mergedDirs !== undefined) {
+      mergedConfig.copy.dirs = mergedDirs;
     }
   }
 
