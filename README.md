@@ -245,6 +245,29 @@ dirs = [
 - Glob patterns work the same as file patterns
 - Large directories like `node_modules` may take time to copy
 
+#### Copy Performance Optimization
+
+Vibe automatically selects the best copy strategy based on your system:
+
+| Strategy | When Used | Platform |
+|----------|-----------|----------|
+| Clone (CoW) | Directory copy on APFS | macOS |
+| Clone (reflink) | Directory copy on Btrfs/XFS | Linux |
+| rsync | Directory copy when clone unavailable | macOS/Linux |
+| Standard | File copy, or fallback | All |
+
+**How it works:**
+- **File copy**: Always uses Deno's native `copyFile()` for best single-file performance
+- **Directory copy**: Automatically uses the fastest available method:
+  - On macOS with APFS: Uses `cp -cR` for Copy-on-Write cloning (near-instant)
+  - On Linux with Btrfs/XFS: Uses `cp --reflink=auto` for CoW cloning
+  - Falls back to rsync or standard copy if CoW is unavailable
+
+**Benefits:**
+- Copy-on-Write is extremely fast as it only copies metadata, not actual data
+- No configuration needed - the best strategy is auto-detected
+- Automatic fallback ensures copying always works
+
 ### Security: Hash Verification
 
 Vibe automatically verifies the integrity of `.vibe.toml` and `.vibe.local.toml` files using SHA-256 hashes. This prevents unauthorized modifications to configuration files.
