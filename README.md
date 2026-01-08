@@ -61,8 +61,10 @@ deno install -A --global jsr:@kexi/vibe
 **Permissions**: For more security, you can specify exact permissions instead of `-A`:
 
 ```bash
-deno install --global --allow-run --allow-read --allow-write --allow-env jsr:@kexi/vibe
+deno install --global --allow-run --allow-read --allow-write --allow-env --allow-ffi jsr:@kexi/vibe
 ```
+
+> Note: `--allow-ffi` enables optimized Copy-on-Write file cloning on macOS (APFS) and Linux (Btrfs/XFS). The tool works without it but may be slightly slower for directory copies.
 
 **Using with mise**: Add to your `.mise.toml`:
 

@@ -226,6 +226,30 @@ Deno.test("validatePath: rejects empty paths", () => {
   }
 });
 
+Deno.test("validatePath: rejects paths with command substitution $(...)", () => {
+  try {
+    validatePath("/path/$(whoami)/file.txt");
+    throw new Error("Should have thrown");
+  } catch (err) {
+    assertEquals(
+      (err as Error).message,
+      "Invalid path: contains shell command substitution pattern",
+    );
+  }
+});
+
+Deno.test("validatePath: rejects paths with backticks", () => {
+  try {
+    validatePath("/path/`whoami`/file.txt");
+    throw new Error("Should have thrown");
+  } catch (err) {
+    assertEquals(
+      (err as Error).message,
+      "Invalid path: contains shell command substitution pattern",
+    );
+  }
+});
+
 // Platform-specific tests
 const isMacOS = Deno.build.os === "darwin";
 

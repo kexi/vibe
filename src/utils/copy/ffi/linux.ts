@@ -108,33 +108,39 @@ export class LinuxClone implements NativeClone {
       return Promise.reject(this.createError(src, dest, errno, "open source"));
     }
 
-    // Create and open destination file for writing
-    const destFd = this.libc!.symbols.open(
-      destBuffer,
-      O_WRONLY | O_CREAT | O_TRUNC,
-      0o644,
-    );
-    const destOpenFailed = destFd < 0;
-    if (destOpenFailed) {
-      this.libc!.symbols.close(srcFd);
+    // Use try-finally to ensure file descriptors are always closed
+    let destFd = -1;
+    try {
+      // Create and open destination file for writing
+      destFd = this.libc!.symbols.open(
+        destBuffer,
+        O_WRONLY | O_CREAT | O_TRUNC,
+        0o644,
+      );
+      const destOpenFailed = destFd < 0;
+      if (destOpenFailed) {
+        const errno = this.getErrno();
+        return Promise.reject(this.createError(src, dest, errno, "open dest"));
+      }
+
+      // Perform FICLONE ioctl
+      const result = this.libc!.symbols.ioctl(destFd, BigInt(FICLONE), srcFd);
+
+      const isSuccess = result === 0;
+      if (isSuccess) {
+        return Promise.resolve();
+      }
+
       const errno = this.getErrno();
-      return Promise.reject(this.createError(src, dest, errno, "open dest"));
+      return Promise.reject(this.createError(src, dest, errno, "ioctl FICLONE"));
+    } finally {
+      // Always close file descriptors to prevent resource leaks
+      this.libc!.symbols.close(srcFd);
+      const hasDestFd = destFd >= 0;
+      if (hasDestFd) {
+        this.libc!.symbols.close(destFd);
+      }
     }
-
-    // Perform FICLONE ioctl
-    const result = this.libc!.symbols.ioctl(destFd, BigInt(FICLONE), srcFd);
-
-    // Close file descriptors
-    this.libc!.symbols.close(srcFd);
-    this.libc!.symbols.close(destFd);
-
-    const isSuccess = result === 0;
-    if (isSuccess) {
-      return Promise.resolve();
-    }
-
-    const errno = this.getErrno();
-    return Promise.reject(this.createError(src, dest, errno, "ioctl FICLONE"));
   }
 
   /**
