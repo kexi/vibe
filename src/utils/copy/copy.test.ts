@@ -110,29 +110,38 @@ Deno.test("CopyService: selects a directory strategy", async () => {
   resetState();
 
   const service = new CopyService();
-  const strategy = await service.getDirectoryStrategy();
+  try {
+    const strategy = await service.getDirectoryStrategy();
 
-  // Should select some strategy
-  const isValidStrategy = strategy.name === "clone" ||
-    strategy.name === "rsync" ||
-    strategy.name === "standard";
-  assertEquals(isValidStrategy, true);
+    // Should select some strategy
+    const isValidStrategy = strategy.name === "clone" ||
+      strategy.name === "rsync" ||
+      strategy.name === "standard";
+    assertEquals(isValidStrategy, true);
+  } finally {
+    service.close();
+  }
 });
 
 Deno.test("CopyService: caches selected directory strategy", async () => {
   resetState();
 
   const service = new CopyService();
-  const strategy1 = await service.getDirectoryStrategy();
-  const strategy2 = await service.getDirectoryStrategy();
+  try {
+    const strategy1 = await service.getDirectoryStrategy();
+    const strategy2 = await service.getDirectoryStrategy();
 
-  // Same strategy should be returned
-  assertEquals(strategy1.name, strategy2.name);
+    // Same strategy should be returned
+    assertEquals(strategy1.name, strategy2.name);
+  } finally {
+    service.close();
+  }
 });
 
 Deno.test("CopyService: copies file correctly", async () => {
   resetState();
   const tempDir = await Deno.makeTempDir();
+  const service = new CopyService();
 
   try {
     const srcFile = join(tempDir, "source.txt");
@@ -140,12 +149,12 @@ Deno.test("CopyService: copies file correctly", async () => {
 
     await Deno.writeTextFile(srcFile, "test content");
 
-    const service = new CopyService();
     await service.copyFile(srcFile, destFile);
 
     const content = await Deno.readTextFile(destFile);
     assertEquals(content, "test content");
   } finally {
+    service.close();
     await Deno.remove(tempDir, { recursive: true });
   }
 });
@@ -153,6 +162,7 @@ Deno.test("CopyService: copies file correctly", async () => {
 Deno.test("CopyService: copies directory correctly", async () => {
   resetState();
   const tempDir = await Deno.makeTempDir();
+  const service = new CopyService();
 
   try {
     const srcDir = join(tempDir, "source");
@@ -164,7 +174,6 @@ Deno.test("CopyService: copies directory correctly", async () => {
     await Deno.mkdir(join(srcDir, "nested"));
     await Deno.writeTextFile(join(srcDir, "nested", "file2.txt"), "content2");
 
-    const service = new CopyService();
     await service.copyDirectory(srcDir, destDir);
 
     // Verify files were copied
@@ -173,6 +182,7 @@ Deno.test("CopyService: copies directory correctly", async () => {
     assertEquals(content1, "content1");
     assertEquals(content2, "content2");
   } finally {
+    service.close();
     await Deno.remove(tempDir, { recursive: true });
   }
 });
