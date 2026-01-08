@@ -1,9 +1,14 @@
 import type { CopyStrategy, CopyStrategyType } from "./types.ts";
-import { CloneStrategy, RsyncStrategy, StandardStrategy } from "./strategies/index.ts";
+import {
+  CloneStrategy,
+  NativeCloneStrategy,
+  RsyncStrategy,
+  StandardStrategy,
+} from "./strategies/index.ts";
 
 export type { CopyCapabilities, CopyStrategy, CopyStrategyType } from "./types.ts";
 export { detectCapabilities, resetCapabilitiesCache } from "./detector.ts";
-export { CloneStrategy, RsyncStrategy, StandardStrategy };
+export { CloneStrategy, NativeCloneStrategy, RsyncStrategy, StandardStrategy };
 
 /**
  * CopyService manages copy operations with automatic strategy selection
@@ -11,7 +16,9 @@ export { CloneStrategy, RsyncStrategy, StandardStrategy };
  *
  * Strategy selection:
  * - File copy: Always uses Standard (Deno.copyFile) as it's fastest for individual files
- * - Directory copy: Uses Clone (CoW) > Rsync > Standard based on availability
+ * - Directory copy:
+ *   - macOS: NativeClone (clonefile FFI) > Clone (cp -c) > Rsync > Standard
+ *   - Linux: Clone (cp --reflink=auto) > Rsync > Standard
  *
  * The overhead of spawning external processes (cp, rsync) makes them slower
  * for individual file copies, but they excel at bulk directory operations.
@@ -20,11 +27,17 @@ export class CopyService {
   private directoryStrategies: CopyStrategy[];
   private selectedDirectoryStrategy: CopyStrategy | null = null;
   private standardStrategy: StandardStrategy;
+  private nativeCloneStrategy: NativeCloneStrategy;
 
   constructor() {
     this.standardStrategy = new StandardStrategy();
-    // Priority order for directory copy: clone (CoW) -> rsync -> standard
+    this.nativeCloneStrategy = new NativeCloneStrategy();
+    // Priority order for directory copy:
+    // macOS: native clone (clonefile) -> clone (cp -c) -> rsync -> standard
+    // Linux: clone (cp --reflink) -> rsync -> standard
+    // NativeCloneStrategy is only used when it supports directory cloning (macOS)
     this.directoryStrategies = [
+      this.nativeCloneStrategy,
       new CloneStrategy(),
       new RsyncStrategy(),
       this.standardStrategy,
@@ -36,12 +49,26 @@ export class CopyService {
    * Result is cached for subsequent calls.
    */
   async getDirectoryStrategy(): Promise<CopyStrategy> {
-    if (this.selectedDirectoryStrategy !== null) {
-      return this.selectedDirectoryStrategy;
+    const hasCachedStrategy = this.selectedDirectoryStrategy !== null;
+    if (hasCachedStrategy) {
+      return this.selectedDirectoryStrategy!;
     }
 
     // Find the first available strategy
     for (const strategy of this.directoryStrategies) {
+      // For NativeCloneStrategy, check if it supports directory cloning
+      const isNativeClone = strategy instanceof NativeCloneStrategy;
+      if (isNativeClone) {
+        const isAvailable = await strategy.isAvailable();
+        const supportsDirectory = strategy.supportsDirectoryClone();
+        const canUseForDirectory = isAvailable && supportsDirectory;
+        if (canUseForDirectory) {
+          this.selectedDirectoryStrategy = strategy;
+          return strategy;
+        }
+        continue;
+      }
+
       const isAvailable = await strategy.isAvailable();
       if (isAvailable) {
         this.selectedDirectoryStrategy = strategy;
@@ -94,6 +121,13 @@ export class CopyService {
       }
     }
   }
+
+  /**
+   * Release FFI resources
+   */
+  close(): void {
+    this.nativeCloneStrategy.close();
+  }
 }
 
 /**
@@ -114,7 +148,9 @@ export function getCopyService(): CopyService {
 
 /**
  * Reset the default CopyService instance (for testing purposes)
+ * Also releases FFI resources
  */
 export function resetCopyService(): void {
+  defaultCopyService?.close();
   defaultCopyService = null;
 }
