@@ -12,8 +12,9 @@ import type { VibeConfig } from "../types/config.ts";
 import { loadVibeConfig } from "../utils/config.ts";
 import { type HookTrackerInfo, runHooks } from "../utils/hooks.ts";
 import { confirm, select } from "../utils/prompt.ts";
-import { expandCopyPatterns } from "../utils/glob.ts";
+import { expandCopyPatterns, expandDirectoryPatterns } from "../utils/glob.ts";
 import { ProgressTracker } from "../utils/progress.ts";
+import { getCopyService } from "../utils/copy/index.ts";
 
 interface StartOptions {
   reuse?: boolean;
@@ -28,6 +29,7 @@ async function runConfigAndHooks(
   const hasOperations = config !== undefined &&
     (config.hooks?.pre_start?.length ?? 0) +
           (config.copy?.files?.length ?? 0) +
+          (config.copy?.dirs?.length ?? 0) +
           (config.hooks?.post_start?.length ?? 0) > 0;
 
   if (hasOperations) {
@@ -153,6 +155,9 @@ async function runVibeConfig(
   worktreePath: string,
   tracker?: ProgressTracker,
 ): Promise<void> {
+  // Get the copy service (automatically selects the best strategy)
+  const copyService = getCopyService();
+
   // Copy files from origin to worktree
   // Expand glob patterns to actual file paths
   const filesToCopy = await expandCopyPatterns(
@@ -181,14 +186,9 @@ async function runVibeConfig(
       tracker.startTask(copyTaskIds[i]);
     }
 
-    // Ensure parent directory exists
-    const destDir = dirname(dest);
-    // Ignore errors if directory already exists
-    await Deno.mkdir(destDir, { recursive: true }).catch(() => {});
-
-    // Copy the file
+    // Copy the file using CopyService
     try {
-      await Deno.copyFile(src, dest);
+      await copyService.copyFile(src, dest);
       // Update progress: complete task
       if (tracker && copyTaskIds.length > 0) {
         tracker.completeTask(copyTaskIds[i]);
@@ -200,6 +200,51 @@ async function runVibeConfig(
         tracker.failTask(copyTaskIds[i], errorMessage);
       }
       console.warn(`Warning: Failed to copy ${file}: ${errorMessage}`);
+    }
+  }
+
+  // Copy directories from origin to worktree
+  const directoriesToCopy = await expandDirectoryPatterns(
+    config.copy?.dirs ?? [],
+    repoRoot,
+  );
+
+  // Add directory copying phase if there are directories to copy
+  let dirCopyPhaseId: string | undefined;
+  const dirCopyTaskIds: string[] = [];
+  const hasDirectoriesToCopy = directoriesToCopy.length > 0;
+  if (tracker && hasDirectoriesToCopy) {
+    dirCopyPhaseId = tracker.addPhase("Copying directories");
+    for (const dir of directoriesToCopy) {
+      const taskId = tracker.addTask(dirCopyPhaseId, dir);
+      dirCopyTaskIds.push(taskId);
+    }
+  }
+
+  for (let i = 0; i < directoriesToCopy.length; i++) {
+    const dir = directoriesToCopy[i];
+    const src = join(repoRoot, dir);
+    const dest = join(worktreePath, dir);
+
+    // Update progress: start task
+    if (tracker && dirCopyTaskIds.length > 0) {
+      tracker.startTask(dirCopyTaskIds[i]);
+    }
+
+    // Copy directory using CopyService
+    try {
+      await copyService.copyDirectory(src, dest);
+      // Update progress: complete task
+      if (tracker && dirCopyTaskIds.length > 0) {
+        tracker.completeTask(dirCopyTaskIds[i]);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      // Update progress: fail task
+      if (tracker && dirCopyTaskIds.length > 0) {
+        tracker.failTask(dirCopyTaskIds[i], errorMessage);
+      }
+      console.warn(`Warning: Failed to copy directory ${dir}: ${errorMessage}`);
     }
   }
 

@@ -61,8 +61,10 @@ deno install -A --global jsr:@kexi/vibe
 **権限設定**: より安全にするため、`-A`の代わりに必要な権限のみを指定できます:
 
 ```bash
-deno install --global --allow-run --allow-read --allow-write --allow-env jsr:@kexi/vibe
+deno install --global --allow-run --allow-read --allow-write --allow-env --allow-ffi jsr:@kexi/vibe
 ```
+
+> 注意: `--allow-ffi`はmacOS (APFS)とLinux (Btrfs/XFS)で最適化されたCopy-on-Writeファイルクローニングを有効にします。このフラグがなくても動作しますが、ディレクトリコピーが若干遅くなる可能性があります。
 
 **miseを使う場合**: `.mise.toml`に追加:
 
@@ -183,9 +185,10 @@ function vibe { Invoke-Expression (& vibe.exe $args) }
 このファイルは通常Gitにコミットされ、チームで共有されます。
 
 ```toml
-# ファイルを元リポジトリからworktreeへコピー
+# ファイルとディレクトリを元リポジトリからworktreeへコピー
 [copy]
 files = [".env"]
+dirs = ["node_modules", ".cache"]
 
 # 実行するコマンド
 [hooks]
@@ -225,6 +228,47 @@ files = [
 - 再帰的パターン（`**/*`）は、大規模リポジトリでは処理に時間がかかる場合があります
   - 可能な限り具体的なパターンを使用してください（例: `**/*.json`より`config/**/*.json`）
   - パターン展開はworktree作成時に1回だけ実行され、コマンド実行毎ではありません
+
+#### ディレクトリコピー設定
+
+`dirs`配列でディレクトリ全体を再帰的にコピーできます：
+
+```toml
+[copy]
+dirs = [
+  "node_modules",      # 厳密なディレクトリパス
+  ".cache",            # 隠しディレクトリ
+  "packages/*"         # 複数ディレクトリにマッチするGlobパターン
+]
+```
+
+**注意:**
+- ディレクトリは完全コピーされます（差分同期ではありません）
+- Globパターンはファイルパターンと同様に動作します
+- `node_modules`のような大きなディレクトリはコピーに時間がかかる場合があります
+
+#### コピーパフォーマンスの最適化
+
+Vibeはシステムに応じて最適なコピー戦略を自動選択します:
+
+| 戦略 | 使用条件 | プラットフォーム |
+|------|----------|------------------|
+| Clone (CoW) | APFSでのディレクトリコピー | macOS |
+| Clone (reflink) | Btrfs/XFSでのディレクトリコピー | Linux |
+| rsync | cloneが利用できない場合のディレクトリコピー | macOS/Linux |
+| Standard | ファイルコピー、またはフォールバック | 全て |
+
+**仕組み:**
+- **ファイルコピー**: 単一ファイルの最高パフォーマンスのため、常にDenoネイティブの`copyFile()`を使用
+- **ディレクトリコピー**: 利用可能な最速の方法を自動使用:
+  - APFSを使用したmacOS: Copy-on-Writeクローニングに`cp -cR`を使用（ほぼ瞬時）
+  - Btrfs/XFSを使用したLinux: CoWクローニングに`cp --reflink=auto`を使用
+  - CoWが利用できない場合はrsyncまたは標準コピーにフォールバック
+
+**メリット:**
+- Copy-on-Writeは実際のデータではなくメタデータのみをコピーするため非常に高速
+- 設定不要 - 最適な戦略が自動検出されます
+- 自動フォールバックによりコピーは常に動作します
 
 ### セキュリティ: ハッシュ検証
 
@@ -334,12 +378,12 @@ Vibeはフック実行中にタスクの状態を表示するリアルタイム�
 進捗表示の例：
 ```
 ✶ Setting up worktree feature/new-ui…
-  ⎿  ☒ Pre-start hooks
-       ⎿  ☒ npm install
-          ☒ cargo build --release
-     ⠋ Copying files
-       ⎿  ⠋ .env.local
-          ☐ node_modules/
+┗ ☒ Pre-start hooks
+   ┗ ☒ npm install
+     ☒ cargo build --release
+  ⠋ Copying files
+   ┗ ⠋ .env.local
+     ☐ node_modules/
 ```
 
 **注意**: 進捗表示は非TTY環境（CI/CDなど）では自動的に無効になり、フックの出力が通常通り表示されます。

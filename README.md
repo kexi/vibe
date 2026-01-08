@@ -61,8 +61,10 @@ deno install -A --global jsr:@kexi/vibe
 **Permissions**: For more security, you can specify exact permissions instead of `-A`:
 
 ```bash
-deno install --global --allow-run --allow-read --allow-write --allow-env jsr:@kexi/vibe
+deno install --global --allow-run --allow-read --allow-write --allow-env --allow-ffi jsr:@kexi/vibe
 ```
+
+> Note: `--allow-ffi` enables optimized Copy-on-Write file cloning on macOS (APFS) and Linux (Btrfs/XFS). The tool works without it but may be slightly slower for directory copies.
 
 **Using with mise**: Add to your `.mise.toml`:
 
@@ -183,9 +185,10 @@ Place a `.vibe.toml` file in the repository root to automatically run tasks on
 `vibe start`. This file is typically committed to git and shared with the team.
 
 ```toml
-# Copy files from origin repository to worktree
+# Copy files and directories from origin repository to worktree
 [copy]
 files = [".env"]
+dirs = ["node_modules", ".cache"]
 
 # Commands to run after worktree creation
 [hooks]
@@ -225,6 +228,47 @@ files = [
 - Recursive patterns (`**/*`) may be slower in large repositories
   - Use specific patterns when possible (e.g., `config/**/*.json` instead of `**/*.json`)
   - Pattern expansion happens once during worktree creation, not on every command
+
+#### Directory Copy Configuration
+
+The `dirs` array copies entire directories recursively:
+
+```toml
+[copy]
+dirs = [
+  "node_modules",      # Exact directory path
+  ".cache",            # Hidden directories
+  "packages/*"         # Glob pattern for multiple directories
+]
+```
+
+**Notes:**
+- Directories are fully copied (not incrementally synced)
+- Glob patterns work the same as file patterns
+- Large directories like `node_modules` may take time to copy
+
+#### Copy Performance Optimization
+
+Vibe automatically selects the best copy strategy based on your system:
+
+| Strategy | When Used | Platform |
+|----------|-----------|----------|
+| Clone (CoW) | Directory copy on APFS | macOS |
+| Clone (reflink) | Directory copy on Btrfs/XFS | Linux |
+| rsync | Directory copy when clone unavailable | macOS/Linux |
+| Standard | File copy, or fallback | All |
+
+**How it works:**
+- **File copy**: Always uses Deno's native `copyFile()` for best single-file performance
+- **Directory copy**: Automatically uses the fastest available method:
+  - On macOS with APFS: Uses `cp -cR` for Copy-on-Write cloning (near-instant)
+  - On Linux with Btrfs/XFS: Uses `cp --reflink=auto` for CoW cloning
+  - Falls back to rsync or standard copy if CoW is unavailable
+
+**Benefits:**
+- Copy-on-Write is extremely fast as it only copies metadata, not actual data
+- No configuration needed - the best strategy is auto-detected
+- Automatic fallback ensures copying always works
 
 ### Security: Hash Verification
 
@@ -335,12 +379,12 @@ Vibe displays a real-time progress tree during hook execution to show task statu
 Example progress display:
 ```
 ✶ Setting up worktree feature/new-ui…
-  ⎿  ☒ Pre-start hooks
-       ⎿  ☒ npm install
-          ☒ cargo build --release
-     ⠋ Copying files
-       ⎿  ⠋ .env.local
-          ☐ node_modules/
+┗ ☒ Pre-start hooks
+   ┗ ☒ npm install
+     ☒ cargo build --release
+  ⠋ Copying files
+   ┗ ⠋ .env.local
+     ☐ node_modules/
 ```
 
 **Note**: Progress display auto-disables in non-TTY environments (e.g., CI/CD), and hook output will be shown normally.
