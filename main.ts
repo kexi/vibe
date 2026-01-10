@@ -24,7 +24,7 @@ Installation:
   deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts
 
 Usage:
-  vibe start <branch-name> [--reuse]  Create a new worktree with the given branch
+  vibe start <branch-name> [options]  Create a new worktree with the given branch
   vibe clean                          Remove current worktree and return to main
   vibe trust                          Trust .vibe.toml in current repository
   vibe untrust                        Remove trust for .vibe.toml in current repository
@@ -35,6 +35,8 @@ Options:
   -h, --help     Show this help message
   -v, --version  Show version information
   --reuse        Use existing branch instead of creating a new one
+  --no-hooks     Skip pre-start and post-start hooks
+  --no-copy      Skip copying files and directories
 
 Setup:
   Add this to your .zshrc:
@@ -52,7 +54,7 @@ Examples:
 
 async function main(): Promise<void> {
   const args = parseArgs(Deno.args, {
-    boolean: ["help", "version", "reuse"],
+    boolean: ["help", "version", "reuse", "no-hooks", "no-copy"],
     alias: { h: "help", v: "version" },
   });
 
@@ -81,7 +83,9 @@ async function main(): Promise<void> {
     case "start": {
       const branchName = String(args._[1] ?? "");
       const reuse = args.reuse;
-      await startCommand(branchName, { reuse });
+      const noHooks = args["no-hooks"];
+      const noCopy = args["no-copy"];
+      await startCommand(branchName, { reuse, noHooks, noCopy });
       break;
     }
     case "clean":
