@@ -36,10 +36,8 @@ async function runConfigAndHooks(
 ): Promise<void> {
   const { skipHooks = false, skipCopy = false } = options;
 
-  const hooksCount = skipHooks
-    ? 0
-    : (config?.hooks?.pre_start?.length ?? 0) +
-      (config?.hooks?.post_start?.length ?? 0);
+  const hooksCount = skipHooks ? 0 : (config?.hooks?.pre_start?.length ?? 0) +
+    (config?.hooks?.post_start?.length ?? 0);
   const copyCount = skipCopy
     ? 0
     : (config?.copy?.files?.length ?? 0) + (config?.copy?.dirs?.length ?? 0);
