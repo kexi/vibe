@@ -8,6 +8,24 @@ Thank you for your interest in contributing to vibe!
 mise install
 ```
 
+## Running vibe in Development
+
+Source the development helper to use `vibe` command directly:
+
+```bash
+source .vibedev
+vibe start feat/my-feature
+vibe clean
+```
+
+Or run via deno task:
+
+```bash
+deno task dev start feat/my-feature
+```
+
+Note: The shell function uses `eval` because `vibe start` outputs shell commands for directory navigation.
+
 ## Available Tasks
 
 All tasks are defined in `deno.json` to ensure consistency between local development and CI:
