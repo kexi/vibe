@@ -18,6 +18,13 @@ import { getCopyService } from "../utils/copy/index.ts";
 
 interface StartOptions {
   reuse?: boolean;
+  noHooks?: boolean;
+  noCopy?: boolean;
+}
+
+interface ConfigAndHooksOptions {
+  skipHooks?: boolean;
+  skipCopy?: boolean;
 }
 
 async function runConfigAndHooks(
@@ -25,21 +32,31 @@ async function runConfigAndHooks(
   repoRoot: string,
   worktreePath: string,
   tracker: ProgressTracker,
+  options: ConfigAndHooksOptions = {},
 ): Promise<void> {
-  const hasOperations = config !== undefined &&
-    (config.hooks?.pre_start?.length ?? 0) +
-          (config.copy?.files?.length ?? 0) +
-          (config.copy?.dirs?.length ?? 0) +
-          (config.hooks?.post_start?.length ?? 0) > 0;
+  const { skipHooks = false, skipCopy = false } = options;
+
+  const hooksCount = skipHooks ? 0 : (config?.hooks?.pre_start?.length ?? 0) +
+    (config?.hooks?.post_start?.length ?? 0);
+  const copyCount = skipCopy
+    ? 0
+    : (config?.copy?.files?.length ?? 0) + (config?.copy?.dirs?.length ?? 0);
+  const hasOperations = config !== undefined && hooksCount + copyCount > 0;
 
   if (hasOperations) {
     tracker.start();
   }
 
-  await runPreStartHooksIfNeeded(config, repoRoot, worktreePath, tracker);
+  const shouldRunPreStartHooks = !skipHooks;
+  if (shouldRunPreStartHooks) {
+    await runPreStartHooksIfNeeded(config, repoRoot, worktreePath, tracker);
+  }
 
   if (config !== undefined) {
-    await runVibeConfig(config, repoRoot, worktreePath, tracker);
+    await runVibeConfig(config, repoRoot, worktreePath, tracker, {
+      skipHooks,
+      skipCopy,
+    });
   }
 
   if (hasOperations) {
@@ -49,8 +66,9 @@ async function runConfigAndHooks(
 
 export async function startCommand(
   branchName: string,
-  _options: StartOptions = {}, // Kept for backward compatibility, --reuse no longer required
+  options: StartOptions = {},
 ): Promise<void> {
+  const { noHooks = false, noCopy = false } = options;
   const isBranchNameEmpty = !branchName;
   if (isBranchNameEmpty) {
     console.error("Error: Branch name is required");
@@ -99,7 +117,10 @@ export async function startCommand(
         console.error(`Note: Worktree already exists at '${worktreePath}'`);
 
         // Run hooks and config in case they changed
-        await runConfigAndHooks(config, repoRoot, worktreePath, tracker);
+        await runConfigAndHooks(config, repoRoot, worktreePath, tracker, {
+          skipHooks: noHooks,
+          skipCopy: noCopy,
+        });
 
         // Output cd command
         console.log(`cd '${worktreePath}'`);
@@ -116,7 +137,10 @@ export async function startCommand(
           await runGitCommand(["worktree", "remove", worktreePath, "--force"]);
         } else if (choice === 1) {
           // Reuse: skip git worktree creation, run hooks/config, and output cd
-          await runConfigAndHooks(config, repoRoot, worktreePath, tracker);
+          await runConfigAndHooks(config, repoRoot, worktreePath, tracker, {
+            skipHooks: noHooks,
+            skipCopy: noCopy,
+          });
 
           // Output cd command
           console.log(`cd '${worktreePath}'`);
@@ -139,7 +163,10 @@ export async function startCommand(
     }
 
     // Run hooks and config
-    await runConfigAndHooks(config, repoRoot, worktreePath, tracker);
+    await runConfigAndHooks(config, repoRoot, worktreePath, tracker, {
+      skipHooks: noHooks,
+      skipCopy: noCopy,
+    });
 
     console.log(`cd '${worktreePath}'`);
   } catch (error) {
@@ -154,16 +181,19 @@ async function runVibeConfig(
   repoRoot: string,
   worktreePath: string,
   tracker?: ProgressTracker,
+  options: ConfigAndHooksOptions = {},
 ): Promise<void> {
+  const { skipHooks = false, skipCopy = false } = options;
+
   // Get the copy service (automatically selects the best strategy)
   const copyService = getCopyService();
 
   // Copy files from origin to worktree
   // Expand glob patterns to actual file paths
-  const filesToCopy = await expandCopyPatterns(
-    config.copy?.files ?? [],
-    repoRoot,
-  );
+  const shouldCopyFiles = !skipCopy;
+  const filesToCopy = shouldCopyFiles
+    ? await expandCopyPatterns(config.copy?.files ?? [], repoRoot)
+    : [];
 
   // Add file copying phase if there are files to copy
   let copyPhaseId: string | undefined;
@@ -204,10 +234,10 @@ async function runVibeConfig(
   }
 
   // Copy directories from origin to worktree
-  const directoriesToCopy = await expandDirectoryPatterns(
-    config.copy?.dirs ?? [],
-    repoRoot,
-  );
+  const shouldCopyDirs = !skipCopy;
+  const directoriesToCopy = shouldCopyDirs
+    ? await expandDirectoryPatterns(config.copy?.dirs ?? [], repoRoot)
+    : [];
 
   // Add directory copying phase if there are directories to copy
   let dirCopyPhaseId: string | undefined;
@@ -249,8 +279,9 @@ async function runVibeConfig(
   }
 
   // Run post_start hooks
+  const shouldRunPostStartHooks = !skipHooks;
   const postStartHooks = config.hooks?.post_start;
-  if (postStartHooks !== undefined && postStartHooks.length > 0) {
+  if (shouldRunPostStartHooks && postStartHooks !== undefined && postStartHooks.length > 0) {
     let trackerInfo: HookTrackerInfo | undefined;
     if (tracker) {
       const phaseId = tracker.addPhase("Post-start hooks");
