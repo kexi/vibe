@@ -4,6 +4,10 @@ Git Worktreeを簡単に管理するCLIツール。
 
 [English](README.md)
 
+## ドキュメント
+
+📚 完全なドキュメントは [vibe.kexi.dev](https://vibe.kexi.dev) で閲覧できます
+
 ## 使い方
 
 | コマンド                       | 説明                                                  |
