@@ -6,6 +6,9 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "vibe",
+      components: {
+        SocialIcons: "./src/components/CustomSocialIcons.astro",
+      },
       defaultLocale: "root",
       locales: {
         root: {
