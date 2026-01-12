@@ -1,0 +1,101 @@
+---
+title: Changelog
+description: Version history and release notes for vibe
+---
+
+All notable changes to vibe are documented here.
+
+## v0.5.0
+
+**Released:** 2024
+
+### Added
+
+- `--no-hooks` option to skip hook execution during `vibe start`
+- `--no-copy` option to skip file copying during `vibe start`
+- GitHub Sponsors and Patreon funding configuration
+
+### Changed
+
+- Improved documentation for development workflows
+
+---
+
+## v0.4.0
+
+**Released:** 2024
+
+### Added
+
+- **Copy strategies** with performance optimization
+  - Native clone using FFI (`clonefile` on macOS, `FICLONE` on Linux)
+  - Copy-on-Write (CoW) support for APFS and Btrfs/XFS
+  - rsync fallback for cross-filesystem copies
+- **Directory copy** support with glob patterns
+- Progress display improvements with new marker format
+
+### Changed
+
+- Refactored CopyService for better performance
+- Enhanced progress display with cleaner output
+
+### Fixed
+
+- Resource leaks in CopyService tests
+- Empty marker lines in progress display
+
+---
+
+## v0.3.0
+
+**Released:** 2024
+
+### Added
+
+- **Trust system** for repository security
+  - Repositories must be explicitly trusted before running hooks
+  - `vibe trust` command for managing trusted repositories
+  - Security-first approach to prevent malicious hook execution
+- Idempotent `vibe start` - running on existing worktree reuses it
+
+### Changed
+
+- Replaced Japanese UI messages with English for international users
+- Improved repository root path normalization
+
+### Fixed
+
+- Repository root normalization issues
+
+---
+
+## v0.2.0
+
+**Released:** 2024
+
+### Added
+
+- **Hook system** for automated workflows
+  - `pre_start`, `post_start`, `pre_clean`, `post_clean` hooks
+  - `files` configuration for copying files to worktrees
+- Local configuration support (`.vibe.local.toml`)
+- `vibe config` command for managing settings
+
+### Changed
+
+- Enhanced worktree management
+- Improved shell integration
+
+---
+
+## v0.1.0
+
+**Released:** 2024
+
+### Added
+
+- Initial release
+- Basic worktree creation with `vibe start`
+- Worktree cleanup with `vibe clean`
+- Multi-shell support (Bash, Zsh, Fish, Nushell, PowerShell)
+- `.vibe.toml` configuration file support

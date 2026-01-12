@@ -1,0 +1,47 @@
+---
+title: vibeへようこそ
+description: Git Worktreeを簡単に管理するCLIツール
+template: splash
+hero:
+  tagline: Git Worktreeを簡単に管理。作成、切り替え、クリーンアップを効率的に。
+  actions:
+    - text: はじめる
+      link: /ja/getting-started/
+      icon: right-arrow
+    - text: GitHubで見る
+      link: https://github.com/kexi/vibe
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from "@astrojs/starlight/components";
+
+## 特徴
+
+<CardGrid stagger>
+  <Card title="シンプルなコマンド" icon="terminal">
+    2つのメインコマンドだけ: `vibe start`でWorktree作成、`vibe clean`で削除。
+  </Card>
+  <Card title="冪等な操作" icon="approve-check">
+    `vibe start`を複数回実行しても安全 - 既存のWorktreeは適切に処理されます。
+  </Card>
+  <Card title="自動セットアップ" icon="setting">
+    `.vibe.toml`でファイルコピー、フック実行、環境設定を自動化。
+  </Card>
+  <Card title="セキュリティ重視" icon="warning">
+    SHA-256ハッシュ検証で設定ファイルの不正な変更を防止。
+  </Card>
+</CardGrid>
+
+## クイックスタート
+
+```bash
+# Homebrewでインストール (macOS)
+brew install kexi/tap/vibe
+
+# 新機能用のWorktreeを作成
+vibe start feat/new-feature
+
+# 作業完了後、クリーンアップ
+vibe clean
+```

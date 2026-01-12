@@ -1,0 +1,44 @@
+---
+title: Commands Overview
+description: Available vibe commands
+sidebar:
+  order: 1
+---
+
+vibe provides a simple set of commands for managing Git Worktrees.
+
+## Command Summary
+
+| Command               | Description                                     |
+| --------------------- | ----------------------------------------------- |
+| `vibe start <branch>` | Create a worktree with a new or existing branch |
+| `vibe clean`          | Delete current worktree and return to main      |
+| `vibe trust`          | Trust configuration files                       |
+| `vibe untrust`        | Untrust configuration files                     |
+| `vibe config`         | Show current configuration                      |
+
+## Quick Reference
+
+```bash
+# Create a worktree for a new feature
+vibe start feat/new-feature
+
+# Use an existing branch
+vibe start feat/existing-branch
+
+# Clean up when done
+vibe clean
+
+# Trust configuration files
+vibe trust
+
+# Show current config
+vibe config
+```
+
+## Detailed Documentation
+
+- [start](/en/commands/start/) - Create worktrees
+- [clean](/en/commands/clean/) - Remove worktrees
+- [trust](/en/commands/trust/) - Manage configuration trust
+- [config](/en/commands/config/) - View configuration

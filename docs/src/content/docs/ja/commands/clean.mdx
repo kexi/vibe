@@ -1,0 +1,101 @@
+---
+title: vibe clean
+description: 現在のWorktreeを削除してメインリポジトリに戻る
+sidebar:
+  order: 3
+---
+
+`clean`コマンドは現在のWorktreeを削除し、メインリポジトリに戻ります。
+
+## 使い方
+
+```bash
+vibe clean
+```
+
+## 動作
+
+### 安全チェック
+
+Worktreeを削除する前に、`vibe clean`は：
+
+1. 未コミットの変更をチェック
+2. 変更がある場合は確認を求める
+3. pre_cleanフックを実行
+4. Worktreeを削除
+5. post_cleanフックを実行
+6. メインリポジトリにディレクトリを変更
+
+### 未コミットの変更の警告
+
+```
+$ vibe clean
+未コミットの変更があります。本当にクリーンアップしますか? (y/N)
+```
+
+未コミットの変更がある場合、vibeは：
+
+- 警告を表示
+- 確認を求める
+- 明示的に確認した場合のみ続行
+
+## フック
+
+`clean`コマンドはクリーンアップタスク用のフックをサポートしています：
+
+```toml
+[hooks]
+pre_clean = ["git stash"]
+post_clean = ["echo 'クリーンアップ完了'"]
+```
+
+| フック       | 実行タイミング | 作業ディレクトリ |
+| ------------ | -------------- | ---------------- |
+| `pre_clean`  | Worktree削除前 | 現在のWorktree   |
+| `post_clean` | Worktree削除後 | メインリポジトリ |
+
+### pre_cleanフック例
+
+クリーンアップ前に作業を保存：
+
+```toml
+[hooks]
+pre_clean = [
+  "git stash --include-untracked",
+  "echo '変更をstashしました'"
+]
+```
+
+### post_cleanフック例
+
+共有リソースをクリーンアップ：
+
+```toml
+[hooks]
+post_clean = [
+  "docker-compose down",
+  "echo 'クリーンアップ完了'"
+]
+```
+
+## ワークフロー
+
+```
+Worktree (現在)
+     │
+     ├── pre_cleanフックが実行
+     │
+     ├── git worktree remove
+     │
+     ├── post_cleanフックが実行
+     │
+     └── メインリポジトリにcd
+            │
+            ▼
+メインリポジトリ (新しい現在地)
+```
+
+## 関連
+
+- [start](/ja/commands/start/) - Worktreeの作成
+- [フック](/ja/configuration/hooks/) - クリーンアップフックの設定

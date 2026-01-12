@@ -1,0 +1,51 @@
+---
+title: Welcome to vibe
+description: A CLI tool for easy Git Worktree management
+template: splash
+hero:
+  tagline: Manage Git Worktrees with ease. Create, switch, and clean up worktrees effortlessly.
+  actions:
+    - text: Get Started
+      link: /en/getting-started/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/kexi/vibe
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from "@astrojs/starlight/components";
+
+## Features
+
+<CardGrid stagger>
+  <Card title="Simple Commands" icon="terminal">
+    Just two main commands: `vibe start` to create a worktree, `vibe clean` to
+    remove it.
+  </Card>
+  <Card title="Idempotent Operations" icon="approve-check">
+    Run `vibe start` multiple times safely - it handles existing worktrees
+    gracefully.
+  </Card>
+  <Card title="Automated Setup" icon="setting">
+    Copy files, run hooks, and configure your environment automatically with
+    `.vibe.toml`.
+  </Card>
+  <Card title="Security First" icon="warning">
+    SHA-256 hash verification prevents unauthorized changes to configuration
+    files.
+  </Card>
+</CardGrid>
+
+## Quick Start
+
+```bash
+# Install via Homebrew (macOS)
+brew install kexi/tap/vibe
+
+# Create a worktree for a new feature
+vibe start feat/new-feature
+
+# When done, clean up
+vibe clean
+```

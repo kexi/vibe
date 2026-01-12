@@ -1,0 +1,134 @@
+---
+title: Hooks
+description: Configure hooks for automated workflows
+sidebar:
+  order: 4
+---
+
+Hooks allow you to run commands automatically during the worktree lifecycle.
+
+## Available Hooks
+
+| Hook         | When                     | Working Directory |
+| ------------ | ------------------------ | ----------------- |
+| `pre_start`  | Before worktree creation | Origin repository |
+| `post_start` | After worktree creation  | New worktree      |
+| `pre_clean`  | Before worktree removal  | Current worktree  |
+| `post_clean` | After worktree removal   | Main repository   |
+
+## Configuration
+
+```toml
+[hooks]
+pre_start = ["echo 'Preparing worktree...'"]
+post_start = [
+  "pnpm install",
+  "pnpm db:migrate"
+]
+pre_clean = ["git stash"]
+post_clean = ["echo 'Cleanup complete'"]
+```
+
+## Environment Variables
+
+The following environment variables are available in all hook commands:
+
+| Variable             | Description                              |
+| -------------------- | ---------------------------------------- |
+| `VIBE_WORKTREE_PATH` | Absolute path to the created worktree    |
+| `VIBE_ORIGIN_PATH`   | Absolute path to the original repository |
+
+### Example Usage
+
+```toml
+[hooks]
+post_start = [
+  "echo 'Worktree created at: $VIBE_WORKTREE_PATH'",
+  "echo 'Origin repository: $VIBE_ORIGIN_PATH'"
+]
+```
+
+## Hook Output Behavior
+
+vibe displays a real-time progress tree during hook execution:
+
+```
+✶ Setting up worktree feature/new-ui…
+┗ ☒ Pre-start hooks
+   ┗ ☒ npm install
+     ☒ cargo build --release
+  ⠋ Copying files
+   ┗ ⠋ .env.local
+     ☐ node_modules/
+```
+
+### Output Handling
+
+| Situation                 | stdout            | stderr       |
+| ------------------------- | ----------------- | ------------ |
+| Progress display active   | Suppressed        | Always shown |
+| Progress display inactive | Written to stderr | Always shown |
+| Failed hooks              | N/A               | Always shown |
+
+:::note
+Progress display auto-disables in non-TTY environments (e.g., CI/CD), and hook output will be shown normally.
+:::
+
+## Hook Execution Order
+
+For `vibe start`:
+
+1. `pre_start` hooks run in origin repository
+2. Worktree is created
+3. Files/directories are copied
+4. `post_start` hooks run in new worktree
+
+For `vibe clean`:
+
+1. `pre_clean` hooks run in current worktree
+2. Worktree is removed
+3. `post_clean` hooks run in main repository
+
+## Common Patterns
+
+### Node.js Project
+
+```toml
+[hooks]
+post_start = [
+  "pnpm install",
+  "pnpm build"
+]
+pre_clean = ["git stash --include-untracked"]
+```
+
+### Database Migration
+
+```toml
+[hooks]
+post_start = [
+  "pnpm install",
+  "pnpm db:migrate",
+  "pnpm db:seed"
+]
+```
+
+### Docker Environment
+
+```toml
+[hooks]
+post_start = [
+  "docker-compose up -d",
+  "sleep 5",
+  "pnpm db:migrate"
+]
+pre_clean = ["docker-compose down"]
+```
+
+## Skipping Hooks
+
+You can skip hooks with the `--no-hooks` option:
+
+```bash
+vibe start feat/quick-fix --no-hooks
+```

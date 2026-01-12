@@ -1,0 +1,99 @@
+---
+title: .vibe.local.toml
+description: 個人用ローカル設定の上書き
+sidebar:
+  order: 3
+---
+
+`.vibe.local.toml`ファイルを使用すると、共有の`.vibe.toml`設定を個人用設定で上書きまたは拡張できます。このファイルは自動的にgitignoreされます。
+
+## ユースケース
+
+- 開発者固有の環境ファイル
+- ローカルパスや認証情報
+- 個人的なワークフローのカスタマイズ
+- マシン固有の設定
+
+## 基本例
+
+```toml
+# 共有フックをローカルコマンドで上書き・拡張
+[hooks]
+post_start_prepend = ["echo 'ローカルセットアップ開始'"]
+post_start_append = ["npm run dev"]
+
+# コピーするファイルを上書き
+[copy]
+files = [".env.local", ".secrets"]
+```
+
+## 設定のマージ
+
+`.vibe.toml`と`.vibe.local.toml`の両方が存在する場合、以下のルールに従ってマージされます：
+
+| 方法       | 構文                           | 説明                       |
+| ---------- | ------------------------------ | -------------------------- |
+| 完全上書き | `フィールド名 = [...]`         | 共有値を完全に置き換え     |
+| 先頭に追加 | `フィールド名_prepend = [...]` | 共有値の前にアイテムを追加 |
+| 末尾に追加 | `フィールド名_append = [...]`  | 共有値の後にアイテムを追加 |
+
+### マージ例
+
+```toml
+# .vibe.toml（共有）
+[hooks]
+post_start = ["npm install", "npm run build"]
+
+# .vibe.local.toml（ローカル）
+[hooks]
+post_start_prepend = ["echo 'ローカルセットアップ'"]
+post_start_append = ["npm run dev"]
+
+# 結果: ["echo 'ローカルセットアップ'", "npm install", "npm run build", "npm run dev"]
+```
+
+### 上書き例
+
+共有設定を完全に置き換えるには：
+
+```toml
+# .vibe.local.toml
+[hooks]
+post_start = ["my-custom-script.sh"]
+
+# 結果: ["my-custom-script.sh"]
+# （共有のpost_startは完全に置き換えられる）
+```
+
+## 信頼登録
+
+`.vibe.toml`と同様に、ローカル設定ファイルも信頼登録が必要です：
+
+```bash
+vibe trust
+```
+
+このコマンドは`.vibe.toml`と`.vibe.local.toml`の両方を信頼登録します（存在する場合）。
+
+## 完全な例
+
+```toml
+# .vibe.local.toml
+
+[copy]
+# ローカル専用のコピーファイルを追加
+files = [".env.local", ".secrets", "local-config.json"]
+
+[hooks]
+# 共有のpre_startフックの前に実行
+pre_start_prepend = ["echo 'ローカルセットアップ開始'"]
+
+# 共有のpost_startフックの後に実行
+post_start_append = [
+  "npm run dev",
+  "open http://localhost:3000"
+]
+
+# pre_cleanを完全に上書き
+pre_clean = ["echo 'カスタムクリーンアップ'"]
+```

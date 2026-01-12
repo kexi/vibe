@@ -1,0 +1,101 @@
+---
+title: vibe clean
+description: Delete current worktree and return to main repository
+sidebar:
+  order: 3
+---
+
+The `clean` command removes the current worktree and returns you to the main repository.
+
+## Usage
+
+```bash
+vibe clean
+```
+
+## Behavior
+
+### Safety Checks
+
+Before removing a worktree, `vibe clean`:
+
+1. Checks for uncommitted changes
+2. Prompts for confirmation if changes exist
+3. Runs pre-clean hooks
+4. Removes the worktree
+5. Runs post-clean hooks
+6. Changes directory to the main repository
+
+### Uncommitted Changes Warning
+
+```
+$ vibe clean
+You have uncommitted changes. Are you sure you want to clean? (y/N)
+```
+
+If you have uncommitted changes, vibe will:
+
+- Show a warning
+- Ask for confirmation
+- Only proceed if you explicitly confirm
+
+## Hooks
+
+The `clean` command supports hooks for cleanup tasks:
+
+```toml
+[hooks]
+pre_clean = ["git stash"]
+post_clean = ["echo 'Cleanup complete'"]
+```
+
+| Hook         | When                    | Working Directory |
+| ------------ | ----------------------- | ----------------- |
+| `pre_clean`  | Before worktree removal | Current worktree  |
+| `post_clean` | After worktree removal  | Main repository   |
+
+### Pre-clean Hook Example
+
+Save your work before cleaning:
+
+```toml
+[hooks]
+pre_clean = [
+  "git stash --include-untracked",
+  "echo 'Changes stashed'"
+]
+```
+
+### Post-clean Hook Example
+
+Clean up shared resources:
+
+```toml
+[hooks]
+post_clean = [
+  "docker-compose down",
+  "echo 'Cleanup complete'"
+]
+```
+
+## Workflow
+
+```
+worktree (current)
+     │
+     ├── pre_clean hooks run
+     │
+     ├── git worktree remove
+     │
+     ├── post_clean hooks run
+     │
+     └── cd to main repository
+            │
+            ▼
+main repository (new current)
+```
+
+## Related
+
+- [start](/en/commands/start/) - Create worktrees
+- [Hooks](/en/configuration/hooks/) - Configure cleanup hooks

@@ -1,0 +1,80 @@
+---
+title: Shell Setup
+description: Configure your shell to use vibe
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+vibe needs a shell wrapper function to change directories after creating or cleaning up worktrees. Add the appropriate configuration to your shell.
+
+## Shell Configuration
+
+<Tabs>
+  <TabItem label="Zsh">
+    Add to `~/.zshrc`:
+
+    ```bash
+    vibe() { eval "$(command vibe "$@")" }
+    ```
+
+  </TabItem>
+  <TabItem label="Bash">
+    Add to `~/.bashrc`:
+
+    ```bash
+    vibe() { eval "$(command vibe "$@")"; }
+    ```
+
+  </TabItem>
+  <TabItem label="Fish">
+    Add to `~/.config/fish/config.fish`:
+
+    ```fish
+    function vibe
+        eval (command vibe $argv)
+    end
+    ```
+
+  </TabItem>
+  <TabItem label="Nushell">
+    Add to `~/.config/nushell/config.nu`:
+
+    ```nu
+    def --env vibe [...args] {
+        ^vibe ...$args | lines | each { |line| nu -c $line }
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="PowerShell">
+    Add to your `$PROFILE`:
+
+    ```powershell
+    function vibe { Invoke-Expression (& vibe.exe $args) }
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Why is this needed?
+
+When vibe creates a worktree, it needs to change your current working directory to the new worktree. However, a subprocess cannot change the parent process's directory directly.
+
+The shell wrapper function captures vibe's output (which contains shell commands like `cd /path/to/worktree`) and executes it in the current shell context.
+
+## Verify Installation
+
+After adding the shell configuration, reload your shell and verify:
+
+```bash
+# Reload your shell or open a new terminal
+source ~/.zshrc  # or ~/.bashrc, etc.
+
+# Check vibe is working
+vibe --help
+```
+
+## Next Steps
+
+- [Configuration](/en/configuration/) - Set up `.vibe.toml` for automated workflows
+- [Commands](/en/commands/) - Learn about available commands
