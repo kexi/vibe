@@ -1,0 +1,110 @@
+---
+title: インストール
+description: システムにvibeをインストール
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+## パッケージマネージャー
+
+<Tabs>
+  <TabItem label="Homebrew (macOS)">
+    ```bash
+    brew install kexi/tap/vibe
+    ```
+  </TabItem>
+  <TabItem label="Deno (JSR)">
+    ```bash
+    deno install -A --global jsr:@kexi/vibe
+    ```
+
+    **権限設定**: より安全にするため、`-A`の代わりに必要な権限のみを指定できます：
+
+    ```bash
+    deno install --global --allow-run --allow-read --allow-write --allow-env --allow-ffi jsr:@kexi/vibe
+    ```
+
+    :::note
+    `--allow-ffi`はmacOS (APFS)とLinux (Btrfs/XFS)で最適化されたCopy-on-Writeファイルクローニングを有効にします。このフラグがなくても動作しますが、ディレクトリコピーが若干遅くなる可能性があります。
+    :::
+
+  </TabItem>
+  <TabItem label="mise">
+    `.mise.toml`に追加：
+
+    ```toml
+    [tools]
+    "jsr:@kexi/vibe" = "latest"
+    ```
+
+    その後、インストール：
+
+    ```bash
+    mise install
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Linux
+
+:::note
+WSL2ユーザーは、使用しているディストリビューションに応じて以下のLinuxインストール方法を使用できます。
+:::
+
+<Tabs>
+  <TabItem label="Ubuntu/Debian">
+    ```bash
+    # x64
+    curl -LO https://github.com/kexi/vibe/releases/latest/download/vibe_amd64.deb
+    sudo apt install ./vibe_amd64.deb
+
+    # ARM64
+    curl -LO https://github.com/kexi/vibe/releases/latest/download/vibe_arm64.deb
+    sudo apt install ./vibe_arm64.deb
+
+    # アンインストール
+    sudo apt remove vibe
+    ```
+
+  </TabItem>
+  <TabItem label="その他のディストリビューション">
+    ```bash
+    # x64
+    curl -L https://github.com/kexi/vibe/releases/latest/download/vibe-linux-x64 -o vibe
+    chmod +x vibe
+    sudo mv vibe /usr/local/bin/
+
+    # ARM64
+    curl -L https://github.com/kexi/vibe/releases/latest/download/vibe-linux-arm64 -o vibe
+    chmod +x vibe
+    sudo mv vibe /usr/local/bin/
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Windows
+
+```powershell
+# ダウンロード
+Invoke-WebRequest -Uri "https://github.com/kexi/vibe/releases/latest/download/vibe-windows-x64.exe" -OutFile "$env:LOCALAPPDATA\vibe.exe"
+
+# PATHに追加（初回のみ）
+$path = [Environment]::GetEnvironmentVariable("Path", "User")
+[Environment]::SetEnvironmentVariable("Path", "$path;$env:LOCALAPPDATA", "User")
+```
+
+## 手動ビルド
+
+Denoがインストールされている場合、ソースからコンパイルできます：
+
+```bash
+git clone https://github.com/kexi/vibe.git
+cd vibe
+deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts
+```
+
+## 次のステップ
+
+インストール後、[シェル設定](/ja/setup/)でvibeのディレクトリ変更機能を有効にしてください。

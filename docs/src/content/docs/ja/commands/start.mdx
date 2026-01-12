@@ -1,0 +1,93 @@
+---
+title: vibe start
+description: 新規または既存ブランチでWorktreeを作成
+sidebar:
+  order: 2
+---
+
+import { Badge } from "@astrojs/starlight/components";
+
+`start`コマンドは指定したブランチ用のGit Worktreeを作成し、そのディレクトリに移動します。
+
+## 使い方
+
+```bash
+vibe start <branch> [options]
+```
+
+## オプション
+
+| オプション   | 説明                                     |                          |
+| ------------ | ---------------------------------------- | ------------------------ |
+| `--reuse`    | 既存ブランチを使用（新規作成しない）     |                          |
+| `--no-hooks` | pre-startとpost-startフックをスキップ    | <Badge text="v0.5.0+" /> |
+| `--no-copy`  | ファイル・ディレクトリのコピーをスキップ | <Badge text="v0.5.0+" /> |
+
+## 例
+
+```bash
+# 新しいブランチでWorktreeを作成
+vibe start feat/new-feature
+
+# 既存ブランチを使用
+vibe start feat/existing-branch
+
+# フックなしでクイックスタート
+vibe start feat/quick-fix --no-hooks
+
+# ファイルコピーなしで開始
+vibe start feat/clean-slate --no-copy
+```
+
+## 動作
+
+### 冪等な操作
+
+`vibe start`は冪等です - 同じブランチで複数回実行しても安全：
+
+- 同じブランチのWorktreeが既に存在する場合、vibeはそこに移動します
+- 重複したWorktreeは作成されません
+
+### インタラクティブプロンプト
+
+`vibe start`は様々な状況に対話的に対応します：
+
+#### ブランチが他のWorktreeで使用中の場合
+
+```
+$ vibe start feat/new-feature
+ブランチ 'feat/new-feature' は既にWorktree '/path/to/repo-feat-new-feature' で使用中です。
+既存のWorktreeに移動しますか? (Y/n)
+```
+
+#### 異なるブランチのディレクトリが存在する場合
+
+以下から選択できます：
+
+- **上書き**: 削除して再作成
+- **再利用**: 既存ディレクトリをそのまま使用
+- **キャンセル**: 操作を中止
+
+### Worktreeの配置場所
+
+デフォルトでは、Worktreeはメインリポジトリの兄弟として作成されます：
+
+```
+/path/to/repo/                   # メインリポジトリ
+/path/to/repo-feat-new-feature/  # Worktree
+```
+
+## ワークフロー
+
+`vibe start`実行時：
+
+1. **pre_startフック**が元リポジトリで実行（設定されている場合）
+2. **Worktree作成**: Git Worktreeが作成される
+3. **ファイルコピー**: ファイル/ディレクトリがコピーされる（設定されている場合）
+4. **post_startフック**が新しいWorktreeで実行（設定されている場合）
+5. **ディレクトリ変更**: ターミナルが新しいWorktreeに移動
+
+## 関連
+
+- [clean](/ja/commands/clean/) - 作業完了後のWorktree削除
+- [フック](/ja/configuration/hooks/) - 自動ワークフローの設定

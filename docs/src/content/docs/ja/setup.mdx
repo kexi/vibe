@@ -1,0 +1,80 @@
+---
+title: シェル設定
+description: vibeを使用するためのシェル設定
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+vibeはWorktreeの作成やクリーンアップ後にディレクトリを変更するため、シェルラッパー関数が必要です。以下の適切な設定をシェルに追加してください。
+
+## シェル設定
+
+<Tabs>
+  <TabItem label="Zsh">
+    `~/.zshrc`に追加：
+
+    ```bash
+    vibe() { eval "$(command vibe "$@")" }
+    ```
+
+  </TabItem>
+  <TabItem label="Bash">
+    `~/.bashrc`に追加：
+
+    ```bash
+    vibe() { eval "$(command vibe "$@")"; }
+    ```
+
+  </TabItem>
+  <TabItem label="Fish">
+    `~/.config/fish/config.fish`に追加：
+
+    ```fish
+    function vibe
+        eval (command vibe $argv)
+    end
+    ```
+
+  </TabItem>
+  <TabItem label="Nushell">
+    `~/.config/nushell/config.nu`に追加：
+
+    ```nu
+    def --env vibe [...args] {
+        ^vibe ...$args | lines | each { |line| nu -c $line }
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="PowerShell">
+    `$PROFILE`に追加：
+
+    ```powershell
+    function vibe { Invoke-Expression (& vibe.exe $args) }
+    ```
+
+  </TabItem>
+</Tabs>
+
+## なぜこれが必要なのか？
+
+vibeがWorktreeを作成すると、現在の作業ディレクトリを新しいWorktreeに変更する必要があります。しかし、サブプロセスは親プロセスのディレクトリを直接変更することができません。
+
+シェルラッパー関数はvibeの出力（`cd /path/to/worktree`のようなシェルコマンドを含む）をキャプチャし、現在のシェルコンテキストで実行します。
+
+## インストールの確認
+
+シェル設定を追加した後、シェルをリロードして確認：
+
+```bash
+# シェルをリロードまたは新しいターミナルを開く
+source ~/.zshrc  # または ~/.bashrc など
+
+# vibeが動作することを確認
+vibe --help
+```
+
+## 次のステップ
+
+- [設定](/ja/configuration/) - 自動ワークフロー用の`.vibe.toml`をセットアップ
+- [コマンド](/ja/commands/) - 利用可能なコマンドについて学ぶ
