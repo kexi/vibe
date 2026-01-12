@@ -23,6 +23,18 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
   <TabItem label="Deno">
     ```bash deno install -A --global jsr:@kexi/vibe ```
   </TabItem>
+  <TabItem label="Linux">
+    ```bash
+    # Ubuntu/Debian (x64)
+    curl -LO https://github.com/kexi/vibe/releases/latest/download/vibe_amd64.deb
+    sudo apt install ./vibe_amd64.deb
+
+    # その他のディストリビューション (x64)
+    curl -L https://github.com/kexi/vibe/releases/latest/download/vibe-linux-x64 -o vibe
+    chmod +x vibe && sudo mv vibe /usr/local/bin/
+    ```
+
+  </TabItem>
 </Tabs>
 
 ### 2. シェルを設定
@@ -48,6 +60,20 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     function vibe
         eval (command vibe $argv)
     end
+    ```
+  </TabItem>
+  <TabItem label="Nushell">
+    ```nu
+    # ~/.config/nushell/config.nu に追加
+    def --env vibe [...args] {
+        ^vibe ...$args | lines | each { |line| nu -c $line }
+    }
+    ```
+  </TabItem>
+  <TabItem label="PowerShell">
+    ```powershell
+    # $PROFILE に追加
+    function vibe { Invoke-Expression (& vibe.exe $args) }
     ```
   </TabItem>
 </Tabs>
