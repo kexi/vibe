@@ -1,0 +1,121 @@
+---
+title: Security
+description: Hash verification and security features
+sidebar:
+  order: 1
+---
+
+vibe includes security features to protect against unauthorized modifications to configuration files.
+
+## Hash Verification
+
+vibe automatically verifies the integrity of `.vibe.toml` and `.vibe.local.toml` files using SHA-256 hashes.
+
+### How It Works
+
+1. When you run `vibe trust`, vibe calculates and stores the SHA-256 hash
+2. When you run `vibe start`, vibe verifies the file hasn't been modified
+3. If the hash doesn't match, vibe exits with an error
+
+### Trust Flow
+
+```
+First use:
+  vibe trust → Store hash → Ready to use
+
+Subsequent use:
+  vibe start → Verify hash → ✓ Match → Run hooks
+                          → ✗ Mismatch → Error (re-trust required)
+```
+
+## Settings File
+
+Trust information is stored in `~/.config/vibe/settings.json`:
+
+```json
+{
+  "version": 3,
+  "permissions": {
+    "allow": [
+      {
+        "repoId": {
+          "remoteUrl": "github.com/user/repo",
+          "repoRoot": "/path/to/repo"
+        },
+        "relativePath": ".vibe.toml",
+        "hashes": ["abc123..."]
+      }
+    ],
+    "deny": []
+  }
+}
+```
+
+### Repository-Based Trust
+
+Version 3 uses repository-based trust identification:
+
+- Trust is shared across all worktrees of the same repository
+- Settings are automatically migrated from v2 to v3 on first load
+
+## Skip Hash Check
+
+:::caution
+Only disable hash verification if you understand the security implications.
+:::
+
+### Global Setting
+
+Disable verification for all repositories:
+
+```json
+{
+  "version": 3,
+  "skipHashCheck": true,
+  "permissions": { "allow": [], "deny": [] }
+}
+```
+
+### Per-File Setting
+
+Disable verification for a specific file:
+
+```json
+{
+  "version": 3,
+  "permissions": {
+    "allow": [
+      {
+        "repoId": {
+          "remoteUrl": "github.com/user/repo",
+          "repoRoot": "/path/to/repo"
+        },
+        "relativePath": ".vibe.toml",
+        "hashes": ["abc123..."],
+        "skipHashCheck": true
+      }
+    ],
+    "deny": []
+  }
+}
+```
+
+## Branch Switching
+
+vibe stores multiple hashes per file (up to 100), allowing you to switch between branches without re-trusting:
+
+- Each trusted version's hash is stored
+- When switching branches, vibe checks against all stored hashes
+- If the current hash matches any stored hash, verification passes
+
+## Best Practices
+
+1. **Always review changes** before running `vibe trust`
+2. **Don't skip hash check** in production environments
+3. **Keep `.vibe.local.toml` local** - it's automatically gitignored
+4. **Review team changes** to `.vibe.toml` during code review
+
+## Related
+
+- [trust](/en/commands/trust/) - Trust management commands
+- [Configuration](/en/configuration/) - Configuration file format

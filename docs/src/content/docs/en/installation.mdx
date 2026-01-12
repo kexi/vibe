@@ -1,0 +1,110 @@
+---
+title: Installation
+description: Install vibe on your system
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+## Package Managers
+
+<Tabs>
+  <TabItem label="Homebrew (macOS)">
+    ```bash
+    brew install kexi/tap/vibe
+    ```
+  </TabItem>
+  <TabItem label="Deno (JSR)">
+    ```bash
+    deno install -A --global jsr:@kexi/vibe
+    ```
+
+    **Permissions**: For more security, you can specify exact permissions instead of `-A`:
+
+    ```bash
+    deno install --global --allow-run --allow-read --allow-write --allow-env --allow-ffi jsr:@kexi/vibe
+    ```
+
+    :::note
+    `--allow-ffi` enables optimized Copy-on-Write file cloning on macOS (APFS) and Linux (Btrfs/XFS). The tool works without it but may be slightly slower for directory copies.
+    :::
+
+  </TabItem>
+  <TabItem label="mise">
+    Add to your `.mise.toml`:
+
+    ```toml
+    [tools]
+    "jsr:@kexi/vibe" = "latest"
+    ```
+
+    Then run:
+
+    ```bash
+    mise install
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Linux
+
+:::note
+WSL2 users can use the Linux installation methods below based on their distribution.
+:::
+
+<Tabs>
+  <TabItem label="Ubuntu/Debian">
+    ```bash
+    # x64
+    curl -LO https://github.com/kexi/vibe/releases/latest/download/vibe_amd64.deb
+    sudo apt install ./vibe_amd64.deb
+
+    # ARM64
+    curl -LO https://github.com/kexi/vibe/releases/latest/download/vibe_arm64.deb
+    sudo apt install ./vibe_arm64.deb
+
+    # Uninstall
+    sudo apt remove vibe
+    ```
+
+  </TabItem>
+  <TabItem label="Other Distributions">
+    ```bash
+    # x64
+    curl -L https://github.com/kexi/vibe/releases/latest/download/vibe-linux-x64 -o vibe
+    chmod +x vibe
+    sudo mv vibe /usr/local/bin/
+
+    # ARM64
+    curl -L https://github.com/kexi/vibe/releases/latest/download/vibe-linux-arm64 -o vibe
+    chmod +x vibe
+    sudo mv vibe /usr/local/bin/
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Windows
+
+```powershell
+# Download
+Invoke-WebRequest -Uri "https://github.com/kexi/vibe/releases/latest/download/vibe-windows-x64.exe" -OutFile "$env:LOCALAPPDATA\vibe.exe"
+
+# Add to PATH (first time only)
+$path = [Environment]::GetEnvironmentVariable("Path", "User")
+[Environment]::SetEnvironmentVariable("Path", "$path;$env:LOCALAPPDATA", "User")
+```
+
+## Manual Build
+
+If you have Deno installed, you can compile from source:
+
+```bash
+git clone https://github.com/kexi/vibe.git
+cd vibe
+deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts
+```
+
+## Next Steps
+
+After installation, [set up your shell](/en/setup/) to enable vibe's directory changing functionality.

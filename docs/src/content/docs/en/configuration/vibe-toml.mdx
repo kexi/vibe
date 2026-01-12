@@ -1,0 +1,120 @@
+---
+title: .vibe.toml
+description: Shared team configuration file
+sidebar:
+  order: 2
+---
+
+import { Badge } from "@astrojs/starlight/components";
+
+The `.vibe.toml` file contains shared configuration that is typically committed to git and shared with your team.
+
+## Copy Configuration
+
+### Files
+
+Copy individual files from the origin repository to the worktree:
+
+```toml
+[copy]
+files = [".env", "config.json"]
+```
+
+#### Glob Patterns
+
+The `files` array supports glob patterns for flexible file selection:
+
+```toml
+[copy]
+files = [
+  "*.env",              # All .env files in root
+  "**/*.json",          # All JSON files recursively
+  "config/*.txt",       # All .txt files in config/
+  ".env.production"     # Exact paths still work
+]
+```
+
+**Supported patterns:**
+
+| Pattern | Description                                      |
+| ------- | ------------------------------------------------ |
+| `*`     | Matches any characters except `/`                |
+| `**`    | Matches any characters including `/` (recursive) |
+| `?`     | Matches any single character                     |
+| `[abc]` | Matches any character in brackets                |
+
+:::tip[Performance]
+Recursive patterns (`**/*`) may be slower in large repositories. Use specific patterns when possible (e.g., `config/**/*.json` instead of `**/*.json`).
+:::
+
+### Directories <Badge text="v0.4.0+" />
+
+Copy entire directories recursively:
+
+```toml
+[copy]
+dirs = [
+  "node_modules",      # Exact directory path
+  ".cache",            # Hidden directories
+  "packages/*"         # Glob pattern for multiple directories
+]
+```
+
+:::note
+
+- Directories are fully copied (not incrementally synced)
+- Large directories like `node_modules` may take time to copy
+- Directory structure is preserved when copying matched files
+  :::
+
+## Copy Performance Optimization <Badge text="v0.4.0+" />
+
+vibe automatically selects the best copy strategy based on your system:
+
+| Strategy        | When Used                             | Platform    |
+| --------------- | ------------------------------------- | ----------- |
+| Clone (CoW)     | Directory copy on APFS                | macOS       |
+| Clone (reflink) | Directory copy on Btrfs/XFS           | Linux       |
+| rsync           | Directory copy when clone unavailable | macOS/Linux |
+| Standard        | File copy, or fallback                | All         |
+
+**How it works:**
+
+- **File copy**: Always uses Deno's native `copyFile()` for best single-file performance
+- **Directory copy**: Automatically uses the fastest available method
+
+**Benefits:**
+
+- Copy-on-Write is extremely fast as it only copies metadata, not actual data
+- No configuration needed - the best strategy is auto-detected
+- Automatic fallback ensures copying always works
+
+## Hooks Configuration
+
+See [Hooks](/en/configuration/hooks/) for details on configuring pre/post hooks.
+
+## Full Example
+
+```toml
+[copy]
+files = [
+  ".env",
+  ".env.local",
+  "**/*.secret"
+]
+dirs = [
+  "node_modules",
+  ".cache",
+  "vendor"
+]
+
+[hooks]
+pre_start = ["echo 'Preparing worktree...'"]
+post_start = [
+  "pnpm install",
+  "pnpm db:migrate",
+  "pnpm build"
+]
+pre_clean = ["git stash"]
+post_clean = ["echo 'Cleanup complete'"]
+```

@@ -1,0 +1,60 @@
+---
+title: vibe config
+description: Display current configuration
+sidebar:
+  order: 5
+---
+
+The `config` command displays the current effective configuration.
+
+## Usage
+
+```bash
+vibe config
+```
+
+## Output
+
+Shows the merged configuration from `.vibe.toml` and `.vibe.local.toml`:
+
+```bash
+$ vibe config
+Copy:
+  files: [".env", ".env.local"]
+  dirs: ["node_modules", ".cache"]
+
+Hooks:
+  pre_start: ["echo 'Starting'"]
+  post_start: ["pnpm install", "pnpm build"]
+  pre_clean: ["git stash"]
+  post_clean: ["echo 'Done'"]
+```
+
+## Use Cases
+
+### Verify Configuration
+
+Check that your configuration is set up correctly before creating a worktree:
+
+```bash
+vibe config
+vibe start feat/new-feature
+```
+
+### Debug Merging
+
+See how `.vibe.toml` and `.vibe.local.toml` are merged:
+
+```bash
+# Check merged result
+vibe config
+
+# Compare with individual files
+cat .vibe.toml
+cat .vibe.local.toml
+```
+
+## Related
+
+- [Configuration](/en/configuration/) - How to configure vibe
+- [.vibe.local.toml](/en/configuration/local-config/) - Local overrides

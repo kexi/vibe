@@ -1,0 +1,52 @@
+---
+title: Configuration Overview
+description: Configure vibe with .vibe.toml
+sidebar:
+  order: 1
+---
+
+vibe can be configured using TOML files to automate your workflow when creating and cleaning up worktrees.
+
+## Configuration Files
+
+| File               | Purpose                   | Git tracked     |
+| ------------------ | ------------------------- | --------------- |
+| `.vibe.toml`       | Shared team configuration | Yes             |
+| `.vibe.local.toml` | Personal local overrides  | No (gitignored) |
+
+## Basic Example
+
+Create a `.vibe.toml` file in your repository root:
+
+```toml
+# Copy files and directories from origin repository to worktree
+[copy]
+files = [".env"]
+dirs = ["node_modules", ".cache"]
+
+# Commands to run after worktree creation
+[hooks]
+pre_start = ["echo 'Preparing worktree...'"]
+post_start = [
+  "pnpm install",
+  "pnpm db:migrate"
+]
+pre_clean = ["git stash"]
+post_clean = ["echo 'Cleanup complete'"]
+```
+
+## First-time Setup
+
+Before using configuration files, you need to trust them:
+
+```bash
+vibe trust
+```
+
+This registers the SHA-256 hash of your configuration files to prevent unauthorized modifications.
+
+## Configuration Topics
+
+- [.vibe.toml](/en/configuration/vibe-toml/) - Shared configuration details
+- [.vibe.local.toml](/en/configuration/local-config/) - Local overrides
+- [Hooks](/en/configuration/hooks/) - Available hooks and environment variables
