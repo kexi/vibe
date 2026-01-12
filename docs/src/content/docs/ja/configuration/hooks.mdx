@@ -1,0 +1,134 @@
+---
+title: フック
+description: 自動ワークフロー用のフック設定
+sidebar:
+  order: 4
+---
+
+フックを使用すると、Worktreeのライフサイクル中にコマンドを自動的に実行できます。
+
+## 利用可能なフック
+
+| フック       | 実行タイミング | 作業ディレクトリ |
+| ------------ | -------------- | ---------------- |
+| `pre_start`  | Worktree作成前 | 元リポジトリ     |
+| `post_start` | Worktree作成後 | 新しいWorktree   |
+| `pre_clean`  | Worktree削除前 | 現在のWorktree   |
+| `post_clean` | Worktree削除後 | メインリポジトリ |
+
+## 設定
+
+```toml
+[hooks]
+pre_start = ["echo 'Worktreeを準備中...'"]
+post_start = [
+  "pnpm install",
+  "pnpm db:migrate"
+]
+pre_clean = ["git stash"]
+post_clean = ["echo 'クリーンアップ完了'"]
+```
+
+## 環境変数
+
+すべてのフックコマンドで以下の環境変数が利用可能です：
+
+| 変数                 | 説明                         |
+| -------------------- | ---------------------------- |
+| `VIBE_WORKTREE_PATH` | 作成されたWorktreeの絶対パス |
+| `VIBE_ORIGIN_PATH`   | 元リポジトリの絶対パス       |
+
+### 使用例
+
+```toml
+[hooks]
+post_start = [
+  "echo 'Worktree作成先: $VIBE_WORKTREE_PATH'",
+  "echo '元リポジトリ: $VIBE_ORIGIN_PATH'"
+]
+```
+
+## フック実行時の出力動作
+
+vibeはフック実行中にリアルタイム進捗ツリーを表示します：
+
+```
+✶ Setting up worktree feature/new-ui…
+┗ ☒ Pre-start hooks
+   ┗ ☒ npm install
+     ☒ cargo build --release
+  ⠋ Copying files
+   ┗ ⠋ .env.local
+     ☐ node_modules/
+```
+
+### 出力の処理
+
+| 状況           | 標準出力         | 標準エラー出力 |
+| -------------- | ---------------- | -------------- |
+| 進捗表示が有効 | 抑制される       | 常に表示       |
+| 進捗表示が無効 | 標準エラーに出力 | 常に表示       |
+| 失敗したフック | N/A              | 常に表示       |
+
+:::note
+進捗表示は非TTY環境（CI/CDなど）では自動的に無効になり、フックの出力が通常通り表示されます。
+:::
+
+## フック実行順序
+
+`vibe start`の場合：
+
+1. `pre_start`フックが元リポジトリで実行
+2. Worktreeが作成される
+3. ファイル/ディレクトリがコピーされる
+4. `post_start`フックが新しいWorktreeで実行
+
+`vibe clean`の場合：
+
+1. `pre_clean`フックが現在のWorktreeで実行
+2. Worktreeが削除される
+3. `post_clean`フックがメインリポジトリで実行
+
+## よくあるパターン
+
+### Node.jsプロジェクト
+
+```toml
+[hooks]
+post_start = [
+  "pnpm install",
+  "pnpm build"
+]
+pre_clean = ["git stash --include-untracked"]
+```
+
+### データベースマイグレーション
+
+```toml
+[hooks]
+post_start = [
+  "pnpm install",
+  "pnpm db:migrate",
+  "pnpm db:seed"
+]
+```
+
+### Docker環境
+
+```toml
+[hooks]
+post_start = [
+  "docker-compose up -d",
+  "sleep 5",
+  "pnpm db:migrate"
+]
+pre_clean = ["docker-compose down"]
+```
+
+## フックのスキップ
+
+`--no-hooks`オプションでフックをスキップできます：
+
+```bash
+vibe start feat/quick-fix --no-hooks
+```

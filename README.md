@@ -4,6 +4,10 @@ A CLI tool for easy Git Worktree management.
 
 [日本語](README.ja.md)
 
+## Documentation
+
+📚 Full documentation is available at [vibe.kexi.dev](https://vibe.kexi.dev)
+
 ## Usage
 
 | Command                      | Description                                         |
@@ -269,6 +273,8 @@ Vibe automatically selects the best copy strategy based on your system:
 - Copy-on-Write is extremely fast as it only copies metadata, not actual data
 - No configuration needed - the best strategy is auto-detected
 - Automatic fallback ensures copying always works
+
+For detailed information about copy strategies and implementation, see [Copy Strategies](docs/copy-strategies.md).
 
 ### Security: Hash Verification
 

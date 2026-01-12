@@ -1,0 +1,44 @@
+---
+title: コマンド概要
+description: 利用可能なvibeコマンド
+sidebar:
+  order: 1
+---
+
+vibeはGit Worktreeを管理するためのシンプルなコマンドセットを提供します。
+
+## コマンド一覧
+
+| コマンド              | 説明                                   |
+| --------------------- | -------------------------------------- |
+| `vibe start <branch>` | 新規または既存ブランチでWorktreeを作成 |
+| `vibe clean`          | 現在のWorktreeを削除してメインに戻る   |
+| `vibe trust`          | 設定ファイルを信頼登録                 |
+| `vibe untrust`        | 設定ファイルの信頼を解除               |
+| `vibe config`         | 現在の設定を表示                       |
+
+## クイックリファレンス
+
+```bash
+# 新機能用のWorktreeを作成
+vibe start feat/new-feature
+
+# 既存ブランチを使用
+vibe start feat/existing-branch
+
+# 作業完了後にクリーンアップ
+vibe clean
+
+# 設定ファイルを信頼登録
+vibe trust
+
+# 現在の設定を表示
+vibe config
+```
+
+## 詳細ドキュメント
+
+- [start](/ja/commands/start/) - Worktreeの作成
+- [clean](/ja/commands/clean/) - Worktreeの削除
+- [trust](/ja/commands/trust/) - 設定の信頼管理
+- [config](/ja/commands/config/) - 設定の表示

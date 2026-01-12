@@ -1,0 +1,85 @@
+---
+title: はじめに
+description: vibeを数分で使い始める
+---
+
+## vibeとは？
+
+vibeはGit Worktreeの管理を簡素化するCLIツールです。以下のことができます：
+
+- メインリポジトリを離れずに新機能用のWorktreeを作成
+- 設定ファイルや依存関係を自動的にコピー
+- Worktreeの作成・クリーンアップ時にセットアップフックを実行
+- 対話的なプロンプトでWorktreeのライフサイクルを安全に管理
+
+## クイックスタート
+
+### 1. vibeをインストール
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+<Tabs>
+  <TabItem label="Homebrew">```bash brew install kexi/tap/vibe ```</TabItem>
+  <TabItem label="Deno">
+    ```bash deno install -A --global jsr:@kexi/vibe ```
+  </TabItem>
+</Tabs>
+
+### 2. シェルを設定
+
+シェル設定に以下を追加：
+
+<Tabs>
+  <TabItem label="Zsh">
+    ```bash
+    # ~/.zshrc に追加
+    vibe() { eval "$(command vibe "$@")" }
+    ```
+  </TabItem>
+  <TabItem label="Bash">
+    ```bash
+    # ~/.bashrc に追加
+    vibe() { eval "$(command vibe "$@")"; }
+    ```
+  </TabItem>
+  <TabItem label="Fish">
+    ```fish
+    # ~/.config/fish/config.fish に追加
+    function vibe
+        eval (command vibe $argv)
+    end
+    ```
+  </TabItem>
+</Tabs>
+
+### 3. 最初のWorktreeを作成
+
+```bash
+# 新機能の作業を開始
+vibe start feat/my-new-feature
+
+# ターミナルは新しいWorktreeに移動しています！
+# 変更を加えて、コミット、プッシュなど...
+
+# 作業完了後、Worktreeをクリーンアップ
+vibe clean
+```
+
+## 基本的なワークフロー
+
+```
+メインリポジトリ
+     │
+     ├── vibe start feat/feature-a  →  repo-feat-feature-a/
+     │                                      │
+     │                                      └── (機能を開発)
+     │
+     └── vibe clean  ←─────────────────────────┘
+           (メインに戻り、Worktreeを削除)
+```
+
+## 次のステップ
+
+- [インストール](/ja/installation/) - 詳細なインストール手順
+- [シェル設定](/ja/setup/) - シェルの設定
+- [設定](/ja/configuration/) - `.vibe.toml`のセットアップ

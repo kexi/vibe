@@ -1,0 +1,52 @@
+---
+title: 設定の概要
+description: .vibe.tomlでvibeを設定
+sidebar:
+  order: 1
+---
+
+vibeはTOMLファイルを使用して設定でき、Worktreeの作成やクリーンアップ時のワークフローを自動化できます。
+
+## 設定ファイル
+
+| ファイル           | 用途                 | Git管理             |
+| ------------------ | -------------------- | ------------------- |
+| `.vibe.toml`       | チーム共有の設定     | はい                |
+| `.vibe.local.toml` | 個人用ローカル上書き | いいえ（gitignore） |
+
+## 基本例
+
+リポジトリルートに`.vibe.toml`ファイルを作成：
+
+```toml
+# ファイルとディレクトリを元リポジトリからWorktreeへコピー
+[copy]
+files = [".env"]
+dirs = ["node_modules", ".cache"]
+
+# Worktree作成後に実行するコマンド
+[hooks]
+pre_start = ["echo 'Worktreeを準備中...'"]
+post_start = [
+  "pnpm install",
+  "pnpm db:migrate"
+]
+pre_clean = ["git stash"]
+post_clean = ["echo 'クリーンアップ完了'"]
+```
+
+## 初回セットアップ
+
+設定ファイルを使用する前に、信頼登録が必要です：
+
+```bash
+vibe trust
+```
+
+これにより、設定ファイルのSHA-256ハッシュが登録され、不正な変更を防止します。
+
+## 設定トピック
+
+- [.vibe.toml](/ja/configuration/vibe-toml/) - 共有設定の詳細
+- [.vibe.local.toml](/ja/configuration/local-config/) - ローカル上書き
+- [フック](/ja/configuration/hooks/) - 利用可能なフックと環境変数

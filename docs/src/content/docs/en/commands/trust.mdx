@@ -1,0 +1,75 @@
+---
+title: vibe trust / untrust
+description: Manage configuration file trust
+sidebar:
+  order: 4
+---
+
+The `trust` and `untrust` commands manage the trust status of configuration files.
+
+## Usage
+
+```bash
+# Trust configuration files
+vibe trust
+
+# Untrust configuration files
+vibe untrust
+```
+
+## Why Trust?
+
+vibe uses SHA-256 hash verification to ensure configuration files haven't been tampered with. This prevents malicious scripts from running through hooks.
+
+### Trust Flow
+
+1. **First time**: Run `vibe trust` to register the hash of `.vibe.toml` and `.vibe.local.toml`
+2. **Subsequent runs**: vibe verifies the hash before running any hooks
+3. **File changes**: If the file changes, you'll need to re-run `vibe trust`
+
+## vibe trust
+
+Registers the current configuration files as trusted by storing their SHA-256 hashes.
+
+```bash
+$ vibe trust
+Trusted .vibe.toml (hash: abc123...)
+Trusted .vibe.local.toml (hash: def456...)
+```
+
+### What Gets Trusted
+
+- `.vibe.toml` (if exists)
+- `.vibe.local.toml` (if exists)
+
+## vibe untrust
+
+Removes trust for configuration files in the current repository.
+
+```bash
+$ vibe untrust
+Untrusted .vibe.toml
+Untrusted .vibe.local.toml
+```
+
+## Hash Verification
+
+### When Hash Doesn't Match
+
+If a configuration file has been modified since trusting:
+
+```bash
+$ vibe start feat/new-feature
+Error: .vibe.toml hash mismatch.
+The file has been modified since last trusted.
+Run 'vibe trust' to re-trust the file.
+```
+
+### Multiple Hashes
+
+vibe stores multiple hashes per file (up to 100), so you can switch between branches without re-trusting (as long as you've trusted each branch's version at least once).
+
+## Related
+
+- [Security](/en/security/) - Hash verification details
+- [Configuration](/en/configuration/) - Configuration file format

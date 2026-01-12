@@ -1,0 +1,85 @@
+---
+title: Getting Started
+description: Get up and running with vibe in minutes
+---
+
+## What is vibe?
+
+vibe is a CLI tool that simplifies Git Worktree management. It helps you:
+
+- Create worktrees for new features without leaving your main repository
+- Automatically copy configuration files and dependencies
+- Run setup hooks when creating or cleaning up worktrees
+- Safely manage worktree lifecycle with interactive prompts
+
+## Quick Start
+
+### 1. Install vibe
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+<Tabs>
+  <TabItem label="Homebrew">```bash brew install kexi/tap/vibe ```</TabItem>
+  <TabItem label="Deno">
+    ```bash deno install -A --global jsr:@kexi/vibe ```
+  </TabItem>
+</Tabs>
+
+### 2. Set up your shell
+
+Add the following to your shell configuration:
+
+<Tabs>
+  <TabItem label="Zsh">
+    ```bash
+    # Add to ~/.zshrc
+    vibe() { eval "$(command vibe "$@")" }
+    ```
+  </TabItem>
+  <TabItem label="Bash">
+    ```bash
+    # Add to ~/.bashrc
+    vibe() { eval "$(command vibe "$@")"; }
+    ```
+  </TabItem>
+  <TabItem label="Fish">
+    ```fish
+    # Add to ~/.config/fish/config.fish
+    function vibe
+        eval (command vibe $argv)
+    end
+    ```
+  </TabItem>
+</Tabs>
+
+### 3. Create your first worktree
+
+```bash
+# Start working on a new feature
+vibe start feat/my-new-feature
+
+# Your terminal is now in the new worktree!
+# Make your changes, commit, push, etc.
+
+# When done, clean up the worktree
+vibe clean
+```
+
+## Basic Workflow
+
+```
+main repository
+     │
+     ├── vibe start feat/feature-a  →  repo-feat-feature-a/
+     │                                      │
+     │                                      └── (work on feature)
+     │
+     └── vibe clean  ←─────────────────────────┘
+           (returns to main, removes worktree)
+```
+
+## Next Steps
+
+- [Installation](/en/installation/) - Detailed installation instructions
+- [Shell Setup](/en/setup/) - Configure your shell
+- [Configuration](/en/configuration/) - Set up `.vibe.toml`

@@ -1,0 +1,93 @@
+---
+title: vibe start
+description: Create a worktree with a new or existing branch
+sidebar:
+  order: 2
+---
+
+import { Badge } from "@astrojs/starlight/components";
+
+The `start` command creates a Git Worktree for the specified branch and changes to that directory.
+
+## Usage
+
+```bash
+vibe start <branch> [options]
+```
+
+## Options
+
+| Option       | Description                               |                          |
+| ------------ | ----------------------------------------- | ------------------------ |
+| `--reuse`    | Use an existing branch (don't create new) |                          |
+| `--no-hooks` | Skip pre-start and post-start hooks       | <Badge text="v0.5.0+" /> |
+| `--no-copy`  | Skip file and directory copying           | <Badge text="v0.5.0+" /> |
+
+## Examples
+
+```bash
+# Create a worktree with a new branch
+vibe start feat/new-feature
+
+# Use an existing branch
+vibe start feat/existing-branch
+
+# Quick start without hooks
+vibe start feat/quick-fix --no-hooks
+
+# Start without copying files
+vibe start feat/clean-slate --no-copy
+```
+
+## Behavior
+
+### Idempotent Operation
+
+`vibe start` is idempotent - running it multiple times with the same branch is safe:
+
+- If the worktree already exists with the same branch, vibe navigates to it
+- No duplicate worktrees are created
+
+### Interactive Prompts
+
+`vibe start` handles various situations interactively:
+
+#### Branch in use by another worktree
+
+```
+$ vibe start feat/new-feature
+Branch 'feat/new-feature' is already in use by worktree '/path/to/repo-feat-new-feature'.
+Navigate to the existing worktree? (Y/n)
+```
+
+#### Directory exists with different branch
+
+You can choose from:
+
+- **Overwrite**: Delete and recreate the worktree
+- **Reuse**: Use the existing directory as-is
+- **Cancel**: Abort the operation
+
+### Worktree Location
+
+By default, worktrees are created as siblings to the main repository:
+
+```
+/path/to/repo/           # Main repository
+/path/to/repo-feat-new-feature/  # Worktree
+```
+
+## Workflow
+
+When `vibe start` runs:
+
+1. **Pre-start hooks** run in origin repository (if configured)
+2. **Worktree creation**: Git worktree is created
+3. **File copying**: Files/directories are copied (if configured)
+4. **Post-start hooks** run in new worktree (if configured)
+5. **Directory change**: Terminal switches to the new worktree
+
+## Related
+
+- [clean](/en/commands/clean/) - Remove the worktree when done
+- [Hooks](/en/configuration/hooks/) - Configure automated workflows

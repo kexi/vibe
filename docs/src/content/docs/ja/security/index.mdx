@@ -1,0 +1,121 @@
+---
+title: セキュリティ
+description: ハッシュ検証とセキュリティ機能
+sidebar:
+  order: 1
+---
+
+vibeには設定ファイルへの不正な変更を防ぐためのセキュリティ機能が含まれています。
+
+## ハッシュ検証
+
+vibeはSHA-256ハッシュを使用して`.vibe.toml`と`.vibe.local.toml`ファイルの整合性を自動的に検証します。
+
+### 仕組み
+
+1. `vibe trust`を実行すると、vibeはSHA-256ハッシュを計算して保存
+2. `vibe start`を実行すると、vibeはファイルが変更されていないか検証
+3. ハッシュが一致しない場合、vibeはエラーで終了
+
+### 信頼フロー
+
+```
+初回使用:
+  vibe trust → ハッシュを保存 → 使用準備完了
+
+以降の使用:
+  vibe start → ハッシュを検証 → ✓ 一致 → フックを実行
+                              → ✗ 不一致 → エラー（再信頼が必要）
+```
+
+## 設定ファイル
+
+信頼情報は`~/.config/vibe/settings.json`に保存されます：
+
+```json
+{
+  "version": 3,
+  "permissions": {
+    "allow": [
+      {
+        "repoId": {
+          "remoteUrl": "github.com/user/repo",
+          "repoRoot": "/path/to/repo"
+        },
+        "relativePath": ".vibe.toml",
+        "hashes": ["abc123..."]
+      }
+    ],
+    "deny": []
+  }
+}
+```
+
+### リポジトリベースの信頼
+
+バージョン3ではリポジトリベースのトラスト識別を使用：
+
+- 信頼は同じリポジトリのすべてのWorktree間で共有
+- 設定は初回ロード時にv2からv3へ自動移行
+
+## ハッシュチェックのスキップ
+
+:::caution
+セキュリティへの影響を理解した上でのみ、ハッシュ検証を無効にしてください。
+:::
+
+### グローバル設定
+
+すべてのリポジトリで検証を無効化：
+
+```json
+{
+  "version": 3,
+  "skipHashCheck": true,
+  "permissions": { "allow": [], "deny": [] }
+}
+```
+
+### ファイルごとの設定
+
+特定のファイルのみ検証を無効化：
+
+```json
+{
+  "version": 3,
+  "permissions": {
+    "allow": [
+      {
+        "repoId": {
+          "remoteUrl": "github.com/user/repo",
+          "repoRoot": "/path/to/repo"
+        },
+        "relativePath": ".vibe.toml",
+        "hashes": ["abc123..."],
+        "skipHashCheck": true
+      }
+    ],
+    "deny": []
+  }
+}
+```
+
+## ブランチ切り替え
+
+vibeはファイルごとに複数のハッシュ（最大100個）を保存するため、再信頼なしでブランチを切り替えられます：
+
+- 信頼された各バージョンのハッシュが保存される
+- ブランチを切り替えると、vibeは保存されたすべてのハッシュに対してチェック
+- 現在のハッシュが保存されたいずれかのハッシュと一致すれば、検証はパス
+
+## ベストプラクティス
+
+1. **変更を常にレビュー** - `vibe trust`を実行する前に
+2. **本番環境ではハッシュチェックをスキップしない**
+3. **`.vibe.local.toml`はローカルに保持** - 自動的にgitignoreされます
+4. **チームの変更をレビュー** - コードレビュー時に`.vibe.toml`を確認
+
+## 関連
+
+- [trust](/ja/commands/trust/) - 信頼管理コマンド
+- [設定](/ja/configuration/) - 設定ファイルの形式

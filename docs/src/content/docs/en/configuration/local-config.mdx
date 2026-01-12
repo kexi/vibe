@@ -1,0 +1,99 @@
+---
+title: .vibe.local.toml
+description: Personal local configuration overrides
+sidebar:
+  order: 3
+---
+
+The `.vibe.local.toml` file allows you to override or extend the shared `.vibe.toml` configuration with your personal settings. This file is automatically gitignored.
+
+## Use Cases
+
+- Developer-specific environment files
+- Local paths or credentials
+- Personal workflow customizations
+- Machine-specific configurations
+
+## Basic Example
+
+```toml
+# Override or extend shared hooks with local commands
+[hooks]
+post_start_prepend = ["echo 'Local setup starting'"]
+post_start_append = ["npm run dev"]
+
+# Override files to copy
+[copy]
+files = [".env.local", ".secrets"]
+```
+
+## Configuration Merging
+
+When both `.vibe.toml` and `.vibe.local.toml` exist, they are merged according to these rules:
+
+| Method            | Syntax                       | Description                        |
+| ----------------- | ---------------------------- | ---------------------------------- |
+| Complete override | `field_name = [...]`         | Replaces the shared value entirely |
+| Prepend items     | `field_name_prepend = [...]` | Adds items before shared values    |
+| Append items      | `field_name_append = [...]`  | Adds items after shared values     |
+
+### Merging Example
+
+```toml
+# .vibe.toml (shared)
+[hooks]
+post_start = ["npm install", "npm run build"]
+
+# .vibe.local.toml (local)
+[hooks]
+post_start_prepend = ["echo 'local setup'"]
+post_start_append = ["npm run dev"]
+
+# Result: ["echo 'local setup'", "npm install", "npm run build", "npm run dev"]
+```
+
+### Override Example
+
+To completely replace a shared configuration:
+
+```toml
+# .vibe.local.toml
+[hooks]
+post_start = ["my-custom-script.sh"]
+
+# Result: ["my-custom-script.sh"]
+# (shared post_start is completely replaced)
+```
+
+## Trust Registration
+
+Like `.vibe.toml`, the local configuration file must also be trusted:
+
+```bash
+vibe trust
+```
+
+This command trusts both `.vibe.toml` and `.vibe.local.toml` if they exist.
+
+## Full Example
+
+```toml
+# .vibe.local.toml
+
+[copy]
+# Add local-only files to copy
+files = [".env.local", ".secrets", "local-config.json"]
+
+[hooks]
+# Run before shared pre_start hooks
+pre_start_prepend = ["echo 'Starting local setup'"]
+
+# Run after shared post_start hooks
+post_start_append = [
+  "npm run dev",
+  "open http://localhost:3000"
+]
+
+# Completely override pre_clean
+pre_clean = ["echo 'Custom cleanup'"]
+```
