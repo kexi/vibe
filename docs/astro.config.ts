@@ -6,9 +6,9 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "vibe",
-      defaultLocale: "en",
+      defaultLocale: "root",
       locales: {
-        en: {
+        root: {
           label: "English",
           lang: "en",
         },
