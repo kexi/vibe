@@ -7,17 +7,18 @@ vibe leverages Copy-on-Write (CoW) for directory copying to achieve fast and dis
 CoW is a filesystem-level optimization technique. When copying a file, only metadata is duplicated instead of the actual data. Data is only copied when it is actually modified.
 
 **Benefits:**
+
 - Near-zero copy time (metadata operations only)
 - Reduced disk usage (data is shared until modified)
 
 ## Strategy Overview
 
-| Strategy | Implementation | macOS (APFS) | Linux (Btrfs/XFS) |
-|----------|---------------|--------------|-------------------|
-| **NativeClone** | Direct FFI calls | File/Directory | File only |
-| **Clone** | cp command | File/Directory | File/Directory |
-| **Rsync** | rsync command | Fallback | Fallback |
-| **Standard** | Deno API | Final fallback | Final fallback |
+| Strategy        | Implementation   | macOS (APFS)   | Linux (Btrfs/XFS) |
+| --------------- | ---------------- | -------------- | ----------------- |
+| **NativeClone** | Direct FFI calls | File/Directory | File only         |
+| **Clone**       | cp command       | File/Directory | File/Directory    |
+| **Rsync**       | rsync command    | Fallback       | Fallback          |
+| **Standard**    | Deno API         | Final fallback | Final fallback    |
 
 ## Platform-specific Priority Order
 
@@ -43,12 +44,13 @@ File copy: Standard (Deno.copyFile)
 
 Invokes system calls directly via FFI. This is the fastest option as there is no process spawning overhead.
 
-| Platform | System Call | File | Directory |
-|----------|-------------|------|-----------|
-| macOS | `clonefile()` | Supported | Supported |
-| Linux | `FICLONE ioctl` | Supported | Not supported |
+| Platform | System Call     | File      | Directory     |
+| -------- | --------------- | --------- | ------------- |
+| macOS    | `clonefile()`   | Supported | Supported     |
+| Linux    | `FICLONE ioctl` | Supported | Not supported |
 
 **Implementation files:**
+
 - `src/utils/copy/strategies/native-clone.ts`
 - `src/utils/copy/ffi/darwin.ts` (macOS)
 - `src/utils/copy/ffi/linux.ts` (Linux)
@@ -57,10 +59,10 @@ Invokes system calls directly via FFI. This is the fastest option as there is no
 
 CoW copy using the `cp` command.
 
-| Platform | Command (File) | Command (Directory) |
-|----------|---------------|---------------------|
-| macOS | `cp -c` | `cp -cR` |
-| Linux | `cp --reflink=auto` | `cp -r --reflink=auto` |
+| Platform | Command (File)      | Command (Directory)    |
+| -------- | ------------------- | ---------------------- |
+| macOS    | `cp -c`             | `cp -cR`               |
+| Linux    | `cp --reflink=auto` | `cp -r --reflink=auto` |
 
 **Implementation file:** `src/utils/copy/strategies/clone.ts`
 
@@ -80,10 +82,10 @@ Uses Deno's standard API (`Deno.copyFile`). This is the final fallback that work
 
 CoW requires a compatible filesystem.
 
-| Platform | Supported | Not Supported |
-|----------|-----------|---------------|
-| macOS | APFS | HFS+ |
-| Linux | Btrfs, XFS | ext4 |
+| Platform | Supported  | Not Supported |
+| -------- | ---------- | ------------- |
+| macOS    | APFS       | HFS+          |
+| Linux    | Btrfs, XFS | ext4          |
 
 On unsupported filesystems, the Standard strategy is automatically used as a fallback.
 
