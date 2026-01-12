@@ -1,0 +1,41 @@
+---
+import Default from '@astrojs/starlight/components/SocialIcons.astro';
+---
+
+<div class="social-icons-wrapper">
+  <span class="github-button-wrapper">
+    <a
+      class="github-button"
+      href="https://github.com/kexi/vibe"
+      data-color-scheme="no-preference: dark; light: light; dark: dark;"
+      data-icon="octicon-star"
+      data-show-count="true"
+      aria-label="Star kexi/vibe on GitHub"
+    >
+      Star
+    </a>
+  </span>
+  <Default><slot /></Default>
+</div>
+
+<script async defer src="https://buttons.github.io/buttons.js"></script>
+
+<style is:global>
+  .social-icons-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .github-button-wrapper {
+    display: flex;
+    align-items: center;
+    height: 20px;
+  }
+  .github-button-wrapper > span {
+    display: flex !important;
+    align-items: center;
+  }
+  .github-button-wrapper iframe {
+    vertical-align: middle !important;
+  }
+</style>
