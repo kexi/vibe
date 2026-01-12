@@ -1,132 +1,132 @@
 # Copy Strategies
 
-vibeはディレクトリコピー時にCopy-on-Write (CoW) を活用して、高速かつディスク効率の良いコピーを実現します。
+vibe leverages Copy-on-Write (CoW) for directory copying to achieve fast and disk-efficient operations.
 
-## Copy-on-Write (CoW) とは
+## What is Copy-on-Write (CoW)?
 
-CoWはファイルシステムレベルの最適化技術です。ファイルをコピーする際、実際のデータをコピーせずメタデータのみを複製します。データは実際に変更されたときに初めてコピーされます。
+CoW is a filesystem-level optimization technique. When copying a file, only metadata is duplicated instead of the actual data. Data is only copied when it is actually modified.
 
-**メリット:**
-- コピー時間がほぼゼロ（メタデータ操作のみ）
-- ディスク使用量の削減（変更がなければデータを共有）
+**Benefits:**
+- Near-zero copy time (metadata operations only)
+- Reduced disk usage (data is shared until modified)
 
-## 戦略一覧
+## Strategy Overview
 
-| 戦略 | 実装方式 | macOS (APFS) | Linux (Btrfs/XFS) |
-|------|---------|--------------|-------------------|
-| **NativeClone** | FFI直接呼び出し | ファイル/ディレクトリ | ファイルのみ |
-| **Clone** | cp コマンド | ファイル/ディレクトリ | ファイル/ディレクトリ |
-| **Rsync** | rsync コマンド | フォールバック | フォールバック |
-| **Standard** | Deno API | 最終フォールバック | 最終フォールバック |
+| Strategy | Implementation | macOS (APFS) | Linux (Btrfs/XFS) |
+|----------|---------------|--------------|-------------------|
+| **NativeClone** | Direct FFI calls | File/Directory | File only |
+| **Clone** | cp command | File/Directory | File/Directory |
+| **Rsync** | rsync command | Fallback | Fallback |
+| **Standard** | Deno API | Final fallback | Final fallback |
 
-## プラットフォーム別の優先順位
+## Platform-specific Priority Order
 
 ### macOS (APFS)
 
 ```
-ディレクトリコピー: NativeClone → Clone → Rsync → Standard
-ファイルコピー: Standard (Deno.copyFile)
+Directory copy: NativeClone → Clone → Rsync → Standard
+File copy: Standard (Deno.copyFile)
 ```
 
 ### Linux (Btrfs/XFS)
 
 ```
-ディレクトリコピー: Clone → Rsync → Standard
-ファイルコピー: Standard (Deno.copyFile)
+Directory copy: Clone → Rsync → Standard
+File copy: Standard (Deno.copyFile)
 ```
 
-> **Note:** Linuxでは`NativeClone`がディレクトリクローンをサポートしないためスキップされます。
+> **Note:** On Linux, `NativeClone` is skipped because it does not support directory cloning.
 
-## 各戦略の詳細
+## Strategy Details
 
 ### NativeClone
 
-FFIを使用してシステムコールを直接呼び出します。プロセス生成のオーバーヘッドがないため最も高速です。
+Invokes system calls directly via FFI. This is the fastest option as there is no process spawning overhead.
 
-| プラットフォーム | システムコール | ファイル | ディレクトリ |
-|-----------------|---------------|---------|-------------|
-| macOS | `clonefile()` | 対応 | 対応 |
-| Linux | `FICLONE ioctl` | 対応 | 非対応 |
+| Platform | System Call | File | Directory |
+|----------|-------------|------|-----------|
+| macOS | `clonefile()` | Supported | Supported |
+| Linux | `FICLONE ioctl` | Supported | Not supported |
 
-**実装ファイル:**
+**Implementation files:**
 - `src/utils/copy/strategies/native-clone.ts`
 - `src/utils/copy/ffi/darwin.ts` (macOS)
 - `src/utils/copy/ffi/linux.ts` (Linux)
 
 ### Clone
 
-`cp`コマンドを使用したCoWコピーです。
+CoW copy using the `cp` command.
 
-| プラットフォーム | コマンド（ファイル） | コマンド（ディレクトリ） |
-|-----------------|-------------------|----------------------|
+| Platform | Command (File) | Command (Directory) |
+|----------|---------------|---------------------|
 | macOS | `cp -c` | `cp -cR` |
 | Linux | `cp --reflink=auto` | `cp -r --reflink=auto` |
 
-**実装ファイル:** `src/utils/copy/strategies/clone.ts`
+**Implementation file:** `src/utils/copy/strategies/clone.ts`
 
 ### Rsync
 
-`rsync`コマンドを使用します。CoWは使用しませんが、差分コピーに優れています。
+Uses the `rsync` command. Does not use CoW but excels at incremental copying.
 
-**実装ファイル:** `src/utils/copy/strategies/rsync.ts`
+**Implementation file:** `src/utils/copy/strategies/rsync.ts`
 
 ### Standard
 
-Denoの標準API（`Deno.copyFile`）を使用します。全プラットフォームで動作する最終フォールバックです。
+Uses Deno's standard API (`Deno.copyFile`). This is the final fallback that works on all platforms.
 
-**実装ファイル:** `src/utils/copy/strategies/standard.ts`
+**Implementation file:** `src/utils/copy/strategies/standard.ts`
 
-## ファイルシステム要件
+## Filesystem Requirements
 
-CoWを利用するには対応ファイルシステムが必要です。
+CoW requires a compatible filesystem.
 
-| プラットフォーム | 対応FS | 非対応FS |
-|-----------------|--------|---------|
+| Platform | Supported | Not Supported |
+|----------|-----------|---------------|
 | macOS | APFS | HFS+ |
 | Linux | Btrfs, XFS | ext4 |
 
-非対応ファイルシステムでは自動的にStandard戦略にフォールバックします。
+On unsupported filesystems, the Standard strategy is automatically used as a fallback.
 
-## 権限要件
+## Permission Requirements
 
 ```bash
---allow-ffi   # NativeClone戦略に必要
---allow-run   # Clone/Rsync戦略に必要（cp, rsyncコマンド実行）
+--allow-ffi   # Required for NativeClone strategy
+--allow-run   # Required for Clone/Rsync strategies (cp, rsync commands)
 ```
 
-## ファイル構造
+## File Structure
 
 ```
 src/utils/copy/
-├── index.ts           # CopyService メインクラス
-├── types.ts           # インターフェース定義
-├── detector.ts        # 機能検出
-├── validation.ts      # パス検証（コマンドインジェクション対策）
+├── index.ts           # CopyService main class
+├── types.ts           # Interface definitions
+├── detector.ts        # Capability detection
+├── validation.ts      # Path validation (command injection prevention)
 ├── ffi/
-│   ├── types.ts       # FFI型定義・エラーコード
+│   ├── types.ts       # FFI type definitions and error codes
 │   ├── darwin.ts      # macOS clonefile FFI
 │   ├── linux.ts       # Linux FICLONE FFI
-│   └── detector.ts    # FFI可用性チェック
+│   └── detector.ts    # FFI availability check
 └── strategies/
-    ├── native-clone.ts  # NativeClone戦略
-    ├── clone.ts         # Clone戦略
-    ├── rsync.ts         # Rsync戦略
-    ├── standard.ts      # Standard戦略
-    └── index.ts         # エクスポート
+    ├── native-clone.ts  # NativeClone strategy
+    ├── clone.ts         # Clone strategy
+    ├── rsync.ts         # Rsync strategy
+    ├── standard.ts      # Standard strategy
+    └── index.ts         # Exports
 ```
 
-## 戦略選択の仕組み
+## Strategy Selection Mechanism
 
-`CopyService`は初回のディレクトリコピー時に最適な戦略を自動選択し、結果をキャッシュします。
+`CopyService` automatically selects the optimal strategy on the first directory copy operation and caches the result.
 
 ```typescript
-// src/utils/copy/index.ts より
+// From src/utils/copy/index.ts
 async getDirectoryStrategy(): Promise<CopyStrategy> {
-  // 1. NativeCloneが使用可能かつディレクトリ対応なら使用
-  // 2. Cloneが使用可能なら使用
-  // 3. Rsyncが使用可能なら使用
-  // 4. 最終的にStandardにフォールバック
+  // 1. Use NativeClone if available and supports directory cloning
+  // 2. Use Clone if available
+  // 3. Use Rsync if available
+  // 4. Fall back to Standard
 }
 ```
 
-戦略が失敗した場合も自動的にStandardにフォールバックします。
+If a strategy fails during execution, it automatically falls back to the Standard strategy.
