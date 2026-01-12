@@ -270,6 +270,8 @@ Vibe automatically selects the best copy strategy based on your system:
 - No configuration needed - the best strategy is auto-detected
 - Automatic fallback ensures copying always works
 
+For detailed information about copy strategies and implementation, see [Copy Strategies](docs/copy-strategies.md).
+
 ### Security: Hash Verification
 
 Vibe automatically verifies the integrity of `.vibe.toml` and `.vibe.local.toml` files using SHA-256 hashes. This prevents unauthorized modifications to configuration files.
