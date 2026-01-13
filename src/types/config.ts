@@ -21,4 +21,7 @@ export interface VibeConfig {
     post_clean_prepend?: string[];
     post_clean_append?: string[];
   };
+  worktree?: {
+    path_script?: string;
+  };
 }

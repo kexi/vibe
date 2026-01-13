@@ -274,6 +274,31 @@ Vibeはシステムに応じて最適なコピー戦略を自動選択します:
 - 設定不要 - 最適な戦略が自動検出されます
 - 自動フォールバックによりコピーは常に動作します
 
+### Worktreeパス設定
+
+外部スクリプトを使用してWorktreeディレクトリパスをカスタマイズできます：
+
+```toml
+[worktree]
+path_script = "~/.config/vibe/worktree-path.sh"
+```
+
+スクリプトは以下の環境変数を受け取り、絶対パスを出力する必要があります：
+
+| 環境変数 | 説明 | 例 |
+|----------|------|-----|
+| `VIBE_REPO_NAME` | リポジトリ名 | `my-project` |
+| `VIBE_BRANCH_NAME` | ブランチ名 | `feat/new-feature` |
+| `VIBE_SANITIZED_BRANCH` | サニタイズ済みブランチ名（`/`→`-`） | `feat-new-feature` |
+| `VIBE_REPO_ROOT` | リポジトリルートパス | `/path/to/repo` |
+
+**スクリプト例:**
+
+```bash
+#!/bin/bash
+echo "${HOME}/worktrees/${VIBE_REPO_NAME}-${VIBE_SANITIZED_BRANCH}"
+```
+
 ### セキュリティ: ハッシュ検証
 
 Vibeは`.vibe.toml`と`.vibe.local.toml`ファイルの整合性をSHA-256ハッシュを使って自動的に検証します。これにより、設定ファイルへの不正な変更を防ぎます。

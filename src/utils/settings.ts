@@ -49,10 +49,13 @@ const SettingsSchemaV2 = z.object({
   }),
 });
 
-// v3 schema - repository-based trust
+// v3 schema - repository-based trust + worktree config
 const SettingsSchemaV3 = z.object({
   version: z.literal(3),
   skipHashCheck: z.boolean().optional(),
+  worktree: z.object({
+    path_script: z.string().optional(),
+  }).optional(),
   permissions: z.object({
     allow: z.array(z.object({
       repoId: z.object({

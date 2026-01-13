@@ -1,4 +1,4 @@
-import { dirname, join } from "@std/path";
+import { join } from "@std/path";
 import {
   branchExists,
   findWorktreeByBranch,
@@ -15,6 +15,8 @@ import { confirm, select } from "../utils/prompt.ts";
 import { expandCopyPatterns, expandDirectoryPatterns } from "../utils/glob.ts";
 import { ProgressTracker } from "../utils/progress.ts";
 import { getCopyService } from "../utils/copy/index.ts";
+import { loadUserSettings } from "../utils/settings.ts";
+import { resolveWorktreePath } from "../utils/worktree-path.ts";
 
 interface StartOptions {
   reuse?: boolean;
@@ -79,8 +81,6 @@ export async function startCommand(
     const repoRoot = await getRepoRoot();
     const repoName = await getRepoName();
     const sanitizedBranch = sanitizeBranchName(branchName);
-    const parentDir = dirname(repoRoot);
-    const worktreePath = join(parentDir, `${repoName}-${sanitizedBranch}`);
 
     // Check if branch is already in use by another worktree
     const existingWorktreePath = await findWorktreeByBranch(branchName);
@@ -99,8 +99,17 @@ export async function startCommand(
       }
     }
 
-    // Load config and verify trust before creating worktree
+    // Load settings and config before determining worktree path
+    const settings = await loadUserSettings();
     const config: VibeConfig | undefined = await loadVibeConfig(repoRoot);
+
+    // Resolve worktree path (may use external script)
+    const worktreePath = await resolveWorktreePath(config, settings, {
+      repoName,
+      branchName,
+      sanitizedBranch,
+      repoRoot,
+    });
 
     // Create progress tracker
     const tracker = new ProgressTracker({
