@@ -21,7 +21,7 @@ jobs:
         shell: bash
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
-          DENO_VERSION=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('deno.json')).version)")
+          DENO_VERSION=$(deno task get-version)
 
           if [ "$TAG_VERSION" != "$DENO_VERSION" ]; then
             echo "Error: Version mismatch!"

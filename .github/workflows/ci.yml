@@ -60,10 +60,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
-      - name: Generate version.ts
-        run: deno task generate-version --target ${{ matrix.target }} --distribution binary
-      - name: Compile binary (${{ matrix.name }})
-        run: deno compile --allow-run --allow-read --allow-write --allow-env --allow-ffi --target ${{ matrix.target }} --output vibe-${{ matrix.name }} main.ts
+      - name: Build binary (${{ matrix.name }})
+        run: deno task compile:ci --target ${{ matrix.target }} --output vibe-${{ matrix.name }} --distribution binary
 
   build-deb:
     runs-on: ubuntu-latest
@@ -77,10 +75,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
-      - name: Generate version.ts
-        run: deno task generate-version --target ${{ matrix.target }} --distribution deb
-      - name: Compile Linux binary
-        run: deno compile --allow-run --allow-read --allow-write --allow-env --allow-ffi --target ${{ matrix.target }} --output vibe-test main.ts
+      - name: Build Linux binary
+        run: deno task compile:ci --target ${{ matrix.target }} --output vibe-test --distribution deb
       - name: Build .deb package
         run: |
           VERSION=$(deno task get-version)
