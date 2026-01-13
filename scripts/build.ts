@@ -1,6 +1,15 @@
 /**
  * Build script for vibe CLI
  * Generates version.ts with semver + commit hash + build metadata, then compiles the binary
+ *
+ * Usage:
+ *   deno run --allow-run --allow-read --allow-write --allow-env scripts/build.ts [options]
+ *
+ * Options:
+ *   --target <target>        Cross-compile target (e.g., x86_64-apple-darwin). Auto-detected if omitted.
+ *   --output <name>          Output binary name (default: "vibe")
+ *   --distribution <type>    Distribution type: dev, binary, deb (default: "dev")
+ *   --generate-version-only  Only generate version.ts without compiling
  */
 
 import { parseArgs } from "@std/cli/parse-args";
@@ -124,8 +133,7 @@ async function compile(options: CompileOptions): Promise<void> {
     "--allow-ffi",
   ];
 
-  const hasTarget = options.target !== undefined;
-  if (hasTarget) {
+  if (options.target !== undefined) {
     args.push("--target", options.target);
   }
 
@@ -159,7 +167,10 @@ async function main(): Promise<void> {
     console.log(`No --target specified, auto-detected: ${target}`);
   }
 
-  // Determine distribution
+  // Determine distribution type for build metadata
+  // - "dev": local development builds (default)
+  // - "binary": standalone binary releases
+  // - "deb": Debian package builds
   const distribution = args.distribution ?? "dev";
 
   // Parse target to get platform and arch
