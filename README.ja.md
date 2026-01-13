@@ -17,6 +17,7 @@ Git Worktreeを簡単に管理するCLIツール。
 | `vibe clean`                   | 現在のworktreeを削除してメインに戻る（未コミットの変更がある場合は確認）                  |
 | `vibe trust`                   | `.vibe.toml`と`.vibe.local.toml`ファイルを信頼登録    |
 | `vibe untrust`                 | `.vibe.toml`と`.vibe.local.toml`ファイルの信頼を解除  |
+| `vibe upgrade [--check]`       | 更新を確認しアップグレード方法を表示                  |
 
 ### 例
 
@@ -69,10 +70,10 @@ deno install -A --global jsr:@kexi/vibe
 **権限設定**: より安全にするため、`-A`の代わりに必要な権限のみを指定できます:
 
 ```bash
-deno install --global --allow-run --allow-read --allow-write --allow-env --allow-ffi jsr:@kexi/vibe
+deno install --global --allow-run --allow-read --allow-write --allow-env --allow-ffi --allow-net jsr:@kexi/vibe
 ```
 
-> 注意: `--allow-ffi`はmacOS (APFS)とLinux (Btrfs/XFS)で最適化されたCopy-on-Writeファイルクローニングを有効にします。このフラグがなくても動作しますが、ディレクトリコピーが若干遅くなる可能性があります。
+> 注意: `--allow-ffi`はmacOS (APFS)とLinux (Btrfs/XFS)で最適化されたCopy-on-Writeファイルクローニングを有効にします。`--allow-net`は`vibe upgrade`コマンドで更新を確認するために必要です。
 
 **miseを使う場合**: `.mise.toml`に追加:
 
@@ -134,7 +135,7 @@ $path = [Environment]::GetEnvironmentVariable("Path", "User")
 ### 手動ビルド
 
 ```bash
-deno compile --allow-run --allow-read --allow-write --allow-env --allow-ffi --output vibe main.ts
+deno compile --allow-run --allow-read --allow-write --allow-env --allow-ffi --allow-net --output vibe main.ts
 ```
 
 ## セットアップ
