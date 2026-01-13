@@ -1,13 +1,12 @@
 ---
-import type { Props } from "@astrojs/starlight/props";
 import Default from "@astrojs/starlight/components/Head.astro";
 
 const siteUrl = "https://vibe.kexi.dev";
 
 // Get slug from locals
 const route = Astro.locals.starlightRoute;
-const slug = route?.slug || "index";
-const ogImageUrl = `${siteUrl}/og/${slug || "index"}.png`;
+const slug = route?.id || "index";
+const ogImageUrl = `${siteUrl}/og/${slug}.png`;
 ---
 
 <Default {...Astro.props} />
