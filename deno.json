@@ -1,6 +1,6 @@
 {
   "name": "@kexi/vibe",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "license": "Apache-2.0",
   "repository": "https://github.com/kexi/vibe",
   "exports": "./main.ts",
@@ -54,5 +54,6 @@
   "publish": {
     "exclude": ["!src/version.ts"]
   },
-  "nodeModulesDir": "auto"
+  "nodeModulesDir": "auto",
+  "minimumDependencyAge": "P3D"
 }
