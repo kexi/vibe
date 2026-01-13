@@ -162,7 +162,9 @@ export async function startCommand(
       } else {
         // Different branch - offer to overwrite
         if (dryRun) {
-          logDryRun(`Directory '${worktreePath}' already exists (branch: ${existingWorktree.branch})`);
+          logDryRun(
+            `Directory '${worktreePath}' already exists (branch: ${existingWorktree.branch})`,
+          );
           logDryRun("Would prompt to Overwrite/Reuse/Cancel");
           return;
         }
