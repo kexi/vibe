@@ -13,6 +13,7 @@ A CLI tool for easy Git Worktree management.
 | Command                      | Description                                         |
 | ---------------------------- | --------------------------------------------------- |
 | `vibe start <branch>`        | Create a worktree with a new or existing branch (idempotent) |
+| `vibe start <branch> --dry-run` | Preview what would be executed without making changes |
 | `vibe clean`                 | Delete current worktree and return to main (prompts if uncommitted changes exist) |
 | `vibe trust`                 | Trust `.vibe.toml` and `.vibe.local.toml` files     |
 | `vibe untrust`               | Untrust `.vibe.toml` and `.vibe.local.toml` files   |
@@ -25,6 +26,9 @@ vibe start feat/new-feature
 
 # Use an existing branch (or re-run if worktree already exists)
 vibe start feat/existing-branch
+
+# Preview what would happen (no actual changes)
+vibe start feat/preview --dry-run
 
 # After work is done, delete the worktree
 vibe clean

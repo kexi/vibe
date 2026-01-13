@@ -197,8 +197,8 @@ export async function startCommand(
     // Path doesn't exist or was overwritten - create worktree
     const branchAlreadyExists = await branchExists(branchName);
     const gitCommand = branchAlreadyExists
-      ? `git worktree add ${worktreePath} ${branchName}`
-      : `git worktree add -b ${branchName} ${worktreePath}`;
+      ? `git worktree add '${worktreePath}' ${branchName}`
+      : `git worktree add -b ${branchName} '${worktreePath}'`;
 
     if (dryRun) {
       logDryRun(`Would run: ${gitCommand}`);
