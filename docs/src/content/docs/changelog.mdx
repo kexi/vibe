@@ -5,6 +5,69 @@ description: Version history and release notes for vibe
 
 All notable changes to vibe are documented here.
 
+## v0.7.0
+
+**Released:** 2026-01-13
+
+### Added
+
+- OGP meta tags for SNS preview on documentation site
+
+### Changed
+
+- Converted to pnpm workspace with docs CI checks
+- Configured minimum release age for supply chain security
+
+### Fixed
+
+- `vibe clean` now outputs cd command to return to main worktree
+
+---
+
+## v0.6.0
+
+**Released:** 2026-01-13
+
+### Added
+
+- **Worktree path customization** via external script
+  - Configure `path_script` to dynamically determine worktree directory path
+  - Environment variables: `VIBE_REPO_NAME`, `VIBE_BRANCH_NAME`, `VIBE_SANITIZED_BRANCH`, `VIBE_REPO_ROOT`
+
+### Changed
+
+- Unified deno compile commands into deno task
+
+---
+
+## v0.5.2
+
+**Released:** 2026-01-13
+
+### Fixed
+
+- Added `--allow-ffi` flag to all compile commands in CI/release workflows
+
+---
+
+## v0.5.1
+
+**Released:** 2026-01-13
+
+### Added
+
+- Documentation site (Starlight-based)
+- GitHub Star button in header
+- Windows, Nushell, PowerShell, and Linux installation guides
+- Automated documentation deployment via GitHub Actions
+
+### Changed
+
+- Parallelized directory copy for improved performance
+- Display copy strategy name during file operations
+
+---
+
 ## v0.5.0
 
 **Released:** 2026-01-10
