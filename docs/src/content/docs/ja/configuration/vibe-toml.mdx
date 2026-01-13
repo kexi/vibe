@@ -93,6 +93,40 @@ vibeはシステムに応じて最適なコピー戦略を自動選択します�
 
 フック設定の詳細は[フック](/ja/configuration/hooks/)を参照してください。
 
+## Worktree設定 <Badge text="v0.6.0+" />
+
+外部スクリプトを使用してWorktreeディレクトリパスをカスタマイズできます。
+
+### path_script
+
+Worktreeパスを出力するスクリプトを指定：
+
+```toml
+[worktree]
+path_script = "~/.config/vibe/worktree-path.sh"
+```
+
+スクリプトは以下の環境変数を受け取ります：
+
+| 環境変数 | 説明 | 例 |
+| -------- | ---- | --- |
+| `VIBE_REPO_NAME` | リポジトリ名 | `my-project` |
+| `VIBE_BRANCH_NAME` | ブランチ名 | `feat/new-feature` |
+| `VIBE_SANITIZED_BRANCH` | サニタイズ済みブランチ名（`/`→`-`） | `feat-new-feature` |
+| `VIBE_REPO_ROOT` | リポジトリルートパス | `/path/to/repo` |
+
+**スクリプト例：**
+
+```bash
+#!/bin/bash
+# ~/.config/vibe/worktree-path.sh
+echo "${HOME}/worktrees/${VIBE_REPO_NAME}-${VIBE_SANITIZED_BRANCH}"
+```
+
+:::note
+スクリプトは標準出力に**絶対パス**を出力する必要があります。
+:::
+
 ## 完全な例
 
 ```toml
@@ -117,4 +151,7 @@ post_start = [
 ]
 pre_clean = ["git stash"]
 post_clean = ["echo 'クリーンアップ完了'"]
+
+[worktree]
+path_script = "~/.config/vibe/worktree-path.sh"
 ```

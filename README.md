@@ -276,6 +276,31 @@ Vibe automatically selects the best copy strategy based on your system:
 
 For detailed information about copy strategies and implementation, see [Copy Strategies](docs/copy-strategies.md).
 
+### Worktree Path Configuration
+
+Customize the worktree directory path using an external script:
+
+```toml
+[worktree]
+path_script = "~/.config/vibe/worktree-path.sh"
+```
+
+The script receives these environment variables and should output an absolute path:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `VIBE_REPO_NAME` | Repository name | `my-project` |
+| `VIBE_BRANCH_NAME` | Branch name | `feat/new-feature` |
+| `VIBE_SANITIZED_BRANCH` | Sanitized branch name (`/` → `-`) | `feat-new-feature` |
+| `VIBE_REPO_ROOT` | Repository root path | `/path/to/repo` |
+
+**Example script:**
+
+```bash
+#!/bin/bash
+echo "${HOME}/worktrees/${VIBE_REPO_NAME}-${VIBE_SANITIZED_BRANCH}"
+```
+
 ### Security: Hash Verification
 
 Vibe automatically verifies the integrity of `.vibe.toml` and `.vibe.local.toml` files using SHA-256 hashes. This prevents unauthorized modifications to configuration files.

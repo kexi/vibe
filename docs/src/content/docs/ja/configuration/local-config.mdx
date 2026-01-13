@@ -65,6 +65,18 @@ post_start = ["my-custom-script.sh"]
 # （共有のpost_startは完全に置き換えられる）
 ```
 
+## Worktreeパスの上書き
+
+`.vibe.local.toml`でWorktreeパススクリプトを上書きできます：
+
+```toml
+# .vibe.local.toml
+[worktree]
+path_script = "./my-local-path-script.sh"
+```
+
+これは`.vibe.toml`の`path_script`よりも優先されます。
+
 ## 信頼登録
 
 `.vibe.toml`と同様に、ローカル設定ファイルも信頼登録が必要です：

@@ -65,6 +65,18 @@ post_start = ["my-custom-script.sh"]
 # (shared post_start is completely replaced)
 ```
 
+## Worktree Path Override
+
+You can override the worktree path script in `.vibe.local.toml`:
+
+```toml
+# .vibe.local.toml
+[worktree]
+path_script = "./my-local-path-script.sh"
+```
+
+This takes precedence over the `path_script` in `.vibe.toml`.
+
 ## Trust Registration
 
 Like `.vibe.toml`, the local configuration file must also be trusted:
