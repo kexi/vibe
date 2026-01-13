@@ -35,11 +35,8 @@ jobs:
 
       - uses: jdx/mise-action@v2
 
-      - name: Generate build info
-        run: deno task generate-version --target ${{ matrix.target }} --distribution binary
-
-      - name: Compile
-        run: deno compile --allow-run --allow-read --allow-write --allow-env --allow-ffi --target ${{ matrix.target }} --output ${{ matrix.artifact }} main.ts
+      - name: Build release binary
+        run: deno task compile:ci --target ${{ matrix.target }} --output ${{ matrix.artifact }} --distribution binary
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -69,15 +66,10 @@ jobs:
           name: ${{ matrix.binary }}
           path: .
 
-      - name: Regenerate build info for deb
+      - name: Rebuild with deb distribution metadata
         run: |
           TARGET="${{ matrix.arch == 'amd64' && 'x86_64-unknown-linux-gnu' || 'aarch64-unknown-linux-gnu' }}"
-          deno task generate-version --target "$TARGET" --distribution deb
-          # Recompile with deb distribution metadata
-          deno compile --allow-run --allow-read --allow-write --allow-env --allow-ffi \
-            --target "$TARGET" \
-            --output vibe-deb \
-            main.ts
+          deno task compile:ci --target "$TARGET" --output vibe-deb --distribution deb
 
       - name: Build .deb package
         run: |

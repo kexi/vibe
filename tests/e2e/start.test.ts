@@ -296,4 +296,154 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.hook-ran"]
       runner.dispose();
     }
   });
+
+  test("worktree.path_script in .vibe.toml determines worktree path", async () => {
+    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+    const parentDir = dirname(repoPath);
+
+    // Create a path script that outputs a custom path
+    const customWorktreeDir = join(parentDir, "custom-worktrees");
+    const scriptPath = join(repoPath, "worktree-path.sh");
+    const scriptContent = `#!/bin/bash
+echo "${customWorktreeDir}/\${VIBE_REPO_NAME}-\${VIBE_SANITIZED_BRANCH}"
+`;
+    writeFileSync(scriptPath, scriptContent);
+    execFileSync("chmod", ["+x", scriptPath], { cwd: repoPath, stdio: "pipe" });
+
+    // Create .vibe.toml with path_script
+    const vibeToml = `
+[worktree]
+path_script = "./worktree-path.sh"
+`;
+    writeFileSync(join(repoPath, ".vibe.toml"), vibeToml);
+    execFileSync("git", ["add", ".vibe.toml", "worktree-path.sh"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+    execFileSync("git", ["commit", "-m", "Add .vibe.toml with path_script"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    // Trust the config
+    const trustRunner = new VibeCommandRunner(vibePath, repoPath);
+    try {
+      await trustRunner.spawn(["trust"]);
+      await trustRunner.waitForExit();
+    } finally {
+      trustRunner.dispose();
+    }
+
+    // Run vibe start
+    const runner = new VibeCommandRunner(vibePath, repoPath);
+    try {
+      await runner.spawn(["start", "feat/custom-path"]);
+      await runner.waitForExit();
+
+      assertExitCode(runner.getExitCode(), 0);
+
+      // Verify worktree was created at the custom path
+      const repoName = basename(repoPath);
+      const expectedWorktreePath = `${customWorktreeDir}/${repoName}-feat-custom-path`;
+
+      await assertDirectoryExists(expectedWorktreePath);
+
+      const output = runner.getOutput();
+      assertOutputContains(output, expectedWorktreePath);
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test(".vibe.local.toml path_script takes precedence over .vibe.toml", async () => {
+    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+    const parentDir = dirname(repoPath);
+
+    // Create two path scripts with different outputs
+    const baseWorktreeDir = join(parentDir, "base-worktrees");
+    const localWorktreeDir = join(parentDir, "local-worktrees");
+
+    const baseScriptPath = join(repoPath, "base-path.sh");
+    writeFileSync(
+      baseScriptPath,
+      `#!/bin/bash\necho "${baseWorktreeDir}/\${VIBE_REPO_NAME}-\${VIBE_SANITIZED_BRANCH}"\n`,
+    );
+    execFileSync("chmod", ["+x", baseScriptPath], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    const localScriptPath = join(repoPath, "local-path.sh");
+    writeFileSync(
+      localScriptPath,
+      `#!/bin/bash\necho "${localWorktreeDir}/\${VIBE_REPO_NAME}-\${VIBE_SANITIZED_BRANCH}"\n`,
+    );
+    execFileSync("chmod", ["+x", localScriptPath], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    // Create .vibe.toml with base path_script
+    const vibeToml = `
+[worktree]
+path_script = "./base-path.sh"
+`;
+    writeFileSync(join(repoPath, ".vibe.toml"), vibeToml);
+
+    // Create .vibe.local.toml with local path_script (should take precedence)
+    const vibeLocalToml = `
+[worktree]
+path_script = "./local-path.sh"
+`;
+    writeFileSync(join(repoPath, ".vibe.local.toml"), vibeLocalToml);
+
+    execFileSync(
+      "git",
+      ["add", ".vibe.toml", ".vibe.local.toml", "base-path.sh", "local-path.sh"],
+      { cwd: repoPath, stdio: "pipe" },
+    );
+    execFileSync("git", ["commit", "-m", "Add config files with path_scripts"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    // Trust the configs
+    const trustRunner = new VibeCommandRunner(vibePath, repoPath);
+    try {
+      await trustRunner.spawn(["trust"]);
+      await trustRunner.waitForExit();
+    } finally {
+      trustRunner.dispose();
+    }
+
+    // Run vibe start
+    const runner = new VibeCommandRunner(vibePath, repoPath);
+    try {
+      await runner.spawn(["start", "feat/precedence-test"]);
+      await runner.waitForExit();
+
+      assertExitCode(runner.getExitCode(), 0);
+
+      // Verify worktree was created at the LOCAL path (not base)
+      const repoName = basename(repoPath);
+      const expectedWorktreePath = `${localWorktreeDir}/${repoName}-feat-precedence-test`;
+
+      await assertDirectoryExists(expectedWorktreePath);
+
+      const output = runner.getOutput();
+      assertOutputContains(output, expectedWorktreePath);
+
+      // Verify it was NOT created at the base path
+      const baseWorktreePath = `${baseWorktreeDir}/${repoName}-feat-precedence-test`;
+      expect(existsSync(baseWorktreePath)).toBe(false);
+    } finally {
+      runner.dispose();
+    }
+  });
 });

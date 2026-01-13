@@ -126,6 +126,15 @@ export function mergeConfigs(
     mergedConfig.hooks = hooks;
   }
 
+  // Merge worktree section (local takes precedence)
+  const hasWorktreeConfig = baseConfig.worktree !== undefined || localConfig.worktree !== undefined;
+  if (hasWorktreeConfig) {
+    mergedConfig.worktree = {
+      path_script: localConfig.worktree?.path_script ??
+        baseConfig.worktree?.path_script,
+    };
+  }
+
   return mergedConfig;
 }
 
