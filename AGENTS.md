@@ -26,7 +26,7 @@ develop ─┴──●──●──●──●─────┴────
 - Runtime: Deno v2.x (setup with `mise install`)
 - Run: `deno run --allow-run --allow-read --allow-write --allow-env main.ts`
 - Compile:
-  `deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts`
+  `deno compile --allow-run --allow-read --allow-write --allow-env --allow-ffi --output vibe main.ts`
 
 ## Testing
 

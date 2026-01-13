@@ -130,7 +130,7 @@ $path = [Environment]::GetEnvironmentVariable("Path", "User")
 ### 手動ビルド
 
 ```bash
-deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts
+deno compile --allow-run --allow-read --allow-write --allow-env --allow-ffi --output vibe main.ts
 ```
 
 ## セットアップ

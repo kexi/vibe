@@ -114,7 +114,8 @@ Deno.test("CopyService: selects a directory strategy", async () => {
     const strategy = await service.getDirectoryStrategy();
 
     // Should select some strategy
-    const isValidStrategy = strategy.name === "clone" ||
+    const isValidStrategy = strategy.name === "clonefile" ||
+      strategy.name === "clone" ||
       strategy.name === "rsync" ||
       strategy.name === "standard";
     assertEquals(isValidStrategy, true);

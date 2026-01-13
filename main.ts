@@ -21,7 +21,7 @@ Installation:
   "jsr:@kexi/vibe" = "latest"
 
   # Manual build
-  deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts
+  deno compile --allow-run --allow-read --allow-write --allow-env --allow-ffi --output vibe main.ts
 
 Usage:
   vibe start <branch-name> [options]  Create a new worktree with the given branch
