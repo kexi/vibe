@@ -15,6 +15,8 @@ interface JsrMeta {
   versions: Record<string, { yanked?: boolean }>;
 }
 
+const MAX_RESPONSE_SIZE = 1_000_000; // 1MB limit
+
 /**
  * Fetch the latest version from JSR registry
  */
@@ -30,7 +32,26 @@ async function fetchLatestVersion(): Promise<string> {
     );
   }
 
-  const meta: JsrMeta = await response.json();
+  // Validate Content-Type
+  const contentType = response.headers.get("content-type");
+  const isNotJson = !contentType?.includes("application/json");
+  if (isNotJson) {
+    throw new Error("Invalid response format: expected JSON");
+  }
+
+  // Validate response size and parse JSON
+  const text = await response.text();
+  const isTooLarge = text.length > MAX_RESPONSE_SIZE;
+  if (isTooLarge) {
+    throw new Error("Response too large");
+  }
+
+  let meta: JsrMeta;
+  try {
+    meta = JSON.parse(text);
+  } catch {
+    throw new Error("Invalid JSON response");
+  }
 
   // Filter out yanked versions and find the latest
   const availableVersions = Object.entries(meta.versions)
@@ -48,15 +69,32 @@ async function fetchLatestVersion(): Promise<string> {
 }
 
 /**
+ * Parse and validate a semver version string
+ * Returns array of [major, minor, patch] or throws if invalid
+ */
+function parseVersion(v: string): number[] {
+  const [semver] = v.split("+");
+  const parts = semver.split(".").map((n) => parseInt(n, 10));
+
+  // Validate that we have valid numbers
+  const hasInvalidParts = parts.some((n) => Number.isNaN(n));
+  if (hasInvalidParts) {
+    throw new Error(`Invalid version format: ${v}`);
+  }
+
+  const hasTooFewParts = parts.length < 1;
+  if (hasTooFewParts) {
+    throw new Error(`Invalid version format: ${v}`);
+  }
+
+  return parts;
+}
+
+/**
  * Compare two semver versions
  * Returns negative if a < b, positive if a > b, 0 if equal
  */
 function compareVersions(a: string, b: string): number {
-  const parseVersion = (v: string): number[] => {
-    const [semver] = v.split("+");
-    return semver.split(".").map((n) => parseInt(n, 10));
-  };
-
   const aParts = parseVersion(a);
   const bParts = parseVersion(b);
 
@@ -90,8 +128,20 @@ function checkHomebrewInstall(): boolean {
   }
 
   const execPath = Deno.execPath();
+
+  // Resolve symlinks to get the real path
+  let realPath: string;
+  try {
+    realPath = Deno.realPathSync(execPath);
+  } catch {
+    // If realPathSync fails, fall back to original path
+    realPath = execPath;
+  }
+
   const homebrewPrefixes = ["/opt/homebrew", "/usr/local"];
-  const isInHomebrewPath = homebrewPrefixes.some((prefix) => execPath.startsWith(prefix));
+  const isInHomebrewPath = homebrewPrefixes.some((prefix) =>
+    execPath.startsWith(prefix) || realPath.startsWith(prefix)
+  );
 
   return isInHomebrewPath;
 }
