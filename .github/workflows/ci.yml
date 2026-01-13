@@ -123,6 +123,32 @@ jobs:
         env:
           VIBE_BINARY_PATH: ${{ github.workspace }}/vibe-e2e
 
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - name: Install dependencies
+        working-directory: docs
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        working-directory: docs
+        run: pnpm lint
+      - name: Format check
+        working-directory: docs
+        run: pnpm format
+      - name: Type check
+        working-directory: docs
+        run: pnpm check
+      - name: Build
+        working-directory: docs
+        run: pnpm build
+
   build:
     needs: [build-binaries, build-deb]
     runs-on: ubuntu-latest
