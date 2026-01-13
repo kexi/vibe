@@ -54,5 +54,6 @@
   "publish": {
     "exclude": ["!src/version.ts"]
   },
-  "nodeModulesDir": "auto"
+  "nodeModulesDir": "auto",
+  "minimumDependencyAge": "P3D"
 }
