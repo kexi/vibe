@@ -13,6 +13,13 @@ export default [
       parserOptions: {
         project: true,
       },
+      globals: {
+        fetch: "readonly",
+        console: "readonly",
+        Response: "readonly",
+        Uint8Array: "readonly",
+        ArrayBuffer: "readonly",
+      },
     },
     plugins: {
       "@typescript-eslint": tseslint,
