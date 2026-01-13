@@ -23,6 +23,27 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
   <TabItem label="Deno">
     ```bash deno install -A --global jsr:@kexi/vibe ```
   </TabItem>
+  <TabItem label="Linux">
+    ```bash
+    # Ubuntu/Debian (x64)
+    curl -LO https://github.com/kexi/vibe/releases/latest/download/vibe_amd64.deb
+    sudo apt install ./vibe_amd64.deb
+
+    # Other distributions (x64)
+    curl -L https://github.com/kexi/vibe/releases/latest/download/vibe-linux-x64 -o vibe
+    chmod +x vibe && sudo mv vibe /usr/local/bin/
+    ```
+
+  </TabItem>
+  <TabItem label="Windows">
+    ```powershell
+    Invoke-WebRequest -Uri "https://github.com/kexi/vibe/releases/latest/download/vibe-windows-x64.exe" -OutFile "$env:LOCALAPPDATA\vibe.exe"
+    # Add to PATH (first time only)
+    $path = [Environment]::GetEnvironmentVariable("Path", "User")
+    [Environment]::SetEnvironmentVariable("Path", "$path;$env:LOCALAPPDATA", "User")
+    ```
+
+  </TabItem>
 </Tabs>
 
 ### 2. Set up your shell
@@ -48,6 +69,20 @@ Add the following to your shell configuration:
     function vibe
         eval (command vibe $argv)
     end
+    ```
+  </TabItem>
+  <TabItem label="Nushell">
+    ```nu
+    # Add to ~/.config/nushell/config.nu
+    def --env vibe [...args] {
+        ^vibe ...$args | lines | each { |line| nu -c $line }
+    }
+    ```
+  </TabItem>
+  <TabItem label="PowerShell">
+    ```powershell
+    # Add to your $PROFILE
+    function vibe { Invoke-Expression (& vibe.exe $args) }
     ```
   </TabItem>
 </Tabs>
