@@ -244,15 +244,18 @@ async function runVibeConfig(
   const dirCopyTaskIds: string[] = [];
   const hasDirectoriesToCopy = directoriesToCopy.length > 0;
   if (tracker && hasDirectoriesToCopy) {
-    dirCopyPhaseId = tracker.addPhase("Copying directories");
+    // Get strategy name to show in progress
+    const dirStrategy = await copyService.getDirectoryStrategy();
+    const strategyName = dirStrategy.name;
+    dirCopyPhaseId = tracker.addPhase(`Copying directories (${strategyName})`);
     for (const dir of directoriesToCopy) {
       const taskId = tracker.addTask(dirCopyPhaseId, dir);
       dirCopyTaskIds.push(taskId);
     }
   }
 
-  for (let i = 0; i < directoriesToCopy.length; i++) {
-    const dir = directoriesToCopy[i];
+  // Copy directories in parallel for better performance with clonefile
+  const directoryCopyPromises = directoriesToCopy.map(async (dir, i) => {
     const src = join(repoRoot, dir);
     const dest = join(worktreePath, dir);
 
@@ -276,7 +279,9 @@ async function runVibeConfig(
       }
       console.warn(`Warning: Failed to copy directory ${dir}: ${errorMessage}`);
     }
-  }
+  });
+
+  await Promise.all(directoryCopyPromises);
 
   // Run post_start hooks
   const shouldRunPostStartHooks = !skipHooks;
