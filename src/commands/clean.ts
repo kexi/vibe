@@ -88,7 +88,10 @@ export async function cleanCommand(): Promise<void> {
       });
     }
 
-    console.log(`Worktree ${currentWorktreePath} has been removed.`);
+    console.error(`Worktree ${currentWorktreePath} has been removed.`);
+
+    // Output cd command for shell wrapper to eval
+    console.log(`cd '${mainPath}'`);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${errorMessage}`);
