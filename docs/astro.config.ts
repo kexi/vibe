@@ -19,6 +19,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       components: {
         SocialIcons: "./src/components/CustomSocialIcons.astro",
         SkipLink: "./src/components/SkipLink.astro",
+        Head: "./src/components/Head.astro",
       },
       defaultLocale: "root",
       locales: {
