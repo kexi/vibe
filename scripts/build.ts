@@ -109,19 +109,31 @@ export const REPOSITORY_URL = BUILD_INFO.repository;
   console.log(`  Build: ${metadata.buildTime} (${metadata.buildEnv})`);
 }
 
-async function compile(): Promise<void> {
+interface CompileOptions {
+  target?: string;
+  output: string;
+}
+
+async function compile(options: CompileOptions): Promise<void> {
+  const args = [
+    "compile",
+    "--allow-run",
+    "--allow-read",
+    "--allow-write",
+    "--allow-env",
+    "--allow-ffi",
+  ];
+
+  const hasTarget = options.target !== undefined;
+  if (hasTarget) {
+    args.push("--target", options.target);
+  }
+
+  args.push("--output", options.output);
+  args.push("main.ts");
+
   const command = new Deno.Command("deno", {
-    args: [
-      "compile",
-      "--allow-run",
-      "--allow-read",
-      "--allow-write",
-      "--allow-env",
-      "--allow-ffi",
-      "--output",
-      "vibe",
-      "main.ts",
-    ],
+    args,
     stdout: "inherit",
     stderr: "inherit",
   });
@@ -134,7 +146,7 @@ async function compile(): Promise<void> {
 
 async function main(): Promise<void> {
   const args = parseArgs(Deno.args, {
-    string: ["target", "distribution"],
+    string: ["target", "distribution", "output"],
     boolean: ["generate-version-only"],
   });
 
@@ -177,7 +189,14 @@ async function main(): Promise<void> {
     return;
   }
 
-  await compile();
+  // Determine output filename
+  const output = args.output ?? "vibe";
+
+  // Pass target only if explicitly specified (cross-compilation)
+  // If not specified, compile for current platform without --target flag
+  const compileTarget = args.target ? target : undefined;
+
+  await compile({ target: compileTarget, output });
   console.log("Build completed successfully");
 }
 
