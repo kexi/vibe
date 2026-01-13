@@ -10,7 +10,7 @@ import { validatePath } from "../validation.ts";
  * - Linux: Uses FICLONE ioctl for files only (directories not supported)
  */
 export class NativeCloneStrategy implements CopyStrategy {
-  readonly name = "clone" as const;
+  readonly name = "clonefile" as const;
   private nativeClone: NativeClone | null = null;
   private initialized = false;
 

@@ -1,7 +1,7 @@
 /**
  * Copy strategy type identifier
  */
-export type CopyStrategyType = "clone" | "rsync" | "standard";
+export type CopyStrategyType = "clonefile" | "clone" | "rsync" | "standard";
 
 /**
  * Interface for copy strategies
