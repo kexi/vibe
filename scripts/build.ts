@@ -117,6 +117,7 @@ async function compile(): Promise<void> {
       "--allow-read",
       "--allow-write",
       "--allow-env",
+      "--allow-ffi",
       "--output",
       "vibe",
       "main.ts",
