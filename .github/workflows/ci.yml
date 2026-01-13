@@ -63,7 +63,7 @@ jobs:
       - name: Generate version.ts
         run: deno task generate-version --target ${{ matrix.target }} --distribution binary
       - name: Compile binary (${{ matrix.name }})
-        run: deno compile --allow-run --allow-read --allow-write --allow-env --target ${{ matrix.target }} --output vibe-${{ matrix.name }} main.ts
+        run: deno compile --allow-run --allow-read --allow-write --allow-env --allow-ffi --target ${{ matrix.target }} --output vibe-${{ matrix.name }} main.ts
 
   build-deb:
     runs-on: ubuntu-latest
@@ -80,7 +80,7 @@ jobs:
       - name: Generate version.ts
         run: deno task generate-version --target ${{ matrix.target }} --distribution deb
       - name: Compile Linux binary
-        run: deno compile --allow-run --allow-read --allow-write --allow-env --target ${{ matrix.target }} --output vibe-test main.ts
+        run: deno compile --allow-run --allow-read --allow-write --allow-env --allow-ffi --target ${{ matrix.target }} --output vibe-test main.ts
       - name: Build .deb package
         run: |
           VERSION=$(deno task get-version)
