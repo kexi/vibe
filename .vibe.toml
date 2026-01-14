@@ -1,10 +1,6 @@
-[copy]
-dirs=["./node_modules"]
-
 [hooks]
 post_start = [
   "mise trust",
-  "mise install",
-  "deno task generate-version"
+  "mise install"
 ]
 
