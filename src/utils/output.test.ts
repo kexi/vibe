@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { log, type OutputOptions, verboseLog } from "./output.ts";
+import { errorLog, log, type OutputOptions, verboseLog } from "./output.ts";
 
 Deno.test("log: outputs message when quiet is false", () => {
   const messages: string[] = [];
@@ -94,6 +94,48 @@ Deno.test("verboseLog: suppresses message when quiet is true even if verbose is 
     const options: OutputOptions = { verbose: true, quiet: true };
     verboseLog("test message", options);
     assertEquals(messages, []);
+  } finally {
+    console.error = originalError;
+  }
+});
+
+Deno.test("errorLog: always outputs message even when quiet is true", () => {
+  const messages: string[] = [];
+  const originalError = console.error;
+  console.error = (msg: string) => messages.push(msg);
+
+  try {
+    const options: OutputOptions = { quiet: true };
+    errorLog("error message", options);
+    assertEquals(messages, ["error message"]);
+  } finally {
+    console.error = originalError;
+  }
+});
+
+Deno.test("errorLog: outputs message when quiet is false", () => {
+  const messages: string[] = [];
+  const originalError = console.error;
+  console.error = (msg: string) => messages.push(msg);
+
+  try {
+    const options: OutputOptions = { quiet: false };
+    errorLog("error message", options);
+    assertEquals(messages, ["error message"]);
+  } finally {
+    console.error = originalError;
+  }
+});
+
+Deno.test("errorLog: outputs message regardless of verbose setting", () => {
+  const messages: string[] = [];
+  const originalError = console.error;
+  console.error = (msg: string) => messages.push(msg);
+
+  try {
+    const options: OutputOptions = { verbose: true, quiet: true };
+    errorLog("error message", options);
+    assertEquals(messages, ["error message"]);
   } finally {
     console.error = originalError;
   }

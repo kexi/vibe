@@ -25,3 +25,11 @@ export function verboseLog(message: string, options: OutputOptions): void {
     console.error(`[verbose] ${message}`);
   }
 }
+
+/**
+ * Log an error or warning message to stderr.
+ * Always outputs regardless of quiet mode, as errors should never be suppressed.
+ */
+export function errorLog(message: string, _options: OutputOptions): void {
+  console.error(message);
+}

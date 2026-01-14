@@ -52,19 +52,21 @@ Usage:
   vibe config                         Show current settings
   vibe upgrade [options]              Check for updates and show upgrade instructions
 
-Options:
+Global Options:
   -h, --help        Show this help message
   -v, --version     Show version information
   -V, --verbose     Show detailed output
   -q, --quiet       Suppress non-essential output
-  --reuse           Use existing branch instead of creating a new one
-  --no-hooks        Skip pre-start and post-start hooks
-  --no-copy         Skip copying files and directories
-  -n, --dry-run     Show what would be executed without making changes
-  -f, --force       Skip confirmation prompts (for clean command)
-  --delete-branch   Delete the branch after removing the worktree
-  --keep-branch     Keep the branch after removing the worktree
-  --check           Check for updates without showing upgrade instructions (upgrade command)
+
+Command Options:
+  --reuse           Use existing branch instead of creating a new one (start)
+  --no-hooks        Skip pre-start and post-start hooks (start)
+  --no-copy         Skip copying files and directories (start)
+  -n, --dry-run     Show what would be executed without making changes (start)
+  -f, --force       Skip confirmation prompts (clean)
+  --delete-branch   Delete the branch after removing the worktree (clean)
+  --keep-branch     Keep the branch after removing the worktree (clean)
+  --check           Check for updates without showing upgrade instructions (upgrade)
 
 Setup:
   Add this to your .zshrc:
@@ -108,7 +110,9 @@ async function main(): Promise<void> {
     }
   }
 
-  // Warn when both --verbose and --quiet are specified
+  // Warn when both --verbose and --quiet are specified.
+  // Note: Warnings and errors always display regardless of --quiet flag,
+  // as they indicate issues the user should be aware of.
   const hasConflictingOutputOptions = args.verbose && args.quiet;
   if (hasConflictingOutputOptions) {
     console.error(
