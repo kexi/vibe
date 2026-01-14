@@ -8,6 +8,25 @@ import { configCommand } from "./src/commands/config.ts";
 import { upgradeCommand } from "./src/commands/upgrade.ts";
 import { BUILD_INFO } from "./src/version.ts";
 
+/**
+ * Boolean options supported by the CLI.
+ * Single source of truth for option parsing and validation.
+ */
+const BOOLEAN_OPTIONS = [
+  "help",
+  "version",
+  "verbose",
+  "quiet",
+  "reuse",
+  "no-hooks",
+  "no-copy",
+  "dry-run",
+  "force",
+  "delete-branch",
+  "keep-branch",
+  "check",
+] as const;
+
 const HELP_TEXT = `vibe - git worktree helper
 
 Installation:
@@ -36,10 +55,12 @@ Usage:
 Options:
   -h, --help        Show this help message
   -v, --version     Show version information
+  -V, --verbose     Show detailed output
+  -q, --quiet       Suppress non-essential output
   --reuse           Use existing branch instead of creating a new one
   --no-hooks        Skip pre-start and post-start hooks
   --no-copy         Skip copying files and directories
-  --dry-run         Show what would be executed without making changes
+  -n, --dry-run     Show what would be executed without making changes
   -f, --force       Skip confirmation prompts (for clean command)
   --delete-branch   Delete the branch after removing the worktree
   --keep-branch     Keep the branch after removing the worktree
@@ -63,20 +84,28 @@ Examples:
 
 async function main(): Promise<void> {
   const args = parseArgs(Deno.args, {
-    boolean: [
-      "help",
-      "version",
-      "reuse",
-      "no-hooks",
-      "no-copy",
-      "dry-run",
-      "force",
-      "delete-branch",
-      "keep-branch",
-      "check",
-    ],
-    alias: { h: "help", v: "version", f: "force" },
+    boolean: [...BOOLEAN_OPTIONS],
+    alias: {
+      h: "help",
+      v: "version",
+      V: "verbose",
+      q: "quiet",
+      n: "dry-run",
+      f: "force",
+    },
   });
+
+  // Check for unknown options (includes "_" for positional args)
+  const knownOptions = new Set<string>([...BOOLEAN_OPTIONS, "_"]);
+
+  for (const key of Object.keys(args)) {
+    const isUnknownOption = !knownOptions.has(key);
+    if (isUnknownOption) {
+      console.error(`Error: Unknown option '--${key}'`);
+      console.error("Run 'vibe --help' for usage.");
+      Deno.exit(1);
+    }
+  }
 
   if (args.version) {
     console.error(`vibe ${BUILD_INFO.version}`);
@@ -106,13 +135,17 @@ async function main(): Promise<void> {
       const noHooks = args["no-hooks"];
       const noCopy = args["no-copy"];
       const dryRun = args["dry-run"];
-      await startCommand(branchName, { reuse, noHooks, noCopy, dryRun });
+      const verbose = args.verbose;
+      const quiet = args.quiet;
+      await startCommand(branchName, { reuse, noHooks, noCopy, dryRun, verbose, quiet });
       break;
     }
     case "clean": {
       const force = args.force;
       const deleteBranch = args["delete-branch"];
       const keepBranch = args["keep-branch"];
+      const verbose = args.verbose;
+      const quiet = args.quiet;
 
       // Validate mutually exclusive options
       const hasMutuallyExclusiveOptions = deleteBranch && keepBranch;
@@ -123,7 +156,7 @@ async function main(): Promise<void> {
         Deno.exit(1);
       }
 
-      await cleanCommand({ force, deleteBranch, keepBranch });
+      await cleanCommand({ force, deleteBranch, keepBranch, verbose, quiet });
       break;
     }
     case "trust":
@@ -140,7 +173,9 @@ async function main(): Promise<void> {
       break;
     case "upgrade": {
       const check = args.check;
-      await upgradeCommand({ check });
+      const verbose = args.verbose;
+      const quiet = args.quiet;
+      await upgradeCommand({ check, verbose, quiet });
       break;
     }
     default:
