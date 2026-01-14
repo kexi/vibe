@@ -108,12 +108,22 @@ vibe stores multiple hashes per file (up to 100), allowing you to switch between
 - When switching branches, vibe checks against all stored hashes
 - If the current hash matches any stored hash, verification passes
 
+## Security Considerations
+
+The trust mechanism verifies that configuration files haven't been modified since you trusted them. However, please note:
+
+- **Trust is a declaration of intent**: When you run `vibe trust`, you are declaring that you have reviewed and approved the configuration files, including any hook commands they contain.
+- **Hooks execute arbitrary commands**: Commands defined in `hooks.pre_start`, `hooks.post_start`, etc. are executed in your shell. vibe does not sandbox or restrict what these commands can do.
+- **Review before trusting**: Always review `.vibe.toml` and `.vibe.local.toml` files before running `vibe trust`, especially in repositories you don't control.
+- **Hash verification is not malware protection**: The hash check only detects changes to files you've already trusted. It does not evaluate whether the commands themselves are safe.
+
 ## Best Practices
 
 1. **Always review changes** before running `vibe trust`
 2. **Don't skip hash check** in production environments
 3. **Keep `.vibe.local.toml` local** - it's automatically gitignored
 4. **Review team changes** to `.vibe.toml` during code review
+5. **Be cautious with untrusted repositories** - review hook commands before trusting
 
 ## Related
 
