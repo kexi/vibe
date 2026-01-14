@@ -164,3 +164,35 @@ git tag v0.1.0
 git push origin v0.1.0
 gh release create v0.1.0 --generate-notes
 ```
+
+## Security Guidelines
+
+When contributing to vibe, please keep these security considerations in mind:
+
+### Input Validation
+
+- Always validate user inputs, especially file paths and branch names
+- Use `validatePath()` from `src/utils/copy/validation.ts` for path validation
+- Check for null bytes, newlines, and shell command substitution patterns
+
+### External Command Execution
+
+- Use `Deno.Command` with argument arrays, not shell strings, to prevent injection
+- Never pass untrusted input directly to shell commands
+- The `runHooks()` function in `src/utils/hooks.ts` executes user-defined commands - this is intentional, but the trust mechanism must be respected
+
+### Trust Mechanism
+
+- The trust system (`src/utils/settings.ts`) uses SHA-256 hashes to verify configuration file integrity
+- Trust is repository-based (identified by remote URL or repo root)
+- Always require explicit user consent before executing hook commands from untrusted sources
+
+### File Operations
+
+- Use atomic file operations (temp file + rename) for settings to prevent corruption
+- Validate paths before copy operations to prevent directory traversal
+- The `TOCTOU` (time-of-check to time-of-use) race condition is addressed in `verifyTrustAndRead()` - this function reads the file content and verifies its hash atomically, preventing attackers from modifying the file between the check and use
+
+### Reporting Security Issues
+
+If you discover a security vulnerability, please report it by creating a private security advisory on GitHub rather than opening a public issue.

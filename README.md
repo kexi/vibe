@@ -353,6 +353,15 @@ You can disable hash verification in your settings file (`~/.config/vibe/setting
 #### Branch switching
 Vibe stores multiple hashes per file (up to 100), so you can switch between branches without needing to re-trust files (as long as you've trusted each branch's version at least once).
 
+#### Security Considerations
+
+The trust mechanism verifies that configuration files haven't been modified since you trusted them. However, please note:
+
+- **Trust is a declaration of intent**: When you run `vibe trust`, you are declaring that you have reviewed and approved the configuration files, including any hook commands they contain.
+- **Hooks execute arbitrary commands**: Commands defined in `hooks.pre_start`, `hooks.post_start`, etc. are executed in your shell. Vibe does not sandbox or restrict what these commands can do.
+- **Review before trusting**: Always review `.vibe.toml` and `.vibe.local.toml` files before running `vibe trust`, especially in repositories you don't control.
+- **Hash verification is not malware protection**: The hash check only detects changes to files you've already trusted. It does not evaluate whether the commands themselves are safe.
+
 ### .vibe.local.toml
 
 Create a `.vibe.local.toml` file for local-only configuration overrides that
