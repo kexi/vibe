@@ -21,11 +21,11 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     **権限設定**: より安全にするため、`-A`の代わりに必要な権限のみを指定できます：
 
     ```bash
-    deno install --global --allow-run --allow-read --allow-write --allow-env --allow-ffi --allow-net jsr:@kexi/vibe
+    deno install --global --allow-run --allow-read --allow-write --allow-env --allow-ffi jsr:@kexi/vibe
     ```
 
     :::note
-    `--allow-ffi`はmacOS (APFS)とLinux (Btrfs/XFS)で最適化されたCopy-on-Writeファイルクローニングを有効にします。`--allow-net`は`vibe upgrade`コマンドで更新を確認するために必要です。
+    `--allow-ffi`はmacOS (APFS)とLinux (Btrfs/XFS)で最適化されたCopy-on-Writeファイルクローニングを有効にします。このフラグがなくても動作しますが、ディレクトリコピーが若干遅くなる可能性があります。
     :::
 
   </TabItem>
@@ -102,7 +102,7 @@ Denoがインストールされている場合、ソースからコンパイル�
 ```bash
 git clone https://github.com/kexi/vibe.git
 cd vibe
-deno compile --allow-run --allow-read --allow-write --allow-env --allow-ffi --allow-net --output vibe main.ts
+deno compile --allow-run --allow-read --allow-write --allow-env --allow-ffi --output vibe main.ts
 ```
 
 ## 次のステップ
