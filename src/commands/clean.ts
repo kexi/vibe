@@ -1,7 +1,6 @@
 import {
   getMainWorktreePath,
   getRepoRoot,
-  getWorktreeByPath,
   hasUncommittedChanges,
   isMainWorktree,
   runGitCommand,
@@ -11,13 +10,7 @@ import { type HookTrackerInfo, runHooks } from "../utils/hooks.ts";
 import { confirm } from "../utils/prompt.ts";
 import { ProgressTracker } from "../utils/progress.ts";
 
-interface CleanOptions {
-  force?: boolean;
-  deleteBranch?: boolean;
-  keepBranch?: boolean;
-}
-
-export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
+export async function cleanCommand(): Promise<void> {
   try {
     const isMain = await isMainWorktree();
     if (isMain) {
@@ -28,28 +21,18 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
     }
 
     const hasChanges = await hasUncommittedChanges();
-    let forceRemove = false;
     if (hasChanges) {
-      if (options.force) {
-        forceRemove = true;
-      } else {
-        const shouldContinue = await confirm(
-          "Warning: This worktree has uncommitted changes. Do you want to continue? (Y/n)",
-        );
-        if (!shouldContinue) {
-          console.error("Clean operation cancelled.");
-          Deno.exit(0);
-        }
-        forceRemove = true;
+      const shouldContinue = await confirm(
+        "Warning: This worktree has uncommitted changes. Do you want to continue? (Y/n)",
+      );
+      if (!shouldContinue) {
+        console.error("Clean operation cancelled.");
+        Deno.exit(0);
       }
     }
 
     const currentWorktreePath = await getRepoRoot();
     const mainPath = await getMainWorktreePath();
-
-    // Get current branch name before removing worktree
-    const worktreeInfo = await getWorktreeByPath(currentWorktreePath);
-    const currentBranch = worktreeInfo?.branch;
 
     // Load configuration
     const config = await loadVibeConfig(currentWorktreePath);
@@ -88,12 +71,13 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
     Deno.chdir(mainPath);
 
     // Remove worktree
-    const removeArgs = ["-C", mainPath, "worktree", "remove"];
-    if (forceRemove) {
-      removeArgs.push("--force");
-    }
-    removeArgs.push(currentWorktreePath);
-    await runGitCommand(removeArgs);
+    await runGitCommand([
+      "-C",
+      mainPath,
+      "worktree",
+      "remove",
+      currentWorktreePath,
+    ]);
 
     // Run post_clean hooks from main worktree
     const postCleanHooks = config?.hooks?.post_clean;
@@ -105,29 +89,6 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
     }
 
     console.error(`Worktree ${currentWorktreePath} has been removed.`);
-
-    // Determine whether to delete branch
-    // Priority: CLI option > config > default (false)
-    let shouldDeleteBranch = false;
-    if (options.deleteBranch) {
-      shouldDeleteBranch = true;
-    } else if (options.keepBranch) {
-      shouldDeleteBranch = false;
-    } else if (config?.clean?.delete_branch !== undefined) {
-      shouldDeleteBranch = config.clean.delete_branch;
-    }
-
-    // Delete branch if requested
-    if (shouldDeleteBranch && currentBranch) {
-      try {
-        await runGitCommand(["-C", mainPath, "branch", "-d", currentBranch]);
-        console.error(`Branch ${currentBranch} has been deleted.`);
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        console.error(`Warning: Could not delete branch ${currentBranch}: ${errorMessage}`);
-        console.error("You may need to delete it manually with: git branch -D " + currentBranch);
-      }
-    }
 
     // Output cd command for shell wrapper to eval
     console.log(`cd '${mainPath}'`);

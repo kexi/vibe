@@ -131,7 +131,6 @@ async function compile(options: CompileOptions): Promise<void> {
     "--allow-write",
     "--allow-env",
     "--allow-ffi",
-    "--allow-net",
   ];
 
   if (options.target !== undefined) {

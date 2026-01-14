@@ -22,17 +22,11 @@ interface StartOptions {
   reuse?: boolean;
   noHooks?: boolean;
   noCopy?: boolean;
-  dryRun?: boolean;
 }
 
 interface ConfigAndHooksOptions {
   skipHooks?: boolean;
   skipCopy?: boolean;
-  dryRun?: boolean;
-}
-
-function logDryRun(message: string): void {
-  console.error(`[dry-run] ${message}`);
 }
 
 async function runConfigAndHooks(
@@ -42,7 +36,7 @@ async function runConfigAndHooks(
   tracker: ProgressTracker,
   options: ConfigAndHooksOptions = {},
 ): Promise<void> {
-  const { skipHooks = false, skipCopy = false, dryRun = false } = options;
+  const { skipHooks = false, skipCopy = false } = options;
 
   const hooksCount = skipHooks ? 0 : (config?.hooks?.pre_start?.length ?? 0) +
     (config?.hooks?.post_start?.length ?? 0);
@@ -51,26 +45,23 @@ async function runConfigAndHooks(
     : (config?.copy?.files?.length ?? 0) + (config?.copy?.dirs?.length ?? 0);
   const hasOperations = config !== undefined && hooksCount + copyCount > 0;
 
-  // Don't start tracker in dry-run mode
-  const shouldStartTracker = !dryRun && hasOperations;
-  if (shouldStartTracker) {
+  if (hasOperations) {
     tracker.start();
   }
 
   const shouldRunPreStartHooks = !skipHooks;
   if (shouldRunPreStartHooks) {
-    await runPreStartHooksIfNeeded(config, repoRoot, worktreePath, tracker, dryRun);
+    await runPreStartHooksIfNeeded(config, repoRoot, worktreePath, tracker);
   }
 
   if (config !== undefined) {
     await runVibeConfig(config, repoRoot, worktreePath, tracker, {
       skipHooks,
       skipCopy,
-      dryRun,
     });
   }
 
-  if (shouldStartTracker) {
+  if (hasOperations) {
     tracker.finish();
   }
 }
@@ -79,7 +70,7 @@ export async function startCommand(
   branchName: string,
   options: StartOptions = {},
 ): Promise<void> {
-  const { noHooks = false, noCopy = false, dryRun = false } = options;
+  const { noHooks = false, noCopy = false } = options;
   const isBranchNameEmpty = !branchName;
   if (isBranchNameEmpty) {
     console.error("Error: Branch name is required");
@@ -95,11 +86,6 @@ export async function startCommand(
     const existingWorktreePath = await findWorktreeByBranch(branchName);
     const isBranchUsedInWorktree = existingWorktreePath !== null;
     if (isBranchUsedInWorktree) {
-      if (dryRun) {
-        logDryRun(`Branch '${branchName}' is already used in worktree '${existingWorktreePath}'`);
-        logDryRun(`Would navigate to: ${existingWorktreePath}`);
-        return;
-      }
       const shouldNavigate = await confirm(
         `Branch '${branchName}' is already used in worktree '${existingWorktreePath}'.\nNavigate to the existing worktree? (Y/n)`,
       );
@@ -137,17 +123,6 @@ export async function startCommand(
       // Worktree already exists
       if (existingWorktree.branch === branchName) {
         // Same branch - idempotent re-entry
-        if (dryRun) {
-          logDryRun(`Worktree already exists at '${worktreePath}'`);
-          logDryRun("Would run hooks and config, then navigate to worktree");
-          await runConfigAndHooks(config, repoRoot, worktreePath, tracker, {
-            skipHooks: noHooks,
-            skipCopy: noCopy,
-            dryRun,
-          });
-          logDryRun(`Would change directory to: ${worktreePath}`);
-          return;
-        }
         console.error(`Note: Worktree already exists at '${worktreePath}'`);
 
         // Run hooks and config in case they changed
@@ -161,13 +136,6 @@ export async function startCommand(
         return;
       } else {
         // Different branch - offer to overwrite
-        if (dryRun) {
-          logDryRun(
-            `Directory '${worktreePath}' already exists (branch: ${existingWorktree.branch})`,
-          );
-          logDryRun("Would prompt to Overwrite/Reuse/Cancel");
-          return;
-        }
         const choice = await select(
           `Directory '${worktreePath}' already exists (branch: ${existingWorktree.branch}):`,
           ["Overwrite (remove and recreate)", "Reuse (use existing)", "Cancel"],
@@ -196,33 +164,20 @@ export async function startCommand(
 
     // Path doesn't exist or was overwritten - create worktree
     const branchAlreadyExists = await branchExists(branchName);
-    const gitCommand = branchAlreadyExists
-      ? `git worktree add '${worktreePath}' ${branchName}`
-      : `git worktree add -b ${branchName} '${worktreePath}'`;
-
-    if (dryRun) {
-      logDryRun(`Would run: ${gitCommand}`);
-      logDryRun(`Worktree path: ${worktreePath}`);
+    if (branchAlreadyExists) {
+      // No --reuse flag required anymore
+      await runGitCommand(["worktree", "add", worktreePath, branchName]);
     } else {
-      if (branchAlreadyExists) {
-        await runGitCommand(["worktree", "add", worktreePath, branchName]);
-      } else {
-        await runGitCommand(["worktree", "add", "-b", branchName, worktreePath]);
-      }
+      await runGitCommand(["worktree", "add", "-b", branchName, worktreePath]);
     }
 
     // Run hooks and config
     await runConfigAndHooks(config, repoRoot, worktreePath, tracker, {
       skipHooks: noHooks,
       skipCopy: noCopy,
-      dryRun,
     });
 
-    if (dryRun) {
-      logDryRun(`Would change directory to: ${worktreePath}`);
-    } else {
-      console.log(`cd '${worktreePath}'`);
-    }
+    console.log(`cd '${worktreePath}'`);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${errorMessage}`);
@@ -237,7 +192,7 @@ async function runVibeConfig(
   tracker?: ProgressTracker,
   options: ConfigAndHooksOptions = {},
 ): Promise<void> {
-  const { skipHooks = false, skipCopy = false, dryRun = false } = options;
+  const { skipHooks = false, skipCopy = false } = options;
 
   // Get the copy service (automatically selects the best strategy)
   const copyService = getCopyService();
@@ -249,49 +204,41 @@ async function runVibeConfig(
     ? await expandCopyPatterns(config.copy?.files ?? [], repoRoot)
     : [];
 
-  // Handle dry-run for file copying
-  if (dryRun && filesToCopy.length > 0) {
-    logDryRun("Would copy files:");
+  // Add file copying phase if there are files to copy
+  let copyPhaseId: string | undefined;
+  const copyTaskIds: string[] = [];
+  if (tracker && filesToCopy.length > 0) {
+    copyPhaseId = tracker.addPhase("Copying files");
     for (const file of filesToCopy) {
-      logDryRun(`  - ${file}`);
+      const taskId = tracker.addTask(copyPhaseId, file);
+      copyTaskIds.push(taskId);
     }
-  } else {
-    // Add file copying phase if there are files to copy
-    let copyPhaseId: string | undefined;
-    const copyTaskIds: string[] = [];
-    if (tracker && filesToCopy.length > 0) {
-      copyPhaseId = tracker.addPhase("Copying files");
-      for (const file of filesToCopy) {
-        const taskId = tracker.addTask(copyPhaseId, file);
-        copyTaskIds.push(taskId);
-      }
+  }
+
+  for (let i = 0; i < filesToCopy.length; i++) {
+    const file = filesToCopy[i];
+    const src = join(repoRoot, file);
+    const dest = join(worktreePath, file);
+
+    // Update progress: start task
+    if (tracker && copyTaskIds.length > 0) {
+      tracker.startTask(copyTaskIds[i]);
     }
 
-    for (let i = 0; i < filesToCopy.length; i++) {
-      const file = filesToCopy[i];
-      const src = join(repoRoot, file);
-      const dest = join(worktreePath, file);
-
-      // Update progress: start task
+    // Copy the file using CopyService
+    try {
+      await copyService.copyFile(src, dest);
+      // Update progress: complete task
       if (tracker && copyTaskIds.length > 0) {
-        tracker.startTask(copyTaskIds[i]);
+        tracker.completeTask(copyTaskIds[i]);
       }
-
-      // Copy the file using CopyService
-      try {
-        await copyService.copyFile(src, dest);
-        // Update progress: complete task
-        if (tracker && copyTaskIds.length > 0) {
-          tracker.completeTask(copyTaskIds[i]);
-        }
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        // Update progress: fail task
-        if (tracker && copyTaskIds.length > 0) {
-          tracker.failTask(copyTaskIds[i], errorMessage);
-        }
-        console.warn(`Warning: Failed to copy ${file}: ${errorMessage}`);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      // Update progress: fail task
+      if (tracker && copyTaskIds.length > 0) {
+        tracker.failTask(copyTaskIds[i], errorMessage);
       }
+      console.warn(`Warning: Failed to copy ${file}: ${errorMessage}`);
     }
   }
 
@@ -301,69 +248,54 @@ async function runVibeConfig(
     ? await expandDirectoryPatterns(config.copy?.dirs ?? [], repoRoot)
     : [];
 
-  // Handle dry-run for directory copying
-  if (dryRun && directoriesToCopy.length > 0) {
-    logDryRun("Would copy directories:");
+  // Add directory copying phase if there are directories to copy
+  let dirCopyPhaseId: string | undefined;
+  const dirCopyTaskIds: string[] = [];
+  const hasDirectoriesToCopy = directoriesToCopy.length > 0;
+  if (tracker && hasDirectoriesToCopy) {
+    // Get strategy name to show in progress
+    const dirStrategy = await copyService.getDirectoryStrategy();
+    const strategyName = dirStrategy.name;
+    dirCopyPhaseId = tracker.addPhase(`Copying directories (${strategyName})`);
     for (const dir of directoriesToCopy) {
-      logDryRun(`  - ${dir}`);
+      const taskId = tracker.addTask(dirCopyPhaseId, dir);
+      dirCopyTaskIds.push(taskId);
     }
-  } else {
-    // Add directory copying phase if there are directories to copy
-    let dirCopyPhaseId: string | undefined;
-    const dirCopyTaskIds: string[] = [];
-    const hasDirectoriesToCopy = directoriesToCopy.length > 0;
-    if (tracker && hasDirectoriesToCopy) {
-      // Get strategy name to show in progress
-      const dirStrategy = await copyService.getDirectoryStrategy();
-      const strategyName = dirStrategy.name;
-      dirCopyPhaseId = tracker.addPhase(`Copying directories (${strategyName})`);
-      for (const dir of directoriesToCopy) {
-        const taskId = tracker.addTask(dirCopyPhaseId, dir);
-        dirCopyTaskIds.push(taskId);
-      }
-    }
-
-    // Copy directories in parallel for better performance with clonefile
-    const directoryCopyPromises = directoriesToCopy.map(async (dir, i) => {
-      const src = join(repoRoot, dir);
-      const dest = join(worktreePath, dir);
-
-      // Update progress: start task
-      if (tracker && dirCopyTaskIds.length > 0) {
-        tracker.startTask(dirCopyTaskIds[i]);
-      }
-
-      // Copy directory using CopyService
-      try {
-        await copyService.copyDirectory(src, dest);
-        // Update progress: complete task
-        if (tracker && dirCopyTaskIds.length > 0) {
-          tracker.completeTask(dirCopyTaskIds[i]);
-        }
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        // Update progress: fail task
-        if (tracker && dirCopyTaskIds.length > 0) {
-          tracker.failTask(dirCopyTaskIds[i], errorMessage);
-        }
-        console.warn(`Warning: Failed to copy directory ${dir}: ${errorMessage}`);
-      }
-    });
-
-    await Promise.all(directoryCopyPromises);
   }
+
+  // Copy directories in parallel for better performance with clonefile
+  const directoryCopyPromises = directoriesToCopy.map(async (dir, i) => {
+    const src = join(repoRoot, dir);
+    const dest = join(worktreePath, dir);
+
+    // Update progress: start task
+    if (tracker && dirCopyTaskIds.length > 0) {
+      tracker.startTask(dirCopyTaskIds[i]);
+    }
+
+    // Copy directory using CopyService
+    try {
+      await copyService.copyDirectory(src, dest);
+      // Update progress: complete task
+      if (tracker && dirCopyTaskIds.length > 0) {
+        tracker.completeTask(dirCopyTaskIds[i]);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      // Update progress: fail task
+      if (tracker && dirCopyTaskIds.length > 0) {
+        tracker.failTask(dirCopyTaskIds[i], errorMessage);
+      }
+      console.warn(`Warning: Failed to copy directory ${dir}: ${errorMessage}`);
+    }
+  });
+
+  await Promise.all(directoryCopyPromises);
 
   // Run post_start hooks
   const shouldRunPostStartHooks = !skipHooks;
   const postStartHooks = config.hooks?.post_start;
-  const hasPostStartHooks = postStartHooks !== undefined && postStartHooks.length > 0;
-
-  if (dryRun && shouldRunPostStartHooks && hasPostStartHooks) {
-    logDryRun("Would run post-start hooks:");
-    for (const hook of postStartHooks) {
-      logDryRun(`  - ${hook}`);
-    }
-  } else if (shouldRunPostStartHooks && hasPostStartHooks) {
+  if (shouldRunPostStartHooks && postStartHooks !== undefined && postStartHooks.length > 0) {
     let trackerInfo: HookTrackerInfo | undefined;
     if (tracker) {
       const phaseId = tracker.addPhase("Post-start hooks");
@@ -383,32 +315,19 @@ async function runPreStartHooksIfNeeded(
   repoRoot: string,
   worktreePath: string,
   tracker?: ProgressTracker,
-  dryRun: boolean = false,
 ): Promise<void> {
   const preStartHooks = config?.hooks?.pre_start;
-  const hasPreStartHooks = preStartHooks !== undefined && preStartHooks.length > 0;
-
-  if (!hasPreStartHooks) {
-    return;
-  }
-
-  if (dryRun) {
-    logDryRun("Would run pre-start hooks:");
-    for (const hook of preStartHooks) {
-      logDryRun(`  - ${hook}`);
+  if (preStartHooks !== undefined && preStartHooks.length > 0) {
+    let trackerInfo: HookTrackerInfo | undefined;
+    if (tracker) {
+      const phaseId = tracker.addPhase("Pre-start hooks");
+      const taskIds = preStartHooks.map((hook) => tracker.addTask(phaseId, hook));
+      trackerInfo = { tracker, taskIds };
     }
-    return;
-  }
 
-  let trackerInfo: HookTrackerInfo | undefined;
-  if (tracker) {
-    const phaseId = tracker.addPhase("Pre-start hooks");
-    const taskIds = preStartHooks.map((hook) => tracker.addTask(phaseId, hook));
-    trackerInfo = { tracker, taskIds };
+    await runHooks(preStartHooks, repoRoot, {
+      worktreePath,
+      originPath: repoRoot,
+    }, trackerInfo);
   }
-
-  await runHooks(preStartHooks, repoRoot, {
-    worktreePath,
-    originPath: repoRoot,
-  }, trackerInfo);
 }

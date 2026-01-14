@@ -24,7 +24,4 @@ export interface VibeConfig {
   worktree?: {
     path_script?: string;
   };
-  clean?: {
-    delete_branch?: boolean;
-  };
 }
