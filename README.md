@@ -48,6 +48,16 @@ Branch 'feat/new-feature' is already in use by worktree '/path/to/repo-feat-new-
 Navigate to the existing worktree? (Y/n)
 ```
 
+### Global Options
+
+| Option            | Description                                        |
+| ----------------- | -------------------------------------------------- |
+| `-h`, `--help`    | Show help message                                  |
+| `-v`, `--version` | Show version information                           |
+| `-V`, `--verbose` | Show detailed output                               |
+| `-q`, `--quiet`   | Suppress non-essential output                      |
+| `-n`, `--dry-run` | Preview operations without executing (start only)  |
+
 ## Installation
 
 ### Homebrew (macOS)
