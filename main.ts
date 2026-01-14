@@ -108,6 +108,14 @@ async function main(): Promise<void> {
     }
   }
 
+  // Warn when both --verbose and --quiet are specified
+  const hasConflictingOutputOptions = args.verbose && args.quiet;
+  if (hasConflictingOutputOptions) {
+    console.error(
+      "Warning: Both --verbose and --quiet specified. Using --quiet.",
+    );
+  }
+
   if (args.version) {
     console.error(`vibe ${BUILD_INFO.version}`);
     console.error(
