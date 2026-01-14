@@ -191,7 +191,7 @@ When contributing to vibe, please keep these security considerations in mind:
 
 - Use atomic file operations (temp file + rename) for settings to prevent corruption
 - Validate paths before copy operations to prevent directory traversal
-- The `TOCTOU` (time-of-check to time-of-use) pattern is addressed in `verifyTrustAndRead()`
+- The `TOCTOU` (time-of-check to time-of-use) race condition is addressed in `verifyTrustAndRead()` - this function reads the file content and verifies its hash atomically, preventing attackers from modifying the file between the check and use
 
 ### Reporting Security Issues
 

@@ -294,4 +294,51 @@ describe("clean command", () => {
       runner.dispose();
     }
   });
+
+  test("Error when --delete-branch and --keep-branch are used together", async () => {
+    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+
+    // Create a worktree first
+    const parentDir = dirname(repoPath);
+    const repoName = basename(repoPath);
+    const worktreePath = `${parentDir}/${repoName}-feat-exclusive`;
+
+    execFileSync("git", ["worktree", "add", "-b", "feat/exclusive", worktreePath], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    // Run vibe clean with both --delete-branch and --keep-branch (should fail)
+    const runner = new VibeCommandRunner(vibePath, worktreePath);
+    try {
+      await runner.spawn(["clean", "--delete-branch", "--keep-branch"]);
+      await runner.waitForExit();
+
+      // Verify exit code is non-zero
+      const exitCode = runner.getExitCode();
+      expect(exitCode).not.toBe(0);
+
+      const output = runner.getOutput();
+
+      // Verify error message about mutually exclusive options
+      assertOutputContains(output, "--delete-branch and --keep-branch cannot be used together");
+
+      // Verify worktree still exists (command should have failed before removal)
+      expect(existsSync(worktreePath)).toBe(true);
+    } finally {
+      runner.dispose();
+      // Clean up the worktree manually since the command failed
+      try {
+        execFileSync("git", ["worktree", "remove", worktreePath, "--force"], {
+          cwd: repoPath,
+          stdio: "pipe",
+        });
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+  });
 });
