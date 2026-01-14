@@ -72,7 +72,7 @@ async function fetchLatestVersion(): Promise<string> {
  * Parse and validate a semver version string
  * Returns array of [major, minor, patch] or throws if invalid
  */
-function parseVersion(v: string): number[] {
+export function parseVersion(v: string): number[] {
   const [semver] = v.split("+");
   const parts = semver.split(".").map((n) => parseInt(n, 10));
 
@@ -87,6 +87,11 @@ function parseVersion(v: string): number[] {
     throw new Error(`Invalid version format: ${v}`);
   }
 
+  // Pad with zeros to ensure [major, minor, patch] format
+  while (parts.length < 3) {
+    parts.push(0);
+  }
+
   return parts;
 }
 
@@ -94,7 +99,7 @@ function parseVersion(v: string): number[] {
  * Compare two semver versions
  * Returns negative if a < b, positive if a > b, 0 if equal
  */
-function compareVersions(a: string, b: string): number {
+export function compareVersions(a: string, b: string): number {
   const aParts = parseVersion(a);
   const bParts = parseVersion(b);
 
