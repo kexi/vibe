@@ -159,6 +159,15 @@ describe("clean command", () => {
       stdio: "pipe",
     });
 
+    // Trust the config from worktree path (trust is path-based)
+    const trustRunner = new VibeCommandRunner(vibePath, worktreePath);
+    try {
+      await trustRunner.spawn(["trust"]);
+      await trustRunner.waitForExit();
+    } finally {
+      trustRunner.dispose();
+    }
+
     // Verify branch exists
     expect(branchExists(repoPath, branchName)).toBe(true);
 
@@ -186,29 +195,11 @@ describe("clean command", () => {
 
     const vibePath = getVibePath();
 
-    // Trust the repo first
-    const trustRunner = new VibeCommandRunner(vibePath, repoPath);
-    try {
-      await trustRunner.spawn(["trust"]);
-      await trustRunner.waitForExit();
-    } finally {
-      trustRunner.dispose();
-    }
-
     // Create .vibe.toml with delete_branch=true
     const vibeConfigPath = join(repoPath, ".vibe.toml");
     writeFileSync(vibeConfigPath, "[clean]\ndelete_branch = true\n");
     execFileSync("git", ["add", ".vibe.toml"], { cwd: repoPath, stdio: "pipe" });
     execFileSync("git", ["commit", "-m", "Add vibe config"], { cwd: repoPath, stdio: "pipe" });
-
-    // Trust again after config change
-    const trustRunner2 = new VibeCommandRunner(vibePath, repoPath);
-    try {
-      await trustRunner2.spawn(["trust"]);
-      await trustRunner2.waitForExit();
-    } finally {
-      trustRunner2.dispose();
-    }
 
     // Create a worktree
     const parentDir = dirname(repoPath);
@@ -220,6 +211,15 @@ describe("clean command", () => {
       cwd: repoPath,
       stdio: "pipe",
     });
+
+    // Trust the config from worktree path (trust is path-based)
+    const trustRunner = new VibeCommandRunner(vibePath, worktreePath);
+    try {
+      await trustRunner.spawn(["trust"]);
+      await trustRunner.waitForExit();
+    } finally {
+      trustRunner.dispose();
+    }
 
     // Verify branch exists
     expect(branchExists(repoPath, branchName)).toBe(true);

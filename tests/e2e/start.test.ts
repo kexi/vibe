@@ -358,6 +358,151 @@ path_script = "./worktree-path.sh"
     }
   });
 
+  test("--dry-run shows what would be executed without making changes", async () => {
+    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+
+    // Create an untracked file to be copied and .vibe.toml with both hooks and copy
+    writeFileSync(join(repoPath, ".env.local"), "SECRET=value\n");
+    writeFileSync(join(repoPath, ".gitignore"), ".env.local\n");
+    const vibeToml = `
+[copy]
+files = [".env.local"]
+
+[hooks]
+pre_start = ["echo pre-start"]
+post_start = ["touch $VIBE_WORKTREE_PATH/.hook-ran"]
+`;
+    writeFileSync(join(repoPath, ".vibe.toml"), vibeToml);
+    execFileSync("git", ["add", ".vibe.toml", ".gitignore"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+    execFileSync("git", ["commit", "-m", "Add .vibe.toml"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    // Trust the config
+    const trustRunner = new VibeCommandRunner(vibePath, repoPath);
+    try {
+      await trustRunner.spawn(["trust"]);
+      await trustRunner.waitForExit();
+    } finally {
+      trustRunner.dispose();
+    }
+
+    // Run vibe start with --dry-run
+    const runner = new VibeCommandRunner(vibePath, repoPath);
+    try {
+      await runner.spawn(["start", "feat/test-dry-run", "--dry-run"]);
+      await runner.waitForExit();
+
+      assertExitCode(runner.getExitCode(), 0);
+
+      const output = runner.getOutput();
+
+      // Verify output contains [dry-run] prefix
+      assertOutputContains(output, "[dry-run]");
+
+      // Verify output shows what would be executed
+      assertOutputContains(output, "Would run:");
+      assertOutputContains(output, "git worktree add");
+
+      // Verify output shows hooks that would run
+      assertOutputContains(output, "Would run pre-start hooks:");
+      assertOutputContains(output, "Would run post-start hooks:");
+
+      // Verify output shows files that would be copied
+      assertOutputContains(output, "Would copy files:");
+      assertOutputContains(output, ".env.local");
+
+      // Verify worktree was NOT created
+      const parentDir = dirname(repoPath);
+      const repoName = basename(repoPath);
+      const worktreePath = `${parentDir}/${repoName}-feat-test-dry-run`;
+
+      expect(existsSync(worktreePath)).toBe(false);
+
+      // Verify output does NOT contain actual cd command (only dry-run message)
+      expect(output).not.toMatch(/^cd '/m);
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test("--dry-run combined with --no-hooks shows only copy preview", async () => {
+    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+
+    // Create an untracked file to be copied and .vibe.toml with both hooks and copy
+    writeFileSync(join(repoPath, ".env.local"), "SECRET=value\n");
+    writeFileSync(join(repoPath, ".gitignore"), ".env.local\n");
+    const vibeToml = `
+[copy]
+files = [".env.local"]
+
+[hooks]
+post_start = ["touch $VIBE_WORKTREE_PATH/.hook-ran"]
+`;
+    writeFileSync(join(repoPath, ".vibe.toml"), vibeToml);
+    execFileSync("git", ["add", ".vibe.toml", ".gitignore"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+    execFileSync("git", ["commit", "-m", "Add .vibe.toml"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    // Trust the config
+    const trustRunner = new VibeCommandRunner(vibePath, repoPath);
+    try {
+      await trustRunner.spawn(["trust"]);
+      await trustRunner.waitForExit();
+    } finally {
+      trustRunner.dispose();
+    }
+
+    // Run vibe start with --dry-run and --no-hooks
+    const runner = new VibeCommandRunner(vibePath, repoPath);
+    try {
+      await runner.spawn([
+        "start",
+        "feat/test-dry-run-no-hooks",
+        "--dry-run",
+        "--no-hooks",
+      ]);
+      await runner.waitForExit();
+
+      assertExitCode(runner.getExitCode(), 0);
+
+      const output = runner.getOutput();
+
+      // Verify output contains [dry-run] prefix
+      assertOutputContains(output, "[dry-run]");
+
+      // Verify output shows files that would be copied
+      assertOutputContains(output, "Would copy files:");
+
+      // Verify hooks are NOT mentioned (because --no-hooks was passed)
+      expect(output).not.toContain("Would run post-start hooks:");
+
+      // Verify worktree was NOT created
+      const parentDir = dirname(repoPath);
+      const repoName = basename(repoPath);
+      const worktreePath = `${parentDir}/${repoName}-feat-test-dry-run-no-hooks`;
+
+      expect(existsSync(worktreePath)).toBe(false);
+    } finally {
+      runner.dispose();
+    }
+  });
+
   test(".vibe.local.toml path_script takes precedence over .vibe.toml", async () => {
     const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
