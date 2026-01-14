@@ -12,6 +12,7 @@ import { confirm } from "../utils/prompt.ts";
 import { ProgressTracker } from "../utils/progress.ts";
 
 interface CleanOptions {
+  force?: boolean;
   deleteBranch?: boolean;
   keepBranch?: boolean;
 }
@@ -27,14 +28,19 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
     }
 
     const hasChanges = await hasUncommittedChanges();
-    const forceRemove = hasChanges;
+    let forceRemove = false;
     if (hasChanges) {
-      const shouldContinue = await confirm(
-        "Warning: This worktree has uncommitted changes. Do you want to continue? (Y/n)",
-      );
-      if (!shouldContinue) {
-        console.error("Clean operation cancelled.");
-        Deno.exit(0);
+      if (options.force) {
+        forceRemove = true;
+      } else {
+        const shouldContinue = await confirm(
+          "Warning: This worktree has uncommitted changes. Do you want to continue? (Y/n)",
+        );
+        if (!shouldContinue) {
+          console.error("Clean operation cancelled.");
+          Deno.exit(0);
+        }
+        forceRemove = true;
       }
     }
 

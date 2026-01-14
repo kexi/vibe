@@ -38,6 +38,7 @@ Options:
   --no-hooks        Skip pre-start and post-start hooks
   --no-copy         Skip copying files and directories
   --dry-run         Show what would be executed without making changes
+  -f, --force       Skip confirmation prompts (for clean command)
   --delete-branch   Delete the branch after removing the worktree
   --keep-branch     Keep the branch after removing the worktree
 
@@ -64,10 +65,11 @@ async function main(): Promise<void> {
       "no-hooks",
       "no-copy",
       "dry-run",
+      "force",
       "delete-branch",
       "keep-branch",
     ],
-    alias: { h: "help", v: "version" },
+    alias: { h: "help", v: "version", f: "force" },
   });
 
   if (args.version) {
@@ -102,9 +104,10 @@ async function main(): Promise<void> {
       break;
     }
     case "clean": {
+      const force = args.force;
       const deleteBranch = args["delete-branch"];
       const keepBranch = args["keep-branch"];
-      await cleanCommand({ deleteBranch, keepBranch });
+      await cleanCommand({ force, deleteBranch, keepBranch });
       break;
     }
     case "trust":
