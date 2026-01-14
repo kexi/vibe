@@ -1,0 +1,71 @@
+---
+title: vibe upgrade
+description: アップデートを確認しアップグレード方法を表示
+sidebar:
+  order: 5
+---
+
+`upgrade`コマンドは新しいバージョンを確認し、インストール方法に応じたアップグレード手順を表示します。
+
+## 使い方
+
+```bash
+vibe upgrade
+```
+
+## オプション
+
+### `--check`
+
+アップグレード方法を表示せず、新しいバージョンがあるかどうかのみ確認します。
+
+```bash
+vibe upgrade --check
+```
+
+## 動作
+
+### バージョンチェック
+
+コマンドはJSRレジストリから最新バージョンを取得し、現在のバージョンと比較します：
+
+```
+$ vibe upgrade
+vibe 0.8.0
+
+A new version is available: 0.8.1
+
+To upgrade:
+  brew upgrade vibe
+
+Release notes:
+  https://github.com/kexi/vibe/releases/tag/v0.8.1
+```
+
+### インストール方法の自動検出
+
+vibeはインストール方法を自動検出し、適切なアップグレードコマンドを表示します：
+
+| 方法     | アップグレードコマンド                     |
+| -------- | ------------------------------------------ |
+| Homebrew | `brew upgrade vibe`                        |
+| JSR      | `deno install -A --global jsr:@kexi/vibe`  |
+| Deb      | `sudo apt update && sudo apt upgrade vibe` |
+| Binary   | GitHubリリースのダウンロードリンクを表示   |
+| Dev      | `deno task compile`                        |
+
+### 最新バージョンの場合
+
+すでに最新バージョンを使用している場合：
+
+```
+$ vibe upgrade
+vibe 0.8.0
+
+You are using the latest version.
+```
+
+## 関連
+
+- [インストール](/ja/installation/) - インストール方法
+- [変更履歴](/ja/changelog/) - バージョン履歴

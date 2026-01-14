@@ -13,6 +13,45 @@ sidebar:
 vibe clean
 ```
 
+## オプション
+
+### `--force`, `-f`
+
+未コミットの変更がある場合でも確認プロンプトをスキップします。
+
+```bash
+vibe clean --force
+```
+
+### `--delete-branch`
+
+Worktree削除後にブランチも削除します。
+
+```bash
+vibe clean --delete-branch
+```
+
+### `--keep-branch`
+
+Worktree削除後もブランチを保持します。設定ファイルの`delete_branch`設定を上書きします。
+
+```bash
+vibe clean --keep-branch
+```
+
+## 設定
+
+`.vibe.toml`でデフォルトの動作を設定できます：
+
+```toml
+[clean]
+delete_branch = true  # デフォルトでブランチを削除
+```
+
+| オプション      | デフォルト | 説明                           |
+| --------------- | ---------- | ------------------------------ |
+| `delete_branch` | `false`    | Worktree削除後にブランチを削除 |
+
 ## 動作
 
 ### 安全チェック
