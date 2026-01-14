@@ -165,6 +165,14 @@ git push origin v0.1.0
 gh release create v0.1.0 --generate-notes
 ```
 
+## CLI Guidelines
+
+This project follows [GNU Coding Standards](https://www.gnu.org/prep/standards/) for command-line interface design:
+
+- Support `--help` and `--version` options
+- Use long options with `--` prefix (e.g., `--verbose`)
+- Use short options with `-` prefix (e.g., `-v`)
+
 ## Security Guidelines
 
 When contributing to vibe, please keep these security considerations in mind:
