@@ -25,18 +25,20 @@ Installation:
 
 Usage:
   vibe start <branch-name> [options]  Create a new worktree with the given branch
-  vibe clean                          Remove current worktree and return to main
+  vibe clean [options]                Remove current worktree and return to main
   vibe trust                          Trust .vibe.toml in current repository
   vibe untrust                        Remove trust for .vibe.toml in current repository
   vibe verify                         Verify trust status and hash history
   vibe config                         Show current settings
 
 Options:
-  -h, --help     Show this help message
-  -v, --version  Show version information
-  --reuse        Use existing branch instead of creating a new one
-  --no-hooks     Skip pre-start and post-start hooks
-  --no-copy      Skip copying files and directories
+  -h, --help        Show this help message
+  -v, --version     Show version information
+  --reuse           Use existing branch instead of creating a new one
+  --no-hooks        Skip pre-start and post-start hooks
+  --no-copy         Skip copying files and directories
+  --delete-branch   Delete the branch after removing the worktree
+  --keep-branch     Keep the branch after removing the worktree
 
 Setup:
   Add this to your .zshrc:
@@ -54,7 +56,7 @@ Examples:
 
 async function main(): Promise<void> {
   const args = parseArgs(Deno.args, {
-    boolean: ["help", "version", "reuse", "no-hooks", "no-copy"],
+    boolean: ["help", "version", "reuse", "no-hooks", "no-copy", "delete-branch", "keep-branch"],
     alias: { h: "help", v: "version" },
   });
 
@@ -88,9 +90,12 @@ async function main(): Promise<void> {
       await startCommand(branchName, { reuse, noHooks, noCopy });
       break;
     }
-    case "clean":
-      await cleanCommand();
+    case "clean": {
+      const deleteBranch = args["delete-branch"];
+      const keepBranch = args["keep-branch"];
+      await cleanCommand({ deleteBranch, keepBranch });
       break;
+    }
     case "trust":
       await trustCommand();
       break;
