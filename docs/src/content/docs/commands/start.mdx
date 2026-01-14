@@ -22,6 +22,7 @@ vibe start <branch> [options]
 | `--reuse`    | Use an existing branch (don't create new) |                          |
 | `--no-hooks` | Skip pre-start and post-start hooks       | <Badge text="v0.5.0+" /> |
 | `--no-copy`  | Skip file and directory copying           | <Badge text="v0.5.0+" /> |
+| `--dry-run`  | Preview operations without executing      | <Badge text="v0.8.0+" /> |
 
 ## Examples
 
@@ -37,6 +38,9 @@ vibe start feat/quick-fix --no-hooks
 
 # Start without copying files
 vibe start feat/clean-slate --no-copy
+
+# Preview what would happen
+vibe start feat/preview --dry-run
 ```
 
 ## Behavior

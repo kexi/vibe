@@ -13,6 +13,45 @@ The `clean` command removes the current worktree and returns you to the main rep
 vibe clean
 ```
 
+## Options
+
+### `--force`, `-f`
+
+Skip confirmation prompt when uncommitted changes exist.
+
+```bash
+vibe clean --force
+```
+
+### `--delete-branch`
+
+Delete the branch after removing the worktree.
+
+```bash
+vibe clean --delete-branch
+```
+
+### `--keep-branch`
+
+Keep the branch after removing the worktree. This overrides the `delete_branch` config setting.
+
+```bash
+vibe clean --keep-branch
+```
+
+## Configuration
+
+Configure default behavior in `.vibe.toml`:
+
+```toml
+[clean]
+delete_branch = true  # Delete branch by default when cleaning
+```
+
+| Option          | Default | Description                          |
+| --------------- | ------- | ------------------------------------ |
+| `delete_branch` | `false` | Delete branch after worktree removal |
+
 ## Behavior
 
 ### Safety Checks
