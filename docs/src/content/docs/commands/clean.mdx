@@ -15,9 +15,22 @@ vibe clean [options]
 
 ## Options
 
-| Option          | Description                                  |
-| --------------- | -------------------------------------------- |
-| `-f`, `--force` | Skip confirmation prompts for uncommitted changes |
+| Option            | Description                                        |
+| ----------------- | -------------------------------------------------- |
+| `-f`, `--force`   | Skip confirmation prompts for uncommitted changes  |
+| `--delete-branch` | Delete the branch after removing the worktree      |
+| `--keep-branch`   | Keep the branch (overrides config setting)         |
+
+## Configuration
+
+You can set the default behavior for branch deletion in `.vibe.toml`:
+
+```toml
+[clean]
+delete_branch = true  # Delete branch by default when running vibe clean
+```
+
+When `delete_branch` is `true`, the branch will be deleted unless `--keep-branch` is specified.
 
 ## Behavior
 

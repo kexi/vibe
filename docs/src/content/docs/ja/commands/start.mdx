@@ -17,11 +17,12 @@ vibe start <branch> [options]
 
 ## オプション
 
-| オプション   | 説明                                     |                          |
-| ------------ | ---------------------------------------- | ------------------------ |
-| `--reuse`    | 既存ブランチを使用（新規作成しない）     |                          |
-| `--no-hooks` | pre-startとpost-startフックをスキップ    | <Badge text="v0.5.0+" /> |
-| `--no-copy`  | ファイル・ディレクトリのコピーをスキップ | <Badge text="v0.5.0+" /> |
+| オプション   | 説明                                       |                          |
+| ------------ | ------------------------------------------ | ------------------------ |
+| `--reuse`    | 既存ブランチを使用（新規作成しない）       |                          |
+| `--no-hooks` | pre-startとpost-startフックをスキップ      | <Badge text="v0.5.0+" /> |
+| `--no-copy`  | ファイル・ディレクトリのコピーをスキップ   | <Badge text="v0.5.0+" /> |
+| `--dry-run`  | 実行内容をプレビュー表示（実際の変更なし） | <Badge text="v0.8.0+" /> |
 
 ## 例
 
@@ -37,6 +38,9 @@ vibe start feat/quick-fix --no-hooks
 
 # ファイルコピーなしで開始
 vibe start feat/clean-slate --no-copy
+
+# 実行内容をプレビュー（実際の変更なし）
+vibe start feat/preview --dry-run
 ```
 
 ## 動作
