@@ -57,7 +57,16 @@ Examples:
 
 async function main(): Promise<void> {
   const args = parseArgs(Deno.args, {
-    boolean: ["help", "version", "reuse", "no-hooks", "no-copy", "dry-run", "delete-branch", "keep-branch"],
+    boolean: [
+      "help",
+      "version",
+      "reuse",
+      "no-hooks",
+      "no-copy",
+      "dry-run",
+      "delete-branch",
+      "keep-branch",
+    ],
     alias: { h: "help", v: "version" },
   });
 
