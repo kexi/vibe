@@ -17,8 +17,9 @@ import { ProgressTracker } from "../utils/progress.ts";
 import { getCopyService } from "../utils/copy/index.ts";
 import { loadUserSettings } from "../utils/settings.ts";
 import { resolveWorktreePath } from "../utils/worktree-path.ts";
+import { log, type OutputOptions, verboseLog } from "../utils/output.ts";
 
-interface StartOptions {
+interface StartOptions extends OutputOptions {
   reuse?: boolean;
   noHooks?: boolean;
   noCopy?: boolean;
@@ -79,7 +80,9 @@ export async function startCommand(
   branchName: string,
   options: StartOptions = {},
 ): Promise<void> {
-  const { noHooks = false, noCopy = false, dryRun = false } = options;
+  const { noHooks = false, noCopy = false, dryRun = false, verbose = false, quiet = false } =
+    options;
+  const outputOpts: OutputOptions = { verbose, quiet };
   const isBranchNameEmpty = !branchName;
   if (isBranchNameEmpty) {
     console.error("Error: Branch name is required");
@@ -90,6 +93,10 @@ export async function startCommand(
     const repoRoot = await getRepoRoot();
     const repoName = await getRepoName();
     const sanitizedBranch = sanitizeBranchName(branchName);
+
+    verboseLog(`Repository root: ${repoRoot}`, outputOpts);
+    verboseLog(`Repository name: ${repoName}`, outputOpts);
+    verboseLog(`Sanitized branch: ${sanitizedBranch}`, outputOpts);
 
     // Check if branch is already in use by another worktree
     const existingWorktreePath = await findWorktreeByBranch(branchName);
@@ -148,7 +155,7 @@ export async function startCommand(
           logDryRun(`Would change directory to: ${worktreePath}`);
           return;
         }
-        console.error(`Note: Worktree already exists at '${worktreePath}'`);
+        log(`Note: Worktree already exists at '${worktreePath}'`, outputOpts);
 
         // Run hooks and config in case they changed
         await runConfigAndHooks(config, repoRoot, worktreePath, tracker, {
@@ -205,8 +212,10 @@ export async function startCommand(
       logDryRun(`Worktree path: ${worktreePath}`);
     } else {
       if (branchAlreadyExists) {
+        verboseLog(`Running: git worktree add '${worktreePath}' ${branchName}`, outputOpts);
         await runGitCommand(["worktree", "add", worktreePath, branchName]);
       } else {
+        verboseLog(`Running: git worktree add -b ${branchName} '${worktreePath}'`, outputOpts);
         await runGitCommand(["worktree", "add", "-b", branchName, worktreePath]);
       }
     }

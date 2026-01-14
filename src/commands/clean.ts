@@ -10,14 +10,18 @@ import { loadVibeConfig } from "../utils/config.ts";
 import { type HookTrackerInfo, runHooks } from "../utils/hooks.ts";
 import { confirm } from "../utils/prompt.ts";
 import { ProgressTracker } from "../utils/progress.ts";
+import { log, type OutputOptions, verboseLog } from "../utils/output.ts";
 
-interface CleanOptions {
+interface CleanOptions extends OutputOptions {
   force?: boolean;
   deleteBranch?: boolean;
   keepBranch?: boolean;
 }
 
 export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
+  const { verbose = false, quiet = false } = options;
+  const outputOpts: OutputOptions = { verbose, quiet };
+
   try {
     const isMain = await isMainWorktree();
     if (isMain) {
@@ -93,6 +97,7 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
       removeArgs.push("--force");
     }
     removeArgs.push(currentWorktreePath);
+    verboseLog(`Running: git ${removeArgs.join(" ")}`, outputOpts);
     await runGitCommand(removeArgs);
 
     // Run post_clean hooks from main worktree
@@ -104,7 +109,7 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
       });
     }
 
-    console.error(`Worktree ${currentWorktreePath} has been removed.`);
+    log(`Worktree ${currentWorktreePath} has been removed.`, outputOpts);
 
     // Determine whether to delete branch
     // Priority: CLI option > config > default (false)
@@ -121,7 +126,7 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
     if (shouldDeleteBranch && currentBranch) {
       try {
         await runGitCommand(["-C", mainPath, "branch", "-d", currentBranch]);
-        console.error(`Branch ${currentBranch} has been deleted.`);
+        log(`Branch ${currentBranch} has been deleted.`, outputOpts);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         console.error(`Warning: Could not delete branch ${currentBranch}: ${errorMessage}`);
