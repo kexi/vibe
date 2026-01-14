@@ -10,7 +10,11 @@ import { type HookTrackerInfo, runHooks } from "../utils/hooks.ts";
 import { confirm } from "../utils/prompt.ts";
 import { ProgressTracker } from "../utils/progress.ts";
 
-export async function cleanCommand(): Promise<void> {
+interface CleanOptions {
+  force?: boolean;
+}
+
+export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
   try {
     const isMain = await isMainWorktree();
     if (isMain) {
@@ -21,13 +25,19 @@ export async function cleanCommand(): Promise<void> {
     }
 
     const hasChanges = await hasUncommittedChanges();
+    let forceRemove = false;
     if (hasChanges) {
-      const shouldContinue = await confirm(
-        "Warning: This worktree has uncommitted changes. Do you want to continue? (Y/n)",
-      );
-      if (!shouldContinue) {
-        console.error("Clean operation cancelled.");
-        Deno.exit(0);
+      if (options.force) {
+        forceRemove = true;
+      } else {
+        const shouldContinue = await confirm(
+          "Warning: This worktree has uncommitted changes. Do you want to continue? (Y/n)",
+        );
+        if (!shouldContinue) {
+          console.error("Clean operation cancelled.");
+          Deno.exit(0);
+        }
+        forceRemove = true;
       }
     }
 
@@ -71,13 +81,12 @@ export async function cleanCommand(): Promise<void> {
     Deno.chdir(mainPath);
 
     // Remove worktree
-    await runGitCommand([
-      "-C",
-      mainPath,
-      "worktree",
-      "remove",
-      currentWorktreePath,
-    ]);
+    const removeArgs = ["-C", mainPath, "worktree", "remove"];
+    if (forceRemove) {
+      removeArgs.push("--force");
+    }
+    removeArgs.push(currentWorktreePath);
+    await runGitCommand(removeArgs);
 
     // Run post_clean hooks from main worktree
     const postCleanHooks = config?.hooks?.post_clean;

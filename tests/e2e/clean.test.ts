@@ -53,6 +53,55 @@ describe("clean command", () => {
     }
   });
 
+  test("Remove worktree with uncommitted changes using --force", async () => {
+    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+
+    // Create a worktree first
+    const parentDir = dirname(repoPath);
+    const repoName = basename(repoPath);
+    const worktreePath = `${parentDir}/${repoName}-feat-force`;
+
+    execFileSync("git", ["worktree", "add", "-b", "feat/force", worktreePath], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    // Create uncommitted changes in the worktree
+    execFileSync("git", ["config", "user.email", "test@example.com"], {
+      cwd: worktreePath,
+      stdio: "pipe",
+    });
+    execFileSync("git", ["config", "user.name", "Test User"], {
+      cwd: worktreePath,
+      stdio: "pipe",
+    });
+    const fs = await import("fs");
+    fs.writeFileSync(`${worktreePath}/uncommitted.txt`, "uncommitted changes");
+
+    // Run vibe clean with --force from the worktree
+    const runner = new VibeCommandRunner(vibePath, worktreePath);
+    try {
+      await runner.spawn(["clean", "--force"]);
+      await runner.waitForExit();
+
+      // Verify exit code
+      assertExitCode(runner.getExitCode(), 0);
+
+      const output = runner.getOutput();
+
+      // Verify output contains success message
+      assertOutputContains(output, "has been removed");
+
+      // Verify worktree directory no longer exists
+      expect(existsSync(worktreePath)).toBe(false);
+    } finally {
+      runner.dispose();
+    }
+  });
+
   test("Error when run from main worktree", async () => {
     const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;

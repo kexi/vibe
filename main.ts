@@ -25,7 +25,7 @@ Installation:
 
 Usage:
   vibe start <branch-name> [options]  Create a new worktree with the given branch
-  vibe clean                          Remove current worktree and return to main
+  vibe clean [options]                Remove current worktree and return to main
   vibe trust                          Trust .vibe.toml in current repository
   vibe untrust                        Remove trust for .vibe.toml in current repository
   vibe verify                         Verify trust status and hash history
@@ -37,6 +37,7 @@ Options:
   --reuse        Use existing branch instead of creating a new one
   --no-hooks     Skip pre-start and post-start hooks
   --no-copy      Skip copying files and directories
+  -f, --force    Skip confirmation prompts (for clean command)
 
 Setup:
   Add this to your .zshrc:
@@ -54,8 +55,8 @@ Examples:
 
 async function main(): Promise<void> {
   const args = parseArgs(Deno.args, {
-    boolean: ["help", "version", "reuse", "no-hooks", "no-copy"],
-    alias: { h: "help", v: "version" },
+    boolean: ["help", "version", "reuse", "no-hooks", "no-copy", "force"],
+    alias: { h: "help", v: "version", f: "force" },
   });
 
   if (args.version) {
@@ -88,9 +89,11 @@ async function main(): Promise<void> {
       await startCommand(branchName, { reuse, noHooks, noCopy });
       break;
     }
-    case "clean":
-      await cleanCommand();
+    case "clean": {
+      const force = args.force;
+      await cleanCommand({ force });
       break;
+    }
     case "trust":
       await trustCommand();
       break;
