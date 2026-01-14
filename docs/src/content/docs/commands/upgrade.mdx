@@ -1,0 +1,71 @@
+---
+title: vibe upgrade
+description: Check for updates and show upgrade instructions
+sidebar:
+  order: 5
+---
+
+The `upgrade` command checks for new versions and shows how to upgrade based on your installation method.
+
+## Usage
+
+```bash
+vibe upgrade
+```
+
+## Options
+
+### `--check`
+
+Only check if a new version is available without showing upgrade instructions.
+
+```bash
+vibe upgrade --check
+```
+
+## Behavior
+
+### Version Check
+
+The command fetches the latest version from the JSR registry and compares it with your current version:
+
+```
+$ vibe upgrade
+vibe 0.8.0
+
+A new version is available: 0.8.1
+
+To upgrade:
+  brew upgrade vibe
+
+Release notes:
+  https://github.com/kexi/vibe/releases/tag/v0.8.1
+```
+
+### Installation Method Detection
+
+vibe automatically detects how it was installed and shows the appropriate upgrade command:
+
+| Method   | Upgrade Command                            |
+| -------- | ------------------------------------------ |
+| Homebrew | `brew upgrade vibe`                        |
+| JSR      | `deno install -A --global jsr:@kexi/vibe`  |
+| Deb      | `sudo apt update && sudo apt upgrade vibe` |
+| Binary   | Shows GitHub releases download link        |
+| Dev      | `deno task compile`                        |
+
+### Up-to-date
+
+If you're already on the latest version:
+
+```
+$ vibe upgrade
+vibe 0.8.0
+
+You are using the latest version.
+```
+
+## Related
+
+- [Installation](/installation/) - Installation methods
+- [Changelog](/changelog/) - Version history

@@ -22,6 +22,7 @@ vibe start <branch> [options]
 | `--reuse`    | 既存ブランチを使用（新規作成しない）     |                          |
 | `--no-hooks` | pre-startとpost-startフックをスキップ    | <Badge text="v0.5.0+" /> |
 | `--no-copy`  | ファイル・ディレクトリのコピーをスキップ | <Badge text="v0.5.0+" /> |
+| `--dry-run`  | 実行せずに操作内容をプレビュー           | <Badge text="v0.8.0+" /> |
 
 ## 例
 
@@ -37,6 +38,9 @@ vibe start feat/quick-fix --no-hooks
 
 # ファイルコピーなしで開始
 vibe start feat/clean-slate --no-copy
+
+# 実行内容をプレビュー
+vibe start feat/preview --dry-run
 ```
 
 ## 動作
