@@ -5,6 +5,28 @@ description: Version history and release notes for vibe
 
 All notable changes to vibe are documented here.
 
+## v0.8.0
+
+**Released:** 2026-01-14
+
+### Added
+
+- `vibe upgrade` command to check for updates and show upgrade instructions
+- `--dry-run` option for `vibe start` to preview operations without executing
+- `--delete-branch` / `--keep-branch` options for `vibe clean` command
+- `--force` / `-f` option for `vibe clean` to skip confirmation prompts
+- `[clean] delete_branch` config option in `.vibe.toml`
+
+### Changed
+
+- Claude Actions switched from OAuth to API key authentication
+
+### Fixed
+
+- Add `--force` flag when removing worktree with uncommitted changes
+
+---
+
 ## v0.7.0
 
 **Released:** 2026-01-13
