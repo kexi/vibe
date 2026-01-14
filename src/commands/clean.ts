@@ -27,6 +27,7 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
     }
 
     const hasChanges = await hasUncommittedChanges();
+    const forceRemove = hasChanges;
     if (hasChanges) {
       const shouldContinue = await confirm(
         "Warning: This worktree has uncommitted changes. Do you want to continue? (Y/n)",
@@ -81,13 +82,12 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
     Deno.chdir(mainPath);
 
     // Remove worktree
-    await runGitCommand([
-      "-C",
-      mainPath,
-      "worktree",
-      "remove",
-      currentWorktreePath,
-    ]);
+    const removeArgs = ["-C", mainPath, "worktree", "remove"];
+    if (forceRemove) {
+      removeArgs.push("--force");
+    }
+    removeArgs.push(currentWorktreePath);
+    await runGitCommand(removeArgs);
 
     // Run post_clean hooks from main worktree
     const postCleanHooks = config?.hooks?.post_clean;
