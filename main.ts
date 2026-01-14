@@ -95,8 +95,9 @@ async function main(): Promise<void> {
     },
   });
 
-  // Check for unknown options (includes "_" for positional args)
-  const knownOptions = new Set<string>([...BOOLEAN_OPTIONS, "_"]);
+  // Check for unknown options (includes "_" for positional args and alias keys)
+  const ALIAS_KEYS = ["h", "v", "V", "q", "n", "f"] as const;
+  const knownOptions = new Set<string>([...BOOLEAN_OPTIONS, "_", ...ALIAS_KEYS]);
 
   for (const key of Object.keys(args)) {
     const isUnknownOption = !knownOptions.has(key);
