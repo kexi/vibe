@@ -1,10 +1,22 @@
 import { execFileSync } from "child_process";
-import { existsSync } from "fs";
-import { basename, dirname } from "path";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { basename, dirname, join } from "path";
 import { afterEach, describe, expect, test } from "vitest";
 import { getVibePath, VibeCommandRunner } from "./helpers/pty.js";
 import { setupTestGitRepo } from "./helpers/git-setup.js";
 import { assertExitCode, assertOutputContains } from "./helpers/assertions.js";
+
+function branchExists(repoPath: string, branchName: string): boolean {
+  try {
+    execFileSync("git", ["show-ref", "--verify", "--quiet", `refs/heads/${branchName}`], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 describe("clean command", () => {
   let cleanup: (() => Promise<void>) | null = null;
@@ -77,6 +89,158 @@ describe("clean command", () => {
 
       // Verify error message
       assertOutputContains(output, "Error");
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test("Delete branch with --delete-branch option", async () => {
+    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+
+    // Create a worktree first
+    const parentDir = dirname(repoPath);
+    const repoName = basename(repoPath);
+    const worktreePath = `${parentDir}/${repoName}-feat-delete`;
+    const branchName = "feat/delete";
+
+    execFileSync("git", ["worktree", "add", "-b", branchName, worktreePath], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    // Verify branch exists
+    expect(branchExists(repoPath, branchName)).toBe(true);
+
+    // Run vibe clean with --delete-branch
+    const runner = new VibeCommandRunner(vibePath, worktreePath);
+    try {
+      await runner.spawn(["clean", "--delete-branch"]);
+      await runner.waitForExit();
+
+      assertExitCode(runner.getExitCode(), 0);
+
+      const output = runner.getOutput();
+      assertOutputContains(output, "has been removed");
+      assertOutputContains(output, "has been deleted");
+
+      // Verify worktree directory no longer exists
+      expect(existsSync(worktreePath)).toBe(false);
+
+      // Verify branch no longer exists
+      expect(branchExists(repoPath, branchName)).toBe(false);
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test("Keep branch with --keep-branch option even when config has delete_branch=true", async () => {
+    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+
+    // Create .vibe.toml with delete_branch=true
+    const vibeConfigPath = join(repoPath, ".vibe.toml");
+    writeFileSync(vibeConfigPath, "[clean]\ndelete_branch = true\n");
+    execFileSync("git", ["add", ".vibe.toml"], { cwd: repoPath, stdio: "pipe" });
+    execFileSync("git", ["commit", "-m", "Add vibe config"], { cwd: repoPath, stdio: "pipe" });
+
+    // Create a worktree
+    const parentDir = dirname(repoPath);
+    const repoName = basename(repoPath);
+    const worktreePath = `${parentDir}/${repoName}-feat-keep`;
+    const branchName = "feat/keep";
+
+    execFileSync("git", ["worktree", "add", "-b", branchName, worktreePath], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    // Verify branch exists
+    expect(branchExists(repoPath, branchName)).toBe(true);
+
+    // Run vibe clean with --keep-branch (should override config)
+    const runner = new VibeCommandRunner(vibePath, worktreePath);
+    try {
+      await runner.spawn(["clean", "--keep-branch"]);
+      await runner.waitForExit();
+
+      assertExitCode(runner.getExitCode(), 0);
+
+      // Verify worktree directory no longer exists
+      expect(existsSync(worktreePath)).toBe(false);
+
+      // Verify branch still exists (--keep-branch overrides config)
+      expect(branchExists(repoPath, branchName)).toBe(true);
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test("Delete branch when config has delete_branch=true", async () => {
+    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+
+    // Trust the repo first
+    const trustRunner = new VibeCommandRunner(vibePath, repoPath);
+    try {
+      await trustRunner.spawn(["trust"]);
+      await trustRunner.waitForExit();
+    } finally {
+      trustRunner.dispose();
+    }
+
+    // Create .vibe.toml with delete_branch=true
+    const vibeConfigPath = join(repoPath, ".vibe.toml");
+    writeFileSync(vibeConfigPath, "[clean]\ndelete_branch = true\n");
+    execFileSync("git", ["add", ".vibe.toml"], { cwd: repoPath, stdio: "pipe" });
+    execFileSync("git", ["commit", "-m", "Add vibe config"], { cwd: repoPath, stdio: "pipe" });
+
+    // Trust again after config change
+    const trustRunner2 = new VibeCommandRunner(vibePath, repoPath);
+    try {
+      await trustRunner2.spawn(["trust"]);
+      await trustRunner2.waitForExit();
+    } finally {
+      trustRunner2.dispose();
+    }
+
+    // Create a worktree
+    const parentDir = dirname(repoPath);
+    const repoName = basename(repoPath);
+    const worktreePath = `${parentDir}/${repoName}-feat-config`;
+    const branchName = "feat/config";
+
+    execFileSync("git", ["worktree", "add", "-b", branchName, worktreePath], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    // Verify branch exists
+    expect(branchExists(repoPath, branchName)).toBe(true);
+
+    // Run vibe clean (should use config)
+    const runner = new VibeCommandRunner(vibePath, worktreePath);
+    try {
+      await runner.spawn(["clean"]);
+      await runner.waitForExit();
+
+      assertExitCode(runner.getExitCode(), 0);
+
+      const output = runner.getOutput();
+      assertOutputContains(output, "has been removed");
+      assertOutputContains(output, "has been deleted");
+
+      // Verify worktree directory no longer exists
+      expect(existsSync(worktreePath)).toBe(false);
+
+      // Verify branch no longer exists
+      expect(branchExists(repoPath, branchName)).toBe(false);
     } finally {
       runner.dispose();
     }
