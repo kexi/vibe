@@ -28,6 +28,13 @@ develop ─┴──●──●──●──●─────┴────
 - Compile:
   `deno compile --allow-run --allow-read --allow-write --allow-env --allow-ffi --output vibe main.ts`
 
+## CLI Guidelines
+
+- Follow [GNU Coding Standards](https://www.gnu.org/prep/standards/) for command-line interface design
+  - Support `--help` and `--version` options
+  - Use long options with `--` prefix (e.g., `--verbose`)
+  - Use short options with `-` prefix (e.g., `-v`)
+
 ## Testing
 
 - Lint check: `deno task lint` or `deno lint`
