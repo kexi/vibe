@@ -1,11 +1,11 @@
 {
   "name": "@kexi/vibe",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "license": "Apache-2.0",
   "repository": "https://github.com/kexi/vibe",
   "exports": "./main.ts",
   "tasks": {
-    "dev": "deno run --allow-run --allow-read --allow-write --allow-env --allow-ffi main.ts",
+    "dev": "deno run --allow-run --allow-read --allow-write --allow-env --allow-ffi --allow-net main.ts",
     "compile": "deno run --allow-run --allow-read --allow-write --allow-env scripts/build.ts --distribution dev",
     "compile:ci": "deno run --allow-run --allow-read --allow-write --allow-env scripts/build.ts",
     "compile:e2e": "deno run --allow-run --allow-read --allow-write --allow-env scripts/build.ts --output vibe-e2e --distribution dev",
