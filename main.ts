@@ -5,6 +5,7 @@ import { trustCommand } from "./src/commands/trust.ts";
 import { untrustCommand } from "./src/commands/untrust.ts";
 import { verifyCommand } from "./src/commands/verify.ts";
 import { configCommand } from "./src/commands/config.ts";
+import { upgradeCommand } from "./src/commands/upgrade.ts";
 import { BUILD_INFO } from "./src/version.ts";
 
 const HELP_TEXT = `vibe - git worktree helper
@@ -21,7 +22,7 @@ Installation:
   "jsr:@kexi/vibe" = "latest"
 
   # Manual build
-  deno compile --allow-run --allow-read --allow-write --allow-env --allow-ffi --output vibe main.ts
+  deno compile --allow-run --allow-read --allow-write --allow-env --allow-ffi --allow-net --output vibe main.ts
 
 Usage:
   vibe start <branch-name> [options]  Create a new worktree with the given branch
@@ -30,6 +31,7 @@ Usage:
   vibe untrust                        Remove trust for .vibe.toml in current repository
   vibe verify                         Verify trust status and hash history
   vibe config                         Show current settings
+  vibe upgrade [options]              Check for updates and show upgrade instructions
 
 Options:
   -h, --help        Show this help message
@@ -41,6 +43,7 @@ Options:
   -f, --force       Skip confirmation prompts (for clean command)
   --delete-branch   Delete the branch after removing the worktree
   --keep-branch     Keep the branch after removing the worktree
+  --check           Check for updates without showing upgrade instructions (upgrade command)
 
 Setup:
   Add this to your .zshrc:
@@ -51,6 +54,8 @@ Examples:
   vibe untrust
   vibe verify
   vibe config
+  vibe upgrade
+  vibe upgrade --check
   vibe start feat/new-feature
   vibe start feat/existing --reuse
   vibe clean
@@ -68,6 +73,7 @@ async function main(): Promise<void> {
       "force",
       "delete-branch",
       "keep-branch",
+      "check",
     ],
     alias: { h: "help", v: "version", f: "force" },
   });
@@ -122,6 +128,11 @@ async function main(): Promise<void> {
     case "config":
       await configCommand();
       break;
+    case "upgrade": {
+      const check = args.check;
+      await upgradeCommand({ check });
+      break;
+    }
     default:
       console.error(`Unknown command: ${command}`);
       Deno.exit(1);
