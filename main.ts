@@ -113,6 +113,16 @@ async function main(): Promise<void> {
       const force = args.force;
       const deleteBranch = args["delete-branch"];
       const keepBranch = args["keep-branch"];
+
+      // Validate mutually exclusive options
+      const hasMutuallyExclusiveOptions = deleteBranch && keepBranch;
+      if (hasMutuallyExclusiveOptions) {
+        console.error(
+          "Error: --delete-branch and --keep-branch cannot be used together",
+        );
+        Deno.exit(1);
+      }
+
       await cleanCommand({ force, deleteBranch, keepBranch });
       break;
     }
