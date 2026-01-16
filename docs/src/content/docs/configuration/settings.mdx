@@ -9,10 +9,10 @@ The `settings.json` file contains user-specific settings that are stored locally
 
 ## Location
 
-| Platform | Path                              |
-| -------- | --------------------------------- |
-| macOS    | `~/.config/vibe/settings.json`    |
-| Linux    | `~/.config/vibe/settings.json`    |
+| Platform | Path                                       |
+| -------- | ------------------------------------------ |
+| macOS    | `~/.config/vibe/settings.json`             |
+| Linux    | `~/.config/vibe/settings.json`             |
 | Windows  | `%USERPROFILE%\.config\vibe\settings.json` |
 
 ## Configuration Options
@@ -100,6 +100,7 @@ Schema URLs are only available for **released versions**. If you're using a deve
 :::
 
 **Upgrade behavior:**
+
 - When you upgrade vibe, the `$schema` URL is automatically updated to match your new version
 - Old schema URLs remain accessible on GitHub, so existing settings files continue to work
 - The schema is backward compatible within major versions
