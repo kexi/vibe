@@ -82,7 +82,7 @@ vibe provides a JSON Schema for editor autocompletion and validation. The `$sche
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/kexi/vibe/v0.9.0/schemas/settings.schema.json",
+  "$schema": "https://raw.githubusercontent.com/kexi/vibe/v0.10.0/schemas/settings.schema.json",
   "version": 3,
   "clean": {
     "fast_remove": true
@@ -90,7 +90,7 @@ vibe provides a JSON Schema for editor autocompletion and validation. The `$sche
 }
 ```
 
-The schema URL includes the vibe version tag (e.g., `v0.9.0`) to ensure compatibility with your installed version.
+The schema URL includes the vibe version tag (e.g., `v0.10.0`) to ensure compatibility with your installed version.
 
 ### VS Code Setup
 
@@ -101,19 +101,19 @@ VS Code automatically provides autocompletion when the `$schema` property is pre
   "json.schemas": [
     {
       "fileMatch": ["**/vibe/settings.json"],
-      "url": "https://raw.githubusercontent.com/kexi/vibe/v0.9.0/schemas/settings.schema.json"
+      "url": "https://raw.githubusercontent.com/kexi/vibe/v0.10.0/schemas/settings.schema.json"
     }
   ]
 }
 ```
 
-Replace `v0.9.0` with your installed vibe version.
+Replace `v0.10.0` with your installed vibe version.
 
 ## Full Example
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/kexi/vibe/v0.9.0/schemas/settings.schema.json",
+  "$schema": "https://raw.githubusercontent.com/kexi/vibe/v0.10.0/schemas/settings.schema.json",
   "version": 3,
   "skipHashCheck": false,
   "worktree": {

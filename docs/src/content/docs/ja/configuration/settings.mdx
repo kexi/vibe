@@ -82,7 +82,7 @@ vibeはエディタの自動補完と検証のためのJSON Schemaを提供し�
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/kexi/vibe/v0.9.0/schemas/settings.schema.json",
+  "$schema": "https://raw.githubusercontent.com/kexi/vibe/v0.10.0/schemas/settings.schema.json",
   "version": 3,
   "clean": {
     "fast_remove": true
@@ -90,7 +90,7 @@ vibeはエディタの自動補完と検証のためのJSON Schemaを提供し�
 }
 ```
 
-スキーマURLにはvibeのバージョンタグ（例：`v0.9.0`）が含まれ、インストールされているバージョンとの互換性が保証されます。
+スキーマURLにはvibeのバージョンタグ（例：`v0.10.0`）が含まれ、インストールされているバージョンとの互換性が保証されます。
 
 ### VS Code設定
 
@@ -101,19 +101,19 @@ VS Codeは`$schema`プロパティがあると自動的に補完を提供しま�
   "json.schemas": [
     {
       "fileMatch": ["**/vibe/settings.json"],
-      "url": "https://raw.githubusercontent.com/kexi/vibe/v0.9.0/schemas/settings.schema.json"
+      "url": "https://raw.githubusercontent.com/kexi/vibe/v0.10.0/schemas/settings.schema.json"
     }
   ]
 }
 ```
 
-`v0.9.0`はインストールしているvibeのバージョンに置き換えてください。
+`v0.10.0`はインストールしているvibeのバージョンに置き換えてください。
 
 ## 完全な例
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/kexi/vibe/v0.9.0/schemas/settings.schema.json",
+  "$schema": "https://raw.githubusercontent.com/kexi/vibe/v0.10.0/schemas/settings.schema.json",
   "version": 3,
   "skipHashCheck": false,
   "worktree": {
