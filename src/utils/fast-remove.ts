@@ -4,6 +4,7 @@ import { dirname, join } from "@std/path";
 const MACOS_TRASH_PATH = "~/.Trash";
 
 /** Pattern to detect control characters that could cause issues in shell/AppleScript */
+// deno-lint-ignore no-control-regex
 const CONTROL_CHARS_PATTERN = /[\x00-\x1f\x7f]/;
 
 export interface FastRemoveResult {
