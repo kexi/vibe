@@ -1,0 +1,53 @@
+{
+  "name": "@vibe/native",
+  "version": "0.10.0",
+  "description": "Native clone operations for vibe CLI (clonefile on macOS, FICLONE on Linux)",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "src",
+    "binding.gyp",
+    "prebuilds"
+  ],
+  "scripts": {
+    "install": "prebuild-install || node-gyp rebuild || echo 'Native module compilation failed, falling back to JS implementation'",
+    "build": "node-gyp rebuild",
+    "prebuild": "prebuildify --napi --strip",
+    "prebuild:all": "prebuildify-cross -i node:18 -i node:20 -i node:22 --napi --strip",
+    "clean": "node-gyp clean"
+  },
+  "dependencies": {
+    "node-addon-api": "^8.0.0",
+    "prebuild-install": "^7.1.0"
+  },
+  "devDependencies": {
+    "node-gyp": "^11.0.0",
+    "prebuildify": "^6.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kexi/vibe.git",
+    "directory": "packages/@vibe/native"
+  },
+  "keywords": [
+    "clonefile",
+    "ficlone",
+    "cow",
+    "copy-on-write",
+    "native"
+  ],
+  "author": "kexi",
+  "license": "Apache-2.0"
+}
