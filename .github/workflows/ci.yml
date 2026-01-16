@@ -115,11 +115,11 @@ jobs:
 
       # Build node-pty native addon
       - name: Build node-pty
-        run: pnpm rebuild node-pty
+        run: pnpm -C tests/e2e rebuild node-pty
 
       # Run E2E tests with Vitest
       - name: Run E2E tests
-        run: pnpm run test:e2e
+        run: pnpm -C tests/e2e run test
         env:
           VIBE_BINARY_PATH: ${{ github.workspace }}/vibe-e2e
 
