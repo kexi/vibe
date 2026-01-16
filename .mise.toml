@@ -1,3 +1,6 @@
+[plugins]
+lua = "https://github.com/Stratus3D/asdf-lua.git"
+
 [tools]
 deno = "2.6.3"
 ruby = "3.4.8"
