@@ -18,6 +18,7 @@ import {
   fastRemoveDirectory,
   isFastRemoveSupported,
 } from "../utils/fast-remove.ts";
+import { runtime } from "../runtime/index.ts";
 
 interface CleanOptions extends OutputOptions {
   force?: boolean;
@@ -44,7 +45,7 @@ async function removeWorktree(
     const gitFilePath = join(worktreePath, ".git");
     let gitFileContent: string | null = null;
     try {
-      gitFileContent = await Deno.readTextFile(gitFilePath);
+      gitFileContent = await runtime.fs.readTextFile(gitFilePath);
     } catch {
       // .git file might not exist or be unreadable, will fall back to traditional method
     }
@@ -54,8 +55,8 @@ async function removeWorktree(
 
       if (fastResult.success) {
         // Create empty directory with .git file for git worktree remove
-        await Deno.mkdir(worktreePath);
-        await Deno.writeTextFile(gitFilePath, gitFileContent);
+        await runtime.fs.mkdir(worktreePath);
+        await runtime.fs.writeTextFile(gitFilePath, gitFileContent);
 
         // Run git worktree remove on empty directory (very fast)
         // Always use --force since we've already moved the files
@@ -101,7 +102,7 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
       console.error(
         "Error: Cannot clean main worktree. Use this command from a secondary worktree.",
       );
-      Deno.exit(1);
+      runtime.control.exit(1);
     }
 
     const hasChanges = await hasUncommittedChanges();
@@ -115,7 +116,7 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
         );
         if (!shouldContinue) {
           console.error("Clean operation cancelled.");
-          Deno.exit(0);
+          runtime.control.exit(0);
         }
         forceRemove = true;
       }
@@ -162,7 +163,7 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
     }
 
     // Change to main worktree before removing (so cwd remains valid after deletion)
-    Deno.chdir(mainPath);
+    runtime.control.chdir(mainPath);
 
     // Load user settings to check fast_remove preference
     const settings = await loadUserSettings();
@@ -216,6 +217,6 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${errorMessage}`);
-    Deno.exit(1);
+    runtime.control.exit(1);
   }
 }

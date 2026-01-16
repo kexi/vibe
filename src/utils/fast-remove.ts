@@ -1,4 +1,5 @@
 import { dirname, join } from "@std/path";
+import { runtime } from "../runtime/index.ts";
 
 export interface FastRemoveResult {
   success: boolean;
@@ -31,28 +32,30 @@ function generateTrashName(): string {
  * while ensuring the process is truly detached from the parent.
  */
 function spawnBackgroundDelete(trashPath: string): void {
-  const isWindows = Deno.build.os === "windows";
+  const isWindows = runtime.build.os === "windows";
 
   if (isWindows) {
     // Windows: use cmd /c with start /b for detached process
     // Path is passed as separate argument to avoid shell interpretation
-    const child = new Deno.Command("cmd", {
+    const child = runtime.process.spawn({
+      cmd: "cmd",
       args: ["/c", "start", "/b", "cmd", "/c", "rd", "/s", "/q", trashPath],
       stdin: "null",
       stdout: "null",
       stderr: "null",
-    }).spawn();
+    });
     // Unref to allow parent to exit without waiting
     child.unref();
   } else {
     // macOS/Linux: use rm directly
     // Path is passed as argument, avoiding shell injection
-    const child = new Deno.Command("rm", {
+    const child = runtime.process.spawn({
+      cmd: "rm",
       args: ["-rf", trashPath],
       stdin: "null",
       stdout: "null",
       stderr: "null",
-    }).spawn();
+    });
     // Unref to allow parent to exit without waiting for child
     child.unref();
   }
@@ -74,7 +77,7 @@ export async function fastRemoveDirectory(
 
   try {
     // Step 1: Rename (O(1) operation on same filesystem)
-    await Deno.rename(targetPath, trashPath);
+    await runtime.fs.rename(targetPath, trashPath);
 
     // Step 2: Spawn detached background process for deletion
     // Parent process can exit immediately without waiting
@@ -97,7 +100,7 @@ export async function fastRemoveDirectory(
  */
 export async function cleanupStaleTrash(parentDir: string): Promise<void> {
   try {
-    for await (const entry of Deno.readDir(parentDir)) {
+    for await (const entry of runtime.fs.readDir(parentDir)) {
       const isVibeTrash = entry.isDirectory &&
         entry.name.startsWith(".vibe-trash-");
       if (isVibeTrash) {

@@ -1,4 +1,5 @@
 import type { ProgressTracker } from "./progress.ts";
+import { runtime } from "../runtime/index.ts";
 
 export interface HookEnvironment {
   worktreePath: string;
@@ -33,13 +34,13 @@ export async function runHooks(
   trackerInfo?: HookTrackerInfo,
 ): Promise<void> {
   const hookEnv = {
-    ...Deno.env.toObject(),
+    ...runtime.env.toObject(),
     VIBE_WORKTREE_PATH: env.worktreePath,
     VIBE_ORIGIN_PATH: env.originPath,
   };
 
   // Detect platform and use appropriate shell
-  const isWindows = Deno.build.os === "windows";
+  const isWindows = runtime.build.os === "windows";
   const shell = isWindows ? "cmd" : "sh";
 
   for (let i = 0; i < commands.length; i++) {
@@ -51,20 +52,20 @@ export async function runHooks(
       trackerInfo.tracker.startTask(trackerInfo.taskIds[i]);
     }
 
-    const proc = new Deno.Command(shell, {
+    const result = await runtime.process.run({
+      cmd: shell,
       args: shellArgs,
       cwd,
       env: hookEnv,
       stdout: "piped",
       stderr: "piped",
     });
-    const result = await proc.output();
 
     // Write hook stdout to stderr so it doesn't interfere with shell wrapper eval
     // When tracker is enabled, suppress output to avoid interfering with progress display
     if (!trackerInfo && result.stdout.length > 0) {
       try {
-        await Deno.stderr.write(result.stdout);
+        await runtime.io.stderr.write(result.stdout);
       } catch (error) {
         // Fallback: if stderr write fails, at least don't crash the hook execution
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -86,7 +87,7 @@ export async function runHooks(
       // Show stderr output for failed hooks to help with debugging
       if (result.stderr.length > 0) {
         try {
-          await Deno.stderr.write(result.stderr);
+          await runtime.io.stderr.write(result.stderr);
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           console.error(

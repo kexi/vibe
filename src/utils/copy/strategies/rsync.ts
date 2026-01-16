@@ -2,6 +2,7 @@ import { dirname } from "@std/path";
 import { detectCapabilities } from "../detector.ts";
 import type { CopyStrategy } from "../types.ts";
 import { validatePath } from "../validation.ts";
+import { runtime } from "../../../runtime/index.ts";
 
 /**
  * Rsync-based copy strategy.
@@ -22,13 +23,13 @@ export class RsyncStrategy implements CopyStrategy {
 
     // Ensure parent directory exists
     const destDir = dirname(dest);
-    await Deno.mkdir(destDir, { recursive: true }).catch(() => {});
+    await runtime.fs.mkdir(destDir, { recursive: true }).catch(() => {});
 
-    const cmd = new Deno.Command("rsync", {
+    const result = await runtime.process.run({
+      cmd: "rsync",
       args: ["-a", src, dest],
       stderr: "piped",
     });
-    const result = await cmd.output();
 
     if (!result.success) {
       const stderr = new TextDecoder().decode(result.stderr);
@@ -43,18 +44,18 @@ export class RsyncStrategy implements CopyStrategy {
 
     // Ensure parent directory exists
     const destDir = dirname(dest);
-    await Deno.mkdir(destDir, { recursive: true }).catch(() => {});
+    await runtime.fs.mkdir(destDir, { recursive: true }).catch(() => {});
 
     // rsync requires trailing slash on src to copy contents
     // Without trailing slash, it copies the directory itself into dest
     const srcPath = src.endsWith("/") ? src : `${src}/`;
 
     // Note: --delete is intentionally NOT used to prevent data loss
-    const cmd = new Deno.Command("rsync", {
+    const result = await runtime.process.run({
+      cmd: "rsync",
       args: ["-a", srcPath, dest],
       stderr: "piped",
     });
-    const result = await cmd.output();
 
     if (!result.success) {
       const stderr = new TextDecoder().decode(result.stderr);

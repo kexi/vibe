@@ -18,6 +18,7 @@ import { getCopyService } from "../utils/copy/index.ts";
 import { loadUserSettings } from "../utils/settings.ts";
 import { resolveWorktreePath } from "../utils/worktree-path.ts";
 import { log, type OutputOptions, verboseLog } from "../utils/output.ts";
+import { runtime } from "../runtime/index.ts";
 
 interface StartOptions extends OutputOptions {
   reuse?: boolean;
@@ -86,7 +87,7 @@ export async function startCommand(
   const isBranchNameEmpty = !branchName;
   if (isBranchNameEmpty) {
     console.error("Error: Branch name is required");
-    Deno.exit(1);
+    runtime.control.exit(1);
   }
 
   try {
@@ -113,10 +114,10 @@ export async function startCommand(
 
       if (shouldNavigate) {
         console.log(`cd '${existingWorktreePath}'`);
-        Deno.exit(0);
+        runtime.control.exit(0);
       } else {
         console.error("Cancelled");
-        Deno.exit(0);
+        runtime.control.exit(0);
       }
     }
 
@@ -196,7 +197,7 @@ export async function startCommand(
         } else {
           // Cancel
           console.error("Cancelled");
-          Deno.exit(0);
+          runtime.control.exit(0);
         }
       }
     }
@@ -235,7 +236,7 @@ export async function startCommand(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${errorMessage}`);
-    Deno.exit(1);
+    runtime.control.exit(1);
   }
 }
 

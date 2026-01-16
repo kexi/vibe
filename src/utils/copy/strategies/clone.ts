@@ -2,6 +2,7 @@ import { dirname } from "@std/path";
 import { detectCapabilities } from "../detector.ts";
 import type { CopyStrategy } from "../types.ts";
 import { validatePath } from "../validation.ts";
+import { runtime } from "../../../runtime/index.ts";
 
 /**
  * Clone (Copy-on-Write) strategy using filesystem-level cloning.
@@ -23,14 +24,14 @@ export class CloneStrategy implements CopyStrategy {
 
     // Ensure parent directory exists
     const destDir = dirname(dest);
-    await Deno.mkdir(destDir, { recursive: true }).catch(() => {});
+    await runtime.fs.mkdir(destDir, { recursive: true }).catch(() => {});
 
     const args = this.getCloneArgs(src, dest, false);
-    const cmd = new Deno.Command("cp", {
+    const result = await runtime.process.run({
+      cmd: "cp",
       args,
       stderr: "piped",
     });
-    const result = await cmd.output();
 
     if (!result.success) {
       const stderr = new TextDecoder().decode(result.stderr);
@@ -45,14 +46,14 @@ export class CloneStrategy implements CopyStrategy {
 
     // Ensure parent directory exists
     const destDir = dirname(dest);
-    await Deno.mkdir(destDir, { recursive: true }).catch(() => {});
+    await runtime.fs.mkdir(destDir, { recursive: true }).catch(() => {});
 
     const args = this.getCloneArgs(src, dest, true);
-    const cmd = new Deno.Command("cp", {
+    const result = await runtime.process.run({
+      cmd: "cp",
       args,
       stderr: "piped",
     });
-    const result = await cmd.output();
 
     if (!result.success) {
       const stderr = new TextDecoder().decode(result.stderr);
@@ -70,7 +71,7 @@ export class CloneStrategy implements CopyStrategy {
     dest: string,
     recursive: boolean,
   ): string[] {
-    const os = Deno.build.os;
+    const os = runtime.build.os;
 
     if (os === "darwin") {
       // macOS: cp -c (clone) or cp -cR (recursive clone)

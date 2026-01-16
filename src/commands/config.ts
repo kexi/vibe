@@ -1,4 +1,5 @@
 import { getSettingsPath, loadUserSettings } from "../utils/trust.ts";
+import { runtime } from "../runtime/index.ts";
 
 export async function configCommand(): Promise<void> {
   try {
@@ -11,6 +12,6 @@ export async function configCommand(): Promise<void> {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${errorMessage}`);
-    Deno.exit(1);
+    runtime.control.exit(1);
   }
 }

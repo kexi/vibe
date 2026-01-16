@@ -1,20 +1,20 @@
-import { dirname, isAbsolute, normalize, relative, SEPARATOR } from "@std/path";
+import { basename, dirname, isAbsolute, normalize, relative, SEPARATOR } from "@std/path";
+import { runtime } from "../runtime/index.ts";
 
 export async function runGitCommand(args: string[]): Promise<string> {
-  const command = new Deno.Command("git", {
+  const result = await runtime.process.run({
+    cmd: "git",
     args,
     stdout: "piped",
     stderr: "piped",
   });
 
-  const { code, stdout, stderr } = await command.output();
-
-  if (code !== 0) {
-    const errorMessage = new TextDecoder().decode(stderr);
+  if (!result.success) {
+    const errorMessage = new TextDecoder().decode(result.stderr);
     throw new Error(`git ${args.join(" ")} failed: ${errorMessage}`);
   }
 
-  return new TextDecoder().decode(stdout).trim();
+  return new TextDecoder().decode(result.stdout).trim();
 }
 
 export async function getRepoRoot(): Promise<string> {
@@ -23,7 +23,7 @@ export async function getRepoRoot(): Promise<string> {
 
 export async function getRepoName(): Promise<string> {
   const root = await getRepoRoot();
-  return root.split("/").pop() ?? "";
+  return basename(root);
 }
 
 export async function isInsideWorktree(): Promise<boolean> {
@@ -188,7 +188,7 @@ export async function getRepoInfoFromPath(
 ): Promise<RepoInfo | null> {
   try {
     // Resolve symlinks to real path for security
-    const realPath = await Deno.realPath(absolutePath);
+    const realPath = await runtime.fs.realPath(absolutePath);
     const fileDir = dirname(realPath);
 
     // Use git -C to run commands in specific directory without changing CWD

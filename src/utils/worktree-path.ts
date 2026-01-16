@@ -1,6 +1,7 @@
 import { dirname, isAbsolute, join } from "@std/path";
 import type { VibeConfig } from "../types/config.ts";
 import type { VibeSettings } from "./settings.ts";
+import { runtime } from "../runtime/index.ts";
 
 export interface WorktreePathContext {
   repoName: string;
@@ -37,7 +38,7 @@ async function executePathScript(
   context: WorktreePathContext,
 ): Promise<string> {
   // Expand ~ to home directory
-  const home = Deno.env.get("HOME") ?? "";
+  const home = runtime.env.get("HOME") ?? "";
   const expandedPath = scriptPath.replace(/^~/, home);
 
   // Resolve relative paths against repoRoot
@@ -47,13 +48,13 @@ async function executePathScript(
 
   // Check if script exists
   try {
-    const stat = await Deno.stat(resolvedPath);
+    const stat = await runtime.fs.stat(resolvedPath);
     const isNotFile = !stat.isFile;
     if (isNotFile) {
       throw new Error(`Worktree path script is not a file: ${resolvedPath}`);
     }
   } catch (error) {
-    const isNotFoundError = error instanceof Deno.errors.NotFound;
+    const isNotFoundError = runtime.errors.isNotFound(error);
     if (isNotFoundError) {
       throw new Error(`Worktree path script not found: ${resolvedPath}`);
     }
@@ -61,9 +62,10 @@ async function executePathScript(
   }
 
   // Execute the script with environment variables
-  const command = new Deno.Command(resolvedPath, {
+  const result = await runtime.process.run({
+    cmd: resolvedPath,
     env: {
-      ...Deno.env.toObject(),
+      ...runtime.env.toObject(),
       VIBE_REPO_NAME: context.repoName,
       VIBE_BRANCH_NAME: context.branchName,
       VIBE_SANITIZED_BRANCH: context.sanitizedBranch,
@@ -73,7 +75,7 @@ async function executePathScript(
     stderr: "piped",
   });
 
-  const { code, stdout, stderr } = await command.output();
+  const { code, stdout, stderr } = result;
 
   const isScriptFailed = code !== 0;
   if (isScriptFailed) {

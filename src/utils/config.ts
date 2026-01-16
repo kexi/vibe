@@ -2,13 +2,14 @@ import { parse } from "@std/toml";
 import { join } from "@std/path";
 import { parseVibeConfig, type VibeConfig } from "../types/config.ts";
 import { verifyTrustAndRead } from "./settings.ts";
+import { runtime } from "../runtime/index.ts";
 
 const VIBE_TOML = ".vibe.toml";
 const VIBE_LOCAL_TOML = ".vibe.local.toml";
 
 async function fileExists(path: string): Promise<boolean> {
   try {
-    await Deno.stat(path);
+    await runtime.fs.stat(path);
     return true;
   } catch {
     return false;
@@ -160,7 +161,7 @@ export async function loadVibeConfig(
         "Error: .vibe.toml file is not trusted or has been modified.\n" +
           "Please run: vibe trust",
       );
-      Deno.exit(1);
+      runtime.control.exit(1);
     }
   }
 
@@ -181,7 +182,7 @@ export async function loadVibeConfig(
         "Error: .vibe.local.toml file is not trusted or has been modified.\n" +
           "Please run: vibe trust",
       );
-      Deno.exit(1);
+      runtime.control.exit(1);
     }
   }
 

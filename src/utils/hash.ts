@@ -1,12 +1,14 @@
+import { runtime } from "../runtime/index.ts";
+
 /**
  * Calculate SHA-256 hash from file content
- * @param content File content as BufferSource
+ * @param content File content as Uint8Array or BufferSource
  * @returns Hash value (hex format, 64 characters)
  */
 export async function calculateHashFromContent(
-  content: BufferSource,
+  content: Uint8Array | BufferSource,
 ): Promise<string> {
-  const hashBuffer = await crypto.subtle.digest("SHA-256", content);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", content as BufferSource);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   const hashHex = hashArray
     .map((b) => b.toString(16).padStart(2, "0"))
@@ -20,7 +22,7 @@ export async function calculateHashFromContent(
  * @returns Hash value (hex format, 64 characters)
  */
 export async function calculateFileHash(filePath: string): Promise<string> {
-  const fileContent = await Deno.readFile(filePath);
+  const fileContent = await runtime.fs.readFile(filePath);
   return await calculateHashFromContent(fileContent);
 }
 

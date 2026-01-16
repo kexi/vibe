@@ -1,5 +1,6 @@
 import { expandGlob } from "@std/fs";
 import { join, relative } from "@std/path";
+import { runtime } from "../runtime/index.ts";
 
 /**
  * Checks if a string contains glob pattern characters.
@@ -92,7 +93,7 @@ export async function expandCopyPatterns(
  */
 async function isDir(path: string): Promise<boolean> {
   try {
-    const stat = await Deno.stat(path);
+    const stat = await runtime.fs.stat(path);
     return stat.isDirectory;
   } catch {
     return false;

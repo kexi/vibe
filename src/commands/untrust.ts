@@ -1,6 +1,7 @@
 import { join } from "@std/path";
 import { getRepoRoot } from "../utils/git.ts";
 import { getSettingsPath, removeTrustedPath } from "../utils/trust.ts";
+import { runtime } from "../runtime/index.ts";
 
 const VIBE_TOML = ".vibe.toml";
 const VIBE_LOCAL_TOML = ".vibe.local.toml";
@@ -19,7 +20,7 @@ export async function untrustCommand(): Promise<void> {
       console.error(
         `Error: Neither .vibe.toml nor .vibe.local.toml found in ${repoRoot}`,
       );
-      Deno.exit(1);
+      runtime.control.exit(1);
     }
 
     const untrustedFiles: string[] = [];
@@ -44,13 +45,13 @@ export async function untrustCommand(): Promise<void> {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${errorMessage}`);
-    Deno.exit(1);
+    runtime.control.exit(1);
   }
 }
 
 async function checkFileExists(path: string): Promise<boolean> {
   try {
-    await Deno.stat(path);
+    await runtime.fs.stat(path);
     return true;
   } catch {
     return false;

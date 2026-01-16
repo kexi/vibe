@@ -3,10 +3,27 @@ import { z } from "zod";
 import { calculateFileHash, calculateHashFromContent } from "./hash.ts";
 import { getRepoInfoFromPath, type RepoInfo } from "./git.ts";
 import { VERSION } from "../version.ts";
+import { runtime } from "../runtime/index.ts";
 
-// Settings file path
-const CONFIG_DIR = join(Deno.env.get("HOME") ?? "", ".config", "vibe");
-const USER_SETTINGS_FILE = join(CONFIG_DIR, "settings.json");
+// Settings file path (lazy-evaluated for cross-runtime support)
+function getConfigDir(): string {
+  const home = runtime.env.get("HOME") ?? "";
+
+  // Validate HOME to prevent path traversal attacks
+  const isValidHome = home.length > 0 && isAbsolute(home) && !home.includes("..");
+  if (!isValidHome) {
+    throw new Error(
+      "Invalid HOME environment variable. " +
+        "HOME must be an absolute path without '..' components.",
+    );
+  }
+
+  return join(home, ".config", "vibe");
+}
+
+function getUserSettingsFile(): string {
+  return join(getConfigDir(), "settings.json");
+}
 
 // Current schema version
 const CURRENT_SCHEMA_VERSION = 3;
@@ -263,9 +280,9 @@ function createDefaultSettings(): VibeSettings {
 
 async function ensureConfigDir(): Promise<void> {
   try {
-    await Deno.mkdir(CONFIG_DIR, { recursive: true });
+    await runtime.fs.mkdir(getConfigDir(), { recursive: true });
   } catch (error) {
-    const isAlreadyExists = error instanceof Deno.errors.AlreadyExists;
+    const isAlreadyExists = runtime.errors.isAlreadyExists(error);
     if (!isAlreadyExists) {
       throw error;
     }
@@ -274,7 +291,7 @@ async function ensureConfigDir(): Promise<void> {
 
 export async function loadUserSettings(): Promise<VibeSettings> {
   try {
-    const content = await Deno.readTextFile(USER_SETTINGS_FILE);
+    const content = await runtime.fs.readTextFile(getUserSettingsFile());
     const rawData = JSON.parse(content);
 
     // Execute migration (async)
@@ -323,14 +340,14 @@ export async function saveUserSettings(settings: VibeSettings): Promise<void> {
 
   // Use atomic write via temp file + rename to prevent corruption during concurrent writes
   // Use crypto.randomUUID() to ensure unique temp files for concurrent operations
-  const tempFile = `${USER_SETTINGS_FILE}.tmp.${Date.now()}.${crypto.randomUUID()}`;
+  const tempFile = `${getUserSettingsFile()}.tmp.${Date.now()}.${crypto.randomUUID()}`;
   try {
-    await Deno.writeTextFile(tempFile, content);
-    await Deno.rename(tempFile, USER_SETTINGS_FILE);
+    await runtime.fs.writeTextFile(tempFile, content);
+    await runtime.fs.rename(tempFile, getUserSettingsFile());
   } catch (error) {
     // Clean up temp file if rename fails
     try {
-      await Deno.remove(tempFile);
+      await runtime.fs.remove(tempFile);
     } catch {
       // Ignore cleanup errors
     }
@@ -526,7 +543,7 @@ export async function verifyTrustAndRead(
   }
 
   // Read file once (atomically)
-  const fileContent = await Deno.readTextFile(vibeFilePath);
+  const fileContent = await runtime.fs.readTextFile(vibeFilePath);
 
   // Determine whether to skip hash check
   // Priority: per-path setting > global setting > default (false)
@@ -554,7 +571,7 @@ export async function verifyTrustAndRead(
 }
 
 export function getSettingsPath(): string {
-  return USER_SETTINGS_FILE;
+  return getUserSettingsFile();
 }
 
 // Export for testing

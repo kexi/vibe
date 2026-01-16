@@ -1,4 +1,5 @@
 import type { CopyCapabilities } from "./types.ts";
+import { runtime } from "../../runtime/index.ts";
 
 /**
  * Cached capabilities (detected once per process)
@@ -36,7 +37,7 @@ export function resetCapabilitiesCache(): void {
  * - Linux: Btrfs/XFS support `cp --reflink=auto`
  */
 async function detectCloneSupport(): Promise<boolean> {
-  const os = Deno.build.os;
+  const os = runtime.build.os;
 
   if (os === "darwin") {
     return await testMacOSClone();
@@ -53,28 +54,28 @@ async function detectCloneSupport(): Promise<boolean> {
  * Test if macOS `cp -c` (clone) works.
  */
 async function testMacOSClone(): Promise<boolean> {
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await runtime.fs.makeTempDir();
   const srcFile = `${tempDir}/test_src`;
   const destFile = `${tempDir}/test_dest`;
 
   try {
     // Create a test file
-    await Deno.writeTextFile(srcFile, "test");
+    await runtime.fs.writeTextFile(srcFile, "test");
 
     // Try to clone it
-    const cmd = new Deno.Command("cp", {
+    const result = await runtime.process.run({
+      cmd: "cp",
       args: ["-c", srcFile, destFile],
       stderr: "null",
       stdout: "null",
     });
-    const result = await cmd.output();
 
     return result.success;
   } catch {
     return false;
   } finally {
     // Cleanup
-    await Deno.remove(tempDir, { recursive: true }).catch(() => {});
+    await runtime.fs.remove(tempDir, { recursive: true }).catch(() => {});
   }
 }
 
@@ -82,28 +83,28 @@ async function testMacOSClone(): Promise<boolean> {
  * Test if Linux `cp --reflink=auto` works.
  */
 async function testLinuxReflink(): Promise<boolean> {
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await runtime.fs.makeTempDir();
   const srcFile = `${tempDir}/test_src`;
   const destFile = `${tempDir}/test_dest`;
 
   try {
     // Create a test file
-    await Deno.writeTextFile(srcFile, "test");
+    await runtime.fs.writeTextFile(srcFile, "test");
 
     // Try to reflink copy it
-    const cmd = new Deno.Command("cp", {
+    const result = await runtime.process.run({
+      cmd: "cp",
       args: ["--reflink=auto", srcFile, destFile],
       stderr: "null",
       stdout: "null",
     });
-    const result = await cmd.output();
 
     return result.success;
   } catch {
     return false;
   } finally {
     // Cleanup
-    await Deno.remove(tempDir, { recursive: true }).catch(() => {});
+    await runtime.fs.remove(tempDir, { recursive: true }).catch(() => {});
   }
 }
 
@@ -112,12 +113,12 @@ async function testLinuxReflink(): Promise<boolean> {
  */
 async function detectRsyncAvailable(): Promise<boolean> {
   try {
-    const cmd = new Deno.Command("rsync", {
+    const result = await runtime.process.run({
+      cmd: "rsync",
       args: ["--version"],
       stderr: "null",
       stdout: "null",
     });
-    const result = await cmd.output();
 
     return result.success;
   } catch {

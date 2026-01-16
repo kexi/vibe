@@ -1,5 +1,7 @@
 // Progress tracking for hooks and file operations
 
+import { runtime } from "../runtime/index.ts";
+
 export type ProgressState = "pending" | "running" | "completed" | "failed";
 
 export interface ProgressNode {
@@ -168,8 +170,8 @@ export class ProgressTracker {
   private cleanupHandler?: () => void;
 
   constructor(options: ProgressOptions = {}) {
-    this.enabled = options.enabled ?? Deno.stderr.isTerminal();
-    this.stream = options.stream ?? Deno.stderr;
+    this.enabled = options.enabled ?? runtime.io.stderr.isTerminal();
+    this.stream = options.stream ?? runtime.io.stderr;
 
     // Validate spinner frames
     const spinnerFrames = options.spinnerFrames ?? [
@@ -219,12 +221,12 @@ export class ProgressTracker {
 
     this.cleanupHandler = () => {
       this.finish();
-      Deno.exit(0);
+      runtime.control.exit(0);
     };
 
     try {
-      Deno.addSignalListener("SIGINT", this.cleanupHandler);
-      Deno.addSignalListener("SIGTERM", this.cleanupHandler);
+      runtime.signals.addListener("SIGINT", this.cleanupHandler);
+      runtime.signals.addListener("SIGTERM", this.cleanupHandler);
     } catch {
       // Signal handlers might not be available in all environments
     }
@@ -234,8 +236,8 @@ export class ProgressTracker {
     if (!this.cleanupHandler) return;
 
     try {
-      Deno.removeSignalListener("SIGINT", this.cleanupHandler);
-      Deno.removeSignalListener("SIGTERM", this.cleanupHandler);
+      runtime.signals.removeListener("SIGINT", this.cleanupHandler);
+      runtime.signals.removeListener("SIGTERM", this.cleanupHandler);
     } catch {
       // Signal handlers might not be available in all environments
     }

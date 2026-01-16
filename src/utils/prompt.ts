@@ -2,12 +2,14 @@
  * Interactive prompt utilities
  */
 
+import { runtime } from "../runtime/index.ts";
+
 /**
  * Read a single line of input from the user
  */
 async function readLine(): Promise<string> {
   const buf = new Uint8Array(1024);
-  const n = await Deno.stdin.read(buf);
+  const n = await runtime.io.stdin.read(buf);
   const isInputReceived = n !== null;
   if (isInputReceived) {
     return new TextDecoder().decode(buf.subarray(0, n)).trim();
@@ -25,8 +27,8 @@ export async function confirm(message: string): Promise<boolean> {
   // This is necessary for E2E testing with node-pty, which creates a pseudo-terminal (PTY)
   // that Deno.stdin.isTerminal() doesn't recognize as a true TTY. Without this flag,
   // interactive prompts would fail in E2E tests even though they're running in a PTY.
-  const forceInteractive = Deno.env.get("VIBE_FORCE_INTERACTIVE") === "1";
-  const isInteractive = forceInteractive || (Deno.stdin.isTerminal?.() ?? false);
+  const forceInteractive = runtime.env.get("VIBE_FORCE_INTERACTIVE") === "1";
+  const isInteractive = forceInteractive || (runtime.io.stdin.isTerminal());
 
   // In non-interactive environments (CI, scripts), automatically return false
   if (!isInteractive) {
@@ -38,7 +40,7 @@ export async function confirm(message: string): Promise<boolean> {
 
   while (true) {
     // Use writeSync to ensure immediate output in PTY environments (bypasses buffering)
-    Deno.stderr.writeSync(new TextEncoder().encode(`${message}\n`));
+    runtime.io.stderr.writeSync(new TextEncoder().encode(`${message}\n`));
     const input = await readLine();
 
     const isYes = input === "Y" || input === "y" || input === "";
@@ -51,7 +53,7 @@ export async function confirm(message: string): Promise<boolean> {
       return false;
     }
 
-    Deno.stderr.writeSync(new TextEncoder().encode("Invalid input. Please enter Y/y/n/N.\n"));
+    runtime.io.stderr.writeSync(new TextEncoder().encode("Invalid input. Please enter Y/y/n/N.\n"));
   }
 }
 
@@ -69,8 +71,8 @@ export async function select(
   // This is necessary for E2E testing with node-pty, which creates a pseudo-terminal (PTY)
   // that Deno.stdin.isTerminal() doesn't recognize as a true TTY. Without this flag,
   // interactive prompts would fail in E2E tests even though they're running in a PTY.
-  const forceInteractive = Deno.env.get("VIBE_FORCE_INTERACTIVE") === "1";
-  const isInteractive = forceInteractive || (Deno.stdin.isTerminal?.() ?? false);
+  const forceInteractive = runtime.env.get("VIBE_FORCE_INTERACTIVE") === "1";
+  const isInteractive = forceInteractive || (runtime.io.stdin.isTerminal());
 
   // In non-interactive environments, throw an error (select() requires interaction)
   if (!isInteractive) {
@@ -79,11 +81,11 @@ export async function select(
 
   while (true) {
     // Use writeSync to ensure immediate output in PTY environments (bypasses buffering)
-    Deno.stderr.writeSync(new TextEncoder().encode(`${message}\n`));
+    runtime.io.stderr.writeSync(new TextEncoder().encode(`${message}\n`));
     for (let i = 0; i < choices.length; i++) {
-      Deno.stderr.writeSync(new TextEncoder().encode(`  ${i + 1}. ${choices[i]}\n`));
+      runtime.io.stderr.writeSync(new TextEncoder().encode(`  ${i + 1}. ${choices[i]}\n`));
     }
-    Deno.stderr.writeSync(new TextEncoder().encode("Please select (enter number):\n"));
+    runtime.io.stderr.writeSync(new TextEncoder().encode("Please select (enter number):\n"));
 
     const input = await readLine();
     const number = parseInt(input, 10);
@@ -93,7 +95,7 @@ export async function select(
       return number - 1;
     }
 
-    Deno.stderr.writeSync(
+    runtime.io.stderr.writeSync(
       new TextEncoder().encode(
         `Invalid input. Please enter a number between 1 and ${choices.length}.\n`,
       ),

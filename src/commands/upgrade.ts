@@ -1,5 +1,6 @@
 import { BUILD_INFO } from "../version.ts";
 import { log, type OutputOptions, verboseLog } from "../utils/output.ts";
+import { runtime } from "../runtime/index.ts";
 
 const JSR_META_URL = "https://jsr.io/@kexi/vibe/meta.json";
 const GITHUB_RELEASES_URL = "https://github.com/kexi/vibe/releases";
@@ -127,20 +128,20 @@ function parseSemver(version: string): string {
 /**
  * Check if the executable is installed via Homebrew
  */
-function checkHomebrewInstall(): boolean {
-  const isMac = Deno.build.os === "darwin";
+async function checkHomebrewInstall(): Promise<boolean> {
+  const isMac = runtime.build.os === "darwin";
   if (!isMac) {
     return false;
   }
 
-  const execPath = Deno.execPath();
+  const execPath = runtime.control.execPath();
 
   // Resolve symlinks to get the real path
   let realPath: string;
   try {
-    realPath = Deno.realPathSync(execPath);
+    realPath = await runtime.fs.realPath(execPath);
   } catch {
-    // If realPathSync fails, fall back to original path
+    // If realPath fails, fall back to original path
     realPath = execPath;
   }
 
@@ -155,7 +156,7 @@ function checkHomebrewInstall(): boolean {
 /**
  * Detect the installation method
  */
-function detectInstallMethod(): InstallMethod {
+async function detectInstallMethod(): Promise<InstallMethod> {
   const distribution = BUILD_INFO.distribution;
 
   const isJSR = distribution === "jsr";
@@ -170,7 +171,7 @@ function detectInstallMethod(): InstallMethod {
 
   const isBinaryOrDev = distribution === "binary" || distribution === "dev";
   if (isBinaryOrDev) {
-    const isHomebrewInstalled = checkHomebrewInstall();
+    const isHomebrewInstalled = await checkHomebrewInstall();
     if (isHomebrewInstalled) {
       return "homebrew";
     }
@@ -237,7 +238,7 @@ export async function upgradeCommand(
         const errorMessage = error instanceof Error ? error.message : String(error);
         console.error(`Error: ${errorMessage}`);
       }
-      Deno.exit(1);
+      runtime.control.exit(1);
     }
 
     const comparison = compareVersions(currentVersion, latestVersion);
@@ -260,7 +261,7 @@ export async function upgradeCommand(
     }
 
     // Detect installation method and show upgrade command
-    const installMethod = detectInstallMethod();
+    const installMethod = await detectInstallMethod();
     verboseLog(`Detected install method: ${installMethod}`, outputOpts);
     const upgradeCmd = getUpgradeCommand(installMethod);
 
@@ -278,6 +279,6 @@ export async function upgradeCommand(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${errorMessage}`);
-    Deno.exit(1);
+    runtime.control.exit(1);
   }
 }
