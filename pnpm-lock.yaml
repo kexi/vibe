@@ -82,6 +82,10 @@ importers:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
+    optionalDependencies:
+      '@kexi/vibe-native':
+        specifier: workspace:^
+        version: link:../packages/@kexi/vibe-native
 
   packages/@kexi/vibe-native:
     dependencies:
