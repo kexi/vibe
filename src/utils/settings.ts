@@ -563,4 +563,5 @@ export const _internal = {
   migrateSettings,
   getSchemaVersion,
   createDefaultSettings,
+  getSettingsSchemaUrl,
 };
