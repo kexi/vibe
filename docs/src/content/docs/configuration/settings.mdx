@@ -1,0 +1,135 @@
+---
+title: settings.json
+description: User-specific global settings
+sidebar:
+  order: 4
+---
+
+The `settings.json` file contains user-specific settings that are stored locally and not shared with your team. This file is located at `~/.config/vibe/settings.json`.
+
+## Location
+
+| Platform | Path                           |
+| -------- | ------------------------------ |
+| macOS    | `~/.config/vibe/settings.json` |
+| Linux    | `~/.config/vibe/settings.json` |
+
+## Configuration Options
+
+### Fast Remove (Clean Performance)
+
+By default, vibe uses a fast deletion strategy that moves the worktree directory to a temporary location and deletes it asynchronously in the background. This makes `vibe clean` feel instant even for large repositories.
+
+```json
+{
+  "version": 3,
+  "clean": {
+    "fast_remove": true
+  }
+}
+```
+
+| Option        | Default | Description                                        |
+| ------------- | ------- | -------------------------------------------------- |
+| `fast_remove` | `true`  | Use fast async deletion (move + background delete) |
+
+**How it works:**
+
+1. Worktree directory is instantly renamed to a hidden `.vibe-trash-*` directory (O(1) operation)
+2. Git worktree metadata is cleaned up against the now-empty directory
+3. Actual file deletion happens asynchronously in the background
+4. Previous `.vibe-trash-*` directories are automatically cleaned up
+
+:::note
+If fast rename fails for any reason, vibe automatically falls back to traditional deletion.
+:::
+
+### Worktree Path Script
+
+Override the default worktree path with a custom script:
+
+```json
+{
+  "version": 3,
+  "worktree": {
+    "path_script": "~/.config/vibe/worktree-path.sh"
+  }
+}
+```
+
+:::tip
+This setting can also be configured per-repository in `.vibe.toml`. The user setting in `settings.json` takes precedence.
+:::
+
+### Skip Hash Check
+
+Disable hash verification globally (not recommended):
+
+```json
+{
+  "version": 3,
+  "skipHashCheck": true
+}
+```
+
+:::caution
+Disabling hash verification reduces security. Only use this if you understand the risks.
+:::
+
+## JSON Schema
+
+vibe provides a JSON Schema for editor autocompletion and validation. The `$schema` property is **automatically added** when vibe saves the settings file:
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/kexi/vibe/v0.9.0/schemas/settings.schema.json",
+  "version": 3,
+  "clean": {
+    "fast_remove": true
+  }
+}
+```
+
+The schema URL includes the vibe version tag (e.g., `v0.9.0`) to ensure compatibility with your installed version.
+
+### VS Code Setup
+
+VS Code automatically provides autocompletion when the `$schema` property is present. For manual configuration, add to your VS Code settings:
+
+```json
+{
+  "json.schemas": [
+    {
+      "fileMatch": ["**/vibe/settings.json"],
+      "url": "https://raw.githubusercontent.com/kexi/vibe/v0.9.0/schemas/settings.schema.json"
+    }
+  ]
+}
+```
+
+Replace `v0.9.0` with your installed vibe version.
+
+## Full Example
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/kexi/vibe/v0.9.0/schemas/settings.schema.json",
+  "version": 3,
+  "skipHashCheck": false,
+  "worktree": {
+    "path_script": "~/.config/vibe/worktree-path.sh"
+  },
+  "clean": {
+    "fast_remove": true
+  },
+  "permissions": {
+    "allow": [],
+    "deny": []
+  }
+}
+```
+
+## Related
+
+- [.vibe.toml](/configuration/vibe-toml/) - Shared team configuration
+- [clean](/commands/clean/) - Clean command with fast_remove details

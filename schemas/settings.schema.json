@@ -1,0 +1,104 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://vibe.kexi.dev/schemas/settings.schema.json",
+  "title": "Vibe Settings",
+  "description": "User settings for vibe CLI tool (~/.config/vibe/settings.json)",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema URL for editor autocompletion"
+    },
+    "version": {
+      "const": 3,
+      "description": "Schema version (must be 3)"
+    },
+    "skipHashCheck": {
+      "type": "boolean",
+      "description": "Globally skip hash verification for trusted files (not recommended)",
+      "default": false
+    },
+    "worktree": {
+      "type": "object",
+      "description": "Worktree configuration",
+      "properties": {
+        "path_script": {
+          "type": "string",
+          "description": "Path to a script that outputs the worktree directory path"
+        }
+      },
+      "additionalProperties": false
+    },
+    "clean": {
+      "type": "object",
+      "description": "Clean command configuration",
+      "properties": {
+        "fast_remove": {
+          "type": "boolean",
+          "description": "Use fast async deletion (move + background delete)",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "permissions": {
+      "type": "object",
+      "description": "Trust permissions for configuration files",
+      "properties": {
+        "allow": {
+          "type": "array",
+          "description": "List of trusted configuration files",
+          "items": {
+            "type": "object",
+            "properties": {
+              "repoId": {
+                "type": "object",
+                "description": "Repository identifier",
+                "properties": {
+                  "remoteUrl": {
+                    "type": "string",
+                    "description": "Git remote URL"
+                  },
+                  "repoRoot": {
+                    "type": "string",
+                    "description": "Absolute path to repository root"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "relativePath": {
+                "type": "string",
+                "description": "Relative path from repository root to the config file"
+              },
+              "hashes": {
+                "type": "array",
+                "description": "SHA-256 hashes of trusted file versions",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "skipHashCheck": {
+                "type": "boolean",
+                "description": "Skip hash verification for this specific file"
+              }
+            },
+            "required": ["repoId", "relativePath", "hashes"],
+            "additionalProperties": false
+          }
+        },
+        "deny": {
+          "type": "array",
+          "description": "List of denied paths (reserved for future use)",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["allow", "deny"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["version", "permissions"],
+  "additionalProperties": false
+}
