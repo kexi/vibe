@@ -2,8 +2,8 @@ import { assertEquals } from "@std/assert";
 import { join } from "@std/path";
 import { cleanupStaleTrash, fastRemoveDirectory, isFastRemoveSupported } from "./fast-remove.ts";
 
-/** macOS Trash path constant for test assertions */
-const MACOS_TRASH_PATH = "~/.Trash";
+/** macOS Trash display path constant for test assertions (matches MACOS_TRASH_DISPLAY_PATH in fast-remove.ts) */
+const MACOS_TRASH_DISPLAY_PATH = "~/.Trash";
 
 /**
  * Wait for a path to be deleted using polling instead of fixed timeout
@@ -45,7 +45,7 @@ Deno.test({
     // On Linux/Windows: trashedPath is in /tmp or parent directory
     const isMacOS = Deno.build.os === "darwin";
     if (isMacOS) {
-      assertEquals(result.trashedPath, MACOS_TRASH_PATH);
+      assertEquals(result.trashedPath, MACOS_TRASH_DISPLAY_PATH);
     } else {
       const isInExpectedLocation = result.trashedPath?.startsWith("/tmp") ||
         result.trashedPath?.startsWith(tempDir);
@@ -63,7 +63,7 @@ Deno.test({
     assertEquals(exists, false);
 
     // Wait for background deletion to complete before cleanup (polling-based)
-    if (result.trashedPath && result.trashedPath !== MACOS_TRASH_PATH) {
+    if (result.trashedPath && result.trashedPath !== MACOS_TRASH_DISPLAY_PATH) {
       await waitForDeletion(result.trashedPath);
     }
 

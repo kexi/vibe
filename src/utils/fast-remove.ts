@@ -1,11 +1,18 @@
 import { dirname, join } from "@std/path";
 
-/** macOS Trash directory path returned when using Finder */
-const MACOS_TRASH_PATH = "~/.Trash";
+/**
+ * Display path for macOS Trash returned to callers.
+ * This is a user-friendly representation (~/.Trash), not the actual
+ * filesystem path. Finder manages the actual trash location internally.
+ */
+const MACOS_TRASH_DISPLAY_PATH = "~/.Trash";
 
 /** Pattern to detect control characters that could cause issues in shell/AppleScript */
 // deno-lint-ignore no-control-regex
 const CONTROL_CHARS_PATTERN = /[\x00-\x1f\x7f]/;
+
+/** Length of UUID suffix used in trash directory names for uniqueness */
+const TRASH_UUID_LENGTH = 8;
 
 export interface FastRemoveResult {
   success: boolean;
@@ -28,7 +35,7 @@ export function isFastRemoveSupported(): boolean {
  * Generate a unique trash directory name
  */
 function generateTrashName(): string {
-  return `.vibe-trash-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+  return `.vibe-trash-${Date.now()}-${crypto.randomUUID().slice(0, TRASH_UUID_LENGTH)}`;
 }
 
 /**
@@ -115,6 +122,10 @@ function getTempDir(): string {
  * On Linux: Uses /tmp with nohup rm -rf (cleaned on reboot)
  * On Windows: Uses temp directory with background deletion
  *
+ * Note: If targetPath is a symlink, the symlink itself is removed/moved,
+ * not the target it points to. This is the expected behavior for cleaning
+ * up worktrees which should not affect the original repository.
+ *
  * @param targetPath The directory to remove
  * @returns Result indicating success/failure and the trash path if successful
  */
@@ -129,7 +140,7 @@ export async function fastRemoveDirectory(
       const movedToTrash = await moveToMacOSTrash(targetPath);
       if (movedToTrash) {
         // Finder handles the actual deletion
-        return { success: true, trashedPath: MACOS_TRASH_PATH };
+        return { success: true, trashedPath: MACOS_TRASH_DISPLAY_PATH };
       }
       // Fall through to fallback if Finder fails (e.g., SSH session)
     }
@@ -147,6 +158,8 @@ export async function fastRemoveDirectory(
       return { success: true, trashedPath: tempTrashPath };
     } catch (tempError) {
       // Cross-device link error (EXDEV) - fall back to parent directory
+      // This occurs when targetPath and /tmp are on different filesystems
+      // (e.g., Docker volumes, network mounts, separate partitions)
       // Check error message since Deno doesn't have a specific CrossDeviceLink error type
       const errorMessage = String(tempError);
       const isCrossDeviceError = errorMessage.includes("cross-device") ||
