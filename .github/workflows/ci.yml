@@ -149,8 +149,44 @@ jobs:
         working-directory: docs
         run: pnpm build
 
+  mise-plugin-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mise
+        uses: jdx/mise-action@v2
+
+      - name: Install vibe plugin from current branch
+        shell: bash
+        run: |
+          mise plugin install vibe "file://${{ github.workspace }}#mise-plugin"
+
+      - name: List available versions
+        shell: bash
+        run: |
+          mise ls-remote vibe | head -10
+
+      - name: Install vibe@latest
+        shell: bash
+        run: |
+          mise install vibe@latest
+
+      - name: Verify vibe installation
+        shell: bash
+        run: |
+          mise exec vibe -- vibe --version
+
+      - name: Verify vibe is in PATH
+        shell: bash
+        run: |
+          mise which vibe
+
   build:
-    needs: [build-binaries, build-deb]
+    needs: [build-binaries, build-deb, mise-plugin-test]
     runs-on: ubuntu-latest
     steps:
       - run: echo "All builds completed successfully"
