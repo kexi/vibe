@@ -316,6 +316,12 @@ The script receives these environment variables and should output an absolute pa
 echo "${HOME}/worktrees/${VIBE_REPO_NAME}-${VIBE_SANITIZED_BRANCH}"
 ```
 
+### Editor Support (JSON Schema)
+
+Vibe provides JSON Schema for `settings.json` with autocompletion and validation. The `$schema` property is **automatically added** when vibe saves the settings file. Most modern editors (VS Code, IntelliJ, etc.) will automatically provide autocompletion.
+
+For manual VS Code configuration, see the [settings.json documentation](https://vibe.kexi.dev/configuration/settings/#json-schema).
+
 ### Security: Hash Verification
 
 Vibe automatically verifies the integrity of `.vibe.toml` and `.vibe.local.toml` files using SHA-256 hashes. This prevents unauthorized modifications to configuration files.

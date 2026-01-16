@@ -314,6 +314,12 @@ path_script = "~/.config/vibe/worktree-path.sh"
 echo "${HOME}/worktrees/${VIBE_REPO_NAME}-${VIBE_SANITIZED_BRANCH}"
 ```
 
+### エディタサポート (JSON Schema)
+
+Vibeは`settings.json`用のJSON Schemaを提供しており、自動補完とバリデーションが利用できます。`$schema`プロパティはvibeが設定ファイルを保存する際に**自動的に追加**されます。最新のエディタ（VS Code、IntelliJなど）は自動的に補完を提供します。
+
+VS Codeの手動設定については、[settings.jsonドキュメント](https://vibe.kexi.dev/ja/configuration/settings/#json-schema)を参照してください。
+
 ### セキュリティ: ハッシュ検証
 
 Vibeは`.vibe.toml`と`.vibe.local.toml`ファイルの整合性をSHA-256ハッシュを使って自動的に検証します。これにより、設定ファイルへの不正な変更を防ぎます。

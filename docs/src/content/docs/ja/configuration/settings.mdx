@@ -9,10 +9,11 @@ sidebar:
 
 ## 場所
 
-| プラットフォーム | パス                           |
-| ---------------- | ------------------------------ |
-| macOS            | `~/.config/vibe/settings.json` |
-| Linux            | `~/.config/vibe/settings.json` |
+| プラットフォーム | パス                                       |
+| ---------------- | ------------------------------------------ |
+| macOS            | `~/.config/vibe/settings.json`             |
+| Linux            | `~/.config/vibe/settings.json`             |
+| Windows          | `%USERPROFILE%\.config\vibe\settings.json` |
 
 ## 設定オプション
 
@@ -82,7 +83,7 @@ vibeはエディタの自動補完と検証のためのJSON Schemaを提供し�
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/kexi/vibe/v0.9.0/schemas/settings.schema.json",
+  "$schema": "https://raw.githubusercontent.com/kexi/vibe/v0.10.0/schemas/settings.schema.json",
   "version": 3,
   "clean": {
     "fast_remove": true
@@ -90,7 +91,19 @@ vibeはエディタの自動補完と検証のためのJSON Schemaを提供し�
 }
 ```
 
-スキーマURLにはvibeのバージョンタグ（例：`v0.9.0`）が含まれ、インストールされているバージョンとの互換性が保証されます。
+スキーマURLにはvibeのバージョンタグ（例：`v0.10.0`）が含まれ、インストールされているバージョンとの互換性が保証されます。
+
+### スキーマバージョニング
+
+:::note[スキーマURLの利用可能性]
+スキーマURLは**リリース版**でのみ利用可能です。開発ビルドを使用している場合、バージョンが正式にリリースされるまでスキーマURLにアクセスできない場合があります。
+:::
+
+**アップグレード時の動作:**
+
+- vibeをアップグレードすると、`$schema` URLは自動的に新しいバージョンに更新されます
+- 古いスキーマURLはGitHub上で引き続きアクセス可能なため、既存の設定ファイルは動作し続けます
+- スキーマはメジャーバージョン内で後方互換性があります
 
 ### VS Code設定
 
@@ -101,19 +114,19 @@ VS Codeは`$schema`プロパティがあると自動的に補完を提供しま�
   "json.schemas": [
     {
       "fileMatch": ["**/vibe/settings.json"],
-      "url": "https://raw.githubusercontent.com/kexi/vibe/v0.9.0/schemas/settings.schema.json"
+      "url": "https://raw.githubusercontent.com/kexi/vibe/v0.10.0/schemas/settings.schema.json"
     }
   ]
 }
 ```
 
-`v0.9.0`はインストールしているvibeのバージョンに置き換えてください。
+`v0.10.0`はインストールしているvibeのバージョンに置き換えてください。
 
 ## 完全な例
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/kexi/vibe/v0.9.0/schemas/settings.schema.json",
+  "$schema": "https://raw.githubusercontent.com/kexi/vibe/v0.10.0/schemas/settings.schema.json",
   "version": 3,
   "skipHashCheck": false,
   "worktree": {

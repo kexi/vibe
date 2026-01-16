@@ -9,10 +9,11 @@ The `settings.json` file contains user-specific settings that are stored locally
 
 ## Location
 
-| Platform | Path                           |
-| -------- | ------------------------------ |
-| macOS    | `~/.config/vibe/settings.json` |
-| Linux    | `~/.config/vibe/settings.json` |
+| Platform | Path                                       |
+| -------- | ------------------------------------------ |
+| macOS    | `~/.config/vibe/settings.json`             |
+| Linux    | `~/.config/vibe/settings.json`             |
+| Windows  | `%USERPROFILE%\.config\vibe\settings.json` |
 
 ## Configuration Options
 
@@ -82,7 +83,7 @@ vibe provides a JSON Schema for editor autocompletion and validation. The `$sche
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/kexi/vibe/v0.9.0/schemas/settings.schema.json",
+  "$schema": "https://raw.githubusercontent.com/kexi/vibe/v0.10.0/schemas/settings.schema.json",
   "version": 3,
   "clean": {
     "fast_remove": true
@@ -90,7 +91,19 @@ vibe provides a JSON Schema for editor autocompletion and validation. The `$sche
 }
 ```
 
-The schema URL includes the vibe version tag (e.g., `v0.9.0`) to ensure compatibility with your installed version.
+The schema URL includes the vibe version tag (e.g., `v0.10.0`) to ensure compatibility with your installed version.
+
+### Schema Versioning
+
+:::note[Schema URL Availability]
+Schema URLs are only available for **released versions**. If you're using a development build, the schema URL may not be accessible until the version is officially released.
+:::
+
+**Upgrade behavior:**
+
+- When you upgrade vibe, the `$schema` URL is automatically updated to match your new version
+- Old schema URLs remain accessible on GitHub, so existing settings files continue to work
+- The schema is backward compatible within major versions
 
 ### VS Code Setup
 
@@ -101,19 +114,19 @@ VS Code automatically provides autocompletion when the `$schema` property is pre
   "json.schemas": [
     {
       "fileMatch": ["**/vibe/settings.json"],
-      "url": "https://raw.githubusercontent.com/kexi/vibe/v0.9.0/schemas/settings.schema.json"
+      "url": "https://raw.githubusercontent.com/kexi/vibe/v0.10.0/schemas/settings.schema.json"
     }
   ]
 }
 ```
 
-Replace `v0.9.0` with your installed vibe version.
+Replace `v0.10.0` with your installed vibe version.
 
 ## Full Example
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/kexi/vibe/v0.9.0/schemas/settings.schema.json",
+  "$schema": "https://raw.githubusercontent.com/kexi/vibe/v0.10.0/schemas/settings.schema.json",
   "version": 3,
   "skipHashCheck": false,
   "worktree": {
