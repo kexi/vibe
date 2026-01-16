@@ -9,10 +9,11 @@ vibe can be configured using TOML files to automate your workflow when creating 
 
 ## Configuration Files
 
-| File               | Purpose                   | Git tracked     |
-| ------------------ | ------------------------- | --------------- |
-| `.vibe.toml`       | Shared team configuration | Yes             |
-| `.vibe.local.toml` | Personal local overrides  | No (gitignored) |
+| File               | Purpose                       | Location          | Git tracked     |
+| ------------------ | ----------------------------- | ----------------- | --------------- |
+| `.vibe.toml`       | Shared team configuration     | Repository root   | Yes             |
+| `.vibe.local.toml` | Personal local overrides      | Repository root   | No (gitignored) |
+| `settings.json`    | User-specific global settings | `~/.config/vibe/` | No (user home)  |
 
 ## Basic Example
 
@@ -49,4 +50,5 @@ This registers the SHA-256 hash of your configuration files to prevent unauthori
 
 - [.vibe.toml](/configuration/vibe-toml/) - Shared configuration details
 - [.vibe.local.toml](/configuration/local-config/) - Local overrides
+- [settings.json](/configuration/settings/) - User-specific global settings
 - [Hooks](/configuration/hooks/) - Available hooks and environment variables

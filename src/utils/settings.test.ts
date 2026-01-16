@@ -400,3 +400,31 @@ Deno.test("loadUserSettings handles corrupted JSON gracefully", async () => {
 
   await Deno.remove(tempSettingsPath);
 });
+
+// ===== JSON Schema URL Tests =====
+
+Deno.test("getSettingsSchemaUrl extracts semver from VERSION string", () => {
+  const url = _internal.getSettingsSchemaUrl();
+
+  // URL should contain version tag pattern
+  const isValidUrl = url.startsWith(
+    "https://raw.githubusercontent.com/kexi/vibe/v",
+  );
+  assertEquals(isValidUrl, true);
+
+  // URL should end with schema file path
+  const hasSchemaPath = url.endsWith("/schemas/settings.schema.json");
+  assertEquals(hasSchemaPath, true);
+
+  // Extract version from URL (e.g., "v0.10.0" from full URL)
+  const versionMatch = url.match(/\/v(\d+\.\d+\.\d+)\//);
+  const hasValidSemver = versionMatch !== null;
+  assertEquals(hasValidSemver, true);
+
+  // Version should not contain build metadata (no "+" in version part)
+  if (versionMatch) {
+    const versionPart = versionMatch[1];
+    const hasNoBuildMetadata = !versionPart.includes("+");
+    assertEquals(hasNoBuildMetadata, true);
+  }
+});

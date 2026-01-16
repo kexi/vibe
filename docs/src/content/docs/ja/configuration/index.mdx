@@ -9,10 +9,11 @@ vibeはTOMLファイルを使用して設定でき、Worktreeの作成やクリ�
 
 ## 設定ファイル
 
-| ファイル           | 用途                 | Git管理             |
-| ------------------ | -------------------- | ------------------- |
-| `.vibe.toml`       | チーム共有の設定     | はい                |
-| `.vibe.local.toml` | 個人用ローカル上書き | いいえ（gitignore） |
+| ファイル           | 用途                         | 場所              | Git管理                  |
+| ------------------ | ---------------------------- | ----------------- | ------------------------ |
+| `.vibe.toml`       | チーム共有の設定             | リポジトリルート  | はい                     |
+| `.vibe.local.toml` | 個人用ローカル上書き         | リポジトリルート  | いいえ（gitignore）      |
+| `settings.json`    | ユーザー固有のグローバル設定 | `~/.config/vibe/` | いいえ（ユーザーホーム） |
 
 ## 基本例
 
@@ -49,4 +50,5 @@ vibe trust
 
 - [.vibe.toml](/ja/configuration/vibe-toml/) - 共有設定の詳細
 - [.vibe.local.toml](/ja/configuration/local-config/) - ローカル上書き
+- [settings.json](/ja/configuration/settings/) - ユーザー固有のグローバル設定
 - [フック](/ja/configuration/hooks/) - 利用可能なフックと環境変数
