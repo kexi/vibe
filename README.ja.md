@@ -82,15 +82,12 @@ deno install --global --allow-run --allow-read --allow-write --allow-env --allow
 
 ### mise
 
-まず、vibeプラグインをインストール:
-
-```bash
-mise plugin install vibe https://github.com/kexi/vibe.git#mise-plugin
-```
-
 `.mise.toml`に追加:
 
 ```toml
+[plugins]
+vibe = "https://github.com/kexi/vibe.git#mise-plugin"
+
 [tools]
 vibe = "latest"
 ```

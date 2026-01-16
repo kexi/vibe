@@ -4,16 +4,25 @@
 
 ## Installation
 
+Add to your `.mise.toml`:
+
+```toml
+[plugins]
+vibe = "https://github.com/kexi/vibe.git#mise-plugin"
+
+[tools]
+vibe = "latest"
+```
+
+Then run:
+
 ```bash
-mise plugin install vibe https://github.com/kexi/vibe.git#mise-plugin
+mise install
 ```
 
 ## Usage
 
 ```bash
-# Install latest version
-mise install vibe@latest
-
 # Install specific version
 mise install vibe@0.8.0
 
@@ -25,28 +34,6 @@ mise use -g vibe@latest
 
 # Set local version (in current directory)
 mise use vibe@0.8.0
-```
-
-### Using with mise.toml
-
-Add to your project's `mise.toml`:
-
-```toml
-[tools]
-vibe = "latest"
-```
-
-Or specify a version:
-
-```toml
-[tools]
-vibe = "0.8.0"
-```
-
-Then run:
-
-```bash
-mise install
 ```
 
 ## Shell Setup

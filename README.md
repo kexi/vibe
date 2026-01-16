@@ -82,20 +82,17 @@ deno install --global --allow-run --allow-read --allow-write --allow-env --allow
 
 ### mise
 
-First, install the vibe plugin:
-
-```bash
-mise plugin install vibe https://github.com/kexi/vibe.git#mise-plugin
-```
-
-Then add to your `.mise.toml`:
+Add to your `.mise.toml`:
 
 ```toml
+[plugins]
+vibe = "https://github.com/kexi/vibe.git#mise-plugin"
+
 [tools]
 vibe = "latest"
 ```
 
-And run:
+Then run:
 
 ```bash
 mise install

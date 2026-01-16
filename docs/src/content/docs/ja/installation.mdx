@@ -30,15 +30,12 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
 
   </TabItem>
   <TabItem label="mise">
-    まず、vibeプラグインをインストール：
-
-    ```bash
-    mise plugin install vibe https://github.com/kexi/vibe.git#mise-plugin
-    ```
-
     `.mise.toml`に追加：
 
     ```toml
+    [plugins]
+    vibe = "https://github.com/kexi/vibe.git#mise-plugin"
+
     [tools]
     vibe = "latest"
     ```
