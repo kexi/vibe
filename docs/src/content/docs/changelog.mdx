@@ -5,6 +5,34 @@ description: Version history and release notes for vibe
 
 All notable changes to vibe are documented here.
 
+## v0.9.0
+
+**Released:** 2026-01-16
+
+### Added
+
+- GNU Coding Standards compliant CLI options
+  - `--verbose` / `-V`: Enable verbose output
+  - `--quiet` / `-q`: Suppress non-essential output
+  - `-n` short alias for `--dry-run`
+  - Unknown option detection with helpful error messages
+- **Fast remove** for `vibe clean` command
+  - O(1) instant directory removal by renaming to `.vibe-trash-*`
+  - Background cleanup for improved user experience
+  - Benchmark: 29s → 2s (342K files, 14x faster)
+  - `[clean] fast_remove` config option (enabled by default)
+
+### Changed
+
+- Improved help text formatting with `errorLog` function
+
+### Fixed
+
+- Shell injection prevention in `clean` command
+- Security improvements for clean operations
+
+---
+
 ## v0.8.0
 
 **Released:** 2026-01-14
