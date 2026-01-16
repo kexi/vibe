@@ -1,0 +1,187 @@
+name: Publish to npm
+
+on:
+  release:
+    types: [released]
+
+permissions:
+  contents: read
+
+jobs:
+  # Build native prebuilds for each platform
+  build-native:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+          - os: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+          - os: macos-latest
+            platform: darwin
+            arch: x64
+          - os: macos-latest
+            platform: darwin
+            arch: arm64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install dependencies
+        working-directory: packages/@vibe/native
+        run: pnpm install
+
+      - name: Build prebuild
+        working-directory: packages/@vibe/native
+        run: pnpm run prebuild
+        env:
+          npm_config_arch: ${{ matrix.arch }}
+
+      - name: Upload prebuild artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuild-${{ matrix.platform }}-${{ matrix.arch }}
+          path: packages/@vibe/native/prebuilds
+
+  # Publish @vibe/native with all prebuilds
+  publish-native:
+    needs: build-native
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Download all prebuilds
+        uses: actions/download-artifact@v4
+        with:
+          path: packages/@vibe/native/prebuilds
+          pattern: prebuild-*
+          merge-multiple: true
+
+      - name: List prebuilds
+        run: ls -la packages/@vibe/native/prebuilds/
+
+      - name: Validate version consistency
+        working-directory: packages/@vibe/native
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "Error: Version mismatch!"
+            echo "  Git tag version: $TAG_VERSION"
+            echo "  package.json version: $PKG_VERSION"
+            exit 1
+          fi
+
+          echo "Version validation passed: $TAG_VERSION"
+
+      - name: Publish @vibe/native
+        working-directory: packages/@vibe/native
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # Publish @kexi/vibe (main CLI package)
+  publish-cli:
+    needs: publish-native
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: jdx/mise-action@v2
+
+      - name: Validate version consistency
+        working-directory: npm
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "Error: Version mismatch!"
+            echo "  Git tag version: $TAG_VERSION"
+            echo "  package.json version: $PKG_VERSION"
+            exit 1
+          fi
+
+          echo "Version validation passed: $TAG_VERSION"
+
+      - name: Install dependencies
+        working-directory: npm
+        run: pnpm install
+
+      - name: Generate version.ts for npm
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          REPOSITORY=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('deno.json')).repository)")
+          BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+          cat > src/version.ts << EOF
+          // This file is auto-generated during npm publishing
+          export interface BuildInfo {
+            version: string;
+            repository: string;
+            platform: string;
+            arch: string;
+            target: string;
+            distribution: string;
+            buildTime: string;
+            buildEnv: string;
+          }
+
+          export const BUILD_INFO: BuildInfo = {
+            version: "$VERSION",
+            repository: "$REPOSITORY",
+            platform: "npm",
+            arch: "npm",
+            target: "npm",
+            distribution: "npm",
+            buildTime: "$BUILD_TIME",
+            buildEnv: "github-actions",
+          };
+
+          // Backwards compatibility
+          export const VERSION = BUILD_INFO.version;
+          export const REPOSITORY_URL = BUILD_INFO.repository;
+          EOF
+          echo "Generated src/version.ts with VERSION = \"$VERSION\" for npm distribution"
+
+      - name: Build CLI
+        working-directory: npm
+        run: pnpm run build
+
+      - name: Publish @kexi/vibe
+        working-directory: npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
