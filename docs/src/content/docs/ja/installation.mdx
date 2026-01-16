@@ -9,18 +9,18 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
 
 <Tabs>
   <TabItem label="Homebrew (macOS)">
-    ```bash
+    ```bash frame="terminal"
     brew install kexi/tap/vibe
     ```
   </TabItem>
   <TabItem label="Deno (JSR)">
-    ```bash
+    ```bash frame="terminal"
     deno install -A --global jsr:@kexi/vibe
     ```
 
     **権限設定**: より安全にするため、`-A`の代わりに必要な権限のみを指定できます：
 
-    ```bash
+    ```bash frame="terminal"
     deno install --global --allow-run --allow-read --allow-write --allow-env --allow-ffi jsr:@kexi/vibe
     ```
 
@@ -42,7 +42,7 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
 
     その後、インストール：
 
-    ```bash
+    ```bash frame="terminal"
     mise install
     ```
 
@@ -57,7 +57,7 @@ WSL2ユーザーは、使用しているディストリビューションに応�
 
 <Tabs>
   <TabItem label="Ubuntu/Debian">
-    ```bash
+    ```bash frame="terminal"
     # x64
     curl -LO https://github.com/kexi/vibe/releases/latest/download/vibe_amd64.deb
     sudo apt install ./vibe_amd64.deb
@@ -72,7 +72,7 @@ WSL2ユーザーは、使用しているディストリビューションに応�
 
   </TabItem>
   <TabItem label="その他のディストリビューション">
-    ```bash
+    ```bash frame="terminal"
     # x64
     curl -L https://github.com/kexi/vibe/releases/latest/download/vibe-linux-x64 -o vibe
     chmod +x vibe
@@ -89,7 +89,7 @@ WSL2ユーザーは、使用しているディストリビューションに応�
 
 ## Windows
 
-```powershell
+```powershell frame="terminal"
 # ダウンロード
 Invoke-WebRequest -Uri "https://github.com/kexi/vibe/releases/latest/download/vibe-windows-x64.exe" -OutFile "$env:LOCALAPPDATA\vibe.exe"
 
@@ -102,7 +102,7 @@ $path = [Environment]::GetEnvironmentVariable("Path", "User")
 
 Denoがインストールされている場合、ソースからコンパイルできます：
 
-```bash
+```bash frame="terminal"
 git clone https://github.com/kexi/vibe.git
 cd vibe
 deno compile --allow-run --allow-read --allow-write --allow-env --allow-ffi --output vibe main.ts

@@ -19,12 +19,18 @@ vibeはGit Worktreeの管理を簡素化するCLIツールです。以下のこ�
 import { Tabs, TabItem } from "@astrojs/starlight/components";
 
 <Tabs>
-  <TabItem label="Homebrew">```bash brew install kexi/tap/vibe ```</TabItem>
+  <TabItem label="Homebrew">
+    ```bash frame="terminal"
+    brew install kexi/tap/vibe
+    ```
+  </TabItem>
   <TabItem label="Deno">
-    ```bash deno install -A --global jsr:@kexi/vibe ```
+    ```bash frame="terminal"
+    deno install -A --global jsr:@kexi/vibe
+    ```
   </TabItem>
   <TabItem label="Linux">
-    ```bash
+    ```bash frame="terminal"
     # Ubuntu/Debian (x64)
     curl -LO https://github.com/kexi/vibe/releases/latest/download/vibe_amd64.deb
     sudo apt install ./vibe_amd64.deb
@@ -36,7 +42,7 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
 
   </TabItem>
   <TabItem label="Windows">
-    ```powershell
+    ```powershell frame="terminal"
     Invoke-WebRequest -Uri "https://github.com/kexi/vibe/releases/latest/download/vibe-windows-x64.exe" -OutFile "$env:LOCALAPPDATA\vibe.exe"
     # PATHに追加（初回のみ）
     $path = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -52,19 +58,19 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
 
 <Tabs>
   <TabItem label="Zsh">
-    ```bash
+    ```bash frame="terminal"
     # ~/.zshrc に追加
     vibe() { eval "$(command vibe "$@")" }
     ```
   </TabItem>
   <TabItem label="Bash">
-    ```bash
+    ```bash frame="terminal"
     # ~/.bashrc に追加
     vibe() { eval "$(command vibe "$@")"; }
     ```
   </TabItem>
   <TabItem label="Fish">
-    ```fish
+    ```fish frame="terminal"
     # ~/.config/fish/config.fish に追加
     function vibe
         eval (command vibe $argv)
@@ -72,7 +78,7 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     ```
   </TabItem>
   <TabItem label="Nushell">
-    ```nu
+    ```nu frame="terminal"
     # ~/.config/nushell/config.nu に追加
     def --env vibe [...args] {
         ^vibe ...$args | lines | each { |line| nu -c $line }
@@ -80,7 +86,7 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     ```
   </TabItem>
   <TabItem label="PowerShell">
-    ```powershell
+    ```powershell frame="terminal"
     # $PROFILE に追加
     function vibe { Invoke-Expression (& vibe.exe $args) }
     ```
@@ -89,7 +95,7 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
 
 ### 3. 最初のWorktreeを作成
 
-```bash
+```bash frame="terminal"
 # 新機能の作業を開始
 vibe start feat/my-new-feature
 
