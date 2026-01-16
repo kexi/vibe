@@ -89,12 +89,19 @@ Configure this in `~/.config/vibe/settings.json`:
 
 **How it works:**
 
-1. The worktree directory is instantly renamed to a hidden `.vibe-trash-*` directory (O(1) operation)
+The behavior differs by platform:
+
+- **macOS**: Items are moved to the system Trash via Finder. This allows recovery if needed and ensures reliable cleanup managed by the OS.
+- **Linux/Windows**: Items are moved to the system temp directory (`/tmp` or `%TEMP%`) and deleted in the background using `nohup`. Temp directories are automatically cleaned on system reboot.
+
+**Detailed process:**
+
+1. The worktree directory is instantly moved (O(1) rename operation)
 2. Git worktree metadata is cleaned up on the now-empty directory
 3. The actual file deletion happens asynchronously in the background
 4. Previous `.vibe-trash-*` directories are automatically cleaned up
 
-**Note:** If the fast rename fails for any reason, it automatically falls back to traditional deletion.
+**Note:** If the fast move fails for any reason (e.g., cross-device link error), it automatically falls back to traditional deletion.
 
 ## Behavior
 
