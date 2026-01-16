@@ -26,27 +26,35 @@ function generateTrashName(): string {
 /**
  * Spawn a detached background process to delete a directory
  * This process runs independently and won't block the parent from exiting
+ *
+ * Note: Uses direct command execution with unref() to avoid shell injection
+ * while ensuring the process is truly detached from the parent.
  */
 function spawnBackgroundDelete(trashPath: string): void {
   const isWindows = Deno.build.os === "windows";
 
   if (isWindows) {
     // Windows: use cmd /c with start /b for detached process
-    new Deno.Command("cmd", {
+    // Path is passed as separate argument to avoid shell interpretation
+    const child = new Deno.Command("cmd", {
       args: ["/c", "start", "/b", "cmd", "/c", "rd", "/s", "/q", trashPath],
       stdin: "null",
       stdout: "null",
       stderr: "null",
     }).spawn();
+    // Unref to allow parent to exit without waiting
+    child.unref();
   } else {
-    // macOS/Linux: use rm -rf with nohup-like behavior via shell
-    // The subshell with & ensures the process is detached
-    new Deno.Command("sh", {
-      args: ["-c", `rm -rf '${trashPath.replace(/'/g, "'\\''")}' &`],
+    // macOS/Linux: use rm directly
+    // Path is passed as argument, avoiding shell injection
+    const child = new Deno.Command("rm", {
+      args: ["-rf", trashPath],
       stdin: "null",
       stdout: "null",
       stderr: "null",
     }).spawn();
+    // Unref to allow parent to exit without waiting for child
+    child.unref();
   }
 }
 
