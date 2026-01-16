@@ -35,6 +35,7 @@
   },
   "lint": {
     "include": ["src/", "main.ts"],
+    "exclude": ["src/runtime/node/"],
     "rules": {
       "tags": ["recommended"]
     }
@@ -54,6 +55,6 @@
   "publish": {
     "exclude": ["!src/version.ts"]
   },
-  "nodeModulesDir": "auto",
+  "nodeModulesDir": "none",
   "minimumDependencyAge": "P3D"
 }
