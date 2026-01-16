@@ -80,14 +80,22 @@ deno install --global --allow-run --allow-read --allow-write --allow-env --allow
 
 > Note: `--allow-ffi` enables optimized Copy-on-Write file cloning on macOS (APFS) and Linux (Btrfs/XFS). The tool works without it but may be slightly slower for directory copies.
 
-**Using with mise**: Add to your `.mise.toml`:
+### mise
+
+First, install the vibe plugin:
+
+```bash
+mise plugin install vibe https://github.com/kexi/vibe.git#mise-plugin
+```
+
+Then add to your `.mise.toml`:
 
 ```toml
 [tools]
-"jsr:@kexi/vibe" = "latest"
+vibe = "latest"
 ```
 
-Then run:
+And run:
 
 ```bash
 mise install

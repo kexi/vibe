@@ -34,12 +34,14 @@ local function get_downloaded_filename()
     return "vibe-" .. platform.os .. "-" .. platform.arch .. platform.ext
 end
 
+-- Shell-escape a string to prevent command injection
+local function shell_escape(s)
+    return "'" .. s:gsub("'", "'\\''") .. "'"
+end
+
 function PLUGIN:PostInstall(ctx)
     local sdkInfo = ctx.sdkInfo[PLUGIN.name]
     local path = sdkInfo.path
-
-    -- Create bin directory
-    os.execute("mkdir -p " .. path .. "/bin")
 
     -- Determine source and destination file names
     local os_name = RUNTIME.osType:lower()
@@ -51,26 +53,44 @@ function PLUGIN:PostInstall(ctx)
         destFilename = "vibe.exe"
     end
 
+    local binDir = path .. "/bin"
     local srcFile = path .. "/" .. srcFilename
-    local destFile = path .. "/bin/" .. destFilename
+    local destFile = binDir .. "/" .. destFilename
 
-    -- Move binary to bin/ and rename
-    local result = os.execute("mv " .. srcFile .. " " .. destFile)
-    if result ~= 0 then
+    -- Create bin directory (platform-specific)
+    local mkdirResult
+    if isWindows then
+        mkdirResult = os.execute("if not exist " .. shell_escape(binDir) .. " mkdir " .. shell_escape(binDir))
+    else
+        mkdirResult = os.execute("mkdir -p " .. shell_escape(binDir))
+    end
+    if mkdirResult ~= 0 then
+        error("Failed to create bin directory")
+    end
+
+    -- Move binary to bin/ and rename (platform-specific)
+    local mvResult
+    if isWindows then
+        mvResult = os.execute("move " .. shell_escape(srcFile) .. " " .. shell_escape(destFile))
+    else
+        mvResult = os.execute("mv " .. shell_escape(srcFile) .. " " .. shell_escape(destFile))
+    end
+    if mvResult ~= 0 then
         error("Failed to move vibe binary to bin/")
     end
 
     -- Set executable permission on Unix systems
     local isUnix = not isWindows
     if isUnix then
-        local chmodResult = os.execute("chmod +x " .. destFile)
+        local chmodResult = os.execute("chmod +x " .. shell_escape(destFile))
         if chmodResult ~= 0 then
             error("Failed to set executable permission on vibe")
         end
     end
 
-    -- Verify installation
-    local testResult = os.execute(destFile .. " --version > /dev/null 2>&1")
+    -- Verify installation (platform-specific null device)
+    local nullDevice = isWindows and "NUL" or "/dev/null"
+    local testResult = os.execute(shell_escape(destFile) .. " --version > " .. nullDevice .. " 2>&1")
     if testResult ~= 0 then
         error("vibe installation verification failed")
     end
