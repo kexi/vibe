@@ -2,6 +2,7 @@ import { basename, dirname, isAbsolute, join } from "@std/path";
 import { z } from "zod";
 import { calculateFileHash, calculateHashFromContent } from "./hash.ts";
 import { getRepoInfoFromPath, type RepoInfo } from "./git.ts";
+import { VERSION } from "../version.ts";
 
 // Settings file path
 const CONFIG_DIR = join(Deno.env.get("HOME") ?? "", ".config", "vibe");
@@ -9,6 +10,13 @@ const USER_SETTINGS_FILE = join(CONFIG_DIR, "settings.json");
 
 // Current schema version
 const CURRENT_SCHEMA_VERSION = 3;
+
+// JSON Schema URL for editor autocompletion (version-tagged)
+function getSettingsSchemaUrl(): string {
+  // Extract semver from VERSION (e.g., "0.9.0+de25205" -> "v0.9.0")
+  const semver = VERSION.split("+")[0];
+  return `https://raw.githubusercontent.com/kexi/vibe/v${semver}/schemas/settings.schema.json`;
+}
 
 // Maximum number of hashes to keep per file (FIFO)
 // 100 hashes × 64 bytes (SHA-256 hex) = ~6.4KB per file
@@ -51,6 +59,7 @@ const SettingsSchemaV2 = z.object({
 
 // v3 schema - repository-based trust + worktree config
 const SettingsSchemaV3 = z.object({
+  $schema: z.string().optional(),
   version: z.literal(3),
   skipHashCheck: z.boolean().optional(),
   worktree: z.object({
@@ -304,7 +313,13 @@ export async function saveUserSettings(settings: VibeSettings): Promise<void> {
   }
 
   await ensureConfigDir();
-  const content = JSON.stringify(settings, null, 2) + "\n";
+
+  // Always add $schema for editor autocompletion
+  const settingsWithSchema = {
+    $schema: getSettingsSchemaUrl(),
+    ...settings,
+  };
+  const content = JSON.stringify(settingsWithSchema, null, 2) + "\n";
 
   // Use atomic write via temp file + rename to prevent corruption during concurrent writes
   // Use crypto.randomUUID() to ensure unique temp files for concurrent operations
