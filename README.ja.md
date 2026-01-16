@@ -86,7 +86,7 @@ deno install --global --allow-run --allow-read --allow-write --allow-env --allow
 
 ```toml
 [plugins]
-vibe = "https://github.com/kexi/vibe.git#mise-plugin"
+vibe = "https://github.com/kexi/mise-vibe"
 
 [tools]
 vibe = "latest"

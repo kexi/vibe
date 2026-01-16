@@ -86,7 +86,7 @@ Add to your `.mise.toml`:
 
 ```toml
 [plugins]
-vibe = "https://github.com/kexi/vibe.git#mise-plugin"
+vibe = "https://github.com/kexi/mise-vibe"
 
 [tools]
 vibe = "latest"

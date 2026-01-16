@@ -149,62 +149,8 @@ jobs:
         working-directory: docs
         run: pnpm build
 
-  mise-plugin-test:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install mise
-        uses: jdx/mise-action@v2
-
-      - name: Create local mise-plugin branch
-        shell: bash
-        run: |
-          # Create a local mise-plugin branch from the mise-plugin directory
-          cd "${{ github.workspace }}"
-          git checkout --orphan mise-plugin-temp
-          git rm -rf .
-          git checkout ${{ github.sha }} -- mise-plugin
-          mv mise-plugin/* .
-          mv mise-plugin/.luacheckrc . 2>/dev/null || true
-          rmdir mise-plugin
-          git add -A
-          git config user.name "test"
-          git config user.email "test@test.com"
-          git commit -m "mise-plugin test branch"
-          git branch -m mise-plugin
-          git checkout ${{ github.sha }}
-
-      - name: Install vibe plugin from local repo
-        shell: bash
-        run: |
-          mise plugin install vibe "file://${{ github.workspace }}#mise-plugin"
-
-      - name: List available versions
-        shell: bash
-        run: |
-          mise ls-remote vibe | head -10
-
-      - name: Install vibe@latest
-        shell: bash
-        run: |
-          mise install vibe@latest
-
-      - name: Verify vibe installation
-        shell: bash
-        run: |
-          mise exec vibe -- vibe --version
-
-      - name: Verify vibe is in PATH
-        shell: bash
-        run: |
-          mise which vibe
-
   build:
-    needs: [build-binaries, build-deb, mise-plugin-test]
+    needs: [build-binaries, build-deb]
     runs-on: ubuntu-latest
     steps:
       - run: echo "All builds completed successfully"
