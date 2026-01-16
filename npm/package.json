@@ -31,7 +31,7 @@
     "zod": "^3.23.0"
   },
   "optionalDependencies": {
-    "@vibe/native": "^0.10.0"
+    "@kexi/vibe-native": "^0.10.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

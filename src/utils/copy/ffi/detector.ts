@@ -15,7 +15,7 @@ export function isFFIAvailable(): boolean {
     }
   }
 
-  // Node.js: Check if @vibe/native is available
+  // Node.js: Check if @kexi/vibe-native is available
   // Note: Actual availability check is done in getNativeClone() which uses dynamic import
   if (IS_NODE) {
     // Return true here to indicate FFI mechanism is available on Node.js
@@ -31,7 +31,7 @@ export function isFFIAvailable(): boolean {
  * Returns null if native clone is not available or the OS is not supported
  */
 export async function getNativeClone(): Promise<NativeClone | null> {
-  // Node.js: Use @vibe/native module
+  // Node.js: Use @kexi/vibe-native module
   if (IS_NODE) {
     try {
       const { createNodeNativeClone } = await import("../../../runtime/node/native.ts");

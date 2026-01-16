@@ -26,6 +26,6 @@ export const nodeRuntime: Runtime = {
   errors: nodeErrors,
   signals: nodeSignals,
   // FFI is not available in Node.js by default
-  // Use @vibe/native package for native operations
+  // Use @kexi/vibe-native package for native operations
   ffi: undefined,
 };

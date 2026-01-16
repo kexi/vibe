@@ -1,5 +1,5 @@
 /**
- * @vibe/native - Native clone operations
+ * @kexi/vibe-native - Native clone operations
  *
  * Provides Copy-on-Write cloning using:
  * - macOS: clonefile() on APFS

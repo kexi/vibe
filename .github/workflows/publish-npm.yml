@@ -40,11 +40,11 @@ jobs:
           version: 9
 
       - name: Install dependencies
-        working-directory: packages/@vibe/native
+        working-directory: packages/@kexi/vibe-native
         run: pnpm install
 
       - name: Build prebuild
-        working-directory: packages/@vibe/native
+        working-directory: packages/@kexi/vibe-native
         run: pnpm run prebuild
         env:
           npm_config_arch: ${{ matrix.arch }}
@@ -53,10 +53,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: prebuild-${{ matrix.platform }}-${{ matrix.arch }}
-          path: packages/@vibe/native/prebuilds/
+          path: packages/@kexi/vibe-native/prebuilds/
           if-no-files-found: error
 
-  # Publish @vibe/native with all prebuilds
+  # Publish @kexi/vibe-native with all prebuilds
   publish-native:
     needs: build-native
     runs-on: ubuntu-latest
@@ -76,15 +76,15 @@ jobs:
       - name: Download all prebuilds
         uses: actions/download-artifact@v4
         with:
-          path: packages/@vibe/native/prebuilds/
+          path: packages/@kexi/vibe-native/prebuilds/
           pattern: prebuild-*
           merge-multiple: true
 
       - name: List prebuilds
-        run: find packages/@vibe/native/prebuilds/ -type f | head -20
+        run: find packages/@kexi/vibe-native/prebuilds/ -type f | head -20
 
       - name: Validate version consistency
-        working-directory: packages/@vibe/native
+        working-directory: packages/@kexi/vibe-native
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           PKG_VERSION=$(node -p "require('./package.json').version")
@@ -98,8 +98,8 @@ jobs:
 
           echo "Version validation passed: $TAG_VERSION"
 
-      - name: Publish @vibe/native
-        working-directory: packages/@vibe/native
+      - name: Publish @kexi/vibe-native
+        working-directory: packages/@kexi/vibe-native
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

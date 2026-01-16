@@ -37,8 +37,8 @@ dist/
 npm/dist/
 
 # Native module build artifacts
-packages/@vibe/native/build/
-packages/@vibe/native/prebuilds/
+packages/@kexi/vibe-native/build/
+packages/@kexi/vibe-native/prebuilds/
 
 # Test coverage
 coverage/
