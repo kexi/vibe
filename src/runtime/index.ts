@@ -87,7 +87,6 @@ if (IS_DENO) {
  * Thread-safe: Uses a flag to prevent concurrent initialization and
  * clears the promise after completion to allow retry on failure.
  */
-// deno-lint-ignore require-await
 export async function getRuntime(): Promise<Runtime> {
   // Fast path: already initialized
   if (runtimeInstance) {
