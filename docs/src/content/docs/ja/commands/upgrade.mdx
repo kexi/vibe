@@ -23,6 +23,22 @@ vibe upgrade
 vibe upgrade --check
 ```
 
+### `-V`, `--verbose`
+
+確認中のレジストリURLなど、詳細な出力を表示します。
+
+```bash
+vibe upgrade --verbose
+```
+
+### `-q`, `--quiet`
+
+不要な出力を抑制します。アップデートがあるかどうかのみ表示します。
+
+```bash
+vibe upgrade --quiet
+```
+
 ## 動作
 
 ### バージョンチェック
@@ -49,7 +65,8 @@ vibeはインストール方法を自動検出し、適切なアップグレー�
 | 方法     | アップグレードコマンド                     |
 | -------- | ------------------------------------------ |
 | Homebrew | `brew upgrade vibe`                        |
-| JSR      | `deno install -A --global jsr:@kexi/vibe`  |
+| mise     | `mise upgrade vibe`                        |
+| Deno     | `deno install -A --global jsr:@kexi/vibe`  |
 | Deb      | `sudo apt update && sudo apt upgrade vibe` |
 | Binary   | GitHubリリースのダウンロードリンクを表示   |
 | Dev      | `deno task compile`                        |

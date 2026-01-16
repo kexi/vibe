@@ -9,18 +9,18 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
 
 <Tabs>
   <TabItem label="Homebrew (macOS)">
-    ```bash
+    ```bash frame="terminal"
     brew install kexi/tap/vibe
     ```
   </TabItem>
   <TabItem label="Deno (JSR)">
-    ```bash
+    ```bash frame="terminal"
     deno install -A --global jsr:@kexi/vibe
     ```
 
     **Permissions**: For more security, you can specify exact permissions instead of `-A`:
 
-    ```bash
+    ```bash frame="terminal"
     deno install --global --allow-run --allow-read --allow-write --allow-env --allow-ffi jsr:@kexi/vibe
     ```
 
@@ -33,13 +33,16 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     Add to your `.mise.toml`:
 
     ```toml
+    [plugins]
+    vibe = "https://github.com/kexi/mise-vibe"
+
     [tools]
-    "jsr:@kexi/vibe" = "latest"
+    vibe = "latest"
     ```
 
     Then run:
 
-    ```bash
+    ```bash frame="terminal"
     mise install
     ```
 
@@ -54,7 +57,7 @@ WSL2 users can use the Linux installation methods below based on their distribut
 
 <Tabs>
   <TabItem label="Ubuntu/Debian">
-    ```bash
+    ```bash frame="terminal"
     # x64
     curl -LO https://github.com/kexi/vibe/releases/latest/download/vibe_amd64.deb
     sudo apt install ./vibe_amd64.deb
@@ -69,7 +72,7 @@ WSL2 users can use the Linux installation methods below based on their distribut
 
   </TabItem>
   <TabItem label="Other Distributions">
-    ```bash
+    ```bash frame="terminal"
     # x64
     curl -L https://github.com/kexi/vibe/releases/latest/download/vibe-linux-x64 -o vibe
     chmod +x vibe
@@ -86,7 +89,7 @@ WSL2 users can use the Linux installation methods below based on their distribut
 
 ## Windows
 
-```powershell
+```powershell frame="terminal"
 # Download
 Invoke-WebRequest -Uri "https://github.com/kexi/vibe/releases/latest/download/vibe-windows-x64.exe" -OutFile "$env:LOCALAPPDATA\vibe.exe"
 
@@ -99,7 +102,7 @@ $path = [Environment]::GetEnvironmentVariable("Path", "User")
 
 If you have Deno installed, you can compile from source:
 
-```bash
+```bash frame="terminal"
 git clone https://github.com/kexi/vibe.git
 cd vibe
 deno compile --allow-run --allow-read --allow-write --allow-env --allow-ffi --output vibe main.ts

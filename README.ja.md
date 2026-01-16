@@ -48,6 +48,16 @@ $ vibe start feat/new-feature
 既存のworktreeに移動しますか? (Y/n)
 ```
 
+### グローバルオプション
+
+| オプション        | 説明                                     |
+| ----------------- | ---------------------------------------- |
+| `-h`, `--help`    | ヘルプメッセージを表示                   |
+| `-v`, `--version` | バージョン情報を表示                     |
+| `-V`, `--verbose` | 詳細な出力を表示                         |
+| `-q`, `--quiet`   | 不要な出力を抑制                         |
+| `-n`, `--dry-run` | 実行せずに操作内容をプレビュー（startのみ） |
+
 ## インストール
 
 ### Homebrew (macOS)
@@ -70,11 +80,16 @@ deno install --global --allow-run --allow-read --allow-write --allow-env --allow
 
 > 注意: `--allow-ffi`はmacOS (APFS)とLinux (Btrfs/XFS)で最適化されたCopy-on-Writeファイルクローニングを有効にします。このフラグがなくても動作しますが、ディレクトリコピーが若干遅くなる可能性があります。
 
-**miseを使う場合**: `.mise.toml`に追加:
+### mise
+
+`.mise.toml`に追加:
 
 ```toml
+[plugins]
+vibe = "https://github.com/kexi/mise-vibe"
+
 [tools]
-"jsr:@kexi/vibe" = "latest"
+vibe = "latest"
 ```
 
 その後、インストール:

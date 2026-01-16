@@ -1,11 +1,12 @@
 import { BUILD_INFO } from "../version.ts";
+import { log, type OutputOptions, verboseLog } from "../utils/output.ts";
 
 const JSR_META_URL = "https://jsr.io/@kexi/vibe/meta.json";
 const GITHUB_RELEASES_URL = "https://github.com/kexi/vibe/releases";
 
 type InstallMethod = "jsr" | "homebrew" | "deb" | "binary" | "dev" | "unknown";
 
-interface UpgradeOptions {
+interface UpgradeOptions extends OutputOptions {
   check: boolean;
 }
 
@@ -211,13 +212,15 @@ function getUpgradeCommand(method: InstallMethod): string | null {
 export async function upgradeCommand(
   options: UpgradeOptions = { check: false },
 ): Promise<void> {
-  const { check } = options;
+  const { check, verbose = false, quiet = false } = options;
+  const outputOpts: OutputOptions = { verbose, quiet };
 
   try {
     const currentVersion = parseSemver(BUILD_INFO.version);
 
-    console.error(`vibe ${BUILD_INFO.version}`);
-    console.error("");
+    verboseLog(`Checking for updates from ${JSR_META_URL}`, outputOpts);
+    log(`vibe ${BUILD_INFO.version}`, outputOpts);
+    log("", outputOpts);
 
     // Fetch latest version
     let latestVersion: string;
@@ -241,36 +244,37 @@ export async function upgradeCommand(
     const isUpToDate = comparison >= 0;
 
     if (isUpToDate) {
-      console.error("You are using the latest version.");
+      log("You are using the latest version.", outputOpts);
       return;
     }
 
     // Update available
-    console.error(`A new version is available: ${latestVersion}`);
-    console.error("");
+    log(`A new version is available: ${latestVersion}`, outputOpts);
+    log("", outputOpts);
 
     // If --check flag, just show version info
     if (check) {
-      console.error(`Current: ${currentVersion}`);
-      console.error(`Latest:  ${latestVersion}`);
+      log(`Current: ${currentVersion}`, outputOpts);
+      log(`Latest:  ${latestVersion}`, outputOpts);
       return;
     }
 
     // Detect installation method and show upgrade command
     const installMethod = detectInstallMethod();
-    const upgradeCommand = getUpgradeCommand(installMethod);
+    verboseLog(`Detected install method: ${installMethod}`, outputOpts);
+    const upgradeCmd = getUpgradeCommand(installMethod);
 
-    if (upgradeCommand) {
-      console.error("To upgrade:");
-      console.error(`  ${upgradeCommand}`);
+    if (upgradeCmd) {
+      log("To upgrade:", outputOpts);
+      log(`  ${upgradeCmd}`, outputOpts);
     } else {
-      console.error("Download the latest version:");
-      console.error(`  ${GITHUB_RELEASES_URL}/tag/v${latestVersion}`);
+      log("Download the latest version:", outputOpts);
+      log(`  ${GITHUB_RELEASES_URL}/tag/v${latestVersion}`, outputOpts);
     }
 
-    console.error("");
-    console.error("Release notes:");
-    console.error(`  ${GITHUB_RELEASES_URL}/tag/v${latestVersion}`);
+    log("", outputOpts);
+    log("Release notes:", outputOpts);
+    log(`  ${GITHUB_RELEASES_URL}/tag/v${latestVersion}`, outputOpts);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${errorMessage}`);

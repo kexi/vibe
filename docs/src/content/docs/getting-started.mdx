@@ -19,12 +19,18 @@ vibe is a CLI tool that simplifies Git Worktree management. It helps you:
 import { Tabs, TabItem } from "@astrojs/starlight/components";
 
 <Tabs>
-  <TabItem label="Homebrew">```bash brew install kexi/tap/vibe ```</TabItem>
+  <TabItem label="Homebrew">
+    ```bash frame="terminal"
+    brew install kexi/tap/vibe
+    ```
+  </TabItem>
   <TabItem label="Deno">
-    ```bash deno install -A --global jsr:@kexi/vibe ```
+    ```bash frame="terminal"
+    deno install -A --global jsr:@kexi/vibe
+    ```
   </TabItem>
   <TabItem label="Linux">
-    ```bash
+    ```bash frame="terminal"
     # Ubuntu/Debian (x64)
     curl -LO https://github.com/kexi/vibe/releases/latest/download/vibe_amd64.deb
     sudo apt install ./vibe_amd64.deb
@@ -36,7 +42,7 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
 
   </TabItem>
   <TabItem label="Windows">
-    ```powershell
+    ```powershell frame="terminal"
     Invoke-WebRequest -Uri "https://github.com/kexi/vibe/releases/latest/download/vibe-windows-x64.exe" -OutFile "$env:LOCALAPPDATA\vibe.exe"
     # Add to PATH (first time only)
     $path = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -52,19 +58,19 @@ Add the following to your shell configuration:
 
 <Tabs>
   <TabItem label="Zsh">
-    ```bash
+    ```bash frame="terminal"
     # Add to ~/.zshrc
     vibe() { eval "$(command vibe "$@")" }
     ```
   </TabItem>
   <TabItem label="Bash">
-    ```bash
+    ```bash frame="terminal"
     # Add to ~/.bashrc
     vibe() { eval "$(command vibe "$@")"; }
     ```
   </TabItem>
   <TabItem label="Fish">
-    ```fish
+    ```fish frame="terminal"
     # Add to ~/.config/fish/config.fish
     function vibe
         eval (command vibe $argv)
@@ -72,7 +78,7 @@ Add the following to your shell configuration:
     ```
   </TabItem>
   <TabItem label="Nushell">
-    ```nu
+    ```nu frame="terminal"
     # Add to ~/.config/nushell/config.nu
     def --env vibe [...args] {
         ^vibe ...$args | lines | each { |line| nu -c $line }
@@ -80,7 +86,7 @@ Add the following to your shell configuration:
     ```
   </TabItem>
   <TabItem label="PowerShell">
-    ```powershell
+    ```powershell frame="terminal"
     # Add to your $PROFILE
     function vibe { Invoke-Expression (& vibe.exe $args) }
     ```
@@ -89,7 +95,7 @@ Add the following to your shell configuration:
 
 ### 3. Create your first worktree
 
-```bash
+```bash frame="terminal"
 # Start working on a new feature
 vibe start feat/my-new-feature
 

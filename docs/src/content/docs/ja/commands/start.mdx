@@ -17,12 +17,14 @@ vibe start <branch> [options]
 
 ## オプション
 
-| オプション   | 説明                                     |                          |
-| ------------ | ---------------------------------------- | ------------------------ |
-| `--reuse`    | 既存ブランチを使用（新規作成しない）     |                          |
-| `--no-hooks` | pre-startとpost-startフックをスキップ    | <Badge text="v0.5.0+" /> |
-| `--no-copy`  | ファイル・ディレクトリのコピーをスキップ | <Badge text="v0.5.0+" /> |
-| `--dry-run`  | 実行せずに操作内容をプレビュー           | <Badge text="v0.8.0+" /> |
+| オプション        | 説明                                     |                          |
+| ----------------- | ---------------------------------------- | ------------------------ |
+| `--reuse`         | 既存ブランチを使用（新規作成しない）     |                          |
+| `--no-hooks`      | pre-startとpost-startフックをスキップ    | <Badge text="v0.5.0+" /> |
+| `--no-copy`       | ファイル・ディレクトリのコピーをスキップ | <Badge text="v0.5.0+" /> |
+| `-n`, `--dry-run` | 実行せずに操作内容をプレビュー           | <Badge text="v0.8.0+" /> |
+| `-V`, `--verbose` | 詳細な出力を表示                         | <Badge text="v0.8.0+" /> |
+| `-q`, `--quiet`   | 不要な出力を抑制                         | <Badge text="v0.8.0+" /> |
 
 ## 例
 
@@ -39,8 +41,14 @@ vibe start feat/quick-fix --no-hooks
 # ファイルコピーなしで開始
 vibe start feat/clean-slate --no-copy
 
-# 実行内容をプレビュー
-vibe start feat/preview --dry-run
+# 実行内容をプレビュー（短縮オプション）
+vibe start feat/preview -n
+
+# 詳細な出力を表示
+vibe start feat/debug -V
+
+# 出力を抑制
+vibe start feat/silent -q
 ```
 
 ## 動作

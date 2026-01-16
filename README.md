@@ -48,6 +48,16 @@ Branch 'feat/new-feature' is already in use by worktree '/path/to/repo-feat-new-
 Navigate to the existing worktree? (Y/n)
 ```
 
+### Global Options
+
+| Option            | Description                                        |
+| ----------------- | -------------------------------------------------- |
+| `-h`, `--help`    | Show help message                                  |
+| `-v`, `--version` | Show version information                           |
+| `-V`, `--verbose` | Show detailed output                               |
+| `-q`, `--quiet`   | Suppress non-essential output                      |
+| `-n`, `--dry-run` | Preview operations without executing (start only)  |
+
 ## Installation
 
 ### Homebrew (macOS)
@@ -70,11 +80,16 @@ deno install --global --allow-run --allow-read --allow-write --allow-env --allow
 
 > Note: `--allow-ffi` enables optimized Copy-on-Write file cloning on macOS (APFS) and Linux (Btrfs/XFS). The tool works without it but may be slightly slower for directory copies.
 
-**Using with mise**: Add to your `.mise.toml`:
+### mise
+
+Add to your `.mise.toml`:
 
 ```toml
+[plugins]
+vibe = "https://github.com/kexi/mise-vibe"
+
 [tools]
-"jsr:@kexi/vibe" = "latest"
+vibe = "latest"
 ```
 
 Then run:

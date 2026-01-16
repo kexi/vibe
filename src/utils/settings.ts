@@ -56,6 +56,9 @@ const SettingsSchemaV3 = z.object({
   worktree: z.object({
     path_script: z.string().optional(),
   }).optional(),
+  clean: z.object({
+    fast_remove: z.boolean().optional(),
+  }).optional(),
   permissions: z.object({
     allow: z.array(z.object({
       repoId: z.object({

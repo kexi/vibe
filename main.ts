@@ -8,6 +8,25 @@ import { configCommand } from "./src/commands/config.ts";
 import { upgradeCommand } from "./src/commands/upgrade.ts";
 import { BUILD_INFO } from "./src/version.ts";
 
+/**
+ * Boolean options supported by the CLI.
+ * Single source of truth for option parsing and validation.
+ */
+const BOOLEAN_OPTIONS = [
+  "help",
+  "version",
+  "verbose",
+  "quiet",
+  "reuse",
+  "no-hooks",
+  "no-copy",
+  "dry-run",
+  "force",
+  "delete-branch",
+  "keep-branch",
+  "check",
+] as const;
+
 const HELP_TEXT = `vibe - git worktree helper
 
 Installation:
@@ -33,17 +52,21 @@ Usage:
   vibe config                         Show current settings
   vibe upgrade [options]              Check for updates and show upgrade instructions
 
-Options:
+Global Options:
   -h, --help        Show this help message
   -v, --version     Show version information
-  --reuse           Use existing branch instead of creating a new one
-  --no-hooks        Skip pre-start and post-start hooks
-  --no-copy         Skip copying files and directories
-  --dry-run         Show what would be executed without making changes
-  -f, --force       Skip confirmation prompts (for clean command)
-  --delete-branch   Delete the branch after removing the worktree
-  --keep-branch     Keep the branch after removing the worktree
-  --check           Check for updates without showing upgrade instructions (upgrade command)
+  -V, --verbose     Show detailed output
+  -q, --quiet       Suppress non-essential output
+
+Command Options:
+  --reuse           Use existing branch instead of creating a new one (start)
+  --no-hooks        Skip pre-start and post-start hooks (start)
+  --no-copy         Skip copying files and directories (start)
+  -n, --dry-run     Show what would be executed without making changes (start)
+  -f, --force       Skip confirmation prompts (clean)
+  --delete-branch   Delete the branch after removing the worktree (clean)
+  --keep-branch     Keep the branch after removing the worktree (clean)
+  --check           Check for updates without showing upgrade instructions (upgrade)
 
 Setup:
   Add this to your .zshrc:
@@ -63,20 +86,39 @@ Examples:
 
 async function main(): Promise<void> {
   const args = parseArgs(Deno.args, {
-    boolean: [
-      "help",
-      "version",
-      "reuse",
-      "no-hooks",
-      "no-copy",
-      "dry-run",
-      "force",
-      "delete-branch",
-      "keep-branch",
-      "check",
-    ],
-    alias: { h: "help", v: "version", f: "force" },
+    boolean: [...BOOLEAN_OPTIONS],
+    alias: {
+      h: "help",
+      v: "version",
+      V: "verbose",
+      q: "quiet",
+      n: "dry-run",
+      f: "force",
+    },
   });
+
+  // Check for unknown options (includes "_" for positional args and alias keys)
+  const ALIAS_KEYS = ["h", "v", "V", "q", "n", "f"] as const;
+  const knownOptions = new Set<string>([...BOOLEAN_OPTIONS, "_", ...ALIAS_KEYS]);
+
+  for (const key of Object.keys(args)) {
+    const isUnknownOption = !knownOptions.has(key);
+    if (isUnknownOption) {
+      console.error(`Error: Unknown option '--${key}'`);
+      console.error("Run 'vibe --help' for usage.");
+      Deno.exit(1);
+    }
+  }
+
+  // Warn when both --verbose and --quiet are specified.
+  // Note: Warnings and errors always display regardless of --quiet flag,
+  // as they indicate issues the user should be aware of.
+  const hasConflictingOutputOptions = args.verbose && args.quiet;
+  if (hasConflictingOutputOptions) {
+    console.error(
+      "Warning: Both --verbose and --quiet specified. Using --quiet.",
+    );
+  }
 
   if (args.version) {
     console.error(`vibe ${BUILD_INFO.version}`);
@@ -106,13 +148,17 @@ async function main(): Promise<void> {
       const noHooks = args["no-hooks"];
       const noCopy = args["no-copy"];
       const dryRun = args["dry-run"];
-      await startCommand(branchName, { reuse, noHooks, noCopy, dryRun });
+      const verbose = args.verbose;
+      const quiet = args.quiet;
+      await startCommand(branchName, { reuse, noHooks, noCopy, dryRun, verbose, quiet });
       break;
     }
     case "clean": {
       const force = args.force;
       const deleteBranch = args["delete-branch"];
       const keepBranch = args["keep-branch"];
+      const verbose = args.verbose;
+      const quiet = args.quiet;
 
       // Validate mutually exclusive options
       const hasMutuallyExclusiveOptions = deleteBranch && keepBranch;
@@ -123,7 +169,7 @@ async function main(): Promise<void> {
         Deno.exit(1);
       }
 
-      await cleanCommand({ force, deleteBranch, keepBranch });
+      await cleanCommand({ force, deleteBranch, keepBranch, verbose, quiet });
       break;
     }
     case "trust":
@@ -140,7 +186,9 @@ async function main(): Promise<void> {
       break;
     case "upgrade": {
       const check = args.check;
-      await upgradeCommand({ check });
+      const verbose = args.verbose;
+      const quiet = args.quiet;
+      await upgradeCommand({ check, verbose, quiet });
       break;
     }
     default:
