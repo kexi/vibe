@@ -9,8 +9,7 @@
   "main": "./dist/main.js",
   "exports": {
     ".": {
-      "import": "./dist/main.js",
-      "types": "./dist/main.d.ts"
+      "import": "./dist/main.js"
     }
   },
   "files": [

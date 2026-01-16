@@ -11,15 +11,14 @@
     "prebuilds"
   ],
   "scripts": {
-    "install": "prebuild-install || node-gyp rebuild || echo 'Native module compilation failed, falling back to JS implementation'",
+    "install": "node-gyp-build || node-gyp rebuild || exit 0",
     "build": "node-gyp rebuild",
     "prebuild": "prebuildify --napi --strip",
-    "prebuild:all": "prebuildify-cross -i node:18 -i node:20 -i node:22 --napi --strip",
     "clean": "node-gyp clean"
   },
   "dependencies": {
     "node-addon-api": "^8.0.0",
-    "prebuild-install": "^7.1.0"
+    "node-gyp-build": "^4.8.0"
   },
   "devDependencies": {
     "node-gyp": "^11.0.0",
@@ -49,5 +48,9 @@
     "native"
   ],
   "author": "kexi",
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
 }

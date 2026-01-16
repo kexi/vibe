@@ -172,6 +172,12 @@ export interface SpawnOptions {
   stdin?: "inherit" | "null" | "piped";
   stdout?: "inherit" | "null" | "piped";
   stderr?: "inherit" | "null" | "piped";
+  /**
+   * Detach the child process from the parent.
+   * When true, the child will run independently of the parent process.
+   * @default false
+   */
+  detached?: boolean;
 }
 
 /**

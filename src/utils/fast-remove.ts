@@ -43,6 +43,7 @@ function spawnBackgroundDelete(trashPath: string): void {
       stdin: "null",
       stdout: "null",
       stderr: "null",
+      detached: true,
     });
     // Unref to allow parent to exit without waiting
     child.unref();
@@ -55,6 +56,7 @@ function spawnBackgroundDelete(trashPath: string): void {
       stdin: "null",
       stdout: "null",
       stderr: "null",
+      detached: true,
     });
     // Unref to allow parent to exit without waiting for child
     child.unref();

@@ -6,18 +6,17 @@
  * - Linux: FICLONE ioctl on Btrfs/XFS
  */
 
+const path = require("path");
+
 let native = null;
 let loadError = null;
 
-// Try to load the native module
+// Try to load the native module using node-gyp-build
+// This handles prebuilds, local builds, and debug builds automatically
 try {
-  native = require("../build/Release/vibe_native.node");
+  native = require("node-gyp-build")(path.join(__dirname, ".."));
 } catch (e) {
-  try {
-    native = require("../build/Debug/vibe_native.node");
-  } catch (e2) {
-    loadError = e;
-  }
+  loadError = e;
 }
 
 /**

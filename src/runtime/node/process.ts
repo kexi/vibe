@@ -81,7 +81,7 @@ export const nodeProcess: RuntimeProcess = {
         toNodeStdio(options.stdout),
         toNodeStdio(options.stderr),
       ],
-      detached: true,
+      detached: options.detached ?? false,
     };
 
     const child = spawn(options.cmd, options.args ?? [], spawnOptions);

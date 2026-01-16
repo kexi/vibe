@@ -36,5 +36,9 @@ package-lock.json
 dist/
 npm/dist/
 
+# Native module build artifacts
+packages/@vibe/native/build/
+packages/@vibe/native/prebuilds/
+
 # Test coverage
 coverage/

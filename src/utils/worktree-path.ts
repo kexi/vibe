@@ -37,8 +37,14 @@ async function executePathScript(
   scriptPath: string,
   context: WorktreePathContext,
 ): Promise<string> {
-  // Expand ~ to home directory
+  // Expand ~ to home directory with validation
   const home = runtime.env.get("HOME") ?? "";
+  const isValidHome = home.length > 0 && isAbsolute(home) && !home.includes("..");
+  if (scriptPath.startsWith("~") && !isValidHome) {
+    throw new Error(
+      "Cannot expand ~ in path_script: HOME environment variable is invalid or not set.",
+    );
+  }
   const expandedPath = scriptPath.replace(/^~/, home);
 
   // Resolve relative paths against repoRoot

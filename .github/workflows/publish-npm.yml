@@ -53,7 +53,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: prebuild-${{ matrix.platform }}-${{ matrix.arch }}
-          path: packages/@vibe/native/prebuilds
+          path: packages/@vibe/native/prebuilds/
+          if-no-files-found: error
 
   # Publish @vibe/native with all prebuilds
   publish-native:
@@ -75,12 +76,12 @@ jobs:
       - name: Download all prebuilds
         uses: actions/download-artifact@v4
         with:
-          path: packages/@vibe/native/prebuilds
+          path: packages/@vibe/native/prebuilds/
           pattern: prebuild-*
           merge-multiple: true
 
       - name: List prebuilds
-        run: ls -la packages/@vibe/native/prebuilds/
+        run: find packages/@vibe/native/prebuilds/ -type f | head -20
 
       - name: Validate version consistency
         working-directory: packages/@vibe/native
