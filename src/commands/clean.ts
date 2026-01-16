@@ -1,3 +1,4 @@
+import { dirname, join } from "@std/path";
 import {
   getMainWorktreePath,
   getRepoRoot,
@@ -11,11 +12,83 @@ import { type HookTrackerInfo, runHooks } from "../utils/hooks.ts";
 import { confirm } from "../utils/prompt.ts";
 import { ProgressTracker } from "../utils/progress.ts";
 import { log, type OutputOptions, verboseLog } from "../utils/output.ts";
+import { loadUserSettings } from "../utils/settings.ts";
+import {
+  cleanupStaleTrash,
+  fastRemoveDirectory,
+  isFastRemoveSupported,
+} from "../utils/fast-remove.ts";
 
 interface CleanOptions extends OutputOptions {
   force?: boolean;
   deleteBranch?: boolean;
   keepBranch?: boolean;
+}
+
+/**
+ * Remove worktree using fast remove (mv + async delete) or traditional git worktree remove
+ */
+async function removeWorktree(
+  mainPath: string,
+  worktreePath: string,
+  forceRemove: boolean,
+  useFastRemove: boolean,
+  outputOpts: OutputOptions,
+): Promise<void> {
+  const shouldUseFastRemove = useFastRemove && isFastRemoveSupported();
+
+  if (shouldUseFastRemove) {
+    verboseLog("Using fast remove (mv + async delete)", outputOpts);
+
+    // Read .git file content before moving (needed for git worktree remove)
+    const gitFilePath = join(worktreePath, ".git");
+    let gitFileContent: string | null = null;
+    try {
+      gitFileContent = await Deno.readTextFile(gitFilePath);
+    } catch {
+      // .git file might not exist or be unreadable, will fall back to traditional method
+    }
+
+    if (gitFileContent) {
+      const fastResult = await fastRemoveDirectory(worktreePath);
+
+      if (fastResult.success) {
+        // Create empty directory with .git file for git worktree remove
+        await Deno.mkdir(worktreePath);
+        await Deno.writeTextFile(gitFilePath, gitFileContent);
+
+        // Run git worktree remove on empty directory (very fast)
+        // Always use --force since we've already moved the files
+        const removeArgs = ["-C", mainPath, "worktree", "remove", "--force"];
+        removeArgs.push(worktreePath);
+        verboseLog(`Running: git ${removeArgs.join(" ")}`, outputOpts);
+        await runGitCommand(removeArgs);
+
+        // Clean up stale trash directories in the background
+        const parentDir = dirname(worktreePath);
+        cleanupStaleTrash(parentDir).catch(() => {
+          // Ignore errors - best effort cleanup
+        });
+
+        return;
+      }
+
+      // Fast remove failed, fall back to traditional method
+      verboseLog(
+        `Fast remove failed: ${fastResult.error?.message}, falling back to git worktree remove`,
+        outputOpts,
+      );
+    }
+  }
+
+  // Traditional git worktree remove
+  const removeArgs = ["-C", mainPath, "worktree", "remove"];
+  if (forceRemove) {
+    removeArgs.push("--force");
+  }
+  removeArgs.push(worktreePath);
+  verboseLog(`Running: git ${removeArgs.join(" ")}`, outputOpts);
+  await runGitCommand(removeArgs);
 }
 
 export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
@@ -91,14 +164,18 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
     // Change to main worktree before removing (so cwd remains valid after deletion)
     Deno.chdir(mainPath);
 
+    // Load user settings to check fast_remove preference
+    const settings = await loadUserSettings();
+    const useFastRemove = settings.clean?.fast_remove ?? true; // Default: true
+
     // Remove worktree
-    const removeArgs = ["-C", mainPath, "worktree", "remove"];
-    if (forceRemove) {
-      removeArgs.push("--force");
-    }
-    removeArgs.push(currentWorktreePath);
-    verboseLog(`Running: git ${removeArgs.join(" ")}`, outputOpts);
-    await runGitCommand(removeArgs);
+    await removeWorktree(
+      mainPath,
+      currentWorktreePath,
+      forceRemove,
+      useFastRemove,
+      outputOpts,
+    );
 
     // Run post_clean hooks from main worktree
     const postCleanHooks = config?.hooks?.post_clean;

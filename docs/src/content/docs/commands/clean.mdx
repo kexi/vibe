@@ -68,6 +68,34 @@ delete_branch = true  # Delete branch by default when cleaning
 | --------------- | ------- | ------------------------------------ |
 | `delete_branch` | `false` | Delete branch after worktree removal |
 
+### Fast Remove (Performance Optimization)
+
+By default, vibe uses a fast removal strategy that moves the worktree directory to a temporary location and deletes it asynchronously in the background. This makes `vibe clean` feel instant even for large repositories.
+
+Configure this in `~/.config/vibe/settings.json`:
+
+```json
+{
+  "version": 3,
+  "clean": {
+    "fast_remove": true
+  }
+}
+```
+
+| Option        | Default | Description                                        |
+| ------------- | ------- | -------------------------------------------------- |
+| `fast_remove` | `true`  | Use fast async deletion (move + background delete) |
+
+**How it works:**
+
+1. The worktree directory is instantly renamed to a hidden `.vibe-trash-*` directory (O(1) operation)
+2. Git worktree metadata is cleaned up on the now-empty directory
+3. The actual file deletion happens asynchronously in the background
+4. Previous `.vibe-trash-*` directories are automatically cleaned up
+
+**Note:** If the fast rename fails for any reason, it automatically falls back to traditional deletion.
+
 ## Behavior
 
 ### Safety Checks
