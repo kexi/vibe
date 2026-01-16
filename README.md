@@ -48,6 +48,15 @@ Branch 'feat/new-feature' is already in use by worktree '/path/to/repo-feat-new-
 Navigate to the existing worktree? (Y/n)
 ```
 
+### Cleanup Behavior
+
+`vibe clean` uses a fast removal strategy that moves the worktree directory instead of deleting it synchronously:
+
+- **macOS**: Items are moved to the system Trash via Finder (can be recovered if needed)
+- **Linux/Windows**: Items are moved to a temporary directory and deleted in the background
+
+This approach allows `vibe clean` to complete instantly regardless of worktree size.
+
 ### Global Options
 
 | Option            | Description                                        |
