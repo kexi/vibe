@@ -160,7 +160,25 @@ jobs:
       - name: Install mise
         uses: jdx/mise-action@v2
 
-      - name: Install vibe plugin from current branch
+      - name: Create local mise-plugin branch
+        shell: bash
+        run: |
+          # Create a local mise-plugin branch from the mise-plugin directory
+          cd "${{ github.workspace }}"
+          git checkout --orphan mise-plugin-temp
+          git rm -rf .
+          git checkout ${{ github.sha }} -- mise-plugin
+          mv mise-plugin/* .
+          mv mise-plugin/.luacheckrc . 2>/dev/null || true
+          rmdir mise-plugin
+          git add -A
+          git config user.name "test"
+          git config user.email "test@test.com"
+          git commit -m "mise-plugin test branch"
+          git branch -m mise-plugin
+          git checkout ${{ github.sha }}
+
+      - name: Install vibe plugin from local repo
         shell: bash
         run: |
           mise plugin install vibe "file://${{ github.workspace }}#mise-plugin"
