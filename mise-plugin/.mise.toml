@@ -1,0 +1,10 @@
+# Development tools for mise-plugin
+# Note: lua requires asdf-lua plugin which doesn't work on Windows
+# Install manually: mise plugin install lua https://github.com/Stratus3D/asdf-lua.git
+
+[plugins]
+lua = "https://github.com/Stratus3D/asdf-lua.git"
+
+[tools]
+lua = "5.4.7"
+stylua = "2.3.1"
