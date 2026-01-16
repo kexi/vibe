@@ -80,11 +80,16 @@ deno install --global --allow-run --allow-read --allow-write --allow-env --allow
 
 > 注意: `--allow-ffi`はmacOS (APFS)とLinux (Btrfs/XFS)で最適化されたCopy-on-Writeファイルクローニングを有効にします。このフラグがなくても動作しますが、ディレクトリコピーが若干遅くなる可能性があります。
 
-**miseを使う場合**: `.mise.toml`に追加:
+### mise
+
+`.mise.toml`に追加:
 
 ```toml
+[plugins]
+vibe = "https://github.com/kexi/mise-vibe"
+
 [tools]
-"jsr:@kexi/vibe" = "latest"
+vibe = "latest"
 ```
 
 その後、インストール:

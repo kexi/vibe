@@ -33,8 +33,11 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     `.mise.toml`に追加：
 
     ```toml
+    [plugins]
+    vibe = "https://github.com/kexi/mise-vibe"
+
     [tools]
-    "jsr:@kexi/vibe" = "latest"
+    vibe = "latest"
     ```
 
     その後、インストール：
