@@ -1,0 +1,135 @@
+---
+title: settings.json
+description: ユーザー固有のグローバル設定
+sidebar:
+  order: 4
+---
+
+`settings.json`ファイルには、ローカルに保存されチームと共有されないユーザー固有の設定が含まれます。このファイルは`~/.config/vibe/settings.json`に配置されます。
+
+## 場所
+
+| プラットフォーム | パス                              |
+| ---------------- | --------------------------------- |
+| macOS            | `~/.config/vibe/settings.json`    |
+| Linux            | `~/.config/vibe/settings.json`    |
+
+## 設定オプション
+
+### 高速削除（Cleanパフォーマンス）
+
+デフォルトで、vibeはworktreeディレクトリを一時的な場所に移動し、バックグラウンドで非同期削除する高速削除戦略を使用します。これにより、大きなリポジトリでも`vibe clean`が瞬時に感じられます。
+
+```json
+{
+  "version": 3,
+  "clean": {
+    "fast_remove": true
+  }
+}
+```
+
+| オプション    | デフォルト | 説明                                                |
+| ------------- | ---------- | --------------------------------------------------- |
+| `fast_remove` | `true`     | 高速非同期削除を使用（移動 + バックグラウンド削除） |
+
+**仕組み:**
+
+1. worktreeディレクトリは隠し`.vibe-trash-*`ディレクトリに瞬時にリネーム（O(1)操作）
+2. 空になったディレクトリに対してgit worktreeメタデータをクリーンアップ
+3. 実際のファイル削除はバックグラウンドで非同期実行
+4. 以前の`.vibe-trash-*`ディレクトリは自動的にクリーンアップ
+
+:::note
+高速リネームが何らかの理由で失敗した場合、自動的に従来の削除にフォールバックします。
+:::
+
+### Worktreeパススクリプト
+
+カスタムスクリプトでデフォルトのworktreeパスを上書き：
+
+```json
+{
+  "version": 3,
+  "worktree": {
+    "path_script": "~/.config/vibe/worktree-path.sh"
+  }
+}
+```
+
+:::tip
+この設定は`.vibe.toml`でリポジトリごとに設定することもできます。`settings.json`のユーザー設定が優先されます。
+:::
+
+### ハッシュチェックのスキップ
+
+グローバルにハッシュ検証を無効化（非推奨）：
+
+```json
+{
+  "version": 3,
+  "skipHashCheck": true
+}
+```
+
+:::caution
+ハッシュ検証を無効にするとセキュリティが低下します。リスクを理解した上でのみ使用してください。
+:::
+
+## JSON Schema
+
+vibeはエディタの自動補完と検証のためのJSON Schemaを提供しています。`$schema`プロパティはvibeが設定ファイルを保存する際に**自動的に追加**されます：
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/kexi/vibe/v0.9.0/schemas/settings.schema.json",
+  "version": 3,
+  "clean": {
+    "fast_remove": true
+  }
+}
+```
+
+スキーマURLにはvibeのバージョンタグ（例：`v0.9.0`）が含まれ、インストールされているバージョンとの互換性が保証されます。
+
+### VS Code設定
+
+VS Codeは`$schema`プロパティがあると自動的に補完を提供します。手動で設定する場合は、VS Codeの設定に以下を追加してください：
+
+```json
+{
+  "json.schemas": [
+    {
+      "fileMatch": ["**/vibe/settings.json"],
+      "url": "https://raw.githubusercontent.com/kexi/vibe/v0.9.0/schemas/settings.schema.json"
+    }
+  ]
+}
+```
+
+`v0.9.0`はインストールしているvibeのバージョンに置き換えてください。
+
+## 完全な例
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/kexi/vibe/v0.9.0/schemas/settings.schema.json",
+  "version": 3,
+  "skipHashCheck": false,
+  "worktree": {
+    "path_script": "~/.config/vibe/worktree-path.sh"
+  },
+  "clean": {
+    "fast_remove": true
+  },
+  "permissions": {
+    "allow": [],
+    "deny": []
+  }
+}
+```
+
+## 関連
+
+- [.vibe.toml](/ja/configuration/vibe-toml/) - チーム共有の設定
+- [clean](/ja/commands/clean/) - fast_removeの詳細を含むcleanコマンド
