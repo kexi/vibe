@@ -9,7 +9,7 @@ export const VibeConfigSchema = z.object({
     dirs: z.array(z.string()).optional(),
     dirs_prepend: z.array(z.string()).optional(),
     dirs_append: z.array(z.string()).optional(),
-  }).optional(),
+  }).strict().optional(),
   hooks: z.object({
     pre_start: z.array(z.string()).optional(),
     pre_start_prepend: z.array(z.string()).optional(),
@@ -23,13 +23,13 @@ export const VibeConfigSchema = z.object({
     post_clean: z.array(z.string()).optional(),
     post_clean_prepend: z.array(z.string()).optional(),
     post_clean_append: z.array(z.string()).optional(),
-  }).optional(),
+  }).strict().optional(),
   worktree: z.object({
     path_script: z.string().optional(),
-  }).optional(),
+  }).strict().optional(),
   clean: z.object({
     delete_branch: z.boolean().optional(),
-  }).optional(),
+  }).strict().optional(),
 }).strict();
 
 export type VibeConfig = z.infer<typeof VibeConfigSchema>;
