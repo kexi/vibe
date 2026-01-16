@@ -1,5 +1,11 @@
 import { dirname, join } from "@std/path";
 
+/** macOS Trash directory path returned when using Finder */
+const MACOS_TRASH_PATH = "~/.Trash";
+
+/** Pattern to detect control characters that could cause issues in shell/AppleScript */
+const CONTROL_CHARS_PATTERN = /[\x00-\x1f\x7f]/;
+
 export interface FastRemoveResult {
   success: boolean;
   trashedPath?: string;
@@ -8,9 +14,10 @@ export interface FastRemoveResult {
 
 /**
  * Check if fast remove is supported on the current OS
- * Fast remove uses rename + async delete, which works on all platforms
- * (same-volume rename is O(1) on macOS, Linux, and Windows)
- * If rename fails for any reason, the caller should fall back to traditional deletion
+ *
+ * This function exists for API stability and future extensibility.
+ * Currently returns true for all platforms, but may be extended to
+ * check for specific OS capabilities or configurations.
  */
 export function isFastRemoveSupported(): boolean {
   return true;
@@ -24,11 +31,41 @@ function generateTrashName(): string {
 }
 
 /**
+ * Move a directory to macOS Trash using Finder (via osascript)
+ * Returns true if successful, false otherwise
+ */
+async function moveToMacOSTrash(targetPath: string): Promise<boolean> {
+  try {
+    // Reject paths with control characters to prevent injection attacks
+    const hasControlChars = CONTROL_CHARS_PATTERN.test(targetPath);
+    if (hasControlChars) {
+      return false;
+    }
+
+    // Escape backslashes and double quotes in the path for AppleScript
+    const escapedPath = targetPath.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    const command = new Deno.Command("osascript", {
+      args: [
+        "-e",
+        `tell application "Finder" to delete POSIX file "${escapedPath}"`,
+      ],
+      stdin: "null",
+      stdout: "null",
+      stderr: "null",
+    });
+    const { success } = await command.output();
+    return success;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Spawn a detached background process to delete a directory
  * This process runs independently and won't block the parent from exiting
  *
- * Note: Uses direct command execution with unref() to avoid shell injection
- * while ensuring the process is truly detached from the parent.
+ * Note: Uses nohup on Linux to ensure the process continues after
+ * the parent exits. Path is passed as an argument ($1) to avoid shell injection.
  */
 function spawnBackgroundDelete(trashPath: string): void {
   const isWindows = Deno.build.os === "windows";
@@ -45,10 +82,10 @@ function spawnBackgroundDelete(trashPath: string): void {
     // Unref to allow parent to exit without waiting
     child.unref();
   } else {
-    // macOS/Linux: use rm directly
-    // Path is passed as argument, avoiding shell injection
-    const child = new Deno.Command("rm", {
-      args: ["-rf", trashPath],
+    // Linux: use nohup to ensure deletion continues after parent exits
+    // $1 is used to pass the path safely, avoiding shell injection
+    const child = new Deno.Command("sh", {
+      args: ["-c", 'nohup rm -rf "$1" >/dev/null 2>&1 &', "_", trashPath],
       stdin: "null",
       stdout: "null",
       stderr: "null",
@@ -59,8 +96,23 @@ function spawnBackgroundDelete(trashPath: string): void {
 }
 
 /**
- * Fast remove a directory by moving it to a trash location
- * and deleting it asynchronously in the background
+ * Get the system temp directory path
+ * Uses /tmp on Linux, %TEMP% on Windows
+ */
+function getTempDir(): string {
+  const isWindows = Deno.build.os === "windows";
+  if (isWindows) {
+    return Deno.env.get("TEMP") || Deno.env.get("TMP") || "C:\\Windows\\Temp";
+  }
+  return "/tmp";
+}
+
+/**
+ * Fast remove a directory by moving it to trash or temp location
+ *
+ * On macOS: Uses Finder to move to system Trash (reliable, OS-managed)
+ * On Linux: Uses /tmp with nohup rm -rf (cleaned on reboot)
+ * On Windows: Uses temp directory with background deletion
  *
  * @param targetPath The directory to remove
  * @returns Result indicating success/failure and the trash path if successful
@@ -68,19 +120,50 @@ function spawnBackgroundDelete(trashPath: string): void {
 export async function fastRemoveDirectory(
   targetPath: string,
 ): Promise<FastRemoveResult> {
-  const parentDir = dirname(targetPath);
-  const trashName = generateTrashName();
-  const trashPath = join(parentDir, trashName);
+  const isMacOS = Deno.build.os === "darwin";
 
   try {
-    // Step 1: Rename (O(1) operation on same filesystem)
-    await Deno.rename(targetPath, trashPath);
+    // macOS: Use Finder to move to Trash (most reliable)
+    if (isMacOS) {
+      const movedToTrash = await moveToMacOSTrash(targetPath);
+      if (movedToTrash) {
+        // Finder handles the actual deletion
+        return { success: true, trashedPath: MACOS_TRASH_PATH };
+      }
+      // Fall through to fallback if Finder fails (e.g., SSH session)
+    }
 
-    // Step 2: Spawn detached background process for deletion
-    // Parent process can exit immediately without waiting
-    spawnBackgroundDelete(trashPath);
+    // Fallback: rename to temp directory + background delete
+    const trashName = generateTrashName();
+    const tempDir = getTempDir();
+    const tempTrashPath = join(tempDir, trashName);
 
-    return { success: true, trashedPath: trashPath };
+    // Step 1: Try to rename to temp directory first
+    // This is preferred because /tmp is cleaned on reboot
+    try {
+      await Deno.rename(targetPath, tempTrashPath);
+      spawnBackgroundDelete(tempTrashPath);
+      return { success: true, trashedPath: tempTrashPath };
+    } catch (tempError) {
+      // Cross-device link error (EXDEV) - fall back to parent directory
+      // Check error message since Deno doesn't have a specific CrossDeviceLink error type
+      const errorMessage = String(tempError);
+      const isCrossDeviceError = errorMessage.includes("cross-device") ||
+        errorMessage.includes("EXDEV");
+      if (!isCrossDeviceError) {
+        throw tempError;
+      }
+    }
+
+    // Step 2: Fallback to parent directory (same filesystem)
+    const parentDir = dirname(targetPath);
+    const fallbackTrashPath = join(parentDir, trashName);
+    await Deno.rename(targetPath, fallbackTrashPath);
+
+    // Spawn detached background process for deletion
+    spawnBackgroundDelete(fallbackTrashPath);
+
+    return { success: true, trashedPath: fallbackTrashPath };
   } catch (error) {
     return {
       success: false,
@@ -90,18 +173,15 @@ export async function fastRemoveDirectory(
 }
 
 /**
- * Clean up any stale .vibe-trash-* directories from previous runs
- * This is called asynchronously and doesn't block the user
- *
- * @param parentDir The directory to search for stale trash directories
+ * Clean up stale .vibe-trash-* directories from a single directory
  */
-export async function cleanupStaleTrash(parentDir: string): Promise<void> {
+async function cleanupTrashInDir(dir: string): Promise<void> {
   try {
-    for await (const entry of Deno.readDir(parentDir)) {
+    for await (const entry of Deno.readDir(dir)) {
       const isVibeTrash = entry.isDirectory &&
         entry.name.startsWith(".vibe-trash-");
       if (isVibeTrash) {
-        const trashPath = join(parentDir, entry.name);
+        const trashPath = join(dir, entry.name);
         // Spawn detached background process for cleanup
         spawnBackgroundDelete(trashPath);
       }
@@ -109,4 +189,20 @@ export async function cleanupStaleTrash(parentDir: string): Promise<void> {
   } catch {
     // Ignore errors - directory might not exist or be inaccessible
   }
+}
+
+/**
+ * Clean up any stale .vibe-trash-* directories from previous runs
+ * Checks both the parent directory and the system temp directory
+ * This is called asynchronously and doesn't block the user
+ *
+ * @param parentDir The directory to search for stale trash directories
+ */
+export async function cleanupStaleTrash(parentDir: string): Promise<void> {
+  // Clean up in both parent directory and temp directory
+  const tempDir = getTempDir();
+  await Promise.all([
+    cleanupTrashInDir(parentDir),
+    cleanupTrashInDir(tempDir),
+  ]);
 }
