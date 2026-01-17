@@ -14,6 +14,14 @@ export async function detectCapabilities(): Promise<CopyCapabilities> {
     return cachedCapabilities;
   }
 
+  // Windows: Native tools (cp, rsync) are notoriously flaky with paths (C:\ vs /c/).
+  // often distributed via Git Bash/MSYS which complicates things.
+  // Force disable them to ensure we use StandardStrategy (Deno native).
+  if (Deno.build.os === "windows") {
+    cachedCapabilities = { cloneSupported: false, rsyncAvailable: false };
+    return cachedCapabilities;
+  }
+
   const [cloneSupported, rsyncAvailable] = await Promise.all([
     detectCloneSupport(),
     detectRsyncAvailable(),
@@ -74,7 +82,7 @@ async function testMacOSClone(): Promise<boolean> {
     return false;
   } finally {
     // Cleanup
-    await Deno.remove(tempDir, { recursive: true }).catch(() => {});
+    await Deno.remove(tempDir, { recursive: true }).catch(() => { });
   }
 }
 
@@ -103,7 +111,7 @@ async function testLinuxReflink(): Promise<boolean> {
     return false;
   } finally {
     // Cleanup
-    await Deno.remove(tempDir, { recursive: true }).catch(() => {});
+    await Deno.remove(tempDir, { recursive: true }).catch(() => { });
   }
 }
 
