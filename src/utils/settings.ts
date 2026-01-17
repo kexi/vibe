@@ -525,6 +525,9 @@ export async function verifyTrustAndRead(
   // Find matching entry in allow list
   const entry = findMatchingEntry(settings.permissions.allow, repoInfo);
   if (!entry) {
+    console.warn(`[DEBUG] Trust verification failed for ${vibeFilePath}`);
+    console.warn(`[DEBUG] RepoInfo: ${JSON.stringify(repoInfo, null, 2)}`);
+    console.warn(`[DEBUG] AllowList: ${JSON.stringify(settings.permissions.allow, null, 2)}`);
     return { trusted: false };
   }
 
