@@ -121,12 +121,14 @@ pub fn clone_file(src: &Path, dest: &Path) -> CloneResult<()> {
         })?;
 
     // Perform FICLONE ioctl
-    let result = unsafe { ficlone(dest_file.as_raw_fd(), src_file.as_raw_fd() as i32) };
+    // nix 0.29.0+ expects u64 as the second argument for ioctl_write_int!
+    let result = unsafe { ficlone(dest_file.as_raw_fd(), src_file.as_raw_fd() as u64) };
 
     if let Err(errno) = result {
         // Remove partially created destination file on failure
         let _ = std::fs::remove_file(dest);
-        let errno_value: i32 = errno.into();
+        // nix 0.29.0+ removed Into<i32> for Errno, use direct cast instead
+        let errno_value: i32 = errno as i32;
         return Err(CloneError::from_errno("ioctl FICLONE", errno_value));
     }
 
