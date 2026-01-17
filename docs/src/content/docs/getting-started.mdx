@@ -33,7 +33,10 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     npx @kexi/vibe start feat/my-feature
     ```
     :::note
-    Shell setup (Step 2) is required. Select the "npx" tab for npx usage.
+    Shell setup (Step 2) is required. Select the "npx" option for npx usage.
+    :::
+    :::tip
+    Global install is recommended for frequent use. npx has slower startup due to package resolution overhead.
     :::
 
   </TabItem>
@@ -112,12 +115,19 @@ Add **one** of the following to your shell configuration (choose based on your i
   </TabItem>
   <TabItem label="Nushell">
     ```nu frame="terminal"
-    # Add to ~/.config/nushell/config.nu
+    # Add to ~/.config/nushell/config.nu (choose one)
+
     # For global install (Homebrew, npm -g, Deno)
     def --env vibe [...args] {
         ^vibe ...$args | lines | each { |line| nu -c $line }
     }
+
+    # For npx (without global install)
+    def --env vibe [...args] {
+        npx @kexi/vibe ...$args | lines | each { |line| nu -c $line }
+    }
     ```
+
   </TabItem>
   <TabItem label="PowerShell">
     ```powershell frame="terminal"
