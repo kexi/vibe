@@ -68,18 +68,17 @@ async function runCommand(
   const command = new Deno.Command(binary, {
     args,
     cwd,
-    stdout: "piped",
-    stderr: "piped",
+    stdout: "inherit",
+    stderr: "inherit",
   });
 
-  const { success, stderr } = await command.output();
+  const { success } = await command.output();
 
   const endTime = performance.now();
   const durationSeconds = (endTime - startTime) / 1000;
 
   if (!success) {
-    const errorMessage = new TextDecoder().decode(stderr);
-    throw new Error(`Command failed: ${binary} ${args.join(" ")}\n${errorMessage}`);
+    throw new Error(`Command failed: ${binary} ${args.join(" ")}`);
   }
 
   return durationSeconds;
