@@ -21,6 +21,9 @@ interface VibeNativeModule {
 let nativeModule: VibeNativeModule | null = null;
 let loadAttempted = false;
 
+/** Last error message from native module loading attempt */
+let lastLoadError: string | null = null;
+
 /**
  * Try to load the @kexi/vibe-native module
  */
@@ -30,14 +33,37 @@ function tryLoadNative(): VibeNativeModule | null {
   }
   loadAttempted = true;
 
+  // Check for Windows - native module is not supported
+  const isWindows = process.platform === "win32";
+  if (isWindows) {
+    lastLoadError = "Native clone module is not supported on Windows. Using standard copy instead.";
+    if (process.env.VIBE_DEBUG) {
+      console.warn(`[vibe-native] ${lastLoadError}`);
+    }
+    return null;
+  }
+
   try {
     // Dynamic import to handle optional dependency
     // @ts-ignore - @kexi/vibe-native is an optional dependency
     nativeModule = require("@kexi/vibe-native") as VibeNativeModule;
     return nativeModule;
-  } catch {
+  } catch (error) {
+    // Log the error for debugging purposes
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    lastLoadError = `Failed to load @kexi/vibe-native: ${errorMessage}`;
+    if (process.env.VIBE_DEBUG) {
+      console.warn(`[vibe-native] ${lastLoadError}`);
+    }
     return null;
   }
+}
+
+/**
+ * Get the last error message from native module loading attempt
+ */
+export function getLastLoadError(): string | null {
+  return lastLoadError;
 }
 
 /**
