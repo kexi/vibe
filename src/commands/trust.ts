@@ -1,19 +1,23 @@
 import { join } from "@std/path";
 import { getRepoInfoFromPath, getRepoRoot } from "../utils/git.ts";
 import { addTrustedPath, getSettingsPath } from "../utils/trust.ts";
-import { runtime } from "../runtime/index.ts";
+import { type AppContext, getGlobalContext } from "../context/index.ts";
 
 const VIBE_TOML = ".vibe.toml";
 const VIBE_LOCAL_TOML = ".vibe.local.toml";
 
-export async function trustCommand(): Promise<void> {
+export async function trustCommand(
+  ctx: AppContext = getGlobalContext(),
+): Promise<void> {
+  const { runtime } = ctx;
+
   try {
-    const repoRoot = await getRepoRoot();
+    const repoRoot = await getRepoRoot(ctx);
     const vibeTomlPath = join(repoRoot, VIBE_TOML);
     const vibeLocalTomlPath = join(repoRoot, VIBE_LOCAL_TOML);
 
-    const vibeTomlExists = await checkFileExists(vibeTomlPath);
-    const vibeLocalTomlExists = await checkFileExists(vibeLocalTomlPath);
+    const vibeTomlExists = await checkFileExists(vibeTomlPath, ctx);
+    const vibeLocalTomlExists = await checkFileExists(vibeLocalTomlPath, ctx);
 
     const hasAnyFile = vibeTomlExists || vibeLocalTomlExists;
     if (!hasAnyFile) {
@@ -31,8 +35,8 @@ export async function trustCommand(): Promise<void> {
     // Trust .vibe.toml
     if (vibeTomlExists) {
       try {
-        await addTrustedPath(vibeTomlPath);
-        const repoInfo = await getRepoInfoFromPath(vibeTomlPath);
+        await addTrustedPath(vibeTomlPath, ctx);
+        const repoInfo = await getRepoInfoFromPath(vibeTomlPath, ctx);
         trustedFiles.push({ path: vibeTomlPath, repoInfo });
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -43,8 +47,8 @@ export async function trustCommand(): Promise<void> {
     // Trust .vibe.local.toml
     if (vibeLocalTomlExists) {
       try {
-        await addTrustedPath(vibeLocalTomlPath);
-        const repoInfo = await getRepoInfoFromPath(vibeLocalTomlPath);
+        await addTrustedPath(vibeLocalTomlPath, ctx);
+        const repoInfo = await getRepoInfoFromPath(vibeLocalTomlPath, ctx);
         trustedFiles.push({ path: vibeLocalTomlPath, repoInfo });
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -73,7 +77,7 @@ export async function trustCommand(): Promise<void> {
         console.error(`    Relative Path: ${repoInfo.relativePath}`);
       }
     }
-    console.error(`\nSettings: ${getSettingsPath()}`);
+    console.error(`\nSettings: ${getSettingsPath(ctx)}`);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${errorMessage}`);
@@ -81,9 +85,9 @@ export async function trustCommand(): Promise<void> {
   }
 }
 
-async function checkFileExists(path: string): Promise<boolean> {
+async function checkFileExists(path: string, ctx: AppContext): Promise<boolean> {
   try {
-    await runtime.fs.stat(path);
+    await ctx.runtime.fs.stat(path);
     return true;
   } catch {
     return false;

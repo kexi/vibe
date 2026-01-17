@@ -2,19 +2,23 @@ import { join } from "@std/path";
 import { getRepoInfoFromPath, getRepoRoot } from "../utils/git.ts";
 import { calculateFileHash } from "../utils/hash.ts";
 import { loadUserSettings } from "../utils/trust.ts";
-import { runtime } from "../runtime/index.ts";
+import { type AppContext, getGlobalContext } from "../context/index.ts";
 
 const VIBE_TOML = ".vibe.toml";
 const VIBE_LOCAL_TOML = ".vibe.local.toml";
 
-export async function verifyCommand(): Promise<void> {
+export async function verifyCommand(
+  ctx: AppContext = getGlobalContext(),
+): Promise<void> {
+  const { runtime } = ctx;
+
   try {
-    const repoRoot = await getRepoRoot();
+    const repoRoot = await getRepoRoot(ctx);
     const vibeTomlPath = join(repoRoot, VIBE_TOML);
     const vibeLocalTomlPath = join(repoRoot, VIBE_LOCAL_TOML);
 
-    const vibeTomlExists = await checkFileExists(vibeTomlPath);
-    const vibeLocalTomlExists = await checkFileExists(vibeLocalTomlPath);
+    const vibeTomlExists = await checkFileExists(vibeTomlPath, ctx);
+    const vibeLocalTomlExists = await checkFileExists(vibeLocalTomlPath, ctx);
 
     const hasAnyFile = vibeTomlExists || vibeLocalTomlExists;
     if (!hasAnyFile) {
@@ -24,13 +28,13 @@ export async function verifyCommand(): Promise<void> {
       runtime.control.exit(1);
     }
 
-    const settings = await loadUserSettings();
+    const settings = await loadUserSettings(ctx);
 
     console.error("=== Vibe Configuration Verification ===\n");
 
     // Verify .vibe.toml
     if (vibeTomlExists) {
-      await displayFileStatus(vibeTomlPath, VIBE_TOML, settings);
+      await displayFileStatus(vibeTomlPath, VIBE_TOML, settings, ctx);
     }
 
     // Verify .vibe.local.toml
@@ -38,7 +42,7 @@ export async function verifyCommand(): Promise<void> {
       if (vibeTomlExists) {
         console.error(); // Add blank line between files
       }
-      await displayFileStatus(vibeLocalTomlPath, VIBE_LOCAL_TOML, settings);
+      await displayFileStatus(vibeLocalTomlPath, VIBE_LOCAL_TOML, settings, ctx);
     }
 
     // Display global settings
@@ -55,12 +59,13 @@ async function displayFileStatus(
   filePath: string,
   fileName: string,
   settings: Awaited<ReturnType<typeof loadUserSettings>>,
+  ctx: AppContext,
 ): Promise<void> {
   console.error(`File: ${fileName}`);
   console.error(`Path: ${filePath}`);
 
   // Get repository information
-  const repoInfo = await getRepoInfoFromPath(filePath);
+  const repoInfo = await getRepoInfoFromPath(filePath, ctx);
   if (!repoInfo) {
     console.error("Status: ❌ NOT IN GIT REPOSITORY");
     console.error(
@@ -99,7 +104,7 @@ async function displayFileStatus(
   // Calculate current file hash
   let currentHash: string;
   try {
-    currentHash = await calculateFileHash(filePath);
+    currentHash = await calculateFileHash(filePath, ctx);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Status: ❌ ERROR - Cannot read file: ${errorMessage}`);
@@ -138,9 +143,9 @@ async function displayFileStatus(
   }
 }
 
-async function checkFileExists(path: string): Promise<boolean> {
+async function checkFileExists(path: string, ctx: AppContext): Promise<boolean> {
   try {
-    await runtime.fs.stat(path);
+    await ctx.runtime.fs.stat(path);
     return true;
   } catch {
     return false;

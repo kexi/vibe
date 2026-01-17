@@ -58,9 +58,7 @@ Deno.test("configCommand displays settings with default values when file not fou
   assertEquals(exitCode, null);
 
   // Should display settings file path
-  const hasSettingsFile = stderr.output.some((line) =>
-    line.includes("Settings file:")
-  );
+  const hasSettingsFile = stderr.output.some((line) => line.includes("Settings file:"));
   assertEquals(
     hasSettingsFile,
     true,
@@ -68,9 +66,7 @@ Deno.test("configCommand displays settings with default values when file not fou
   );
 
   // Should display permissions in JSON output
-  const hasPermissions = stderr.output.some((line) =>
-    line.includes("permissions")
-  );
+  const hasPermissions = stderr.output.some((line) => line.includes("permissions"));
   assertEquals(
     hasPermissions,
     true,

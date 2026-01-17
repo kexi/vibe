@@ -18,7 +18,7 @@ import {
   fastRemoveDirectory,
   isFastRemoveSupported,
 } from "../utils/fast-remove.ts";
-import { runtime } from "../runtime/index.ts";
+import { type AppContext, getGlobalContext } from "../context/index.ts";
 
 interface CleanOptions extends OutputOptions {
   force?: boolean;
@@ -35,7 +35,9 @@ async function removeWorktree(
   forceRemove: boolean,
   useFastRemove: boolean,
   outputOpts: OutputOptions,
+  ctx: AppContext,
 ): Promise<void> {
+  const { runtime } = ctx;
   const shouldUseFastRemove = useFastRemove && isFastRemoveSupported();
 
   if (shouldUseFastRemove) {
@@ -51,7 +53,7 @@ async function removeWorktree(
     }
 
     if (gitFileContent) {
-      const fastResult = await fastRemoveDirectory(worktreePath);
+      const fastResult = await fastRemoveDirectory(worktreePath, ctx);
 
       if (fastResult.success) {
         // Create empty directory with .git file for git worktree remove
@@ -63,11 +65,11 @@ async function removeWorktree(
         const removeArgs = ["-C", mainPath, "worktree", "remove", "--force"];
         removeArgs.push(worktreePath);
         verboseLog(`Running: git ${removeArgs.join(" ")}`, outputOpts);
-        await runGitCommand(removeArgs);
+        await runGitCommand(removeArgs, ctx);
 
         // Clean up stale trash directories in the background
         const parentDir = dirname(worktreePath);
-        cleanupStaleTrash(parentDir).catch(() => {
+        cleanupStaleTrash(parentDir, ctx).catch(() => {
           // Ignore errors - best effort cleanup
         });
 
@@ -89,15 +91,19 @@ async function removeWorktree(
   }
   removeArgs.push(worktreePath);
   verboseLog(`Running: git ${removeArgs.join(" ")}`, outputOpts);
-  await runGitCommand(removeArgs);
+  await runGitCommand(removeArgs, ctx);
 }
 
-export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
+export async function cleanCommand(
+  options: CleanOptions = {},
+  ctx: AppContext = getGlobalContext(),
+): Promise<void> {
+  const { runtime } = ctx;
   const { verbose = false, quiet = false } = options;
   const outputOpts: OutputOptions = { verbose, quiet };
 
   try {
-    const isMain = await isMainWorktree();
+    const isMain = await isMainWorktree(ctx);
     if (isMain) {
       console.error(
         "Error: Cannot clean main worktree. Use this command from a secondary worktree.",
@@ -105,7 +111,7 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
       runtime.control.exit(1);
     }
 
-    const hasChanges = await hasUncommittedChanges();
+    const hasChanges = await hasUncommittedChanges(ctx);
     let forceRemove = false;
     if (hasChanges) {
       if (options.force) {
@@ -113,6 +119,7 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
       } else {
         const shouldContinue = await confirm(
           "Warning: This worktree has uncommitted changes. Do you want to continue? (Y/n)",
+          ctx,
         );
         if (!shouldContinue) {
           console.error("Clean operation cancelled.");
@@ -122,20 +129,20 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
       }
     }
 
-    const currentWorktreePath = await getRepoRoot();
-    const mainPath = await getMainWorktreePath();
+    const currentWorktreePath = await getRepoRoot(ctx);
+    const mainPath = await getMainWorktreePath(ctx);
 
     // Get current branch name before removing worktree
-    const worktreeInfo = await getWorktreeByPath(currentWorktreePath);
+    const worktreeInfo = await getWorktreeByPath(currentWorktreePath, ctx);
     const currentBranch = worktreeInfo?.branch;
 
     // Load configuration
-    const config = await loadVibeConfig(currentWorktreePath);
+    const config = await loadVibeConfig(currentWorktreePath, ctx);
 
     // Create progress tracker
     const tracker = new ProgressTracker({
       title: "Cleaning up worktree",
-    });
+    }, ctx);
 
     // Run pre_clean hooks
     const preCleanHooks = config?.hooks?.pre_clean;
@@ -156,6 +163,7 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
           originPath: mainPath,
         },
         trackerInfo,
+        ctx,
       );
 
       // Finish progress tracking
@@ -166,7 +174,7 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
     runtime.control.chdir(mainPath);
 
     // Load user settings to check fast_remove preference
-    const settings = await loadUserSettings();
+    const settings = await loadUserSettings(ctx);
     const useFastRemove = settings.clean?.fast_remove ?? true; // Default: true
 
     // Remove worktree
@@ -176,15 +184,22 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
       forceRemove,
       useFastRemove,
       outputOpts,
+      ctx,
     );
 
     // Run post_clean hooks from main worktree
     const postCleanHooks = config?.hooks?.post_clean;
     if (postCleanHooks !== undefined && postCleanHooks.length > 0) {
-      await runHooks(postCleanHooks, mainPath, {
-        worktreePath: currentWorktreePath,
-        originPath: mainPath,
-      });
+      await runHooks(
+        postCleanHooks,
+        mainPath,
+        {
+          worktreePath: currentWorktreePath,
+          originPath: mainPath,
+        },
+        undefined,
+        ctx,
+      );
     }
 
     log(`Worktree ${currentWorktreePath} has been removed.`, outputOpts);
@@ -203,7 +218,7 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
     // Delete branch if requested
     if (shouldDeleteBranch && currentBranch) {
       try {
-        await runGitCommand(["-C", mainPath, "branch", "-d", currentBranch]);
+        await runGitCommand(["-C", mainPath, "branch", "-d", currentBranch], ctx);
         log(`Branch ${currentBranch} has been deleted.`, outputOpts);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
