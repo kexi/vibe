@@ -124,14 +124,14 @@ async function loadBaseline(path: string): Promise<Baseline | null> {
 async function runBenchmark(
   binary: string,
   projectPath: string,
-  command: string,
+  args: string[],
   iterations: number,
 ): Promise<number[]> {
   const times: number[] = [];
 
   for (let i = 0; i < iterations; i++) {
     console.log(`  Run ${i + 1}/${iterations}...`);
-    const duration = await runCommand(binary, [command], projectPath);
+    const duration = await runCommand(binary, args, projectPath);
     times.push(duration);
     console.log(`    ${duration.toFixed(2)}s`);
   }
@@ -176,13 +176,18 @@ async function main(): Promise<void> {
 
   // Benchmark vibe start (use a fixed branch name for benchmarking)
   console.log("Benchmarking 'vibe start'...");
-  const startTimes = await runBenchmark(vibeBinary, reactNativePath, "start benchmark-worktree", iterations);
+  const startTimes = await runBenchmark(
+    vibeBinary,
+    reactNativePath,
+    ["start", "benchmark-worktree"],
+    iterations,
+  );
   const startMedian = calculateMedian(startTimes);
   console.log(`  Median: ${startMedian.toFixed(2)}s\n`);
 
   // Benchmark vibe clean
   console.log("Benchmarking 'vibe clean'...");
-  const cleanTimes = await runBenchmark(vibeBinary, reactNativePath, "clean", iterations);
+  const cleanTimes = await runBenchmark(vibeBinary, reactNativePath, ["clean"], iterations);
   const cleanMedian = calculateMedian(cleanTimes);
   console.log(`  Median: ${cleanMedian.toFixed(2)}s\n`);
 
