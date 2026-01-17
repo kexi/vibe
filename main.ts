@@ -8,6 +8,7 @@ import { configCommand } from "./src/commands/config.ts";
 import { upgradeCommand } from "./src/commands/upgrade.ts";
 import { BUILD_INFO } from "./src/version.ts";
 import { initRuntime, runtime } from "./src/runtime/index.ts";
+import { createAppContext, setGlobalContext } from "./src/context/index.ts";
 
 /**
  * Boolean options supported by the CLI.
@@ -90,7 +91,10 @@ Examples:
 
 async function main(): Promise<void> {
   // Initialize runtime before using any runtime APIs
-  await initRuntime();
+  const rt = await initRuntime();
+
+  // Set up global context for dependency injection
+  setGlobalContext(createAppContext(rt));
 
   const args = parseArgs([...runtime.control.args], {
     boolean: [...BOOLEAN_OPTIONS],

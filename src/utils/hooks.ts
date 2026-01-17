@@ -1,5 +1,5 @@
 import type { ProgressTracker } from "./progress.ts";
-import { runtime } from "../runtime/index.ts";
+import { type AppContext, getGlobalContext } from "../context/index.ts";
 
 export interface HookEnvironment {
   worktreePath: string;
@@ -25,6 +25,7 @@ export interface HookTrackerInfo {
  * @param cwd - Working directory for command execution
  * @param env - Hook environment variables (VIBE_WORKTREE_PATH, VIBE_ORIGIN_PATH)
  * @param trackerInfo - Optional progress tracker with task IDs for each command
+ * @param ctx - Application context
  * @throws {Error} If any hook command fails (non-zero exit code)
  */
 export async function runHooks(
@@ -32,7 +33,10 @@ export async function runHooks(
   cwd: string,
   env: HookEnvironment,
   trackerInfo?: HookTrackerInfo,
+  ctx: AppContext = getGlobalContext(),
 ): Promise<void> {
+  const { runtime } = ctx;
+
   const hookEnv = {
     ...runtime.env.toObject(),
     VIBE_WORKTREE_PATH: env.worktreePath,

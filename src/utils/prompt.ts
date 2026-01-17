@@ -2,14 +2,14 @@
  * Interactive prompt utilities
  */
 
-import { runtime } from "../runtime/index.ts";
+import { type AppContext, getGlobalContext } from "../context/index.ts";
 
 /**
  * Read a single line of input from the user
  */
-async function readLine(): Promise<string> {
+async function readLine(ctx: AppContext): Promise<string> {
   const buf = new Uint8Array(1024);
-  const n = await runtime.io.stdin.read(buf);
+  const n = await ctx.runtime.io.stdin.read(buf);
   const isInputReceived = n !== null;
   if (isInputReceived) {
     return new TextDecoder().decode(buf.subarray(0, n)).trim();
@@ -20,9 +20,15 @@ async function readLine(): Promise<string> {
 /**
  * Display a Y/n confirmation prompt
  * @param message Confirmation message
+ * @param ctx Application context
  * @returns true if user selects Yes, false otherwise
  */
-export async function confirm(message: string): Promise<boolean> {
+export async function confirm(
+  message: string,
+  ctx: AppContext = getGlobalContext(),
+): Promise<boolean> {
+  const { runtime } = ctx;
+
   // VIBE_FORCE_INTERACTIVE: When set to "1", forces the CLI to treat stdin as interactive.
   // This is necessary for E2E testing with node-pty, which creates a pseudo-terminal (PTY)
   // that Deno.stdin.isTerminal() doesn't recognize as a true TTY. Without this flag,
@@ -41,7 +47,7 @@ export async function confirm(message: string): Promise<boolean> {
   while (true) {
     // Use writeSync to ensure immediate output in PTY environments (bypasses buffering)
     runtime.io.stderr.writeSync(new TextEncoder().encode(`${message}\n`));
-    const input = await readLine();
+    const input = await readLine(ctx);
 
     const isYes = input === "Y" || input === "y" || input === "";
     if (isYes) {
@@ -61,12 +67,16 @@ export async function confirm(message: string): Promise<boolean> {
  * Display a numbered selection prompt
  * @param message Prompt message
  * @param choices Array of choices
+ * @param ctx Application context
  * @returns Selected index (0-based)
  */
 export async function select(
   message: string,
   choices: string[],
+  ctx: AppContext = getGlobalContext(),
 ): Promise<number> {
+  const { runtime } = ctx;
+
   // VIBE_FORCE_INTERACTIVE: When set to "1", forces the CLI to treat stdin as interactive.
   // This is necessary for E2E testing with node-pty, which creates a pseudo-terminal (PTY)
   // that Deno.stdin.isTerminal() doesn't recognize as a true TTY. Without this flag,
@@ -87,7 +97,7 @@ export async function select(
     }
     runtime.io.stderr.writeSync(new TextEncoder().encode("Please select (enter number):\n"));
 
-    const input = await readLine();
+    const input = await readLine(ctx);
     const number = parseInt(input, 10);
 
     const isValidNumber = !isNaN(number) && number >= 1 && number <= choices.length;

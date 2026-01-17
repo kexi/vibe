@@ -1,6 +1,6 @@
 import { expandGlob } from "@std/fs";
 import { join, relative } from "@std/path";
-import { runtime } from "../runtime/index.ts";
+import { type AppContext, getGlobalContext } from "../context/index.ts";
 
 /**
  * Checks if a string contains glob pattern characters.
@@ -91,9 +91,9 @@ export async function expandCopyPatterns(
 /**
  * Checks if a path is a directory.
  */
-async function isDir(path: string): Promise<boolean> {
+async function isDir(path: string, ctx: AppContext): Promise<boolean> {
   try {
-    const stat = await runtime.fs.stat(path);
+    const stat = await ctx.runtime.fs.stat(path);
     return stat.isDirectory;
   } catch {
     return false;
@@ -152,6 +152,7 @@ async function expandGlobPatternForDirectories(
 export async function expandDirectoryPatterns(
   patterns: string[],
   repoRoot: string,
+  ctx: AppContext = getGlobalContext(),
 ): Promise<string[]> {
   const expandedDirs: string[] = [];
   const seen = new Set<string>();
@@ -180,7 +181,7 @@ export async function expandDirectoryPatterns(
 
       // Treat as exact path - verify it's a directory
       const absolutePath = join(repoRoot, pattern);
-      const isDirPath = await isDir(absolutePath);
+      const isDirPath = await isDir(absolutePath, ctx);
       if (isDirPath && !seen.has(pattern)) {
         seen.add(pattern);
         expandedDirs.push(pattern);

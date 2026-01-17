@@ -20,7 +20,8 @@
     "fmt:check": "deno fmt --check",
     "check": "deno check main.ts src/**/*.ts",
     "ci": "deno task fmt:check && deno task lint && deno task check && deno task test",
-    "check:all": "deno task ci"
+    "check:all": "deno task ci",
+    "sync-version": "deno run --allow-read --allow-write scripts/sync-version.ts"
   },
   "imports": {
     "@std/cli": "jsr:@std/cli@^1.0.0",

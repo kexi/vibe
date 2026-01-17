@@ -19,8 +19,8 @@
 //! - A01:2021 - Broken Access Control (file type validation)
 
 use crate::error::{CloneError, CloneResult};
-use std::fs::{self, File, OpenOptions};
-use std::os::unix::fs::{FileTypeExt, PermissionsExt};
+use std::fs::{self, OpenOptions};
+use std::os::unix::fs::{FileTypeExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
 
@@ -90,13 +90,22 @@ pub fn clone_file(src: &Path, dest: &Path) -> CloneResult<()> {
     validate_file_type(src)?;
 
     // Open source file for reading
-    let src_file = File::open(src).map_err(|e| {
-        CloneError::from_errno("open source", e.raw_os_error().unwrap_or(0))
-    })?;
+    // SECURITY: O_NOFOLLOW prevents TOCTOU race conditions by rejecting symlinks at open time
+    // If an attacker replaces the file with a symlink between validate_file_type() and open(),
+    // this will fail with ELOOP instead of following the symlink
+    let src_file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(src)
+        .map_err(|e| {
+            CloneError::from_errno("open source", e.raw_os_error().unwrap_or(0))
+        })?;
 
     // Get source file permissions to preserve them
-    let src_metadata = std::fs::metadata(src).map_err(|e| {
-        CloneError::from_errno("stat source", e.raw_os_error().unwrap_or(0))
+    // SECURITY: Use fstat on the open file descriptor instead of stat on path
+    // to avoid TOCTOU race conditions
+    let src_metadata = src_file.metadata().map_err(|e| {
+        CloneError::from_errno("fstat source", e.raw_os_error().unwrap_or(0))
     })?;
     let src_mode = src_metadata.permissions().mode();
 

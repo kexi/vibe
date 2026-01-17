@@ -6,10 +6,53 @@ on:
 
 permissions:
   contents: read
+  id-token: write  # Required for npm provenance
 
 jobs:
+  # Verify all versions are in sync before any build/publish
+  verify-versions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+
+      - name: Verify deno.json version matches tag
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          DENO_VERSION=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('deno.json')).version)")
+
+          if [ "$TAG_VERSION" != "$DENO_VERSION" ]; then
+            echo "Error: Version mismatch!"
+            echo "  Git tag version: $TAG_VERSION"
+            echo "  deno.json version: $DENO_VERSION"
+            exit 1
+          fi
+
+          echo "deno.json version validation passed: $DENO_VERSION"
+
+      - name: Verify all package.json versions are in sync
+        run: deno task sync-version --check
+
+  # Security audit for Rust dependencies (runs once, not per platform)
+  security-audit:
+    needs: verify-versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Run security audit
+        working-directory: packages/@kexi/vibe-native
+        run: cargo audit
+
   # Build native binaries for each platform using napi-rs
   build-native:
+    needs: verify-versions
     strategy:
       fail-fast: false
       matrix:
@@ -50,7 +93,7 @@ jobs:
 
   # Publish @kexi/vibe-native package with all platform binaries
   publish-native:
-    needs: build-native
+    needs: [security-audit, build-native]
     runs-on: ubuntu-latest
 
     steps:
@@ -100,7 +143,7 @@ jobs:
 
       - name: Publish @kexi/vibe-native
         working-directory: packages/@kexi/vibe-native
-        run: npm publish --access public
+        run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -179,6 +222,6 @@ jobs:
 
       - name: Publish @kexi/vibe
         working-directory: npm
-        run: npm publish --access public
+        run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -1,4 +1,4 @@
-import { runtime } from "../runtime/index.ts";
+import { type AppContext, getGlobalContext } from "../context/index.ts";
 
 /**
  * Calculate SHA-256 hash from file content
@@ -19,10 +19,14 @@ export async function calculateHashFromContent(
 /**
  * Calculate SHA-256 hash of a file
  * @param filePath File path
+ * @param ctx Application context
  * @returns Hash value (hex format, 64 characters)
  */
-export async function calculateFileHash(filePath: string): Promise<string> {
-  const fileContent = await runtime.fs.readFile(filePath);
+export async function calculateFileHash(
+  filePath: string,
+  ctx: AppContext = getGlobalContext(),
+): Promise<string> {
+  const fileContent = await ctx.runtime.fs.readFile(filePath);
   return await calculateHashFromContent(fileContent);
 }
 

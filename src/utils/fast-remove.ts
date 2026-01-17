@@ -1,5 +1,5 @@
 import { dirname, join } from "@std/path";
-import { runtime } from "../runtime/index.ts";
+import { type AppContext, getGlobalContext } from "../context/index.ts";
 
 /**
  * Display path for macOS Trash returned to callers.
@@ -76,7 +76,8 @@ async function moveToMacOSTrash(targetPath: string): Promise<boolean> {
  * Note: Uses nohup on Linux to ensure the process continues after
  * the parent exits. Path is passed as an argument ($1) to avoid shell injection.
  */
-function spawnBackgroundDelete(trashPath: string): void {
+function spawnBackgroundDelete(trashPath: string, ctx: AppContext): void {
+  const { runtime } = ctx;
   const isWindows = runtime.build.os === "windows";
 
   if (isWindows) {
@@ -132,10 +133,12 @@ function getTempDir(): string {
  * up worktrees which should not affect the original repository.
  *
  * @param targetPath The directory to remove
+ * @param ctx Application context
  * @returns Result indicating success/failure and the trash path if successful
  */
 export async function fastRemoveDirectory(
   targetPath: string,
+  ctx: AppContext = getGlobalContext(),
 ): Promise<FastRemoveResult> {
   const isMacOS = Deno.build.os === "darwin";
 
@@ -159,7 +162,7 @@ export async function fastRemoveDirectory(
     // This is preferred because /tmp is cleaned on reboot
     try {
       await Deno.rename(targetPath, tempTrashPath);
-      spawnBackgroundDelete(tempTrashPath);
+      spawnBackgroundDelete(tempTrashPath, ctx);
       return { success: true, trashedPath: tempTrashPath };
     } catch (tempError) {
       // Cross-device link error (EXDEV) - fall back to parent directory
@@ -180,7 +183,7 @@ export async function fastRemoveDirectory(
     await Deno.rename(targetPath, fallbackTrashPath);
 
     // Spawn detached background process for deletion
-    spawnBackgroundDelete(fallbackTrashPath);
+    spawnBackgroundDelete(fallbackTrashPath, ctx);
 
     return { success: true, trashedPath: fallbackTrashPath };
   } catch (error) {
@@ -194,7 +197,7 @@ export async function fastRemoveDirectory(
 /**
  * Clean up stale .vibe-trash-* directories from a single directory
  */
-async function cleanupTrashInDir(dir: string): Promise<void> {
+async function cleanupTrashInDir(dir: string, ctx: AppContext): Promise<void> {
   try {
     for await (const entry of Deno.readDir(dir)) {
       const isVibeTrash = entry.isDirectory &&
@@ -202,7 +205,7 @@ async function cleanupTrashInDir(dir: string): Promise<void> {
       if (isVibeTrash) {
         const trashPath = join(dir, entry.name);
         // Spawn detached background process for cleanup
-        spawnBackgroundDelete(trashPath);
+        spawnBackgroundDelete(trashPath, ctx);
       }
     }
   } catch {
@@ -216,12 +219,16 @@ async function cleanupTrashInDir(dir: string): Promise<void> {
  * This is called asynchronously and doesn't block the user
  *
  * @param parentDir The directory to search for stale trash directories
+ * @param ctx Application context
  */
-export async function cleanupStaleTrash(parentDir: string): Promise<void> {
+export async function cleanupStaleTrash(
+  parentDir: string,
+  ctx: AppContext = getGlobalContext(),
+): Promise<void> {
   // Clean up in both parent directory and temp directory
   const tempDir = getTempDir();
   await Promise.all([
-    cleanupTrashInDir(parentDir),
-    cleanupTrashInDir(tempDir),
+    cleanupTrashInDir(parentDir, ctx),
+    cleanupTrashInDir(tempDir, ctx),
   ]);
 }

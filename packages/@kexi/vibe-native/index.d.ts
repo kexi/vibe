@@ -29,6 +29,6 @@ export declare function isAvailable(): boolean
 export declare function supportsDirectory(): boolean
 /**
  * Get the current platform
- * Returns "darwin", "linux", or "unknown"
+ * Returns "darwin" or "linux"
  */
-export declare function getPlatform(): "darwin" | "linux" | "unknown"
+export declare function getPlatform(): "darwin" | "linux"

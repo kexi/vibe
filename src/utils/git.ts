@@ -1,8 +1,11 @@
 import { basename, dirname, isAbsolute, normalize, relative, SEPARATOR } from "@std/path";
-import { runtime } from "../runtime/index.ts";
+import { type AppContext, getGlobalContext } from "../context/index.ts";
 
-export async function runGitCommand(args: string[]): Promise<string> {
-  const result = await runtime.process.run({
+export async function runGitCommand(
+  args: string[],
+  ctx: AppContext = getGlobalContext(),
+): Promise<string> {
+  const result = await ctx.runtime.process.run({
     cmd: "git",
     args,
     stdout: "piped",
@@ -17,28 +20,36 @@ export async function runGitCommand(args: string[]): Promise<string> {
   return new TextDecoder().decode(result.stdout).trim();
 }
 
-export async function getRepoRoot(): Promise<string> {
-  return await runGitCommand(["rev-parse", "--show-toplevel"]);
+export async function getRepoRoot(
+  ctx: AppContext = getGlobalContext(),
+): Promise<string> {
+  return await runGitCommand(["rev-parse", "--show-toplevel"], ctx);
 }
 
-export async function getRepoName(): Promise<string> {
-  const root = await getRepoRoot();
+export async function getRepoName(
+  ctx: AppContext = getGlobalContext(),
+): Promise<string> {
+  const root = await getRepoRoot(ctx);
   return basename(root);
 }
 
-export async function isInsideWorktree(): Promise<boolean> {
+export async function isInsideWorktree(
+  ctx: AppContext = getGlobalContext(),
+): Promise<boolean> {
   try {
-    const result = await runGitCommand(["rev-parse", "--is-inside-work-tree"]);
+    const result = await runGitCommand(["rev-parse", "--is-inside-work-tree"], ctx);
     return result === "true";
   } catch {
     return false;
   }
 }
 
-export async function getWorktreeList(): Promise<
+export async function getWorktreeList(
+  ctx: AppContext = getGlobalContext(),
+): Promise<
   { path: string; branch: string }[]
 > {
-  const output = await runGitCommand(["worktree", "list", "--porcelain"]);
+  const output = await runGitCommand(["worktree", "list", "--porcelain"], ctx);
   const lines = output.split("\n");
   const worktrees: { path: string; branch: string }[] = [];
 
@@ -57,14 +68,17 @@ export async function getWorktreeList(): Promise<
 
 export async function getWorktreeByPath(
   path: string,
+  ctx: AppContext = getGlobalContext(),
 ): Promise<{ path: string; branch: string } | null> {
-  const worktrees = await getWorktreeList();
+  const worktrees = await getWorktreeList(ctx);
   const normalizedPath = normalize(path);
   return worktrees.find((w) => normalize(w.path) === normalizedPath) ?? null;
 }
 
-export async function getMainWorktreePath(): Promise<string> {
-  const worktrees = await getWorktreeList();
+export async function getMainWorktreePath(
+  ctx: AppContext = getGlobalContext(),
+): Promise<string> {
+  const worktrees = await getWorktreeList(ctx);
   const mainWorktree = worktrees[0];
   if (!mainWorktree) {
     throw new Error("Could not find main worktree");
@@ -72,9 +86,11 @@ export async function getMainWorktreePath(): Promise<string> {
   return mainWorktree.path;
 }
 
-export async function isMainWorktree(): Promise<boolean> {
-  const currentRoot = await getRepoRoot();
-  const mainPath = await getMainWorktreePath();
+export async function isMainWorktree(
+  ctx: AppContext = getGlobalContext(),
+): Promise<boolean> {
+  const currentRoot = await getRepoRoot(ctx);
+  const mainPath = await getMainWorktreePath(ctx);
   return currentRoot === mainPath;
 }
 
@@ -82,14 +98,17 @@ export function sanitizeBranchName(branchName: string): string {
   return branchName.replace(/\//g, "-");
 }
 
-export async function branchExists(branchName: string): Promise<boolean> {
+export async function branchExists(
+  branchName: string,
+  ctx: AppContext = getGlobalContext(),
+): Promise<boolean> {
   try {
     await runGitCommand([
       "show-ref",
       "--verify",
       "--quiet",
       `refs/heads/${branchName}`,
-    ]);
+    ], ctx);
     return true;
   } catch {
     return false;
@@ -100,8 +119,10 @@ export async function branchExists(branchName: string): Promise<boolean> {
  * Check if the worktree has any uncommitted changes
  * @returns true if there are changes, false otherwise
  */
-export async function hasUncommittedChanges(): Promise<boolean> {
-  const output = await runGitCommand(["status", "--porcelain"]);
+export async function hasUncommittedChanges(
+  ctx: AppContext = getGlobalContext(),
+): Promise<boolean> {
+  const output = await runGitCommand(["status", "--porcelain"], ctx);
   const hasChanges = output.trim().length > 0;
   return hasChanges;
 }
@@ -113,8 +134,9 @@ export async function hasUncommittedChanges(): Promise<boolean> {
  */
 export async function findWorktreeByBranch(
   branchName: string,
+  ctx: AppContext = getGlobalContext(),
 ): Promise<string | null> {
-  const worktrees = await getWorktreeList();
+  const worktrees = await getWorktreeList(ctx);
   const found = worktrees.find((w) => w.branch === branchName);
   const isWorktreeFound = found !== undefined;
   if (isWorktreeFound) {
@@ -157,9 +179,11 @@ export function normalizeRemoteUrl(url: string): string {
  * Get the remote URL for the current repository
  * @returns Remote URL (normalized), or undefined if no remote exists
  */
-export async function getRemoteUrl(): Promise<string | undefined> {
+export async function getRemoteUrl(
+  ctx: AppContext = getGlobalContext(),
+): Promise<string | undefined> {
   try {
-    const rawUrl = await runGitCommand(["config", "--get", "remote.origin.url"]);
+    const rawUrl = await runGitCommand(["config", "--get", "remote.origin.url"], ctx);
     return normalizeRemoteUrl(rawUrl);
   } catch {
     // No remote configured
@@ -185,17 +209,18 @@ export interface RepoInfo {
  */
 export async function getRepoInfoFromPath(
   absolutePath: string,
+  ctx: AppContext = getGlobalContext(),
 ): Promise<RepoInfo | null> {
   try {
     // Resolve symlinks to real path for security
-    const realPath = await runtime.fs.realPath(absolutePath);
+    const realPath = await ctx.runtime.fs.realPath(absolutePath);
     const fileDir = dirname(realPath);
 
     // Use git -C to run commands in specific directory without changing CWD
     // This avoids race conditions when multiple calls run concurrently
 
     // Get repository root
-    const repoRoot = await runGitCommand(["-C", fileDir, "rev-parse", "--show-toplevel"]);
+    const repoRoot = await runGitCommand(["-C", fileDir, "rev-parse", "--show-toplevel"], ctx);
 
     // Validate that repoRoot is absolute
     if (!isAbsolute(repoRoot)) {
@@ -224,7 +249,10 @@ export async function getRepoInfoFromPath(
     // Get remote URL (may be undefined for local-only repos)
     let remoteUrl: string | undefined;
     try {
-      const rawUrl = await runGitCommand(["-C", fileDir, "config", "--get", "remote.origin.url"]);
+      const rawUrl = await runGitCommand(
+        ["-C", fileDir, "config", "--get", "remote.origin.url"],
+        ctx,
+      );
       remoteUrl = normalizeRemoteUrl(rawUrl);
     } catch {
       // No remote configured

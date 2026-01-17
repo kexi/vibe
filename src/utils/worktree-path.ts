@@ -1,7 +1,7 @@
 import { dirname, isAbsolute, join } from "@std/path";
 import type { VibeConfig } from "../types/config.ts";
 import type { VibeSettings } from "./settings.ts";
-import { runtime } from "../runtime/index.ts";
+import { type AppContext, getGlobalContext } from "../context/index.ts";
 
 export interface WorktreePathContext {
   repoName: string;
@@ -18,6 +18,7 @@ export async function resolveWorktreePath(
   config: VibeConfig | undefined,
   settings: VibeSettings,
   context: WorktreePathContext,
+  ctx: AppContext = getGlobalContext(),
 ): Promise<string> {
   // Check if path_script is configured
   const pathScript = config?.worktree?.path_script ??
@@ -25,7 +26,7 @@ export async function resolveWorktreePath(
 
   const hasPathScript = pathScript !== undefined;
   if (hasPathScript) {
-    return await executePathScript(pathScript, context);
+    return await executePathScript(pathScript, context, ctx);
   }
 
   // Default path: {parentDir}/{repoName}-{sanitizedBranch}
@@ -36,7 +37,10 @@ export async function resolveWorktreePath(
 async function executePathScript(
   scriptPath: string,
   context: WorktreePathContext,
+  ctx: AppContext,
 ): Promise<string> {
+  const { runtime } = ctx;
+
   // Expand ~ to home directory with validation
   const home = runtime.env.get("HOME") ?? "";
   const isValidHome = home.length > 0 && isAbsolute(home) && !home.includes("..");

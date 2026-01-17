@@ -34,6 +34,13 @@ extern "C" {
     fn __error() -> *mut libc::c_int;
 }
 
+// SECURITY: CLONE_NOFOLLOW prevents TOCTOU race conditions by not following symlinks
+// If an attacker replaces the file with a symlink between validate_file_type() and clonefile(),
+// this flag ensures clonefile() will clone the symlink itself (which will create a symlink)
+// rather than following it to access unintended files
+// From <sys/clonefile.h>
+const CLONE_NOFOLLOW: u32 = 0x0001;
+
 /// Capture errno immediately using libc's __error() function.
 /// This is safer than std::io::Error::last_os_error() as it avoids
 /// potential race conditions in multi-threaded environments.
@@ -109,7 +116,8 @@ pub fn clone_file(src: &Path, dest: &Path) -> CloneResult<()> {
     let src_cstr = path_to_cstring(src)?;
     let dest_cstr = path_to_cstring(dest)?;
 
-    let result = unsafe { clonefile(src_cstr.as_ptr(), dest_cstr.as_ptr(), 0) };
+    // SECURITY: Use CLONE_NOFOLLOW to prevent TOCTOU symlink attacks
+    let result = unsafe { clonefile(src_cstr.as_ptr(), dest_cstr.as_ptr(), CLONE_NOFOLLOW) };
 
     if result != 0 {
         // SECURITY: Capture errno immediately after syscall using __error()

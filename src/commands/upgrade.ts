@@ -1,6 +1,6 @@
 import { BUILD_INFO } from "../version.ts";
 import { log, type OutputOptions, verboseLog } from "../utils/output.ts";
-import { runtime } from "../runtime/index.ts";
+import { type AppContext, getGlobalContext } from "../context/index.ts";
 
 const JSR_META_URL = "https://jsr.io/@kexi/vibe/meta.json";
 const GITHUB_RELEASES_URL = "https://github.com/kexi/vibe/releases";
@@ -128,7 +128,8 @@ function parseSemver(version: string): string {
 /**
  * Check if the executable is installed via Homebrew
  */
-async function checkHomebrewInstall(): Promise<boolean> {
+async function checkHomebrewInstall(ctx: AppContext): Promise<boolean> {
+  const { runtime } = ctx;
   const isMac = runtime.build.os === "darwin";
   if (!isMac) {
     return false;
@@ -156,7 +157,7 @@ async function checkHomebrewInstall(): Promise<boolean> {
 /**
  * Detect the installation method
  */
-async function detectInstallMethod(): Promise<InstallMethod> {
+async function detectInstallMethod(ctx: AppContext): Promise<InstallMethod> {
   const distribution = BUILD_INFO.distribution;
 
   const isJSR = distribution === "jsr";
@@ -171,7 +172,7 @@ async function detectInstallMethod(): Promise<InstallMethod> {
 
   const isBinaryOrDev = distribution === "binary" || distribution === "dev";
   if (isBinaryOrDev) {
-    const isHomebrewInstalled = await checkHomebrewInstall();
+    const isHomebrewInstalled = await checkHomebrewInstall(ctx);
     if (isHomebrewInstalled) {
       return "homebrew";
     }
@@ -212,7 +213,9 @@ function getUpgradeCommand(method: InstallMethod): string | null {
  */
 export async function upgradeCommand(
   options: UpgradeOptions = { check: false },
+  ctx: AppContext = getGlobalContext(),
 ): Promise<void> {
+  const { runtime } = ctx;
   const { check, verbose = false, quiet = false } = options;
   const outputOpts: OutputOptions = { verbose, quiet };
 
@@ -239,6 +242,7 @@ export async function upgradeCommand(
         console.error(`Error: ${errorMessage}`);
       }
       runtime.control.exit(1);
+      return; // TypeScript flow analysis: exit never returns
     }
 
     const comparison = compareVersions(currentVersion, latestVersion);
@@ -261,7 +265,7 @@ export async function upgradeCommand(
     }
 
     // Detect installation method and show upgrade command
-    const installMethod = await detectInstallMethod();
+    const installMethod = await detectInstallMethod(ctx);
     verboseLog(`Detected install method: ${installMethod}`, outputOpts);
     const upgradeCmd = getUpgradeCommand(installMethod);
 

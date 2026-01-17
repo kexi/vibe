@@ -1,13 +1,5 @@
 import { join } from "@std/path";
-import {
-  branchExists,
-  findWorktreeByBranch,
-  getRepoName,
-  getRepoRoot,
-  getWorktreeByPath,
-  runGitCommand,
-  sanitizeBranchName,
-} from "../utils/git.ts";
+import { getRepoName, getRepoRoot, sanitizeBranchName } from "../utils/git.ts";
 import type { VibeConfig } from "../types/config.ts";
 import { loadVibeConfig } from "../utils/config.ts";
 import { type HookTrackerInfo, runHooks } from "../utils/hooks.ts";
@@ -18,7 +10,14 @@ import { getCopyService } from "../utils/copy/index.ts";
 import { loadUserSettings } from "../utils/settings.ts";
 import { resolveWorktreePath } from "../utils/worktree-path.ts";
 import { log, type OutputOptions, verboseLog } from "../utils/output.ts";
-import { runtime } from "../runtime/index.ts";
+import { type AppContext, getGlobalContext } from "../context/index.ts";
+import {
+  checkWorktreeConflict,
+  createWorktree,
+  getCreateWorktreeCommand,
+  removeWorktree,
+  validateBranchForWorktree,
+} from "../services/worktree/index.ts";
 
 interface StartOptions extends OutputOptions {
   reuse?: boolean;
@@ -37,53 +36,19 @@ function logDryRun(message: string): void {
   console.error(`[dry-run] ${message}`);
 }
 
-async function runConfigAndHooks(
-  config: VibeConfig | undefined,
-  repoRoot: string,
-  worktreePath: string,
-  tracker: ProgressTracker,
-  options: ConfigAndHooksOptions = {},
-): Promise<void> {
-  const { skipHooks = false, skipCopy = false, dryRun = false } = options;
-
-  const hooksCount = skipHooks ? 0 : (config?.hooks?.pre_start?.length ?? 0) +
-    (config?.hooks?.post_start?.length ?? 0);
-  const copyCount = skipCopy
-    ? 0
-    : (config?.copy?.files?.length ?? 0) + (config?.copy?.dirs?.length ?? 0);
-  const hasOperations = config !== undefined && hooksCount + copyCount > 0;
-
-  // Don't start tracker in dry-run mode
-  const shouldStartTracker = !dryRun && hasOperations;
-  if (shouldStartTracker) {
-    tracker.start();
-  }
-
-  const shouldRunPreStartHooks = !skipHooks;
-  if (shouldRunPreStartHooks) {
-    await runPreStartHooksIfNeeded(config, repoRoot, worktreePath, tracker, dryRun);
-  }
-
-  if (config !== undefined) {
-    await runVibeConfig(config, repoRoot, worktreePath, tracker, {
-      skipHooks,
-      skipCopy,
-      dryRun,
-    });
-  }
-
-  if (shouldStartTracker) {
-    tracker.finish();
-  }
-}
-
+/**
+ * Main start command - creates or navigates to a worktree
+ */
 export async function startCommand(
   branchName: string,
   options: StartOptions = {},
+  ctx: AppContext = getGlobalContext(),
 ): Promise<void> {
+  const { runtime } = ctx;
   const { noHooks = false, noCopy = false, dryRun = false, verbose = false, quiet = false } =
     options;
   const outputOpts: OutputOptions = { verbose, quiet };
+
   const isBranchNameEmpty = !branchName;
   if (isBranchNameEmpty) {
     console.error("Error: Branch name is required");
@@ -91,134 +56,91 @@ export async function startCommand(
   }
 
   try {
-    const repoRoot = await getRepoRoot();
-    const repoName = await getRepoName();
+    const repoRoot = await getRepoRoot(ctx);
+    const repoName = await getRepoName(ctx);
     const sanitizedBranch = sanitizeBranchName(branchName);
 
     verboseLog(`Repository root: ${repoRoot}`, outputOpts);
     verboseLog(`Repository name: ${repoName}`, outputOpts);
     verboseLog(`Sanitized branch: ${sanitizedBranch}`, outputOpts);
 
-    // Check if branch is already in use by another worktree
-    const existingWorktreePath = await findWorktreeByBranch(branchName);
-    const isBranchUsedInWorktree = existingWorktreePath !== null;
-    if (isBranchUsedInWorktree) {
-      if (dryRun) {
-        logDryRun(`Branch '${branchName}' is already used in worktree '${existingWorktreePath}'`);
-        logDryRun(`Would navigate to: ${existingWorktreePath}`);
-        return;
-      }
-      const shouldNavigate = await confirm(
-        `Branch '${branchName}' is already used in worktree '${existingWorktreePath}'.\nNavigate to the existing worktree? (Y/n)`,
-      );
+    // Validate branch for worktree creation
+    const validation = await validateBranchForWorktree(branchName, ctx);
+    const isBranchUsedInWorktree = !validation.isValid;
 
-      if (shouldNavigate) {
-        console.log(`cd '${existingWorktreePath}'`);
-        runtime.control.exit(0);
-      } else {
-        console.error("Cancelled");
-        runtime.control.exit(0);
-      }
+    if (isBranchUsedInWorktree) {
+      const handled = await handleExistingBranchWorktree(
+        branchName,
+        validation.existingWorktreePath!,
+        dryRun,
+        ctx,
+      );
+      if (handled) return;
     }
 
-    // Load settings and config before determining worktree path
-    const settings = await loadUserSettings();
-    const config: VibeConfig | undefined = await loadVibeConfig(repoRoot);
+    // Load settings and config
+    const settings = await loadUserSettings(ctx);
+    const config = await loadVibeConfig(repoRoot, ctx);
 
-    // Resolve worktree path (may use external script)
+    // Resolve worktree path
     const worktreePath = await resolveWorktreePath(config, settings, {
       repoName,
       branchName,
       sanitizedBranch,
       repoRoot,
-    });
+    }, ctx);
 
     // Create progress tracker
     const tracker = new ProgressTracker({
       title: `Setting up worktree ${branchName}`,
-    });
+    }, ctx);
 
-    // Check if worktree already exists at the target path
-    const existingWorktree = await getWorktreeByPath(worktreePath);
+    // Check for conflicts at target path
+    const conflict = await checkWorktreeConflict(worktreePath, branchName, ctx);
 
-    if (existingWorktree !== null) {
-      // Worktree already exists
-      if (existingWorktree.branch === branchName) {
-        // Same branch - idempotent re-entry
-        if (dryRun) {
-          logDryRun(`Worktree already exists at '${worktreePath}'`);
-          logDryRun("Would run hooks and config, then navigate to worktree");
-          await runConfigAndHooks(config, repoRoot, worktreePath, tracker, {
-            skipHooks: noHooks,
-            skipCopy: noCopy,
-            dryRun,
-          });
-          logDryRun(`Would change directory to: ${worktreePath}`);
-          return;
-        }
-        log(`Note: Worktree already exists at '${worktreePath}'`, outputOpts);
-
-        // Run hooks and config in case they changed
-        await runConfigAndHooks(config, repoRoot, worktreePath, tracker, {
-          skipHooks: noHooks,
-          skipCopy: noCopy,
-        });
-
-        // Output cd command
-        console.log(`cd '${worktreePath}'`);
-        return;
-      } else {
-        // Different branch - offer to overwrite
-        if (dryRun) {
-          logDryRun(
-            `Directory '${worktreePath}' already exists (branch: ${existingWorktree.branch})`,
-          );
-          logDryRun("Would prompt to Overwrite/Reuse/Cancel");
-          return;
-        }
-        const choice = await select(
-          `Directory '${worktreePath}' already exists (branch: ${existingWorktree.branch}):`,
-          ["Overwrite (remove and recreate)", "Reuse (use existing)", "Cancel"],
-        );
-
-        if (choice === 0) {
-          // Overwrite: remove existing worktree
-          await runGitCommand(["worktree", "remove", worktreePath, "--force"]);
-        } else if (choice === 1) {
-          // Reuse: skip git worktree creation, run hooks/config, and output cd
-          await runConfigAndHooks(config, repoRoot, worktreePath, tracker, {
-            skipHooks: noHooks,
-            skipCopy: noCopy,
-          });
-
-          // Output cd command
-          console.log(`cd '${worktreePath}'`);
-          return;
-        } else {
-          // Cancel
-          console.error("Cancelled");
-          runtime.control.exit(0);
-        }
-      }
+    if (conflict.conflictType === "same-branch") {
+      // Same branch - idempotent re-entry
+      await handleSameBranchWorktree(
+        config,
+        repoRoot,
+        worktreePath,
+        tracker,
+        { noHooks, noCopy, dryRun },
+        outputOpts,
+        ctx,
+      );
+      return;
     }
 
-    // Path doesn't exist or was overwritten - create worktree
-    const branchAlreadyExists = await branchExists(branchName);
-    const gitCommand = branchAlreadyExists
-      ? `git worktree add '${worktreePath}' ${branchName}`
-      : `git worktree add -b ${branchName} '${worktreePath}'`;
+    if (conflict.hasConflict) {
+      // Different branch - offer to overwrite
+      const shouldContinue = await handleDifferentBranchConflict(
+        config,
+        repoRoot,
+        worktreePath,
+        conflict.existingBranch!,
+        tracker,
+        { noHooks, noCopy, dryRun },
+        ctx,
+      );
+      if (!shouldContinue) return;
+    }
+
+    // Create the worktree
+    const createOpts = {
+      branchName,
+      worktreePath,
+      branchExists: validation.branchExists,
+    };
 
     if (dryRun) {
-      logDryRun(`Would run: ${gitCommand}`);
+      const cmd = getCreateWorktreeCommand(createOpts);
+      logDryRun(`Would run: ${cmd}`);
       logDryRun(`Worktree path: ${worktreePath}`);
     } else {
-      if (branchAlreadyExists) {
-        verboseLog(`Running: git worktree add '${worktreePath}' ${branchName}`, outputOpts);
-        await runGitCommand(["worktree", "add", worktreePath, branchName]);
-      } else {
-        verboseLog(`Running: git worktree add -b ${branchName} '${worktreePath}'`, outputOpts);
-        await runGitCommand(["worktree", "add", "-b", branchName, worktreePath]);
-      }
+      const cmd = getCreateWorktreeCommand(createOpts);
+      verboseLog(`Running: ${cmd}`, outputOpts);
+      await createWorktree(createOpts, ctx);
     }
 
     // Run hooks and config
@@ -226,7 +148,7 @@ export async function startCommand(
       skipHooks: noHooks,
       skipCopy: noCopy,
       dryRun,
-    });
+    }, ctx);
 
     if (dryRun) {
       logDryRun(`Would change directory to: ${worktreePath}`);
@@ -240,167 +162,176 @@ export async function startCommand(
   }
 }
 
-async function runVibeConfig(
-  config: VibeConfig,
-  repoRoot: string,
-  worktreePath: string,
-  tracker?: ProgressTracker,
-  options: ConfigAndHooksOptions = {},
-): Promise<void> {
-  const { skipHooks = false, skipCopy = false, dryRun = false } = options;
+/**
+ * Handle case where branch is already used in another worktree
+ * Returns true if the situation was fully handled (caller should return)
+ */
+async function handleExistingBranchWorktree(
+  branchName: string,
+  existingWorktreePath: string,
+  dryRun: boolean,
+  ctx: AppContext,
+): Promise<boolean> {
+  if (dryRun) {
+    logDryRun(`Branch '${branchName}' is already used in worktree '${existingWorktreePath}'`);
+    logDryRun(`Would navigate to: ${existingWorktreePath}`);
+    return true;
+  }
 
-  // Get the copy service (automatically selects the best strategy)
-  const copyService = getCopyService();
+  const shouldNavigate = await confirm(
+    `Branch '${branchName}' is already used in worktree '${existingWorktreePath}'.\nNavigate to the existing worktree? (Y/n)`,
+    ctx,
+  );
 
-  // Copy files from origin to worktree
-  // Expand glob patterns to actual file paths
-  const shouldCopyFiles = !skipCopy;
-  const filesToCopy = shouldCopyFiles
-    ? await expandCopyPatterns(config.copy?.files ?? [], repoRoot)
-    : [];
-
-  // Handle dry-run for file copying
-  if (dryRun && filesToCopy.length > 0) {
-    logDryRun("Would copy files:");
-    for (const file of filesToCopy) {
-      logDryRun(`  - ${file}`);
-    }
+  if (shouldNavigate) {
+    console.log(`cd '${existingWorktreePath}'`);
   } else {
-    // Add file copying phase if there are files to copy
-    let copyPhaseId: string | undefined;
-    const copyTaskIds: string[] = [];
-    if (tracker && filesToCopy.length > 0) {
-      copyPhaseId = tracker.addPhase("Copying files");
-      for (const file of filesToCopy) {
-        const taskId = tracker.addTask(copyPhaseId, file);
-        copyTaskIds.push(taskId);
-      }
-    }
-
-    for (let i = 0; i < filesToCopy.length; i++) {
-      const file = filesToCopy[i];
-      const src = join(repoRoot, file);
-      const dest = join(worktreePath, file);
-
-      // Update progress: start task
-      if (tracker && copyTaskIds.length > 0) {
-        tracker.startTask(copyTaskIds[i]);
-      }
-
-      // Copy the file using CopyService
-      try {
-        await copyService.copyFile(src, dest);
-        // Update progress: complete task
-        if (tracker && copyTaskIds.length > 0) {
-          tracker.completeTask(copyTaskIds[i]);
-        }
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        // Update progress: fail task
-        if (tracker && copyTaskIds.length > 0) {
-          tracker.failTask(copyTaskIds[i], errorMessage);
-        }
-        console.warn(`Warning: Failed to copy ${file}: ${errorMessage}`);
-      }
-    }
+    console.error("Cancelled");
   }
-
-  // Copy directories from origin to worktree
-  const shouldCopyDirs = !skipCopy;
-  const directoriesToCopy = shouldCopyDirs
-    ? await expandDirectoryPatterns(config.copy?.dirs ?? [], repoRoot)
-    : [];
-
-  // Handle dry-run for directory copying
-  if (dryRun && directoriesToCopy.length > 0) {
-    logDryRun("Would copy directories:");
-    for (const dir of directoriesToCopy) {
-      logDryRun(`  - ${dir}`);
-    }
-  } else {
-    // Add directory copying phase if there are directories to copy
-    let dirCopyPhaseId: string | undefined;
-    const dirCopyTaskIds: string[] = [];
-    const hasDirectoriesToCopy = directoriesToCopy.length > 0;
-    if (tracker && hasDirectoriesToCopy) {
-      // Get strategy name to show in progress
-      const dirStrategy = await copyService.getDirectoryStrategy();
-      const strategyName = dirStrategy.name;
-      dirCopyPhaseId = tracker.addPhase(`Copying directories (${strategyName})`);
-      for (const dir of directoriesToCopy) {
-        const taskId = tracker.addTask(dirCopyPhaseId, dir);
-        dirCopyTaskIds.push(taskId);
-      }
-    }
-
-    // Copy directories in parallel for better performance with clonefile
-    const directoryCopyPromises = directoriesToCopy.map(async (dir, i) => {
-      const src = join(repoRoot, dir);
-      const dest = join(worktreePath, dir);
-
-      // Update progress: start task
-      if (tracker && dirCopyTaskIds.length > 0) {
-        tracker.startTask(dirCopyTaskIds[i]);
-      }
-
-      // Copy directory using CopyService
-      try {
-        await copyService.copyDirectory(src, dest);
-        // Update progress: complete task
-        if (tracker && dirCopyTaskIds.length > 0) {
-          tracker.completeTask(dirCopyTaskIds[i]);
-        }
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        // Update progress: fail task
-        if (tracker && dirCopyTaskIds.length > 0) {
-          tracker.failTask(dirCopyTaskIds[i], errorMessage);
-        }
-        console.warn(`Warning: Failed to copy directory ${dir}: ${errorMessage}`);
-      }
-    });
-
-    await Promise.all(directoryCopyPromises);
-  }
-
-  // Run post_start hooks
-  const shouldRunPostStartHooks = !skipHooks;
-  const postStartHooks = config.hooks?.post_start;
-  const hasPostStartHooks = postStartHooks !== undefined && postStartHooks.length > 0;
-
-  if (dryRun && shouldRunPostStartHooks && hasPostStartHooks) {
-    logDryRun("Would run post-start hooks:");
-    for (const hook of postStartHooks) {
-      logDryRun(`  - ${hook}`);
-    }
-  } else if (shouldRunPostStartHooks && hasPostStartHooks) {
-    let trackerInfo: HookTrackerInfo | undefined;
-    if (tracker) {
-      const phaseId = tracker.addPhase("Post-start hooks");
-      const taskIds = postStartHooks.map((hook) => tracker.addTask(phaseId, hook));
-      trackerInfo = { tracker, taskIds };
-    }
-
-    await runHooks(postStartHooks, worktreePath, {
-      worktreePath,
-      originPath: repoRoot,
-    }, trackerInfo);
-  }
+  ctx.runtime.control.exit(0);
+  return true;
 }
 
-async function runPreStartHooksIfNeeded(
+/**
+ * Handle case where worktree already exists with the same branch
+ */
+async function handleSameBranchWorktree(
   config: VibeConfig | undefined,
   repoRoot: string,
   worktreePath: string,
-  tracker?: ProgressTracker,
-  dryRun: boolean = false,
+  tracker: ProgressTracker,
+  options: { noHooks: boolean; noCopy: boolean; dryRun: boolean },
+  outputOpts: OutputOptions,
+  ctx: AppContext,
+): Promise<void> {
+  const { noHooks, noCopy, dryRun } = options;
+
+  if (dryRun) {
+    logDryRun(`Worktree already exists at '${worktreePath}'`);
+    logDryRun("Would run hooks and config, then navigate to worktree");
+    await runConfigAndHooks(config, repoRoot, worktreePath, tracker, {
+      skipHooks: noHooks,
+      skipCopy: noCopy,
+      dryRun,
+    }, ctx);
+    logDryRun(`Would change directory to: ${worktreePath}`);
+    return;
+  }
+
+  log(`Note: Worktree already exists at '${worktreePath}'`, outputOpts);
+  await runConfigAndHooks(config, repoRoot, worktreePath, tracker, {
+    skipHooks: noHooks,
+    skipCopy: noCopy,
+  }, ctx);
+  console.log(`cd '${worktreePath}'`);
+}
+
+/**
+ * Handle case where worktree exists with a different branch
+ * Returns true if we should continue with worktree creation
+ */
+async function handleDifferentBranchConflict(
+  config: VibeConfig | undefined,
+  repoRoot: string,
+  worktreePath: string,
+  existingBranch: string,
+  tracker: ProgressTracker,
+  options: { noHooks: boolean; noCopy: boolean; dryRun: boolean },
+  ctx: AppContext,
+): Promise<boolean> {
+  const { noHooks, noCopy, dryRun } = options;
+
+  if (dryRun) {
+    logDryRun(`Directory '${worktreePath}' already exists (branch: ${existingBranch})`);
+    logDryRun("Would prompt to Overwrite/Reuse/Cancel");
+    return false;
+  }
+
+  const choice = await select(
+    `Directory '${worktreePath}' already exists (branch: ${existingBranch}):`,
+    ["Overwrite (remove and recreate)", "Reuse (use existing)", "Cancel"],
+    ctx,
+  );
+
+  if (choice === 0) {
+    // Overwrite: remove existing worktree
+    await removeWorktree({ worktreePath, force: true }, ctx);
+    return true;
+  }
+
+  if (choice === 1) {
+    // Reuse: skip git worktree creation, run hooks/config
+    await runConfigAndHooks(config, repoRoot, worktreePath, tracker, {
+      skipHooks: noHooks,
+      skipCopy: noCopy,
+    }, ctx);
+    console.log(`cd '${worktreePath}'`);
+    return false;
+  }
+
+  // Cancel
+  console.error("Cancelled");
+  ctx.runtime.control.exit(0);
+  return false;
+}
+
+/**
+ * Run hooks and copy operations based on config
+ */
+async function runConfigAndHooks(
+  config: VibeConfig | undefined,
+  repoRoot: string,
+  worktreePath: string,
+  tracker: ProgressTracker,
+  options: ConfigAndHooksOptions = {},
+  ctx: AppContext = getGlobalContext(),
+): Promise<void> {
+  const { skipHooks = false, skipCopy = false, dryRun = false } = options;
+
+  const hooksCount = skipHooks ? 0 : (config?.hooks?.pre_start?.length ?? 0) +
+    (config?.hooks?.post_start?.length ?? 0);
+  const copyCount = skipCopy
+    ? 0
+    : (config?.copy?.files?.length ?? 0) + (config?.copy?.dirs?.length ?? 0);
+  const hasOperations = config !== undefined && hooksCount + copyCount > 0;
+
+  const shouldStartTracker = !dryRun && hasOperations;
+  if (shouldStartTracker) {
+    tracker.start();
+  }
+
+  if (!skipHooks) {
+    await runPreStartHooks(config, repoRoot, worktreePath, tracker, dryRun, ctx);
+  }
+
+  if (config !== undefined) {
+    await runCopyAndPostHooks(config, repoRoot, worktreePath, tracker, {
+      skipHooks,
+      skipCopy,
+      dryRun,
+    }, ctx);
+  }
+
+  if (shouldStartTracker) {
+    tracker.finish();
+  }
+}
+
+/**
+ * Run pre-start hooks if configured
+ */
+async function runPreStartHooks(
+  config: VibeConfig | undefined,
+  repoRoot: string,
+  worktreePath: string,
+  tracker: ProgressTracker,
+  dryRun: boolean,
+  ctx: AppContext,
 ): Promise<void> {
   const preStartHooks = config?.hooks?.pre_start;
   const hasPreStartHooks = preStartHooks !== undefined && preStartHooks.length > 0;
 
-  if (!hasPreStartHooks) {
-    return;
-  }
+  if (!hasPreStartHooks) return;
 
   if (dryRun) {
     logDryRun("Would run pre-start hooks:");
@@ -410,15 +341,178 @@ async function runPreStartHooksIfNeeded(
     return;
   }
 
-  let trackerInfo: HookTrackerInfo | undefined;
-  if (tracker) {
-    const phaseId = tracker.addPhase("Pre-start hooks");
-    const taskIds = preStartHooks.map((hook) => tracker.addTask(phaseId, hook));
-    trackerInfo = { tracker, taskIds };
+  const phaseId = tracker.addPhase("Pre-start hooks");
+  const taskIds = preStartHooks.map((hook) => tracker.addTask(phaseId, hook));
+  const trackerInfo: HookTrackerInfo = { tracker, taskIds };
+
+  await runHooks(
+    preStartHooks,
+    repoRoot,
+    {
+      worktreePath,
+      originPath: repoRoot,
+    },
+    trackerInfo,
+    ctx,
+  );
+}
+
+/**
+ * Run copy operations and post-start hooks
+ */
+async function runCopyAndPostHooks(
+  config: VibeConfig,
+  repoRoot: string,
+  worktreePath: string,
+  tracker: ProgressTracker,
+  options: ConfigAndHooksOptions,
+  ctx: AppContext,
+): Promise<void> {
+  const { skipHooks = false, skipCopy = false, dryRun = false } = options;
+
+  const copyService = getCopyService(ctx);
+
+  // Copy files
+  if (!skipCopy) {
+    await copyFiles(config, repoRoot, worktreePath, tracker, copyService, dryRun);
+    await copyDirectories(config, repoRoot, worktreePath, tracker, copyService, dryRun, ctx);
   }
 
-  await runHooks(preStartHooks, repoRoot, {
+  // Run post-start hooks
+  if (!skipHooks) {
+    await runPostStartHooks(config, repoRoot, worktreePath, tracker, dryRun, ctx);
+  }
+}
+
+/**
+ * Copy files from origin to worktree
+ */
+async function copyFiles(
+  config: VibeConfig,
+  repoRoot: string,
+  worktreePath: string,
+  tracker: ProgressTracker,
+  copyService: ReturnType<typeof getCopyService>,
+  dryRun: boolean,
+): Promise<void> {
+  const filesToCopy = await expandCopyPatterns(config.copy?.files ?? [], repoRoot);
+
+  if (filesToCopy.length === 0) return;
+
+  if (dryRun) {
+    logDryRun("Would copy files:");
+    for (const file of filesToCopy) {
+      logDryRun(`  - ${file}`);
+    }
+    return;
+  }
+
+  const phaseId = tracker.addPhase("Copying files");
+  const taskIds = filesToCopy.map((file) => tracker.addTask(phaseId, file));
+
+  for (let i = 0; i < filesToCopy.length; i++) {
+    const file = filesToCopy[i];
+    const src = join(repoRoot, file);
+    const dest = join(worktreePath, file);
+
+    tracker.startTask(taskIds[i]);
+    try {
+      await copyService.copyFile(src, dest);
+      tracker.completeTask(taskIds[i]);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      tracker.failTask(taskIds[i], errorMessage);
+      console.warn(`Warning: Failed to copy ${file}: ${errorMessage}`);
+    }
+  }
+}
+
+/**
+ * Copy directories from origin to worktree
+ */
+async function copyDirectories(
+  config: VibeConfig,
+  repoRoot: string,
+  worktreePath: string,
+  tracker: ProgressTracker,
+  copyService: ReturnType<typeof getCopyService>,
+  dryRun: boolean,
+  ctx: AppContext,
+): Promise<void> {
+  const directoriesToCopy = await expandDirectoryPatterns(
+    config.copy?.dirs ?? [],
+    repoRoot,
+    ctx,
+  );
+
+  if (directoriesToCopy.length === 0) return;
+
+  if (dryRun) {
+    logDryRun("Would copy directories:");
+    for (const dir of directoriesToCopy) {
+      logDryRun(`  - ${dir}`);
+    }
+    return;
+  }
+
+  const dirStrategy = await copyService.getDirectoryStrategy();
+  const phaseId = tracker.addPhase(`Copying directories (${dirStrategy.name})`);
+  const taskIds = directoriesToCopy.map((dir) => tracker.addTask(phaseId, dir));
+
+  const copyPromises = directoriesToCopy.map(async (dir, i) => {
+    const src = join(repoRoot, dir);
+    const dest = join(worktreePath, dir);
+
+    tracker.startTask(taskIds[i]);
+    try {
+      await copyService.copyDirectory(src, dest);
+      tracker.completeTask(taskIds[i]);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      tracker.failTask(taskIds[i], errorMessage);
+      console.warn(`Warning: Failed to copy directory ${dir}: ${errorMessage}`);
+    }
+  });
+
+  await Promise.all(copyPromises);
+}
+
+/**
+ * Run post-start hooks if configured
+ */
+async function runPostStartHooks(
+  config: VibeConfig,
+  repoRoot: string,
+  worktreePath: string,
+  tracker: ProgressTracker,
+  dryRun: boolean,
+  ctx: AppContext,
+): Promise<void> {
+  const postStartHooks = config.hooks?.post_start;
+  const hasPostStartHooks = postStartHooks !== undefined && postStartHooks.length > 0;
+
+  if (!hasPostStartHooks) return;
+
+  if (dryRun) {
+    logDryRun("Would run post-start hooks:");
+    for (const hook of postStartHooks) {
+      logDryRun(`  - ${hook}`);
+    }
+    return;
+  }
+
+  const phaseId = tracker.addPhase("Post-start hooks");
+  const taskIds = postStartHooks.map((hook) => tracker.addTask(phaseId, hook));
+  const trackerInfo: HookTrackerInfo = { tracker, taskIds };
+
+  await runHooks(
+    postStartHooks,
     worktreePath,
-    originPath: repoRoot,
-  }, trackerInfo);
+    {
+      worktreePath,
+      originPath: repoRoot,
+    },
+    trackerInfo,
+    ctx,
+  );
 }

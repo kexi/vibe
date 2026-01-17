@@ -2,14 +2,17 @@ import { parse } from "@std/toml";
 import { join } from "@std/path";
 import { parseVibeConfig, type VibeConfig } from "../types/config.ts";
 import { verifyTrustAndRead } from "./settings.ts";
-import { runtime } from "../runtime/index.ts";
+import { type AppContext, getGlobalContext } from "../context/index.ts";
 
 const VIBE_TOML = ".vibe.toml";
 const VIBE_LOCAL_TOML = ".vibe.local.toml";
 
-async function fileExists(path: string): Promise<boolean> {
+async function fileExists(
+  path: string,
+  ctx: AppContext = getGlobalContext(),
+): Promise<boolean> {
   try {
-    await runtime.fs.stat(path);
+    await ctx.runtime.fs.stat(path);
     return true;
   } catch {
     return false;
@@ -141,18 +144,19 @@ export function mergeConfigs(
 
 export async function loadVibeConfig(
   repoRoot: string,
+  ctx: AppContext = getGlobalContext(),
 ): Promise<VibeConfig | undefined> {
   const vibeTomlPath = join(repoRoot, VIBE_TOML);
   const vibeLocalTomlPath = join(repoRoot, VIBE_LOCAL_TOML);
 
-  const vibeTomlExists = await fileExists(vibeTomlPath);
-  const vibeLocalTomlExists = await fileExists(vibeLocalTomlPath);
+  const vibeTomlExists = await fileExists(vibeTomlPath, ctx);
+  const vibeLocalTomlExists = await fileExists(vibeLocalTomlPath, ctx);
 
   let config: VibeConfig | undefined;
 
   // Load .vibe.toml
   if (vibeTomlExists) {
-    const result = await verifyTrustAndRead(vibeTomlPath);
+    const result = await verifyTrustAndRead(vibeTomlPath, ctx);
     if (result.trusted && result.content) {
       const rawConfig = parse(result.content);
       config = parseVibeConfig(rawConfig, vibeTomlPath);
@@ -161,13 +165,13 @@ export async function loadVibeConfig(
         "Error: .vibe.toml file is not trusted or has been modified.\n" +
           "Please run: vibe trust",
       );
-      runtime.control.exit(1);
+      ctx.runtime.control.exit(1);
     }
   }
 
   // Load and merge .vibe.local.toml
   if (vibeLocalTomlExists) {
-    const localResult = await verifyTrustAndRead(vibeLocalTomlPath);
+    const localResult = await verifyTrustAndRead(vibeLocalTomlPath, ctx);
     if (localResult.trusted && localResult.content) {
       const rawLocalConfig = parse(localResult.content);
       const localConfig = parseVibeConfig(rawLocalConfig, vibeLocalTomlPath);
@@ -182,7 +186,7 @@ export async function loadVibeConfig(
         "Error: .vibe.local.toml file is not trusted or has been modified.\n" +
           "Please run: vibe trust",
       );
-      runtime.control.exit(1);
+      ctx.runtime.control.exit(1);
     }
   }
 

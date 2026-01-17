@@ -1,5 +1,5 @@
 import type { CopyCapabilities } from "./types.ts";
-import { runtime } from "../../runtime/index.ts";
+import { type AppContext, getGlobalContext } from "../../context/index.ts";
 
 /**
  * Cached capabilities (detected once per process)
@@ -10,14 +10,16 @@ let cachedCapabilities: CopyCapabilities | null = null;
  * Detect system capabilities for copy operations.
  * Results are cached for the lifetime of the process.
  */
-export async function detectCapabilities(): Promise<CopyCapabilities> {
+export async function detectCapabilities(
+  ctx: AppContext = getGlobalContext(),
+): Promise<CopyCapabilities> {
   if (cachedCapabilities !== null) {
     return cachedCapabilities;
   }
 
   const [cloneSupported, rsyncAvailable] = await Promise.all([
-    detectCloneSupport(),
-    detectRsyncAvailable(),
+    detectCloneSupport(ctx),
+    detectRsyncAvailable(ctx),
   ]);
 
   cachedCapabilities = { cloneSupported, rsyncAvailable };
@@ -36,15 +38,15 @@ export function resetCapabilitiesCache(): void {
  * - macOS: APFS supports `cp -c`
  * - Linux: Btrfs/XFS support `cp --reflink=auto`
  */
-async function detectCloneSupport(): Promise<boolean> {
-  const os = runtime.build.os;
+async function detectCloneSupport(ctx: AppContext): Promise<boolean> {
+  const os = ctx.runtime.build.os;
 
   if (os === "darwin") {
-    return await testMacOSClone();
+    return await testMacOSClone(ctx);
   }
 
   if (os === "linux") {
-    return await testLinuxReflink();
+    return await testLinuxReflink(ctx);
   }
 
   return false;
@@ -53,7 +55,8 @@ async function detectCloneSupport(): Promise<boolean> {
 /**
  * Test if macOS `cp -c` (clone) works.
  */
-async function testMacOSClone(): Promise<boolean> {
+async function testMacOSClone(ctx: AppContext): Promise<boolean> {
+  const { runtime } = ctx;
   const tempDir = await runtime.fs.makeTempDir();
   const srcFile = `${tempDir}/test_src`;
   const destFile = `${tempDir}/test_dest`;
@@ -82,7 +85,8 @@ async function testMacOSClone(): Promise<boolean> {
 /**
  * Test if Linux `cp --reflink=auto` works.
  */
-async function testLinuxReflink(): Promise<boolean> {
+async function testLinuxReflink(ctx: AppContext): Promise<boolean> {
+  const { runtime } = ctx;
   const tempDir = await runtime.fs.makeTempDir();
   const srcFile = `${tempDir}/test_src`;
   const destFile = `${tempDir}/test_dest`;
@@ -111,9 +115,9 @@ async function testLinuxReflink(): Promise<boolean> {
 /**
  * Detect if rsync command is available.
  */
-async function detectRsyncAvailable(): Promise<boolean> {
+async function detectRsyncAvailable(ctx: AppContext): Promise<boolean> {
   try {
-    const result = await runtime.process.run({
+    const result = await ctx.runtime.process.run({
       cmd: "rsync",
       args: ["--version"],
       stderr: "null",

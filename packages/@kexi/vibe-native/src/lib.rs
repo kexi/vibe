@@ -128,7 +128,7 @@ pub fn supports_directory() -> bool {
 }
 
 /// Get the current platform
-/// Returns "darwin", "linux", or "unknown"
+/// Returns "darwin" or "linux"
 #[napi]
 pub fn get_platform() -> String {
     platform::get_platform().to_string()
