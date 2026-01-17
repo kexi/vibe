@@ -3,10 +3,27 @@ import { z } from "zod";
 import { calculateFileHash, calculateHashFromContent } from "./hash.ts";
 import { getRepoInfoFromPath, type RepoInfo } from "./git.ts";
 import { VERSION } from "../version.ts";
+import { type AppContext, getGlobalContext } from "../context/index.ts";
 
-// Settings file path
-const CONFIG_DIR = join(Deno.env.get("HOME") ?? "", ".config", "vibe");
-const USER_SETTINGS_FILE = join(CONFIG_DIR, "settings.json");
+// Settings file path (lazy-evaluated for cross-runtime support)
+function getConfigDir(ctx: AppContext = getGlobalContext()): string {
+  const home = ctx.runtime.env.get("HOME") ?? "";
+
+  // Validate HOME to prevent path traversal attacks
+  const isValidHome = home.length > 0 && isAbsolute(home) && !home.includes("..");
+  if (!isValidHome) {
+    throw new Error(
+      "Invalid HOME environment variable. " +
+        "HOME must be an absolute path without '..' components.",
+    );
+  }
+
+  return join(home, ".config", "vibe");
+}
+
+function getUserSettingsFile(ctx: AppContext = getGlobalContext()): string {
+  return join(getConfigDir(ctx), "settings.json");
+}
 
 // Current schema version
 const CURRENT_SCHEMA_VERSION = 3;
@@ -88,11 +105,11 @@ export type VibeSettings = z.infer<typeof CurrentSettingsSchema>;
 
 // ===== Migration =====
 
-type MigrationFn = (data: unknown) => Promise<unknown>;
+type MigrationFn = (data: unknown, ctx: AppContext) => Promise<unknown>;
 
 const migrations: Record<number, MigrationFn> = {
   // Migration from legacy (no version) to v1
-  0: (data: unknown) => {
+  0: (data: unknown, _ctx: AppContext) => {
     const legacy = LegacySettingsSchema.safeParse(data);
     if (legacy.success) {
       return Promise.resolve({
@@ -105,7 +122,7 @@ const migrations: Record<number, MigrationFn> = {
   },
 
   // Migration from v1 to v2 (add hashes)
-  1: async (data: unknown) => {
+  1: async (data: unknown, ctx: AppContext) => {
     const v1 = SettingsSchemaV1.safeParse(data);
     if (!v1.success) {
       return data;
@@ -114,7 +131,7 @@ const migrations: Record<number, MigrationFn> = {
     const allowWithHashes = await Promise.all(
       v1.data.permissions.allow.map(async (path) => {
         try {
-          const hash = await calculateFileHash(path);
+          const hash = await calculateFileHash(path, ctx);
           return { path, hashes: [hash] };
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
@@ -139,7 +156,7 @@ const migrations: Record<number, MigrationFn> = {
   },
 
   // Migration from v2 to v3 (repository-based trust)
-  2: async (data: unknown) => {
+  2: async (data: unknown, ctx: AppContext) => {
     const v2 = SettingsSchemaV2.safeParse(data);
     if (!v2.success) {
       return data;
@@ -150,7 +167,7 @@ const migrations: Record<number, MigrationFn> = {
       v2.data.permissions.allow.map(async (entry) => {
         try {
           // Get repository information from the absolute path
-          const repoInfo = await getRepoInfoFromPath(entry.path);
+          const repoInfo = await getRepoInfoFromPath(entry.path, ctx);
 
           if (repoInfo) {
             // Successfully converted to repository-based entry
@@ -229,7 +246,10 @@ function getSchemaVersion(data: unknown): number {
   return 0; // Legacy (no version)
 }
 
-async function migrateSettings(data: unknown): Promise<unknown> {
+async function migrateSettings(
+  data: unknown,
+  ctx: AppContext = getGlobalContext(),
+): Promise<unknown> {
   let currentData = data;
   let version = getSchemaVersion(currentData);
 
@@ -239,7 +259,7 @@ async function migrateSettings(data: unknown): Promise<unknown> {
     if (!hasMigration) {
       throw new Error(`Migration from version ${version} is not defined`);
     }
-    currentData = await migration(currentData);
+    currentData = await migration(currentData, ctx);
     version = getSchemaVersion(currentData);
   }
 
@@ -261,24 +281,26 @@ function createDefaultSettings(): VibeSettings {
 
 // ===== File Operations =====
 
-async function ensureConfigDir(): Promise<void> {
+async function ensureConfigDir(ctx: AppContext = getGlobalContext()): Promise<void> {
   try {
-    await Deno.mkdir(CONFIG_DIR, { recursive: true });
+    await ctx.runtime.fs.mkdir(getConfigDir(ctx), { recursive: true });
   } catch (error) {
-    const isAlreadyExists = error instanceof Deno.errors.AlreadyExists;
+    const isAlreadyExists = ctx.runtime.errors.isAlreadyExists(error);
     if (!isAlreadyExists) {
       throw error;
     }
   }
 }
 
-export async function loadUserSettings(): Promise<VibeSettings> {
+export async function loadUserSettings(
+  ctx: AppContext = getGlobalContext(),
+): Promise<VibeSettings> {
   try {
-    const content = await Deno.readTextFile(USER_SETTINGS_FILE);
+    const content = await ctx.runtime.fs.readTextFile(getUserSettingsFile(ctx));
     const rawData = JSON.parse(content);
 
     // Execute migration (async)
-    const migratedData = await migrateSettings(rawData);
+    const migratedData = await migrateSettings(rawData, ctx);
 
     // Schema validation
     const result = CurrentSettingsSchema.safeParse(migratedData);
@@ -287,7 +309,7 @@ export async function loadUserSettings(): Promise<VibeSettings> {
       const needsMigration = getSchemaVersion(rawData) !==
         CURRENT_SCHEMA_VERSION;
       if (needsMigration) {
-        await saveUserSettings(result.data);
+        await saveUserSettings(result.data, ctx);
       }
       return result.data;
     }
@@ -303,7 +325,10 @@ export async function loadUserSettings(): Promise<VibeSettings> {
   }
 }
 
-export async function saveUserSettings(settings: VibeSettings): Promise<void> {
+export async function saveUserSettings(
+  settings: VibeSettings,
+  ctx: AppContext = getGlobalContext(),
+): Promise<void> {
   // Validate settings before saving
   const result = CurrentSettingsSchema.safeParse(settings);
   if (!result.success) {
@@ -312,7 +337,7 @@ export async function saveUserSettings(settings: VibeSettings): Promise<void> {
     );
   }
 
-  await ensureConfigDir();
+  await ensureConfigDir(ctx);
 
   // Always add $schema for editor autocompletion
   const settingsWithSchema = {
@@ -323,14 +348,14 @@ export async function saveUserSettings(settings: VibeSettings): Promise<void> {
 
   // Use atomic write via temp file + rename to prevent corruption during concurrent writes
   // Use crypto.randomUUID() to ensure unique temp files for concurrent operations
-  const tempFile = `${USER_SETTINGS_FILE}.tmp.${Date.now()}.${crypto.randomUUID()}`;
+  const tempFile = `${getUserSettingsFile(ctx)}.tmp.${Date.now()}.${crypto.randomUUID()}`;
   try {
-    await Deno.writeTextFile(tempFile, content);
-    await Deno.rename(tempFile, USER_SETTINGS_FILE);
+    await ctx.runtime.fs.writeTextFile(tempFile, content);
+    await ctx.runtime.fs.rename(tempFile, getUserSettingsFile(ctx));
   } catch (error) {
     // Clean up temp file if rename fails
     try {
-      await Deno.remove(tempFile);
+      await ctx.runtime.fs.remove(tempFile);
     } catch {
       // Ignore cleanup errors
     }
@@ -372,7 +397,10 @@ function findMatchingEntry(
 
 // ===== Public API =====
 
-export async function addTrustedPath(path: string): Promise<void> {
+export async function addTrustedPath(
+  path: string,
+  ctx: AppContext = getGlobalContext(),
+): Promise<void> {
   // Validate path is absolute
   if (!isAbsolute(path)) {
     throw new Error(
@@ -381,10 +409,10 @@ export async function addTrustedPath(path: string): Promise<void> {
     );
   }
 
-  const settings = await loadUserSettings();
+  const settings = await loadUserSettings(ctx);
 
   // Get repository information
-  const repoInfo = await getRepoInfoFromPath(path);
+  const repoInfo = await getRepoInfoFromPath(path, ctx);
   if (!repoInfo) {
     throw new Error(
       `Cannot trust file outside of git repository: ${path}\n` +
@@ -393,7 +421,7 @@ export async function addTrustedPath(path: string): Promise<void> {
   }
 
   // Calculate file hash
-  const hash = await calculateFileHash(path);
+  const hash = await calculateFileHash(path, ctx);
 
   // Find existing entry in allow list
   const existingEntry = findMatchingEntry(settings.permissions.allow, repoInfo);
@@ -420,14 +448,17 @@ export async function addTrustedPath(path: string): Promise<void> {
     });
   }
 
-  await saveUserSettings(settings);
+  await saveUserSettings(settings, ctx);
 }
 
-export async function removeTrustedPath(path: string): Promise<void> {
-  const settings = await loadUserSettings();
+export async function removeTrustedPath(
+  path: string,
+  ctx: AppContext = getGlobalContext(),
+): Promise<void> {
+  const settings = await loadUserSettings(ctx);
 
   // Get repository information
-  const repoInfo = await getRepoInfoFromPath(path);
+  const repoInfo = await getRepoInfoFromPath(path, ctx);
   if (!repoInfo) {
     // Cannot determine repository, try to remove anyway if path matches
     console.warn(
@@ -453,7 +484,7 @@ export async function removeTrustedPath(path: string): Promise<void> {
     settings.permissions.allow.splice(allowIndex, 1);
   }
 
-  await saveUserSettings(settings);
+  await saveUserSettings(settings, ctx);
 }
 
 /**
@@ -465,13 +496,17 @@ export async function removeTrustedPath(path: string): Promise<void> {
  * between verification and file read.
  *
  * @param vibeFilePath Path to the vibe config file
+ * @param ctx Application context
  * @returns true if the file is trusted
  */
-export async function isTrusted(vibeFilePath: string): Promise<boolean> {
-  const settings = await loadUserSettings();
+export async function isTrusted(
+  vibeFilePath: string,
+  ctx: AppContext = getGlobalContext(),
+): Promise<boolean> {
+  const settings = await loadUserSettings(ctx);
 
   // Get repository information from file path
-  const repoInfo = await getRepoInfoFromPath(vibeFilePath);
+  const repoInfo = await getRepoInfoFromPath(vibeFilePath, ctx);
   if (!repoInfo) {
     // Not in a git repository
     return false;
@@ -495,7 +530,7 @@ export async function isTrusted(vibeFilePath: string): Promise<boolean> {
   }
 
   // Calculate file hash
-  const fileHash = await calculateFileHash(vibeFilePath);
+  const fileHash = await calculateFileHash(vibeFilePath, ctx);
 
   // Check if hash matches any stored hash
   const hashMatches = entry.hashes.includes(fileHash);
@@ -505,15 +540,17 @@ export async function isTrusted(vibeFilePath: string): Promise<boolean> {
 /**
  * Atomically read file and verify trust to prevent TOCTOU attacks
  * @param vibeFilePath Path to the vibe config file
+ * @param ctx Application context
  * @returns Object with trusted flag and file content if trusted
  */
 export async function verifyTrustAndRead(
   vibeFilePath: string,
+  ctx: AppContext = getGlobalContext(),
 ): Promise<{ trusted: boolean; content?: string }> {
-  const settings = await loadUserSettings();
+  const settings = await loadUserSettings(ctx);
 
   // Get repository information from file path
-  const repoInfo = await getRepoInfoFromPath(vibeFilePath);
+  const repoInfo = await getRepoInfoFromPath(vibeFilePath, ctx);
   if (!repoInfo) {
     // Not in a git repository
     return { trusted: false };
@@ -526,7 +563,7 @@ export async function verifyTrustAndRead(
   }
 
   // Read file once (atomically)
-  const fileContent = await Deno.readTextFile(vibeFilePath);
+  const fileContent = await ctx.runtime.fs.readTextFile(vibeFilePath);
 
   // Determine whether to skip hash check
   // Priority: per-path setting > global setting > default (false)
@@ -553,8 +590,8 @@ export async function verifyTrustAndRead(
   return { trusted: false };
 }
 
-export function getSettingsPath(): string {
-  return USER_SETTINGS_FILE;
+export function getSettingsPath(ctx: AppContext = getGlobalContext()): string {
+  return getUserSettingsFile(ctx);
 }
 
 // Export for testing

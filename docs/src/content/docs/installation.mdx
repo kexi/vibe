@@ -13,6 +13,20 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     brew install kexi/tap/vibe
     ```
   </TabItem>
+  <TabItem label="npm (Node.js)">
+    ```bash frame="terminal"
+    # Global install
+    npm install -g @kexi/vibe
+
+    # Or run directly with npx
+    npx @kexi/vibe start feat/my-feature
+    ```
+
+    :::note
+    The npm package includes optional native bindings (`@kexi/vibe-native`) for optimized Copy-on-Write file cloning on macOS (APFS) and Linux (Btrfs/XFS). These are automatically used when available.
+    :::
+
+  </TabItem>
   <TabItem label="Deno (JSR)">
     ```bash frame="terminal"
     deno install -A --global jsr:@kexi/vibe

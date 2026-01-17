@@ -1,5 +1,7 @@
 packages:
-  - "."
   - "docs"
+  - "npm"
+  - "tests/e2e"
+  - "packages/@kexi/vibe-native"
 
 minimumReleaseAge: 4320

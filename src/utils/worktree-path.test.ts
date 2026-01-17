@@ -3,6 +3,10 @@ import { join } from "@std/path";
 import { resolveWorktreePath } from "./worktree-path.ts";
 import type { VibeConfig } from "../types/config.ts";
 import type { VibeSettings } from "./settings.ts";
+import { setupRealTestContext } from "../context/testing.ts";
+
+// Initialize test context with real Deno runtime for filesystem tests
+await setupRealTestContext();
 
 const createContext = (repoRoot: string) => ({
   repoName: "test-repo",

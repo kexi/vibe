@@ -3,6 +3,7 @@ import type { CopyStrategy } from "../types.ts";
 import type { NativeClone } from "../ffi/types.ts";
 import { getNativeClone } from "../ffi/detector.ts";
 import { validatePath } from "../validation.ts";
+import { runtime } from "../../../runtime/index.ts";
 
 /**
  * Native clone strategy using FFI-based system calls.
@@ -40,7 +41,7 @@ export class NativeCloneStrategy implements CopyStrategy {
 
     // Ensure parent directory exists
     const destDir = dirname(dest);
-    await Deno.mkdir(destDir, { recursive: true }).catch(() => {});
+    await runtime.fs.mkdir(destDir, { recursive: true }).catch(() => {});
 
     await this.nativeClone!.cloneFile(src, dest);
   }
@@ -63,7 +64,7 @@ export class NativeCloneStrategy implements CopyStrategy {
 
     // Ensure parent directory exists
     const destDir = dirname(dest);
-    await Deno.mkdir(destDir, { recursive: true }).catch(() => {});
+    await runtime.fs.mkdir(destDir, { recursive: true }).catch(() => {});
 
     await this.nativeClone!.cloneDirectory(src, dest);
   }

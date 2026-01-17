@@ -9,6 +9,10 @@ import {
   saveUserSettings,
 } from "./settings.ts";
 import { getRepoInfoFromPath } from "./git.ts";
+import { setupRealTestContext } from "../context/testing.ts";
+
+// Initialize test context with real Deno runtime for filesystem tests
+await setupRealTestContext();
 
 // Helper function to find entry by file path in v3 schema
 async function findEntryByPath(
