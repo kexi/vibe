@@ -23,7 +23,7 @@ function normalizeGitPath(path: string): string {
     // Check for MSYS-style paths like /d/a/vibe/vibe
     const match = path.match(/^\/([a-zA-Z])\/(.*)$/);
     if (match) {
-      const drive = match[1];
+      const drive = match[1].toUpperCase();
       const rest = match[2];
       return `${drive}:\\${rest.replace(/\//g, "\\")}`;
     }
