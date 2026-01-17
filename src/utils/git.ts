@@ -25,13 +25,12 @@ function normalizeGitPath(path: string): string {
     if (match) {
       const drive = match[1].toUpperCase();
       const rest = match[2];
-      return `${drive}:\\${rest.replace(/\//g, "\\")}`;
+      // Use forward slashes for better compatibility with MSYS/Bash
+      return `${drive}:/${rest}`;
     }
-  }
 
-  // Ensure all separators are backslashes on Windows
-  if (Deno.build.os === "windows") {
-    return normalize(path);
+    // Convert backslashes to forward slashes for Windows
+    return path.replace(/\\/g, "/");
   }
 
   return path;
