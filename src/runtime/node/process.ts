@@ -1,5 +1,13 @@
 /**
  * Node.js process implementation
+ *
+ * NOTE: Environment variable behavior differs from Deno:
+ * - Deno: When env is provided, it completely replaces the environment
+ * - Node.js: When env is provided, it is merged with process.env
+ *
+ * This is a deliberate design choice to maintain consistent behavior
+ * with Node.js child_process defaults. If complete isolation is needed,
+ * pass an explicit empty env object.
  */
 
 import { Buffer } from "node:buffer";
@@ -86,13 +94,30 @@ export const nodeProcess: RuntimeProcess = {
 
     const child = spawn(options.cmd, options.args ?? [], spawnOptions);
 
+    // Track spawn errors to reject wait() promise
+    let spawnError: Error | null = null;
+    child.on("error", (error) => {
+      spawnError = error;
+    });
+
     return {
       unref(): void {
         child.unref();
       },
 
       async wait(): Promise<{ code: number; success: boolean }> {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
+          // Handle spawn errors (e.g., command not found)
+          child.on("error", (error) => {
+            reject(error);
+          });
+
+          // If error already occurred before wait() was called
+          if (spawnError) {
+            reject(spawnError);
+            return;
+          }
+
           child.on("close", (code) => {
             const exitCode = code ?? 1;
             resolve({

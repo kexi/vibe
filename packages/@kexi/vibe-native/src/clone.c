@@ -23,12 +23,12 @@
 #define ARG_ERROR_MSG_SIZE 128
 #define DEFAULT_FILE_MODE 0644  /* rw-r--r-- */
 
-#ifdef __DARWIN__
+#ifdef __APPLE__
 #include <copyfile.h>
 #include <sys/clonefile.h>
 #endif
 
-#ifdef __LINUX__
+#ifdef __linux__
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
@@ -91,10 +91,19 @@ static bool get_string_arg(napi_env env, napi_value value, char* buffer, size_t 
     return false;
   }
 
+  // Validate path length does not exceed buffer size (minus null terminator)
+  // napi_get_value_string_utf8 silently truncates if string exceeds buffer_size
+  if (*length >= buffer_size - 1) {
+    char error_msg[ARG_ERROR_MSG_SIZE];
+    snprintf(error_msg, sizeof(error_msg), "%s path too long (max %zu bytes)", arg_name, buffer_size - 2);
+    napi_throw_error(env, NULL, error_msg);
+    return false;
+  }
+
   return true;
 }
 
-#ifdef __DARWIN__
+#ifdef __APPLE__
 /**
  * macOS: Clone file or directory using clonefile()
  *
@@ -155,7 +164,7 @@ static napi_value darwin_supports_directory(napi_env env, napi_callback_info inf
 }
 #endif
 
-#ifdef __LINUX__
+#ifdef __linux__
 /**
  * Linux: Clone file using FICLONE ioctl
  *
@@ -204,6 +213,11 @@ static napi_value linux_ficlone(napi_env env, napi_callback_info info) {
   int result = ioctl(dest_fd, FICLONE, src_fd);
   int saved_errno = errno;
 
+  // Close file descriptors regardless of ioctl result
+  // Note: close() failures are intentionally ignored here as:
+  // 1. Data integrity is already ensured by ioctl success/failure
+  // 2. close() failures mainly occur on NFS and don't affect local data
+  // 3. Both FDs are always closed to prevent resource leaks
   close(src_fd);
   close(dest_fd);
 
@@ -243,9 +257,9 @@ static napi_value linux_supports_directory(napi_env env, napi_callback_info info
  */
 static napi_value get_platform(napi_env env, napi_callback_info info) {
   napi_value result;
-#ifdef __DARWIN__
+#ifdef __APPLE__
   napi_create_string_utf8(env, "darwin", NAPI_AUTO_LENGTH, &result);
-#elif defined(__LINUX__)
+#elif defined(__linux__)
   napi_create_string_utf8(env, "linux", NAPI_AUTO_LENGTH, &result);
 #else
   napi_create_string_utf8(env, "unknown", NAPI_AUTO_LENGTH, &result);
@@ -262,11 +276,11 @@ static napi_value Init(napi_env env, napi_value exports) {
   napi_create_function(env, NULL, 0, get_platform, NULL, &platform_fn);
   napi_set_named_property(env, exports, "getPlatform", platform_fn);
 
-#ifdef __DARWIN__
+#ifdef __APPLE__
   napi_create_function(env, NULL, 0, darwin_clonefile, NULL, &clone_fn);
   napi_create_function(env, NULL, 0, darwin_is_available, NULL, &is_available_fn);
   napi_create_function(env, NULL, 0, darwin_supports_directory, NULL, &supports_dir_fn);
-#elif defined(__LINUX__)
+#elif defined(__linux__)
   napi_create_function(env, NULL, 0, linux_ficlone, NULL, &clone_fn);
   napi_create_function(env, NULL, 0, linux_is_available, NULL, &is_available_fn);
   napi_create_function(env, NULL, 0, linux_supports_directory, NULL, &supports_dir_fn);

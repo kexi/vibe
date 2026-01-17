@@ -118,17 +118,11 @@ export async function getRuntime(): Promise<Runtime> {
         runtimeInstance = nodeRuntime;
       }
       return runtimeInstance;
-    } catch (error) {
-      // Clear state to allow retry on failure
+    } finally {
+      // Always clear initialization state in finally block
+      // This ensures retry is possible on failure and cleans up after success
       runtimeInitPromise = null;
       initializationInProgress = false;
-      throw error;
-    } finally {
-      // Clear the promise reference after successful init (instance is cached)
-      if (runtimeInstance) {
-        runtimeInitPromise = null;
-        initializationInProgress = false;
-      }
     }
   })();
 
