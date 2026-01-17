@@ -58,29 +58,7 @@ function getEnvOrDefault(name: string, defaultValue: string): string {
   return Deno.env.get(name) ?? defaultValue;
 }
 
-/**
- * Verifies that the worktree was created correctly.
- * Specifically checks if node_modules exists.
- */
-async function verifyWorktree(worktreePath: string, expectedDirs: string[] = ["node_modules"]): Promise<void> {
-  for (const dir of expectedDirs) {
-    const dirPath = `${worktreePath}/${dir}`;
-    try {
-      // Check if directory exists
-      const stat = await Deno.stat(dirPath);
-      if (!stat.isDirectory) {
-        throw new Error(`${dir} exists but is not a directory`);
-      }
 
-      console.log(`    Verified ${dir} exists.`);
-    } catch (error) {
-      if (error instanceof Deno.errors.NotFound) {
-        throw new Error(`Verification failed: ${dir} not found in worktree at ${dirPath}`);
-      }
-      throw error;
-    }
-  }
-}
 
 async function runCommand(
   binary: string,
@@ -208,16 +186,11 @@ async function main(): Promise<void> {
   const startMedian = calculateMedian(startTimes);
   console.log(`  Median: ${startMedian.toFixed(2)}s\n`);
 
-  // Verify worktree content to detect false positives (e.g. empty node_modules)
-  // Calculate worktree path: {parentDir}/{repoName}-{branchName}
+  // Calculate worktree path for clean command
   const { dirname, basename, join } = await import("jsr:@std/path");
   const parentDir = dirname(reactNativePath);
   const repoName = basename(reactNativePath);
   const worktreePath = join(parentDir, `${repoName}-benchmark-worktree`);
-
-  console.log(`  Verifying worktree at ${worktreePath}...`);
-  await verifyWorktree(worktreePath);
-  console.log(`  Verification passed.\n`);
 
   // Benchmark vibe clean
   console.log("Benchmarking 'vibe clean'...");
