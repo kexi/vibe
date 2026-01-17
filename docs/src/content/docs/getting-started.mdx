@@ -35,6 +35,7 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     :::note
     Shell setup (Step 2) is required. Select the "npx" tab for npx usage.
     :::
+
   </TabItem>
   <TabItem label="Deno">
     ```bash frame="terminal"
@@ -77,6 +78,7 @@ Add the following to your shell configuration:
     # For npx
     vibe() { eval "$(npx @kexi/vibe "$@")" }
     ```
+
   </TabItem>
   <TabItem label="Bash">
     ```bash frame="terminal"
@@ -86,6 +88,7 @@ Add the following to your shell configuration:
     # For npx
     vibe() { eval "$(npx @kexi/vibe "$@")"; }
     ```
+
   </TabItem>
   <TabItem label="Fish">
     ```fish frame="terminal"
@@ -99,6 +102,7 @@ Add the following to your shell configuration:
         eval (npx @kexi/vibe $argv)
     end
     ```
+
   </TabItem>
   <TabItem label="Nushell">
     ```nu frame="terminal"
@@ -116,6 +120,7 @@ Add the following to your shell configuration:
     # For npx
     function vibe { Invoke-Expression (& npx @kexi/vibe $args) }
     ```
+
   </TabItem>
 </Tabs>
 
