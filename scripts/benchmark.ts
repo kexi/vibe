@@ -174,9 +174,9 @@ async function main(): Promise<void> {
   // Load baseline if exists
   const baseline = await loadBaseline(baselinePath);
 
-  // Benchmark vibe start
+  // Benchmark vibe start (use a fixed branch name for benchmarking)
   console.log("Benchmarking 'vibe start'...");
-  const startTimes = await runBenchmark(vibeBinary, reactNativePath, "start", iterations);
+  const startTimes = await runBenchmark(vibeBinary, reactNativePath, "start benchmark-worktree", iterations);
   const startMedian = calculateMedian(startTimes);
   console.log(`  Median: ${startMedian.toFixed(2)}s\n`);
 
