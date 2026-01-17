@@ -17,13 +17,28 @@ export async function runGitCommand(args: string[]): Promise<string> {
   return new TextDecoder().decode(stdout).trim();
 }
 
+// Helper to normalize MSYS paths to Windows paths on Windows
+function normalizeGitPath(path: string): string {
+  if (Deno.build.os === "windows" && path.startsWith("/")) {
+    // Check for MSYS-style paths like /d/a/vibe/vibe
+    const match = path.match(/^\/([a-zA-Z])\/(.*)$/);
+    if (match) {
+      const drive = match[1];
+      const rest = match[2];
+      return `${drive}:\\${rest.replace(/\//g, "\\")}`;
+    }
+  }
+  return path;
+}
+
 export async function getRepoRoot(): Promise<string> {
-  return await runGitCommand(["rev-parse", "--show-toplevel"]);
+  const root = await runGitCommand(["rev-parse", "--show-toplevel"]);
+  return normalizeGitPath(root);
 }
 
 export async function getRepoName(): Promise<string> {
   const root = await getRepoRoot();
-  return root.split("/").pop() ?? "";
+  return root.split(SEPARATOR).pop() ?? "";
 }
 
 export async function isInsideWorktree(): Promise<boolean> {
@@ -45,7 +60,7 @@ export async function getWorktreeList(): Promise<
   let currentPath = "";
   for (const line of lines) {
     if (line.startsWith("worktree ")) {
-      currentPath = line.slice("worktree ".length);
+      currentPath = normalizeGitPath(line.slice("worktree ".length));
     } else if (line.startsWith("branch ")) {
       const branch = line.slice("branch refs/heads/".length);
       worktrees.push({ path: currentPath, branch });
@@ -195,7 +210,8 @@ export async function getRepoInfoFromPath(
     // This avoids race conditions when multiple calls run concurrently
 
     // Get repository root
-    const repoRoot = await runGitCommand(["-C", fileDir, "rev-parse", "--show-toplevel"]);
+    let repoRoot = await runGitCommand(["-C", fileDir, "rev-parse", "--show-toplevel"]);
+    repoRoot = normalizeGitPath(repoRoot);
 
     // Validate that repoRoot is absolute
     if (!isAbsolute(repoRoot)) {
