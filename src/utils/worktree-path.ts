@@ -37,7 +37,7 @@ async function executePathScript(
   context: WorktreePathContext,
 ): Promise<string> {
   // Expand ~ to home directory
-  const home = Deno.env.get("HOME") ?? "";
+  const home = Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE") ?? "";
   const expandedPath = scriptPath.replace(/^~/, home);
 
   // Resolve relative paths against repoRoot

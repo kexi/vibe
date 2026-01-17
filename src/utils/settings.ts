@@ -5,7 +5,7 @@ import { getRepoInfoFromPath, type RepoInfo } from "./git.ts";
 import { VERSION } from "../version.ts";
 
 // Settings file path
-const CONFIG_DIR = join(Deno.env.get("HOME") ?? "", ".config", "vibe");
+const CONFIG_DIR = join(Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE") ?? "", ".config", "vibe");
 const USER_SETTINGS_FILE = join(CONFIG_DIR, "settings.json");
 
 // Current schema version
@@ -120,7 +120,7 @@ const migrations: Record<number, MigrationFn> = {
           const errorMessage = error instanceof Error ? error.message : String(error);
           console.warn(
             `Warning: Cannot calculate hash for ${path}: ${errorMessage}\n` +
-              `The path will be kept with hash checking disabled (skipHashCheck: true)`,
+            `The path will be kept with hash checking disabled (skipHashCheck: true)`,
           );
           // Keep the path but disable hash checking instead of removing it
           return { path, hashes: [], skipHashCheck: true };
@@ -167,7 +167,7 @@ const migrations: Record<number, MigrationFn> = {
             // Not in a git repository - use fallback
             migrationWarnings.push(
               `Cannot determine repository for ${entry.path}. ` +
-                `Using directory as fallback.`,
+              `Using directory as fallback.`,
             );
             return {
               repoId: {
@@ -182,7 +182,7 @@ const migrations: Record<number, MigrationFn> = {
           const errorMessage = error instanceof Error ? error.message : String(error);
           migrationWarnings.push(
             `Migration failed for ${entry.path}: ${errorMessage}. ` +
-              `Entry will be preserved with hash checking disabled.`,
+            `Entry will be preserved with hash checking disabled.`,
           );
           // Preserve entry with safe fallback
           return {
@@ -377,7 +377,7 @@ export async function addTrustedPath(path: string): Promise<void> {
   if (!isAbsolute(path)) {
     throw new Error(
       `Path must be absolute: ${path}\n` +
-        `Relative paths are not supported for security reasons.`,
+      `Relative paths are not supported for security reasons.`,
     );
   }
 
@@ -388,7 +388,7 @@ export async function addTrustedPath(path: string): Promise<void> {
   if (!repoInfo) {
     throw new Error(
       `Cannot trust file outside of git repository: ${path}\n` +
-        `Vibe requires configuration files to be within a git repository.`,
+      `Vibe requires configuration files to be within a git repository.`,
     );
   }
 
@@ -432,7 +432,7 @@ export async function removeTrustedPath(path: string): Promise<void> {
     // Cannot determine repository, try to remove anyway if path matches
     console.warn(
       `Warning: Cannot determine repository for ${path}. ` +
-        `Removal may not work correctly.`,
+      `Removal may not work correctly.`,
     );
     return;
   }
