@@ -24,6 +24,22 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     brew install kexi/tap/vibe
     ```
   </TabItem>
+  <TabItem label="npm/npx">
+    ```bash frame="terminal"
+    # グローバルインストール
+    npm install -g @kexi/vibe
+
+    # またはnpxで直接実行
+    npx @kexi/vibe start feat/my-feature
+    ```
+    :::note
+    シェル設定（ステップ2）が必要です。npxを使用する場合は「npx用」のコマンドを選択してください。
+    :::
+    :::tip
+    頻繁に使用する場合はグローバルインストールを推奨します。npxはパッケージ解決のため起動が遅くなります。
+    :::
+
+  </TabItem>
   <TabItem label="Deno">
     ```bash frame="terminal"
     deno install -A --global jsr:@kexi/vibe
@@ -54,42 +70,76 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
 
 ### 2. シェルを設定
 
-シェル設定に以下を追加：
+インストール方法に応じて、以下の**いずれか1つ**をシェル設定に追加：
 
 <Tabs>
   <TabItem label="Zsh">
     ```bash frame="terminal"
-    # ~/.zshrc に追加
+    # ~/.zshrc に追加（いずれか1つを選択）
+
+    # グローバルインストール用（Homebrew, npm -g, Deno）
     vibe() { eval "$(command vibe "$@")" }
+
+    # npx用（グローバルインストールなし）
+    vibe() { eval "$(npx @kexi/vibe "$@")" }
     ```
+
   </TabItem>
   <TabItem label="Bash">
     ```bash frame="terminal"
-    # ~/.bashrc に追加
+    # ~/.bashrc に追加（いずれか1つを選択）
+
+    # グローバルインストール用（Homebrew, npm -g, Deno）
     vibe() { eval "$(command vibe "$@")"; }
+
+    # npx用（グローバルインストールなし）
+    vibe() { eval "$(npx @kexi/vibe "$@")"; }
     ```
+
   </TabItem>
   <TabItem label="Fish">
     ```fish frame="terminal"
-    # ~/.config/fish/config.fish に追加
+    # ~/.config/fish/config.fish に追加（いずれか1つを選択）
+
+    # グローバルインストール用（Homebrew, npm -g, Deno）
     function vibe
         eval (command vibe $argv)
     end
+
+    # npx用（グローバルインストールなし）
+    function vibe
+        eval (npx @kexi/vibe $argv)
+    end
     ```
+
   </TabItem>
   <TabItem label="Nushell">
     ```nu frame="terminal"
-    # ~/.config/nushell/config.nu に追加
+    # ~/.config/nushell/config.nu に追加（いずれか1つを選択）
+
+    # グローバルインストール用（Homebrew, npm -g, Deno）
     def --env vibe [...args] {
         ^vibe ...$args | lines | each { |line| nu -c $line }
     }
+
+    # npx用（グローバルインストールなし）
+    def --env vibe [...args] {
+        npx @kexi/vibe ...$args | lines | each { |line| nu -c $line }
+    }
     ```
+
   </TabItem>
   <TabItem label="PowerShell">
     ```powershell frame="terminal"
-    # $PROFILE に追加
+    # $PROFILE に追加（いずれか1つを選択）
+
+    # グローバルインストール用（Homebrew, npm -g, Deno）
     function vibe { Invoke-Expression (& vibe.exe $args) }
+
+    # npx用（グローバルインストールなし）
+    function vibe { Invoke-Expression (& npx @kexi/vibe $args) }
     ```
+
   </TabItem>
 </Tabs>
 
