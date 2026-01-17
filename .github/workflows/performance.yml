@@ -138,14 +138,14 @@ jobs:
 
       - name: Trust vibe config (Unix)
         if: runner.os != 'Windows'
-        run: "${{ github.workspace }}/vibe-benchmark" trust
+        run: '"${{ github.workspace }}/vibe-benchmark" trust'
         working-directory: ${{ steps.project-path.outputs.path }}
         env:
           HOME: ${{ runner.temp }}
 
       - name: Trust vibe config (Windows)
         if: runner.os == 'Windows'
-        run: "${{ github.workspace }}\vibe-benchmark.exe" trust
+        run: '"${{ github.workspace }}\vibe-benchmark.exe" trust'
         working-directory: ${{ steps.project-path.outputs.path }}
         env:
           USERPROFILE: ${{ runner.temp }}
