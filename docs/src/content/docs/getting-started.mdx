@@ -67,37 +67,43 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
 
 ### 2. Set up your shell
 
-Add the following to your shell configuration:
+Add **one** of the following to your shell configuration (choose based on your installation method):
 
 <Tabs>
   <TabItem label="Zsh">
     ```bash frame="terminal"
-    # Add to ~/.zshrc
+    # Add to ~/.zshrc (choose one)
+
+    # For global install (Homebrew, npm -g, Deno)
     vibe() { eval "$(command vibe "$@")" }
 
-    # For npx
+    # For npx (without global install)
     vibe() { eval "$(npx @kexi/vibe "$@")" }
     ```
 
   </TabItem>
   <TabItem label="Bash">
     ```bash frame="terminal"
-    # Add to ~/.bashrc
+    # Add to ~/.bashrc (choose one)
+
+    # For global install (Homebrew, npm -g, Deno)
     vibe() { eval "$(command vibe "$@")"; }
 
-    # For npx
+    # For npx (without global install)
     vibe() { eval "$(npx @kexi/vibe "$@")"; }
     ```
 
   </TabItem>
   <TabItem label="Fish">
     ```fish frame="terminal"
-    # Add to ~/.config/fish/config.fish
+    # Add to ~/.config/fish/config.fish (choose one)
+
+    # For global install (Homebrew, npm -g, Deno)
     function vibe
         eval (command vibe $argv)
     end
 
-    # For npx
+    # For npx (without global install)
     function vibe
         eval (npx @kexi/vibe $argv)
     end
@@ -107,6 +113,7 @@ Add the following to your shell configuration:
   <TabItem label="Nushell">
     ```nu frame="terminal"
     # Add to ~/.config/nushell/config.nu
+    # For global install (Homebrew, npm -g, Deno)
     def --env vibe [...args] {
         ^vibe ...$args | lines | each { |line| nu -c $line }
     }
@@ -114,10 +121,12 @@ Add the following to your shell configuration:
   </TabItem>
   <TabItem label="PowerShell">
     ```powershell frame="terminal"
-    # Add to your $PROFILE
+    # Add to your $PROFILE (choose one)
+
+    # For global install (Homebrew, npm -g, Deno)
     function vibe { Invoke-Expression (& vibe.exe $args) }
 
-    # For npx
+    # For npx (without global install)
     function vibe { Invoke-Expression (& npx @kexi/vibe $args) }
     ```
 
