@@ -23,7 +23,6 @@ jobs:
       contents: read
       pull-requests: read
       issues: read
-      id-token: write
 
     steps:
       - name: Checkout repository
@@ -35,7 +34,7 @@ jobs:
         id: claude-review
         uses: anthropics/claude-code-action@v1
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
@@ -48,7 +47,6 @@ jobs:
             - Test coverage
             - Documentation updates: Check if README.md and README.ja.md need to be updated based on code changes
             - License compatibility: Ensure no GPL-licensed dependencies are introduced that could cause license contamination
-            - CLI guidelines: Verify command-line interface follows GNU Coding Standards (--help, --version, long/short options)
 
             Use the repository's CLAUDE.md for guidance on style and conventions. Be constructive and helpful in your feedback.
 
@@ -57,4 +55,3 @@ jobs:
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
           claude_args: '--allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"'
-
