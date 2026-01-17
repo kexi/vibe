@@ -111,7 +111,10 @@ jobs:
         shell: bash
         run: |
           cp benchmarks/react-native.vibe.toml "${{ steps.project-path.outputs.path }}/.vibe.toml"
-          cd "${{ steps.project-path.outputs.path }}" && git add -A && git commit -m "Add vibe config" --allow-empty
+          cd "${{ steps.project-path.outputs.path }}"
+          git config user.email "benchmark@example.com"
+          git config user.name "Benchmark Runner"
+          git add -A && git commit -m "Add vibe config" --allow-empty
 
       - name: Create React Native tarball
         if: steps.rn-cache.outputs.cache-hit != 'true'
@@ -135,6 +138,11 @@ jobs:
         run: |
           tar -xzf "${{ runner.temp }}/react-native.tar.gz" \
             -C "${{ steps.project-path.outputs.parent }}"
+          cd "${{ steps.project-path.outputs.path }}"
+          git config user.email "benchmark@example.com"
+          git config user.name "Benchmark Runner"
+          # Create a branch if HEAD is detached
+          git checkout -B benchmark-branch
 
       - name: Trust vibe config (Unix)
         if: runner.os != 'Windows'
