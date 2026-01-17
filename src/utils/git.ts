@@ -1,4 +1,4 @@
-import { dirname, isAbsolute, normalize, relative, SEPARATOR } from "@std/path";
+import { basename, dirname, isAbsolute, normalize, relative, SEPARATOR } from "@std/path";
 
 export async function runGitCommand(args: string[]): Promise<string> {
   const command = new Deno.Command("git", {
@@ -38,7 +38,7 @@ export async function getRepoRoot(): Promise<string> {
 
 export async function getRepoName(): Promise<string> {
   const root = await getRepoRoot();
-  return root.split(SEPARATOR).pop() ?? "";
+  return basename(root);
 }
 
 export async function isInsideWorktree(): Promise<boolean> {
