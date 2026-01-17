@@ -28,6 +28,12 @@ function normalizeGitPath(path: string): string {
       return `${drive}:\\${rest.replace(/\//g, "\\")}`;
     }
   }
+
+  // Ensure all separators are backslashes on Windows
+  if (Deno.build.os === "windows") {
+    return normalize(path);
+  }
+
   return path;
 }
 
