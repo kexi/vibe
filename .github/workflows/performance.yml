@@ -70,46 +70,71 @@ jobs:
         run: |
           if [ "${{ matrix.filesystem }}" == "Btrfs" ]; then
             echo "path=/mnt/btrfs/react-native" >> $GITHUB_OUTPUT
+            echo "parent=/mnt/btrfs" >> $GITHUB_OUTPUT
           elif [ "${{ runner.os }}" == "Windows" ]; then
             echo "path=$RUNNER_TEMP/react-native" >> $GITHUB_OUTPUT
+            echo "parent=$RUNNER_TEMP" >> $GITHUB_OUTPUT
           else
             echo "path=/tmp/react-native" >> $GITHUB_OUTPUT
+            echo "parent=/tmp" >> $GITHUB_OUTPUT
           fi
 
+      # Try to restore React Native tarball from cache
+      - name: Restore React Native tarball
+        id: rn-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/react-native.tar.gz
+          key: react-native-0.83.0-installed-${{ runner.os }}-v1
+
+      # If cache miss: clone, install, and create tarball
+      - name: Setup Yarn 1.22.22
+        if: steps.rn-cache.outputs.cache-hit != 'true'
+        run: npm install -g yarn@1.22.22
+
       - name: Clone React Native v0.83.0
+        if: steps.rn-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           git clone --depth 1 --branch v0.83.0 \
             https://github.com/facebook/react-native.git \
             "${{ steps.project-path.outputs.path }}"
 
-      - name: Setup Yarn 1.22.22
-        run: npm install -g yarn@1.22.22
-
-      - name: Get yarn cache directory
-        id: yarn-cache-dir
-        shell: bash
-        run: echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT
-
-      - name: Cache yarn dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ steps.yarn-cache-dir.outputs.dir }}
-            ${{ steps.project-path.outputs.path }}/node_modules
-            ${{ steps.project-path.outputs.path }}/packages/*/node_modules
-          key: yarn-rn-0.83.0-${{ runner.os }}-${{ matrix.name }}-v1
-
       - name: Install React Native dependencies
+        if: steps.rn-cache.outputs.cache-hit != 'true'
         shell: bash
         working-directory: ${{ steps.project-path.outputs.path }}
         run: yarn install --frozen-lockfile
 
-      - name: Setup benchmark config
+      - name: Add vibe config and commit
+        if: steps.rn-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           cp benchmarks/react-native.vibe.toml "${{ steps.project-path.outputs.path }}/.vibe.toml"
           cd "${{ steps.project-path.outputs.path }}" && git add -A && git commit -m "Add vibe config" --allow-empty
+
+      - name: Create React Native tarball
+        if: steps.rn-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          tar -czf "${{ runner.temp }}/react-native.tar.gz" \
+            -C "${{ steps.project-path.outputs.parent }}" \
+            react-native
+
+      - name: Save React Native tarball to cache
+        if: steps.rn-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/react-native.tar.gz
+          key: react-native-0.83.0-installed-${{ runner.os }}-v1
+
+      # If cache hit: extract tarball to project path
+      - name: Extract React Native tarball
+        if: steps.rn-cache.outputs.cache-hit == 'true'
+        shell: bash
+        run: |
+          tar -xzf "${{ runner.temp }}/react-native.tar.gz" \
+            -C "${{ steps.project-path.outputs.parent }}"
 
       - name: Trust vibe config (Unix)
         if: runner.os != 'Windows'
@@ -130,7 +155,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/baseline.json
-          key: performance-baseline-${{ matrix.name }}
+          key: performance-baseline-${{ matrix.name }}-${{ github.event.pull_request.base.sha }}
+          restore-keys: |
+            performance-baseline-${{ matrix.name }}-
 
       - name: Run benchmark
         id: benchmark
