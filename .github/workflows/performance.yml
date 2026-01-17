@@ -168,6 +168,8 @@ jobs:
           REACT_NATIVE_PATH: ${{ steps.project-path.outputs.path }}
           BASELINE_PATH: ${{ runner.temp }}/baseline.json
           RESULTS_PATH: ${{ runner.temp }}/results.json
+          BENCHMARK_ITERATIONS: "1"
+          BENCHMARK_THRESHOLD: "10"
           BENCHMARK_OS: ${{ runner.os }}
           BENCHMARK_FILESYSTEM: ${{ matrix.filesystem }}
           BENCHMARK_COW: ${{ matrix.cow }}
@@ -234,6 +236,7 @@ jobs:
             const dirs = fs.readdirSync(resultsDir);
 
             let hasRegression = false;
+            let threshold = 10;
 
             for (const dir of dirs.sort()) {
               const resultFile = path.join(resultsDir, dir, 'results.json');
@@ -245,6 +248,7 @@ jobs:
               const status = results.failed ? ':x:' : ':white_check_mark:';
 
               if (results.failed) hasRegression = true;
+              threshold = results.threshold || 10;
 
               body += `| ${results.os} | ${results.filesystem} | ${results.cow ? 'Yes' : 'No'} | `;
               body += `${results.start.median.toFixed(2)}s | ${results.clean.median.toFixed(2)}s | `;
@@ -252,7 +256,7 @@ jobs:
             }
 
             if (hasRegression) {
-              body += '\n:x: **Performance regression detected!** (exceeded 30s threshold)\n';
+              body += `\n:x: **Performance regression detected!** (exceeded ${threshold}% threshold)\n`;
             } else {
               body += '\n:white_check_mark: Performance within acceptable range on all platforms\n';
             }

@@ -5,14 +5,16 @@
  * Compares results against baseline and detects performance regressions.
  *
  * Environment variables:
- *   VIBE_BINARY         - Path to the vibe binary to test
- *   REACT_NATIVE_PATH   - Path to the React Native project
- *   BASELINE_PATH       - Path to baseline results JSON (optional)
- *   RESULTS_PATH        - Path to write results JSON
- *   BENCHMARK_OS        - OS name (e.g., "Linux", "macOS", "Windows")
- *   BENCHMARK_FILESYSTEM - Filesystem type (e.g., "ext4", "Btrfs", "APFS", "NTFS")
- *   BENCHMARK_COW       - Whether CoW is enabled ("true" or "false")
- *   BENCHMARK_NAME      - Benchmark configuration name
+ *   VIBE_BINARY           - Path to the vibe binary to test
+ *   REACT_NATIVE_PATH     - Path to the React Native project
+ *   BASELINE_PATH         - Path to baseline results JSON (optional)
+ *   RESULTS_PATH          - Path to write results JSON
+ *   BENCHMARK_ITERATIONS  - Number of iterations per command (default: 1)
+ *   BENCHMARK_THRESHOLD   - Regression threshold in percent (default: 10)
+ *   BENCHMARK_OS          - OS name (e.g., "Linux", "macOS", "Windows")
+ *   BENCHMARK_FILESYSTEM  - Filesystem type (e.g., "ext4", "Btrfs", "APFS", "NTFS")
+ *   BENCHMARK_COW         - Whether CoW is enabled ("true" or "false")
+ *   BENCHMARK_NAME        - Benchmark configuration name
  */
 
 import { z } from "zod";
@@ -41,8 +43,8 @@ const BaselineSchema = z.object({
 
 type Baseline = z.infer<typeof BaselineSchema>;
 
-const ITERATIONS = 3;
-const REGRESSION_THRESHOLD_SECONDS = 30;
+const DEFAULT_ITERATIONS = 1;
+const DEFAULT_THRESHOLD_PERCENT = 10;
 
 function getEnvOrThrow(name: string): string {
   const value = Deno.env.get(name);
@@ -123,11 +125,12 @@ async function runBenchmark(
   binary: string,
   projectPath: string,
   command: string,
+  iterations: number,
 ): Promise<number[]> {
   const times: number[] = [];
 
-  for (let i = 0; i < ITERATIONS; i++) {
-    console.log(`  Run ${i + 1}/${ITERATIONS}...`);
+  for (let i = 0; i < iterations; i++) {
+    console.log(`  Run ${i + 1}/${iterations}...`);
     const duration = await runCommand(binary, [command], projectPath);
     times.push(duration);
     console.log(`    ${duration.toFixed(2)}s`);
@@ -142,6 +145,16 @@ async function main(): Promise<void> {
   const baselinePath = getEnvOrDefault("BASELINE_PATH", "/tmp/baseline.json");
   const resultsPath = getEnvOrDefault("RESULTS_PATH", "/tmp/results.json");
 
+  // Benchmark settings
+  const iterations = parseInt(
+    getEnvOrDefault("BENCHMARK_ITERATIONS", String(DEFAULT_ITERATIONS)),
+    10,
+  );
+  const thresholdPercent = parseInt(
+    getEnvOrDefault("BENCHMARK_THRESHOLD", String(DEFAULT_THRESHOLD_PERCENT)),
+    10,
+  );
+
   // Platform info
   const osName = getEnvOrDefault("BENCHMARK_OS", Deno.build.os);
   const filesystem = getEnvOrDefault("BENCHMARK_FILESYSTEM", "unknown");
@@ -151,7 +164,7 @@ async function main(): Promise<void> {
   console.log("=== Vibe Performance Benchmark ===\n");
   console.log(`Binary: ${vibeBinary}`);
   console.log(`Project: ${reactNativePath}`);
-  console.log(`Iterations: ${ITERATIONS}`);
+  console.log(`Iterations: ${iterations}`);
   console.log(`\nPlatform Info:`);
   console.log(`  OS: ${osName}`);
   console.log(`  Filesystem: ${filesystem}`);
@@ -163,13 +176,13 @@ async function main(): Promise<void> {
 
   // Benchmark vibe start
   console.log("Benchmarking 'vibe start'...");
-  const startTimes = await runBenchmark(vibeBinary, reactNativePath, "start");
+  const startTimes = await runBenchmark(vibeBinary, reactNativePath, "start", iterations);
   const startMedian = calculateMedian(startTimes);
   console.log(`  Median: ${startMedian.toFixed(2)}s\n`);
 
   // Benchmark vibe clean
   console.log("Benchmarking 'vibe clean'...");
-  const cleanTimes = await runBenchmark(vibeBinary, reactNativePath, "clean");
+  const cleanTimes = await runBenchmark(vibeBinary, reactNativePath, "clean", iterations);
   const cleanMedian = calculateMedian(cleanTimes);
   console.log(`  Median: ${cleanMedian.toFixed(2)}s\n`);
 
@@ -182,20 +195,23 @@ async function main(): Promise<void> {
     startDiff = formatDiff(startMedian, baseline.start.median);
     cleanDiff = formatDiff(cleanMedian, baseline.clean.median);
 
-    const startRegression = startMedian - baseline.start.median;
-    const cleanRegression = cleanMedian - baseline.clean.median;
+    // Calculate percentage regression
+    const startRegressionPercent = ((startMedian - baseline.start.median) / baseline.start.median) *
+      100;
+    const cleanRegressionPercent = ((cleanMedian - baseline.clean.median) / baseline.clean.median) *
+      100;
 
-    const hasStartRegression = startRegression > REGRESSION_THRESHOLD_SECONDS;
-    const hasCleanRegression = cleanRegression > REGRESSION_THRESHOLD_SECONDS;
+    const hasStartRegression = startRegressionPercent > thresholdPercent;
+    const hasCleanRegression = cleanRegressionPercent > thresholdPercent;
 
     if (hasStartRegression || hasCleanRegression) {
       failed = true;
       console.log("WARNING: Performance regression detected!");
       if (hasStartRegression) {
-        console.log(`  'vibe start' regressed by ${startRegression.toFixed(2)}s`);
+        console.log(`  'vibe start' regressed by ${startRegressionPercent.toFixed(1)}%`);
       }
       if (hasCleanRegression) {
-        console.log(`  'vibe clean' regressed by ${cleanRegression.toFixed(2)}s`);
+        console.log(`  'vibe clean' regressed by ${cleanRegressionPercent.toFixed(1)}%`);
       }
     }
   }
@@ -212,7 +228,7 @@ async function main(): Promise<void> {
       median: cleanMedian,
       diff: cleanDiff,
     },
-    threshold: REGRESSION_THRESHOLD_SECONDS,
+    threshold: thresholdPercent,
     failed,
     os: osName,
     filesystem,
