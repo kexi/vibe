@@ -85,7 +85,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/react-native.tar.gz
-          key: react-native-0.83.0-installed-${{ runner.os }}-v2
+          key: react-native-0.83.0-installed-${{ runner.os }}-v3
 
       # If cache miss: clone, install, and create tarball
       - name: Setup Yarn 1.22.22
@@ -141,7 +141,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/react-native.tar.gz
-          key: react-native-0.83.0-installed-${{ runner.os }}-v2
+          key: react-native-0.83.0-installed-${{ runner.os }}-v3
 
       # If cache hit: extract tarball to project path
       - name: Extract React Native tarball (Unix)
@@ -179,7 +179,9 @@ jobs:
 
       - name: Trust vibe config (Windows)
         if: runner.os == 'Windows'
-        run: '"${{ github.workspace }}\vibe-benchmark.exe" trust'
+        shell: pwsh
+        run: |
+          & "${{ github.workspace }}\vibe-benchmark.exe" trust
         working-directory: ${{ steps.project-path.outputs.path }}
         env:
           USERPROFILE: ${{ runner.temp }}
