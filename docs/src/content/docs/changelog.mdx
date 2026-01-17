@@ -5,6 +5,30 @@ description: Version history and release notes for vibe
 
 All notable changes to vibe are documented here.
 
+## v0.12.0
+
+**Released:** 2026-01-18
+
+### Added
+
+- **Multi-runtime support**: Run vibe in Node.js/npm/npx environments
+- **RuntimeAbstractionLayer**: Unified runtime abstraction for Deno and Node.js
+- **AppContext dependency injection**: Improved testability through DI pattern
+
+### Changed
+
+- **vibe-native**: Migrated from C to Rust (napi-rs) for better safety and maintainability
+- **vibe-native**: Consolidated multiple packages into a single unified package
+
+### Fixed
+
+- Improved native module error handling
+- Better Windows detection logic
+- Extended mise HTTP timeout for slower connections
+- Various e2e test fixes and improvements
+
+---
+
 ## v0.9.0
 
 **Released:** 2026-01-16
