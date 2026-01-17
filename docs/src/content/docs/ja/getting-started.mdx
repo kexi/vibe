@@ -24,6 +24,18 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     brew install kexi/tap/vibe
     ```
   </TabItem>
+  <TabItem label="npm/npx">
+    ```bash frame="terminal"
+    # グローバルインストール
+    npm install -g @kexi/vibe
+
+    # またはnpxで直接実行
+    npx @kexi/vibe start feat/my-feature
+    ```
+    :::note
+    シェル設定（ステップ2）が必要です。npxを使用する場合は「npx用」のコマンドを選択してください。
+    :::
+  </TabItem>
   <TabItem label="Deno">
     ```bash frame="terminal"
     deno install -A --global jsr:@kexi/vibe
@@ -61,12 +73,18 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     ```bash frame="terminal"
     # ~/.zshrc に追加
     vibe() { eval "$(command vibe "$@")" }
+
+    # npx用
+    vibe() { eval "$(npx @kexi/vibe "$@")" }
     ```
   </TabItem>
   <TabItem label="Bash">
     ```bash frame="terminal"
     # ~/.bashrc に追加
     vibe() { eval "$(command vibe "$@")"; }
+
+    # npx用
+    vibe() { eval "$(npx @kexi/vibe "$@")"; }
     ```
   </TabItem>
   <TabItem label="Fish">
@@ -74,6 +92,11 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     # ~/.config/fish/config.fish に追加
     function vibe
         eval (command vibe $argv)
+    end
+
+    # npx用
+    function vibe
+        eval (npx @kexi/vibe $argv)
     end
     ```
   </TabItem>
@@ -89,6 +112,9 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     ```powershell frame="terminal"
     # $PROFILE に追加
     function vibe { Invoke-Expression (& vibe.exe $args) }
+
+    # npx用
+    function vibe { Invoke-Expression (& npx @kexi/vibe $args) }
     ```
   </TabItem>
 </Tabs>
