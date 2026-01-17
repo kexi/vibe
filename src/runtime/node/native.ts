@@ -7,14 +7,24 @@
 
 import type { NativeClone } from "../../utils/copy/ffi/types.ts";
 
+/** Type for the @kexi/vibe-native module */
+interface VibeNativeModule {
+  cloneSync(src: string, dest: string): void;
+  cloneAsync(src: string, dest: string): Promise<void>;
+  clone(src: string, dest: string): void;
+  isAvailable(): boolean;
+  supportsDirectory(): boolean;
+  getPlatform(): "darwin" | "linux" | "unknown";
+}
+
 // Lazy load the native module
-let nativeModule: typeof import("@kexi/vibe-native") | null = null;
+let nativeModule: VibeNativeModule | null = null;
 let loadAttempted = false;
 
 /**
  * Try to load the @kexi/vibe-native module
  */
-function tryLoadNative(): typeof import("@kexi/vibe-native") | null {
+function tryLoadNative(): VibeNativeModule | null {
   if (loadAttempted) {
     return nativeModule;
   }
@@ -23,7 +33,7 @@ function tryLoadNative(): typeof import("@kexi/vibe-native") | null {
   try {
     // Dynamic import to handle optional dependency
     // @ts-ignore - @kexi/vibe-native is an optional dependency
-    nativeModule = require("@kexi/vibe-native");
+    nativeModule = require("@kexi/vibe-native") as VibeNativeModule;
     return nativeModule;
   } catch {
     return null;
@@ -39,37 +49,33 @@ function tryLoadNative(): typeof import("@kexi/vibe-native") | null {
  */
 export class NodeNativeClone implements NativeClone {
   readonly available: boolean;
+  private readonly native: VibeNativeModule | null;
 
   constructor() {
-    const native = tryLoadNative();
-    this.available = native !== null && native.isAvailable();
+    this.native = tryLoadNative();
+    this.available = this.native !== null && this.native.isAvailable();
   }
 
   async cloneFile(src: string, dest: string): Promise<void> {
-    const native = tryLoadNative();
-    const isAvailable = native !== null && native.isAvailable();
-    if (!isAvailable) {
+    if (!this.available || this.native === null) {
       throw new Error("Native clone not available");
     }
-    return native!.cloneFile(src, dest);
+    return this.native.cloneAsync(src, dest);
   }
 
   async cloneDirectory(src: string, dest: string): Promise<void> {
-    const native = tryLoadNative();
-    const isAvailable = native !== null && native.isAvailable();
-    if (!isAvailable) {
+    if (!this.available || this.native === null) {
       throw new Error("Native clone not available");
     }
-    return native!.cloneDirectory(src, dest);
+    // cloneAsync supports directories on macOS (clonefile)
+    return this.native.cloneAsync(src, dest);
   }
 
   supportsDirectoryClone(): boolean {
-    const native = tryLoadNative();
-    const isAvailable = native !== null;
-    if (!isAvailable) {
+    if (this.native === null) {
       return false;
     }
-    return native.supportsDirectory();
+    return this.native.supportsDirectory();
   }
 
   close(): void {

@@ -1,0 +1,24 @@
+{
+  "name": "@kexi/vibe-native-linux-x64-gnu",
+  "version": "0.10.0",
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "main": "vibe-native.linux-x64-gnu.node",
+  "files": ["vibe-native.linux-x64-gnu.node"],
+  "description": "Native clone operations for vibe CLI (Linux x64 GNU)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kexi/vibe.git",
+    "directory": "packages/@kexi/vibe-native"
+  },
+  "author": "kexi",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "libc": ["glibc"],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

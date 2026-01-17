@@ -8,58 +8,63 @@ permissions:
   contents: read
 
 jobs:
-  # Build native prebuilds for each platform
+  # Build native binaries for each platform using napi-rs
   build-native:
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            platform: linux
-            arch: x64
-          - os: ubuntu-24.04-arm
-            platform: linux
-            arch: arm64
-          - os: macos-latest
-            platform: darwin
-            arch: x64
-          - os: macos-latest
-            platform: darwin
-            arch: arm64
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            npm-dir: linux-x64-gnu
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            npm-dir: linux-arm64-gnu
+          - target: x86_64-apple-darwin
+            os: macos-13
+            npm-dir: darwin-x64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            npm-dir: darwin-arm64
 
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
+      - uses: jdx/mise-action@v2
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
 
       - name: Install dependencies
         working-directory: packages/@kexi/vibe-native
         run: pnpm install
 
-      - name: Build prebuild
+      - name: Build native module
         working-directory: packages/@kexi/vibe-native
-        run: pnpm run prebuild
-        env:
-          npm_config_arch: ${{ matrix.arch }}
+        run: |
+          pnpm exec napi build --platform --release --target ${{ matrix.target }}
 
-      - name: Upload prebuild artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: prebuild-${{ matrix.platform }}-${{ matrix.arch }}
-          path: packages/@kexi/vibe-native/prebuilds/
+          name: bindings-${{ matrix.npm-dir }}
+          path: packages/@kexi/vibe-native/*.node
           if-no-files-found: error
 
-  # Publish @kexi/vibe-native with all prebuilds
-  publish-native:
+  # Publish platform-specific packages
+  publish-native-packages:
     needs: build-native
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        npm-dir:
+          - darwin-arm64
+          - darwin-x64
+          - linux-arm64-gnu
+          - linux-x64-gnu
 
     steps:
       - uses: actions/checkout@v4
@@ -69,19 +74,58 @@ jobs:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - name: Download all prebuilds
+      - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          path: packages/@kexi/vibe-native/prebuilds/
-          pattern: prebuild-*
-          merge-multiple: true
+          name: bindings-${{ matrix.npm-dir }}
+          path: packages/@kexi/vibe-native/npm/${{ matrix.npm-dir }}
 
-      - name: List prebuilds
-        run: find packages/@kexi/vibe-native/prebuilds/ -type f | head -20
+      - name: List files
+        run: ls -la packages/@kexi/vibe-native/npm/${{ matrix.npm-dir }}/
+
+      - name: Validate version consistency
+        working-directory: packages/@kexi/vibe-native/npm/${{ matrix.npm-dir }}
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "Error: Version mismatch!"
+            echo "  Git tag version: $TAG_VERSION"
+            echo "  package.json version: $PKG_VERSION"
+            exit 1
+          fi
+
+          echo "Version validation passed: $TAG_VERSION"
+
+      - name: Publish
+        working-directory: packages/@kexi/vibe-native/npm/${{ matrix.npm-dir }}
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # Publish main @kexi/vibe-native package
+  publish-native:
+    needs: publish-native-packages
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        working-directory: packages/@kexi/vibe-native
+        run: pnpm install
+
+      - name: Build for host platform (generates index.js and index.d.ts)
+        working-directory: packages/@kexi/vibe-native
+        run: pnpm exec napi build --platform --release --js index.js --dts index.d.ts
 
       - name: Validate version consistency
         working-directory: packages/@kexi/vibe-native
@@ -112,16 +156,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: jdx/mise-action@v2
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - uses: jdx/mise-action@v2
 
       - name: Validate version consistency
         working-directory: npm
