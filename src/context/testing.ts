@@ -45,16 +45,17 @@ function createMockFS(overrides: Partial<RuntimeFS> = {}): RuntimeFS {
     mkdir: () => Promise.resolve(),
     remove: () => Promise.resolve(),
     rename: () => Promise.resolve(),
-    stat: () => Promise.resolve({
-      isFile: true,
-      isDirectory: false,
-      isSymlink: false,
-      size: 0,
-      mtime: null,
-      atime: null,
-      birthtime: null,
-      mode: null,
-    }),
+    stat: () =>
+      Promise.resolve({
+        isFile: true,
+        isDirectory: false,
+        isSymlink: false,
+        size: 0,
+        mtime: null,
+        atime: null,
+        birthtime: null,
+        mode: null,
+      }),
     lstat: () =>
       Promise.resolve({
         isFile: true,
