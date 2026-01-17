@@ -98,11 +98,25 @@ export async function getRuntime(): Promise<Runtime> {
     return runtimeInitPromise;
   }
 
-  // Prevent concurrent initialization attempts
+  // Prevent concurrent initialization attempts with bounded retry
+  const MAX_INIT_WAIT_RETRIES = 100;
+  let retryCount = 0;
+  while (initializationInProgress && retryCount < MAX_INIT_WAIT_RETRIES) {
+    // Another call is setting up the promise, wait briefly and check again
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    retryCount++;
+    // Check if initialization completed while waiting
+    if (runtimeInstance) {
+      return runtimeInstance;
+    }
+    if (runtimeInitPromise) {
+      return runtimeInitPromise;
+    }
+  }
+
+  // If still in progress after max retries, throw error
   if (initializationInProgress) {
-    // Another call is setting up the promise, wait briefly and retry
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    return getRuntime();
+    throw new Error("Runtime initialization timed out");
   }
 
   initializationInProgress = true;
