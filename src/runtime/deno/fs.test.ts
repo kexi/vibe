@@ -2,21 +2,17 @@
  * Deno filesystem implementation tests
  */
 
-import {
-  assertEquals,
-  assertExists,
-  assertRejects,
-} from "@std/assert";
+import { assertEquals, assertExists, assertRejects } from "@std/assert";
 import { join } from "@std/path";
 import { denoFS } from "./fs.ts";
 
 // Use a temporary directory for tests
 const TEST_DIR = await Deno.makeTempDir({ prefix: "vibe_fs_test_" });
 
-// Cleanup after all tests
-globalThis.addEventListener("unload", async () => {
+// Cleanup after all tests (use sync to avoid pending Promise issues)
+globalThis.addEventListener("unload", () => {
   try {
-    await Deno.remove(TEST_DIR, { recursive: true });
+    Deno.removeSync(TEST_DIR, { recursive: true });
   } catch {
     // Ignore cleanup errors
   }

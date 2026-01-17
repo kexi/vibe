@@ -2,12 +2,7 @@
  * Deno process implementation tests
  */
 
-import {
-  assertEquals,
-  assertExists,
-  assertMatch,
-  assertRejects,
-} from "@std/assert";
+import { assertEquals, assertExists, assertMatch, assertRejects } from "@std/assert";
 import { denoProcess } from "./process.ts";
 
 // ===== run() Tests =====
@@ -139,19 +134,27 @@ Deno.test("spawn with wait returns exit code", async () => {
   assertEquals(result.success, false);
 });
 
-Deno.test("spawn unref allows parent to exit", async () => {
-  const child = denoProcess.spawn({
-    cmd: "echo",
-    args: ["test"],
-    stdout: "null",
-    stderr: "null",
-  });
+Deno.test({
+  name: "spawn unref allows parent to exit",
+  // Disable sanitizers because unref() intentionally leaves process untracked
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    const child = denoProcess.spawn({
+      cmd: "echo",
+      args: ["test"],
+      stdout: "null",
+      stderr: "null",
+    });
 
-  // unref should not throw
-  child.unref();
+    // unref should not throw - marks process as not blocking event loop
+    // Note: We don't call wait() after unref() because unref() means
+    // we explicitly don't want to wait for the child process
+    child.unref();
 
-  // Wait for completion to avoid resource leak
-  await child.wait();
+    // Brief delay to allow process to complete before next test runs
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  },
 });
 
 // ===== Error Handling Tests =====
