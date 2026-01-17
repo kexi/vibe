@@ -127,7 +127,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: packages/@kexi/vibe-native
-        run: pnpm install
+        run: pnpm install --ignore-scripts
 
       - name: Generate index.js and index.d.ts
         working-directory: packages/@kexi/vibe-native
