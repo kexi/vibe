@@ -51,6 +51,46 @@ Code should follow SOLID principles:
 - **D**ependency Inversion Principle: High-level modules should not depend on
   low-level modules; both should depend on abstractions
 
+### Coding Style
+
+- **Name conditional expressions**: Assign boolean conditions to descriptively
+  named variables before using them in `if` statements
+
+  ```typescript
+  // Good
+  const isPikachu = color === "yellow";
+  if (isPikachu) {
+    console.log("I'm Pikachu");
+  }
+
+  // Bad
+  if (color === "yellow") {
+    console.log("I'm Pikachu");
+  }
+  ```
+
+- **Prefer early returns**: Use early returns to reduce nesting and improve
+  readability
+
+  ```typescript
+  // Good
+  function process(value: string | null): string {
+    if (!value) {
+      return "default";
+    }
+    return value.toUpperCase();
+  }
+
+  // Bad
+  function process(value: string | null): string {
+    if (value) {
+      return value.toUpperCase();
+    } else {
+      return "default";
+    }
+  }
+  ```
+
 ## Testing
 
 - Lint check: `deno task lint` or `deno lint`
