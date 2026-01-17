@@ -2,7 +2,7 @@
  * Runtime detection and initialization tests
  */
 
-import { assertEquals, assertExists, assertRejects } from "@std/assert";
+import { assertEquals, assertExists } from "@std/assert";
 import {
   getRuntime,
   getRuntimeSync,
