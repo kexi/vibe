@@ -5,7 +5,10 @@ import { getRepoInfoFromPath, type RepoInfo } from "./git.ts";
 import { VERSION } from "../version.ts";
 
 // Settings file path
-const CONFIG_DIR = join(Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE") ?? "", ".config", "vibe");
+const home = Deno.build.os === "windows"
+  ? Deno.env.get("USERPROFILE") ?? Deno.env.get("HOME") ?? ""
+  : Deno.env.get("HOME") ?? "";
+const CONFIG_DIR = join(home, ".config", "vibe");
 const USER_SETTINGS_FILE = join(CONFIG_DIR, "settings.json");
 
 // Current schema version
