@@ -1,7 +1,7 @@
 import { assertEquals } from "@std/assert";
 import { verifyCommand } from "./verify.ts";
 import { createMockContext } from "../context/testing.ts";
-import type { FileInfo, ProcessResult } from "../runtime/types.ts";
+import type { FileInfo, RunResult } from "../runtime/types.ts";
 
 // Helper to capture console output
 function captureStderr(): { output: string[]; restore: () => void } {
@@ -33,7 +33,7 @@ Deno.test("verifyCommand exits with code 1 when no config files exist", async ()
           success: true,
           stdout: new TextEncoder().encode("/tmp/mock-repo\n"),
           stderr: new Uint8Array(),
-        } as ProcessResult),
+        } as RunResult),
     },
     control: {
       exit: ((code: number) => {
@@ -72,9 +72,9 @@ Deno.test("verifyCommand shows file path when config file exists", async () => {
             isDirectory: false,
             isSymlink: false,
             size: 100,
-            mtime: undefined,
-            atime: undefined,
-            birthtime: undefined,
+            mtime: null,
+            atime: null,
+            birthtime: null,
             mode: null,
           } as FileInfo);
         }
@@ -93,7 +93,7 @@ Deno.test("verifyCommand shows file path when config file exists", async () => {
             success: true,
             stdout: new TextEncoder().encode("/tmp/mock-repo\n"),
             stderr: new Uint8Array(),
-          } as ProcessResult);
+          } as RunResult);
         }
         // Mock git remote get-url origin (fail - local repo)
         if (args.includes("remote") && args.includes("get-url")) {
@@ -102,7 +102,7 @@ Deno.test("verifyCommand shows file path when config file exists", async () => {
             success: false,
             stdout: new Uint8Array(),
             stderr: new TextEncoder().encode("fatal: not a git repository"),
-          } as ProcessResult);
+          } as RunResult);
         }
         // Default mock for other git commands
         return Promise.resolve({
@@ -110,7 +110,7 @@ Deno.test("verifyCommand shows file path when config file exists", async () => {
           success: true,
           stdout: new Uint8Array(),
           stderr: new Uint8Array(),
-        } as ProcessResult);
+        } as RunResult);
       },
     },
     control: {
@@ -127,9 +127,7 @@ Deno.test("verifyCommand shows file path when config file exists", async () => {
   stderr.restore();
 
   // Should show verification header
-  const hasHeader = stderr.output.some((line) =>
-    line.includes("Vibe Configuration Verification")
-  );
+  const hasHeader = stderr.output.some((line) => line.includes("Vibe Configuration Verification"));
   assertEquals(
     hasHeader,
     true,
@@ -137,9 +135,7 @@ Deno.test("verifyCommand shows file path when config file exists", async () => {
   );
 
   // Should show file path
-  const hasFilePath = stderr.output.some((line) =>
-    line.includes("File: .vibe.toml")
-  );
+  const hasFilePath = stderr.output.some((line) => line.includes("File: .vibe.toml"));
   assertEquals(
     hasFilePath,
     true,

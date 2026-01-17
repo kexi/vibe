@@ -1,7 +1,7 @@
 import { assertEquals } from "@std/assert";
 import { trustCommand } from "./trust.ts";
 import { createMockContext } from "../context/testing.ts";
-import type { FileInfo, ProcessResult } from "../runtime/types.ts";
+import type { FileInfo, RunResult } from "../runtime/types.ts";
 
 // Helper to capture console output
 function captureStderr(): { output: string[]; restore: () => void } {
@@ -33,7 +33,7 @@ Deno.test("trustCommand exits with code 1 when no config files exist", async () 
           success: true,
           stdout: new TextEncoder().encode("/tmp/mock-repo\n"),
           stderr: new Uint8Array(),
-        } as ProcessResult),
+        } as RunResult),
     },
     control: {
       exit: ((code: number) => {
@@ -73,9 +73,9 @@ Deno.test("trustCommand reports error when trust fails", async () => {
             isDirectory: false,
             isSymlink: false,
             size: 100,
-            mtime: undefined,
-            atime: undefined,
-            birthtime: undefined,
+            mtime: null,
+            atime: null,
+            birthtime: null,
             mode: null,
           } as FileInfo);
         }
@@ -96,7 +96,7 @@ Deno.test("trustCommand reports error when trust fails", async () => {
             success: true,
             stdout: new TextEncoder().encode("/tmp/mock-repo\n"),
             stderr: new Uint8Array(),
-          } as ProcessResult);
+          } as RunResult);
         }
         if (args.includes("remote") && args.includes("get-url")) {
           return Promise.resolve({
@@ -104,14 +104,14 @@ Deno.test("trustCommand reports error when trust fails", async () => {
             success: true,
             stdout: new TextEncoder().encode("git@github.com:test/repo.git\n"),
             stderr: new Uint8Array(),
-          } as ProcessResult);
+          } as RunResult);
         }
         return Promise.resolve({
           code: 0,
           success: true,
           stdout: new Uint8Array(),
           stderr: new Uint8Array(),
-        } as ProcessResult);
+        } as RunResult);
       },
     },
     control: {
@@ -146,9 +146,7 @@ Deno.test("trustCommand reports error when trust fails", async () => {
   assertEquals(exitCode, 1);
 
   // Should show error message
-  const hasFailedMessage = stderr.output.some((line) =>
-    line.includes("Failed to trust")
-  );
+  const hasFailedMessage = stderr.output.some((line) => line.includes("Failed to trust"));
   assertEquals(
     hasFailedMessage,
     true,

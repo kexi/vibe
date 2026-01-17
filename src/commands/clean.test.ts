@@ -1,7 +1,7 @@
 import { assertEquals } from "@std/assert";
 import { cleanCommand } from "./clean.ts";
 import { createMockContext } from "../context/testing.ts";
-import type { ProcessResult } from "../runtime/types.ts";
+import type { RunResult } from "../runtime/types.ts";
 
 // Helper to capture console output
 function captureStderr(): { output: string[]; restore: () => void } {
@@ -33,7 +33,7 @@ Deno.test("cleanCommand exits with error when run from main worktree", async () 
             success: true,
             stdout: new TextEncoder().encode("/tmp/mock-repo\n"),
             stderr: new Uint8Array(),
-          } as ProcessResult);
+          } as RunResult);
         }
         // Mock git worktree list to identify main worktree
         if (args.includes("worktree") && args.includes("list")) {
@@ -45,14 +45,14 @@ Deno.test("cleanCommand exits with error when run from main worktree", async () 
               "worktree /tmp/mock-repo\nHEAD abc123\nbranch refs/heads/main\n\n",
             ),
             stderr: new Uint8Array(),
-          } as ProcessResult);
+          } as RunResult);
         }
         return Promise.resolve({
           code: 0,
           success: true,
           stdout: new Uint8Array(),
           stderr: new Uint8Array(),
-        } as ProcessResult);
+        } as RunResult);
       },
     },
     control: {
@@ -71,9 +71,7 @@ Deno.test("cleanCommand exits with error when run from main worktree", async () 
   stderr.restore();
 
   assertEquals(exitCode, 1);
-  const hasErrorMessage = stderr.output.some((line) =>
-    line.includes("Cannot clean main worktree")
-  );
+  const hasErrorMessage = stderr.output.some((line) => line.includes("Cannot clean main worktree"));
   assertEquals(
     hasErrorMessage,
     true,
@@ -105,8 +103,6 @@ Deno.test("cleanCommand shows error on exception", async () => {
   stderr.restore();
 
   assertEquals(exitCode, 1);
-  const hasErrorMessage = stderr.output.some((line) =>
-    line.includes("Error:")
-  );
+  const hasErrorMessage = stderr.output.some((line) => line.includes("Error:"));
   assertEquals(hasErrorMessage, true);
 });

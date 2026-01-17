@@ -1,7 +1,7 @@
 import { assertEquals } from "@std/assert";
 import { untrustCommand } from "./untrust.ts";
 import { createMockContext } from "../context/testing.ts";
-import type { ProcessResult } from "../runtime/types.ts";
+import type { RunResult } from "../runtime/types.ts";
 
 // Helper to capture console output
 function captureStderr(): { output: string[]; restore: () => void } {
@@ -33,7 +33,7 @@ Deno.test("untrustCommand exits with code 1 when no config files exist", async (
           success: true,
           stdout: new TextEncoder().encode("/tmp/mock-repo\n"),
           stderr: new Uint8Array(),
-        } as ProcessResult),
+        } as RunResult),
     },
     control: {
       exit: ((code: number) => {
@@ -84,8 +84,6 @@ Deno.test("untrustCommand shows error on exception", async () => {
   stderr.restore();
 
   assertEquals(exitCode, 1);
-  const hasErrorMessage = stderr.output.some((line) =>
-    line.includes("Error:")
-  );
+  const hasErrorMessage = stderr.output.some((line) => line.includes("Error:"));
   assertEquals(hasErrorMessage, true);
 });
