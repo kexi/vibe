@@ -19,7 +19,8 @@
   "files": [
     "index.js",
     "index.d.ts",
-    "README.md"
+    "README.md",
+    "*.node"
   ],
   "scripts": {
     "artifacts": "napi artifacts",
@@ -30,12 +31,6 @@
   },
   "devDependencies": {
     "@napi-rs/cli": "^2.18.0"
-  },
-  "optionalDependencies": {
-    "@kexi/vibe-native-darwin-arm64": "0.10.0",
-    "@kexi/vibe-native-darwin-x64": "0.10.0",
-    "@kexi/vibe-native-linux-arm64-gnu": "0.10.0",
-    "@kexi/vibe-native-linux-x64-gnu": "0.10.0"
   },
   "engines": {
     "node": ">=18.0.0"
