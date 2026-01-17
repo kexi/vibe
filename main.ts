@@ -7,6 +7,8 @@ import { verifyCommand } from "./src/commands/verify.ts";
 import { configCommand } from "./src/commands/config.ts";
 import { upgradeCommand } from "./src/commands/upgrade.ts";
 import { BUILD_INFO } from "./src/version.ts";
+import { initRuntime, runtime } from "./src/runtime/index.ts";
+import { createAppContext, setGlobalContext } from "./src/context/index.ts";
 
 /**
  * Boolean options supported by the CLI.
@@ -30,6 +32,9 @@ const BOOLEAN_OPTIONS = [
 const HELP_TEXT = `vibe - git worktree helper
 
 Installation:
+  # npx (Node.js)
+  npx @kexi/vibe
+
   # Homebrew (macOS)
   brew install kexi/tap/vibe
 
@@ -85,7 +90,13 @@ Examples:
 `;
 
 async function main(): Promise<void> {
-  const args = parseArgs(Deno.args, {
+  // Initialize runtime before using any runtime APIs
+  const rt = await initRuntime();
+
+  // Set up global context for dependency injection
+  setGlobalContext(createAppContext(rt));
+
+  const args = parseArgs([...runtime.control.args], {
     boolean: [...BOOLEAN_OPTIONS],
     alias: {
       h: "help",
@@ -106,7 +117,7 @@ async function main(): Promise<void> {
     if (isUnknownOption) {
       console.error(`Error: Unknown option '--${key}'`);
       console.error("Run 'vibe --help' for usage.");
-      Deno.exit(1);
+      runtime.control.exit(1);
     }
   }
 
@@ -129,14 +140,14 @@ async function main(): Promise<void> {
     console.error(`Built: ${BUILD_INFO.buildTime} (${BUILD_INFO.buildEnv})`);
     console.error();
     console.error(`${BUILD_INFO.repository}#readme`);
-    Deno.exit(0);
+    runtime.control.exit(0);
   }
 
   const showHelp = args.help || args._.length === 0;
   if (showHelp) {
     console.error(HELP_TEXT);
     console.error(`${BUILD_INFO.repository}#readme`);
-    Deno.exit(0);
+    runtime.control.exit(0);
   }
 
   const command = String(args._[0]);
@@ -166,7 +177,7 @@ async function main(): Promise<void> {
         console.error(
           "Error: --delete-branch and --keep-branch cannot be used together",
         );
-        Deno.exit(1);
+        runtime.control.exit(1);
       }
 
       await cleanCommand({ force, deleteBranch, keepBranch, verbose, quiet });
@@ -193,7 +204,7 @@ async function main(): Promise<void> {
     }
     default:
       console.error(`Unknown command: ${command}`);
-      Deno.exit(1);
+      runtime.control.exit(1);
   }
 }
 

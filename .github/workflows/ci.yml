@@ -12,6 +12,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
+        env:
+          MISE_HTTP_TIMEOUT: "120"
       - name: Verify formatting
         run: deno task fmt:check
       - name: Run linter
@@ -22,6 +24,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
+        env:
+          MISE_HTTP_TIMEOUT: "120"
       - name: Generate version.ts
         run: deno task generate-version
       - name: Type check
@@ -32,10 +36,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
+        env:
+          MISE_HTTP_TIMEOUT: "120"
       - name: Generate version.ts
         run: deno task generate-version
       - name: Run tests
         run: deno task test
+
+  test-node:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - name: Install dependencies
+        working-directory: npm
+        run: pnpm install
+      - name: Run Node.js runtime tests
+        working-directory: npm
+        run: pnpm test
 
   build-binaries:
     strategy:
@@ -60,6 +83,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
+        env:
+          MISE_HTTP_TIMEOUT: "120"
       - name: Build binary (${{ matrix.name }})
         run: deno task compile:ci --target ${{ matrix.target }} --output vibe-${{ matrix.name }} --distribution binary
 
@@ -75,6 +100,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
+        env:
+          MISE_HTTP_TIMEOUT: "120"
       - name: Build Linux binary
         run: deno task compile:ci --target ${{ matrix.target }} --output vibe-test --distribution deb
       - name: Build .deb package
@@ -90,6 +117,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
+        env:
+          MISE_HTTP_TIMEOUT: "120"
 
       # Install build dependencies for node-pty (Linux only)
       - name: Install build dependencies (Ubuntu)
@@ -113,13 +142,25 @@ jobs:
       - name: Install E2E test dependencies
         run: pnpm install
 
-      # Build node-pty native addon
+      # Build node-pty native addon from source (prebuilds may not work on arm64)
       - name: Build node-pty
-        run: pnpm rebuild node-pty
+        run: |
+          cd node_modules/node-pty
+          npm run install -- --build-from-source
+        env:
+          npm_config_build_from_source: true
+
+      # Verify binary exists and has execute permission
+      - name: Verify vibe binary
+        run: |
+          ls -la vibe-e2e
+          file vibe-e2e
+          chmod +x vibe-e2e
+          ./vibe-e2e --version
 
       # Run E2E tests with Vitest
       - name: Run E2E tests
-        run: pnpm run test:e2e
+        run: pnpm -C tests/e2e run test
         env:
           VIBE_BINARY_PATH: ${{ github.workspace }}/vibe-e2e
 

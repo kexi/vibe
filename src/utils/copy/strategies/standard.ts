@@ -1,9 +1,10 @@
 import { copy } from "@std/fs/copy";
 import { dirname } from "@std/path";
 import type { CopyStrategy } from "../types.ts";
+import { runtime } from "../../../runtime/index.ts";
 
 /**
- * Standard copy strategy using Deno's built-in APIs.
+ * Standard copy strategy using runtime's built-in APIs.
  * This is the fallback strategy that works on all platforms.
  */
 export class StandardStrategy implements CopyStrategy {
@@ -16,9 +17,9 @@ export class StandardStrategy implements CopyStrategy {
   async copyFile(src: string, dest: string): Promise<void> {
     // Ensure parent directory exists
     const destDir = dirname(dest);
-    await Deno.mkdir(destDir, { recursive: true }).catch(() => {});
+    await runtime.fs.mkdir(destDir, { recursive: true }).catch(() => {});
 
-    await Deno.copyFile(src, dest);
+    await runtime.fs.copyFile(src, dest);
   }
 
   async copyDirectory(src: string, dest: string): Promise<void> {

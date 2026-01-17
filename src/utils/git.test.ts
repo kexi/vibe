@@ -5,6 +5,10 @@ import {
   normalizeRemoteUrl,
   sanitizeBranchName,
 } from "./git.ts";
+import { setupRealTestContext } from "../context/testing.ts";
+
+// Initialize test context with real Deno runtime for filesystem tests
+await setupRealTestContext();
 
 Deno.test("sanitizeBranchName replaces slashes with dashes", () => {
   const result = sanitizeBranchName("feat/new-feature");

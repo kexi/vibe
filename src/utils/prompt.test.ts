@@ -8,6 +8,10 @@
 
 import { confirm, select } from "./prompt.ts";
 import { assertEquals } from "@std/assert";
+import { setupTestContext } from "../context/testing.ts";
+
+// Initialize test context for modules that depend on getGlobalContext()
+setupTestContext();
 
 Deno.test("confirm function is exported", () => {
   const isConfirmFunction = typeof confirm === "function";

@@ -75,6 +75,18 @@ $ vibe start feat/new-feature
 brew install kexi/tap/vibe
 ```
 
+### npm (Node.js 18+)
+
+```bash
+# グローバルインストール
+npm install -g @kexi/vibe
+
+# またはnpxで直接実行
+npx @kexi/vibe start feat/my-feature
+```
+
+> 注意: npmパッケージにはmacOS (APFS)とLinux (Btrfs/XFS)で最適化されたCopy-on-Writeファイルクローニング用のオプショナルなネイティブバインディング（`@kexi/vibe-native`）が含まれています。利用可能な場合は自動的に使用されます。
+
 ### Deno (JSR)
 
 ```bash

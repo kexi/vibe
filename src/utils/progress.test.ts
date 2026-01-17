@@ -1,5 +1,9 @@
 import { assertEquals, assertThrows } from "@std/assert";
 import { ProgressTracker } from "./progress.ts";
+import { setupTestContext } from "../context/testing.ts";
+
+// Initialize test context for modules that depend on getGlobalContext()
+setupTestContext();
 
 Deno.test("ProgressTracker - constructor with default options", () => {
   const tracker = new ProgressTracker({ enabled: false });

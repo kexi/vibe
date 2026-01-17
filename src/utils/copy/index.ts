@@ -5,6 +5,7 @@ import {
   RsyncStrategy,
   StandardStrategy,
 } from "./strategies/index.ts";
+import type { AppContext } from "../../context/index.ts";
 
 export type { CopyCapabilities, CopyStrategy, CopyStrategyType } from "./types.ts";
 export { detectCapabilities, resetCapabilitiesCache } from "./detector.ts";
@@ -138,8 +139,9 @@ let defaultCopyService: CopyService | null = null;
 /**
  * Get the default CopyService instance.
  * Creates a new instance on first call.
+ * @param _ctx AppContext (reserved for future use)
  */
-export function getCopyService(): CopyService {
+export function getCopyService(_ctx?: AppContext): CopyService {
   if (defaultCopyService === null) {
     defaultCopyService = new CopyService();
   }

@@ -1,0 +1,67 @@
+{
+  "name": "@kexi/vibe",
+  "version": "0.12.0",
+  "description": "Git worktree helper CLI",
+  "type": "module",
+  "bin": {
+    "vibe": "./bin/vibe.js"
+  },
+  "main": "./dist/main.js",
+  "exports": {
+    ".": {
+      "import": "./dist/main.js"
+    }
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "build:watch": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "pnpm run build"
+  },
+  "dependencies": {
+    "@jsr/std__cli": "^1.0.0",
+    "@jsr/std__fs": "^1.0.0",
+    "@jsr/std__path": "^1.0.0",
+    "@jsr/std__toml": "^1.0.0",
+    "zod": "^3.23.0"
+  },
+  "optionalDependencies": {
+    "@kexi/vibe-native": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsup": "^8.0.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kexi/vibe.git"
+  },
+  "homepage": "https://github.com/kexi/vibe#readme",
+  "bugs": {
+    "url": "https://github.com/kexi/vibe/issues"
+  },
+  "keywords": [
+    "git",
+    "worktree",
+    "cli",
+    "workflow"
+  ],
+  "author": "kexi",
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

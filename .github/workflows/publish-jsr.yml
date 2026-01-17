@@ -16,6 +16,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: jdx/mise-action@v2
+        env:
+          MISE_HTTP_TIMEOUT: "120"
 
       - name: Validate version consistency
         shell: bash

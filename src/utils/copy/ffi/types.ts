@@ -1,4 +1,77 @@
 /**
+ * Base error class for FFI clone operations
+ */
+export class CloneError extends Error {
+  constructor(
+    message: string,
+    public readonly code: string,
+    public readonly errno?: number,
+  ) {
+    super(message);
+    this.name = "CloneError";
+  }
+}
+
+/**
+ * Error for unsupported filesystem operations
+ */
+export class UnsupportedFilesystemError extends CloneError {
+  constructor(operation: string, filesystem?: string) {
+    const fsInfo = filesystem ? ` (filesystem: ${filesystem})` : "";
+    super(
+      `${operation} is not supported on this filesystem${fsInfo}`,
+      "ENOTSUP",
+      45,
+    );
+    this.name = "UnsupportedFilesystemError";
+  }
+}
+
+/**
+ * Error for cross-device operations
+ */
+export class CrossDeviceError extends CloneError {
+  constructor(src: string, dest: string) {
+    super(
+      `Cannot clone across different filesystems: ${src} -> ${dest}`,
+      "EXDEV",
+      18,
+    );
+    this.name = "CrossDeviceError";
+  }
+}
+
+/**
+ * Error for permission denied
+ */
+export class PermissionDeniedError extends CloneError {
+  constructor(path: string) {
+    super(`Permission denied: ${path}`, "EACCES", 13);
+    this.name = "PermissionDeniedError";
+  }
+}
+
+/**
+ * Error for file not found
+ */
+export class FileNotFoundError extends CloneError {
+  constructor(path: string) {
+    super(`File not found: ${path}`, "ENOENT", 2);
+    this.name = "FileNotFoundError";
+  }
+}
+
+/**
+ * Error for file already exists
+ */
+export class FileExistsError extends CloneError {
+  constructor(path: string) {
+    super(`File already exists: ${path}`, "EEXIST", 17);
+    this.name = "FileExistsError";
+  }
+}
+
+/**
  * Native clone operation interface for FFI-based implementations
  */
 export interface NativeClone {

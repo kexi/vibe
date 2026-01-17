@@ -75,6 +75,18 @@ This approach allows `vibe clean` to complete instantly regardless of worktree s
 brew install kexi/tap/vibe
 ```
 
+### npm (Node.js 18+)
+
+```bash
+# Global install
+npm install -g @kexi/vibe
+
+# Or run directly with npx
+npx @kexi/vibe start feat/my-feature
+```
+
+> Note: The npm package includes optional native bindings (`@kexi/vibe-native`) for optimized Copy-on-Write file cloning on macOS (APFS) and Linux (Btrfs/XFS). These are automatically used when available.
+
 ### Deno (JSR)
 
 ```bash

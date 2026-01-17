@@ -10,6 +10,10 @@ import { StandardStrategy } from "./strategies/standard.ts";
 import { CloneStrategy } from "./strategies/clone.ts";
 import { RsyncStrategy } from "./strategies/rsync.ts";
 import { validatePath } from "./validation.ts";
+import { setupRealTestContext } from "../../context/testing.ts";
+
+// Initialize test context with real Deno runtime for filesystem tests
+await setupRealTestContext();
 
 // Reset state before each test
 function resetState(): void {
