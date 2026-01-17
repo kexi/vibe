@@ -26,7 +26,7 @@ interface StartOptions extends OutputOptions {
   dryRun?: boolean;
 }
 
-interface ConfigAndHooksOptions {
+interface ConfigAndHooksOptions extends OutputOptions {
   skipHooks?: boolean;
   skipCopy?: boolean;
   dryRun?: boolean;
@@ -153,6 +153,7 @@ export async function startCommand(
             skipHooks: noHooks,
             skipCopy: noCopy,
             dryRun,
+            ...outputOpts,
           });
           logDryRun(`Would change directory to: ${worktreePath}`);
           return;
@@ -163,6 +164,7 @@ export async function startCommand(
         await runConfigAndHooks(config, repoRoot, worktreePath, tracker, {
           skipHooks: noHooks,
           skipCopy: noCopy,
+          ...outputOpts,
         });
 
         // Output cd command
@@ -172,13 +174,13 @@ export async function startCommand(
         // Different branch - offer to overwrite
         if (dryRun) {
           logDryRun(
-            `Directory '${worktreePath}' already exists (branch: ${existingWorktree.branch})`,
+            `Directory '${worktreePath}' already exists(branch: ${existingWorktree.branch})`,
           );
           logDryRun("Would prompt to Overwrite/Reuse/Cancel");
           return;
         }
         const choice = await select(
-          `Directory '${worktreePath}' already exists (branch: ${existingWorktree.branch}):`,
+          `Directory '${worktreePath}' already exists(branch: ${existingWorktree.branch}): `,
           ["Overwrite (remove and recreate)", "Reuse (use existing)", "Cancel"],
         );
 
@@ -190,6 +192,7 @@ export async function startCommand(
           await runConfigAndHooks(config, repoRoot, worktreePath, tracker, {
             skipHooks: noHooks,
             skipCopy: noCopy,
+            ...outputOpts,
           });
 
           // Output cd command
@@ -227,6 +230,7 @@ export async function startCommand(
       skipHooks: noHooks,
       skipCopy: noCopy,
       dryRun,
+      ...outputOpts,
     });
 
     if (dryRun) {
@@ -249,6 +253,7 @@ async function runVibeConfig(
   options: ConfigAndHooksOptions = {},
 ): Promise<void> {
   const { skipHooks = false, skipCopy = false, dryRun = false } = options;
+  const errors: string[] = [];
 
   // Get the copy service (automatically selects the best strategy)
   const copyService = getCopyService();
@@ -257,8 +262,18 @@ async function runVibeConfig(
   // Expand glob patterns to actual file paths
   const shouldCopyFiles = !skipCopy;
   const filesToCopy = shouldCopyFiles
-    ? await expandCopyPatterns(config.copy?.files ?? [], repoRoot)
+    ? await expandCopyPatterns(config.copy?.files ?? [], repoRoot, options)
     : [];
+
+  const shouldCopyFilesConfigured = (config.copy?.files?.length ?? 0) > 0;
+  if (shouldCopyFilesConfigured && filesToCopy.length === 0 && !skipCopy) {
+    errors.push("Configuration specified copy.files but no files were found");
+  }
+
+  // Always log count of files to copy for debugging
+  if (filesToCopy.length > 0) {
+    verboseLog(`Found ${filesToCopy.length} files to copy`, options);
+  }
 
   // Handle dry-run for file copying
   if (dryRun && filesToCopy.length > 0) {
@@ -302,6 +317,7 @@ async function runVibeConfig(
           tracker.failTask(copyTaskIds[i], errorMessage);
         }
         console.warn(`Warning: Failed to copy ${file}: ${errorMessage}`);
+        errors.push(`Failed to copy file '${file}': ${errorMessage}`);
       }
     }
   }
@@ -309,8 +325,18 @@ async function runVibeConfig(
   // Copy directories from origin to worktree
   const shouldCopyDirs = !skipCopy;
   const directoriesToCopy = shouldCopyDirs
-    ? await expandDirectoryPatterns(config.copy?.dirs ?? [], repoRoot)
+    ? await expandDirectoryPatterns(config.copy?.dirs ?? [], repoRoot, options)
     : [];
+
+  const shouldCopyDirsConfigured = (config.copy?.dirs?.length ?? 0) > 0;
+  if (shouldCopyDirsConfigured && directoriesToCopy.length === 0 && !skipCopy) {
+    errors.push("Configuration specified copy.dirs but no directories were found");
+  }
+
+  // Always log count of directories to copy for debugging
+  if (directoriesToCopy.length > 0) {
+    verboseLog(`Found ${directoriesToCopy.length} directories to copy`, options);
+  }
 
   // Handle dry-run for directory copying
   if (dryRun && directoriesToCopy.length > 0) {
@@ -327,7 +353,7 @@ async function runVibeConfig(
       // Get strategy name to show in progress
       const dirStrategy = await copyService.getDirectoryStrategy();
       const strategyName = dirStrategy.name;
-      dirCopyPhaseId = tracker.addPhase(`Copying directories (${strategyName})`);
+      dirCopyPhaseId = tracker.addPhase(`Copying directories(${strategyName})`);
       for (const dir of directoriesToCopy) {
         const taskId = tracker.addTask(dirCopyPhaseId, dir);
         dirCopyTaskIds.push(taskId);
@@ -358,10 +384,15 @@ async function runVibeConfig(
           tracker.failTask(dirCopyTaskIds[i], errorMessage);
         }
         console.warn(`Warning: Failed to copy directory ${dir}: ${errorMessage}`);
+        errors.push(`Failed to copy directory '${dir}': ${errorMessage}`);
       }
     });
 
     await Promise.all(directoryCopyPromises);
+  }
+
+  if (errors.length > 0) {
+    throw new Error(`Copy operation failed with ${errors.length} errors: \n${errors.join("\n")} `);
   }
 
   // Run post_start hooks
@@ -372,7 +403,7 @@ async function runVibeConfig(
   if (dryRun && shouldRunPostStartHooks && hasPostStartHooks) {
     logDryRun("Would run post-start hooks:");
     for (const hook of postStartHooks) {
-      logDryRun(`  - ${hook}`);
+      logDryRun(`  - ${hook} `);
     }
   } else if (shouldRunPostStartHooks && hasPostStartHooks) {
     let trackerInfo: HookTrackerInfo | undefined;
@@ -406,7 +437,7 @@ async function runPreStartHooksIfNeeded(
   if (dryRun) {
     logDryRun("Would run pre-start hooks:");
     for (const hook of preStartHooks) {
-      logDryRun(`  - ${hook}`);
+      logDryRun(`  - ${hook} `);
     }
     return;
   }

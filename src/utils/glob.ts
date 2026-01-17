@@ -1,5 +1,6 @@
 import { expandGlob } from "@std/fs";
 import { join, relative } from "@std/path";
+import { type OutputOptions, verboseLog } from "./output.ts";
 
 /**
  * Checks if a string contains glob pattern characters.
@@ -16,6 +17,7 @@ export function isGlobPattern(pattern: string): boolean {
 export async function expandGlobPattern(
   pattern: string,
   repoRoot: string,
+  options?: OutputOptions,
 ): Promise<string[]> {
   const files: string[] = [];
 
@@ -61,6 +63,7 @@ export async function expandGlobPattern(
 export async function expandCopyPatterns(
   patterns: string[],
   repoRoot: string,
+  options?: OutputOptions,
 ): Promise<string[]> {
   const expandedFiles: string[] = [];
   const seen = new Set<string>();
@@ -68,7 +71,10 @@ export async function expandCopyPatterns(
   for (const pattern of patterns) {
     if (isGlobPattern(pattern)) {
       // Expand glob pattern
-      const matchedFiles = await expandGlobPattern(pattern, repoRoot);
+      const matchedFiles = await expandGlobPattern(pattern, repoRoot, options);
+      if (options?.verbose && matchedFiles.length === 0) {
+        verboseLog(`No files matched for pattern: ${pattern}`, options ?? {});
+      }
       for (const file of matchedFiles) {
         if (!seen.has(file)) {
           seen.add(file);
@@ -106,11 +112,13 @@ async function isDir(path: string): Promise<boolean> {
 async function expandGlobPatternForDirectories(
   pattern: string,
   repoRoot: string,
+  options?: OutputOptions,
 ): Promise<string[]> {
   const dirs: string[] = [];
 
   try {
     const absolutePattern = join(repoRoot, pattern);
+    verboseLog(`Expanding directory glob pattern: ${absolutePattern}`, options ?? {});
 
     for await (const entry of expandGlob(absolutePattern, { root: repoRoot })) {
       const isDirectory = entry.isDirectory;
@@ -151,13 +159,17 @@ async function expandGlobPatternForDirectories(
 export async function expandDirectoryPatterns(
   patterns: string[],
   repoRoot: string,
+  options?: OutputOptions,
 ): Promise<string[]> {
   const expandedDirs: string[] = [];
   const seen = new Set<string>();
 
   for (const pattern of patterns) {
     if (isGlobPattern(pattern)) {
-      const matchedDirs = await expandGlobPatternForDirectories(pattern, repoRoot);
+      const matchedDirs = await expandGlobPatternForDirectories(pattern, repoRoot, options);
+      if (options?.verbose && matchedDirs.length === 0) {
+        verboseLog(`No directories matched for pattern: ${pattern}`, options ?? {});
+      }
       for (const dir of matchedDirs) {
         if (!seen.has(dir)) {
           seen.add(dir);
@@ -180,6 +192,9 @@ export async function expandDirectoryPatterns(
       // Treat as exact path - verify it's a directory
       const absolutePath = join(repoRoot, pattern);
       const isDirPath = await isDir(absolutePath);
+      if (!isDirPath && options?.verbose) {
+        verboseLog(`Directory not found or not a directory: ${absolutePath}`, options ?? {});
+      }
       if (isDirPath && !seen.has(pattern)) {
         seen.add(pattern);
         expandedDirs.push(pattern);

@@ -178,7 +178,7 @@ async function main(): Promise<void> {
   const startTimes = await runBenchmark(
     vibeBinary,
     reactNativePath,
-    ["start", "benchmark-worktree"],
+    ["start", "benchmark-worktree", "--verbose"],
     iterations,
   );
   const startMedian = calculateMedian(startTimes);
@@ -195,7 +195,7 @@ async function main(): Promise<void> {
   const worktreePath = join(parentDir, `${repoName}-benchmark-worktree`);
 
   // Clean command must be run from within the worktree to be removed
-  const cleanTimes = await runBenchmark(vibeBinary, worktreePath, ["clean"], iterations);
+  const cleanTimes = await runBenchmark(vibeBinary, worktreePath, ["clean", "--verbose"], iterations);
   const cleanMedian = calculateMedian(cleanTimes);
   console.log(`  Median: ${cleanMedian.toFixed(2)}s\n`);
 
