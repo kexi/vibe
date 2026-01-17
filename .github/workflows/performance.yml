@@ -85,7 +85,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/react-native.tar.gz
-          key: react-native-0.83.0-installed-${{ runner.os }}-v1
+          key: react-native-0.83.0-installed-${{ runner.os }}-v2
 
       # If cache miss: clone, install, and create tarball
       - name: Setup Yarn 1.22.22
@@ -114,26 +114,38 @@ jobs:
           cd "${{ steps.project-path.outputs.path }}"
           git config user.email "benchmark@example.com"
           git config user.name "Benchmark Runner"
+          # Create a branch from detached HEAD (cloned from tag)
+          git checkout -B benchmark-branch
           git add -A && git commit -m "Add vibe config" --allow-empty
 
-      - name: Create React Native tarball
-        if: steps.rn-cache.outputs.cache-hit != 'true'
+      - name: Create React Native tarball (Unix)
+        if: steps.rn-cache.outputs.cache-hit != 'true' && runner.os != 'Windows'
         shell: bash
         run: |
           tar -czf "${{ runner.temp }}/react-native.tar.gz" \
             -C "${{ steps.project-path.outputs.parent }}" \
             react-native
 
+      - name: Create React Native tarball (Windows)
+        if: steps.rn-cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $tarPath = "${{ runner.temp }}/react-native.tar.gz"
+          $parentPath = "${{ steps.project-path.outputs.parent }}"
+          Push-Location $parentPath
+          tar -czf $tarPath react-native
+          Pop-Location
+
       - name: Save React Native tarball to cache
         if: steps.rn-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/react-native.tar.gz
-          key: react-native-0.83.0-installed-${{ runner.os }}-v1
+          key: react-native-0.83.0-installed-${{ runner.os }}-v2
 
       # If cache hit: extract tarball to project path
-      - name: Extract React Native tarball
-        if: steps.rn-cache.outputs.cache-hit == 'true'
+      - name: Extract React Native tarball (Unix)
+        if: steps.rn-cache.outputs.cache-hit == 'true' && runner.os != 'Windows'
         shell: bash
         run: |
           tar -xzf "${{ runner.temp }}/react-native.tar.gz" \
@@ -141,8 +153,22 @@ jobs:
           cd "${{ steps.project-path.outputs.path }}"
           git config user.email "benchmark@example.com"
           git config user.name "Benchmark Runner"
-          # Create a branch if HEAD is detached
           git checkout -B benchmark-branch
+
+      - name: Extract React Native tarball (Windows)
+        if: steps.rn-cache.outputs.cache-hit == 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $tarPath = "${{ runner.temp }}/react-native.tar.gz"
+          $parentPath = "${{ steps.project-path.outputs.parent }}"
+          Push-Location $parentPath
+          tar -xzf $tarPath
+          Pop-Location
+          Push-Location "${{ steps.project-path.outputs.path }}"
+          git config user.email "benchmark@example.com"
+          git config user.name "Benchmark Runner"
+          git checkout -B benchmark-branch
+          Pop-Location
 
       - name: Trust vibe config (Unix)
         if: runner.os != 'Windows'
