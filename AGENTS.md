@@ -21,6 +21,35 @@ develop ─┴──●──●──●──●─────┴────
             feat/a feat/b
 ```
 
+## Supported Platforms
+
+### OS
+
+| OS      | Architectures   | Notes                          |
+| ------- | --------------- | ------------------------------ |
+| macOS   | x64, ARM64      | Homebrew available             |
+| Linux   | x64, ARM64      | .deb package available (Ubuntu/Debian) |
+| Windows | x64             | PowerShell installation        |
+
+WSL2 is supported via Linux binaries.
+
+### Filesystem (Copy-on-Write Optimization)
+
+| Filesystem | Platform | CoW Support |
+| ---------- | -------- | ----------- |
+| APFS       | macOS    | Yes         |
+| Btrfs      | Linux    | Yes         |
+| XFS        | Linux    | Yes         |
+| Others     | All      | Fallback to standard copy |
+
+### Shell
+
+- Zsh
+- Bash
+- Fish
+- Nushell
+- PowerShell
+
 ## Development Environment
 
 - Runtime: Deno v2.x (setup with `mise install`)
