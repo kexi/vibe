@@ -1,0 +1,238 @@
+name: Performance Benchmark
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+concurrency:
+  group: performance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macos-apfs
+            filesystem: APFS
+            cow: true
+          - os: ubuntu-latest
+            name: linux-ext4
+            filesystem: ext4
+            cow: false
+          - os: ubuntu-latest
+            name: linux-btrfs
+            filesystem: Btrfs
+            cow: true
+          - os: windows-latest
+            name: windows-ntfs
+            filesystem: NTFS
+            cow: false
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    name: Benchmark (${{ matrix.name }})
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+
+      - name: Generate version.ts
+        run: deno task generate-version
+
+      - name: Build vibe binary
+        run: deno task compile:ci --output vibe-benchmark --distribution binary
+
+      # Linux Btrfs setup
+      - name: Setup Btrfs filesystem
+        if: matrix.filesystem == 'Btrfs'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y btrfs-progs
+          # Create a 10GB sparse file for Btrfs
+          sudo truncate -s 10G /tmp/btrfs.img
+          sudo mkfs.btrfs /tmp/btrfs.img
+          sudo mkdir -p /mnt/btrfs
+          sudo mount -o loop /tmp/btrfs.img /mnt/btrfs
+          sudo chmod 777 /mnt/btrfs
+
+      - name: Set project path
+        id: project-path
+        shell: bash
+        run: |
+          if [ "${{ matrix.filesystem }}" == "Btrfs" ]; then
+            echo "path=/mnt/btrfs/react-native" >> $GITHUB_OUTPUT
+          elif [ "${{ runner.os }}" == "Windows" ]; then
+            echo "path=$RUNNER_TEMP/react-native" >> $GITHUB_OUTPUT
+          else
+            echo "path=/tmp/react-native" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Clone React Native v0.83.0
+        shell: bash
+        run: |
+          git clone --depth 1 --branch v0.83.0 \
+            https://github.com/facebook/react-native.git \
+            "${{ steps.project-path.outputs.path }}"
+
+      - name: Setup Yarn 1.22.22
+        run: npm install -g yarn@1.22.22
+
+      - name: Get yarn cache directory
+        id: yarn-cache-dir
+        shell: bash
+        run: echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache yarn dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ steps.yarn-cache-dir.outputs.dir }}
+            ${{ steps.project-path.outputs.path }}/node_modules
+            ${{ steps.project-path.outputs.path }}/packages/*/node_modules
+          key: yarn-rn-0.83.0-${{ runner.os }}-${{ matrix.name }}-v1
+
+      - name: Install React Native dependencies
+        shell: bash
+        working-directory: ${{ steps.project-path.outputs.path }}
+        run: yarn install --frozen-lockfile
+
+      - name: Setup benchmark config
+        shell: bash
+        run: |
+          cp benchmarks/react-native.vibe.toml "${{ steps.project-path.outputs.path }}/.vibe.toml"
+          cd "${{ steps.project-path.outputs.path }}" && git add -A && git commit -m "Add vibe config" --allow-empty
+
+      - name: Trust vibe config (Unix)
+        if: runner.os != 'Windows'
+        run: "${{ github.workspace }}/vibe-benchmark" trust
+        working-directory: ${{ steps.project-path.outputs.path }}
+        env:
+          HOME: ${{ runner.temp }}
+
+      - name: Trust vibe config (Windows)
+        if: runner.os == 'Windows'
+        run: "${{ github.workspace }}\vibe-benchmark.exe" trust
+        working-directory: ${{ steps.project-path.outputs.path }}
+        env:
+          USERPROFILE: ${{ runner.temp }}
+
+      - name: Restore baseline
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/baseline.json
+          key: performance-baseline-${{ matrix.name }}
+
+      - name: Run benchmark
+        id: benchmark
+        shell: bash
+        run: deno run --allow-all scripts/benchmark.ts
+        env:
+          VIBE_BINARY: ${{ github.workspace }}/vibe-benchmark${{ runner.os == 'Windows' && '.exe' || '' }}
+          REACT_NATIVE_PATH: ${{ steps.project-path.outputs.path }}
+          BASELINE_PATH: ${{ runner.temp }}/baseline.json
+          RESULTS_PATH: ${{ runner.temp }}/results.json
+          BENCHMARK_OS: ${{ runner.os }}
+          BENCHMARK_FILESYSTEM: ${{ matrix.filesystem }}
+          BENCHMARK_COW: ${{ matrix.cow }}
+          BENCHMARK_NAME: ${{ matrix.name }}
+
+      - name: Save baseline
+        if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/results.json
+          key: performance-baseline-${{ matrix.name }}-${{ github.sha }}
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ matrix.name }}
+          path: ${{ runner.temp }}/results.json
+
+      # Cleanup Btrfs
+      - name: Cleanup Btrfs
+        if: matrix.filesystem == 'Btrfs' && always()
+        run: |
+          sudo umount /mnt/btrfs || true
+          sudo rm -f /tmp/btrfs.img
+
+      - name: Check quality gate
+        shell: bash
+        run: |
+          if [ -f "${{ runner.temp }}/results.json" ]; then
+            FAILED=$(jq -r '.failed' "${{ runner.temp }}/results.json")
+            if [ "$FAILED" = "true" ]; then
+              echo "Performance regression detected!"
+              exit 1
+            fi
+          fi
+
+  # Aggregate results and comment on PR
+  report:
+    needs: benchmark
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: results
+          pattern: benchmark-results-*
+
+      - name: Generate PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            let body = '## Performance Benchmark Results\n\n';
+            body += '| Platform | Filesystem | CoW | `vibe start` | `vibe clean` | vs Baseline |\n';
+            body += '|----------|------------|-----|--------------|--------------|-------------|\n';
+
+            const resultsDir = 'results';
+            const dirs = fs.readdirSync(resultsDir);
+
+            let hasRegression = false;
+
+            for (const dir of dirs.sort()) {
+              const resultFile = path.join(resultsDir, dir, 'results.json');
+              if (!fs.existsSync(resultFile)) continue;
+
+              const results = JSON.parse(fs.readFileSync(resultFile, 'utf8'));
+              const startDiff = results.start.diff || 'N/A';
+              const cleanDiff = results.clean.diff || 'N/A';
+              const status = results.failed ? ':x:' : ':white_check_mark:';
+
+              if (results.failed) hasRegression = true;
+
+              body += `| ${results.os} | ${results.filesystem} | ${results.cow ? 'Yes' : 'No'} | `;
+              body += `${results.start.median.toFixed(2)}s | ${results.clean.median.toFixed(2)}s | `;
+              body += `${status} start: ${startDiff}, clean: ${cleanDiff} |\n`;
+            }
+
+            if (hasRegression) {
+              body += '\n:x: **Performance regression detected!** (exceeded 30s threshold)\n';
+            } else {
+              body += '\n:white_check_mark: Performance within acceptable range on all platforms\n';
+            }
+
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });

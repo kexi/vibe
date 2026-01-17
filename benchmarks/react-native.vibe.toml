@@ -1,0 +1,8 @@
+# React Native v0.83.0 benchmark configuration
+# Copies all node_modules directories (root + packages/*)
+
+[copy]
+dirs = [
+  "node_modules",
+  "packages/*/node_modules"
+]
