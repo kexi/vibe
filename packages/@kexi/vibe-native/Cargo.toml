@@ -1,6 +1,6 @@
 [package]
 name = "vibe-native"
-version = "0.10.0"
+version = "0.12.0"
 edition = "2021"
 license = "Apache-2.0"
 description = "Native clone operations for vibe CLI (clonefile on macOS, FICLONE on Linux)"
