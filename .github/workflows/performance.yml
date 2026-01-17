@@ -195,12 +195,32 @@ jobs:
           restore-keys: |
             performance-baseline-${{ matrix.name }}-
 
-      - name: Run benchmark
-        id: benchmark
+      - name: Run benchmark (Unix)
+        if: runner.os != 'Windows'
+        id: benchmark-unix
         shell: bash
         run: deno run --allow-all scripts/benchmark.ts
         env:
-          VIBE_BINARY: ${{ github.workspace }}/vibe-benchmark${{ runner.os == 'Windows' && '.exe' || '' }}
+          HOME: ${{ runner.temp }}
+          VIBE_BINARY: ${{ github.workspace }}/vibe-benchmark
+          REACT_NATIVE_PATH: ${{ steps.project-path.outputs.path }}
+          BASELINE_PATH: ${{ runner.temp }}/baseline.json
+          RESULTS_PATH: ${{ runner.temp }}/results.json
+          BENCHMARK_ITERATIONS: "1"
+          BENCHMARK_THRESHOLD: "10"
+          BENCHMARK_OS: ${{ runner.os }}
+          BENCHMARK_FILESYSTEM: ${{ matrix.filesystem }}
+          BENCHMARK_COW: ${{ matrix.cow }}
+          BENCHMARK_NAME: ${{ matrix.name }}
+
+      - name: Run benchmark (Windows)
+        if: runner.os == 'Windows'
+        id: benchmark-windows
+        shell: bash
+        run: deno run --allow-all scripts/benchmark.ts
+        env:
+          USERPROFILE: ${{ runner.temp }}
+          VIBE_BINARY: ${{ github.workspace }}/vibe-benchmark.exe
           REACT_NATIVE_PATH: ${{ steps.project-path.outputs.path }}
           BASELINE_PATH: ${{ runner.temp }}/baseline.json
           RESULTS_PATH: ${{ runner.temp }}/results.json
