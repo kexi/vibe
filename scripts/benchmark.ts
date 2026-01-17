@@ -58,6 +58,40 @@ function getEnvOrDefault(name: string, defaultValue: string): string {
   return Deno.env.get(name) ?? defaultValue;
 }
 
+/**
+ * Verifies that the worktree was created correctly.
+ * Specifically checks if node_modules exists and is not empty.
+ */
+async function verifyWorktree(worktreePath: string, expectedDirs: string[] = ["node_modules"]): Promise<void> {
+  for (const dir of expectedDirs) {
+    const dirPath = `${worktreePath}/${dir}`;
+    try {
+      // Check if directory exists
+      const stat = await Deno.stat(dirPath);
+      if (!stat.isDirectory) {
+        throw new Error(`${dir} exists but is not a directory`);
+      }
+
+      // Check if directory is not empty
+      let fileCount = 0;
+      for await (const _ of Deno.readDir(dirPath)) {
+        fileCount++;
+        if (fileCount > 0) break; // Optimization: Just need to know if it has ANY files
+      }
+
+      if (fileCount === 0) {
+        throw new Error(`${dir} exists but is empty. Copy operation likely failed.`);
+      }
+      console.log(`    Verified ${dir} exists and is not empty.`);
+    } catch (error) {
+      if (error instanceof Deno.errors.NotFound) {
+        throw new Error(`Verification failed: ${dir} not found in worktree at ${dirPath}`);
+      }
+      throw error;
+    }
+  }
+}
+
 async function runCommand(
   binary: string,
   args: string[],
@@ -184,15 +218,19 @@ async function main(): Promise<void> {
   const startMedian = calculateMedian(startTimes);
   console.log(`  Median: ${startMedian.toFixed(2)}s\n`);
 
-  // Benchmark vibe clean
-  console.log("Benchmarking 'vibe clean'...");
-
+  // Verify worktree content to detect false positives (e.g. empty node_modules)
   // Calculate worktree path: {parentDir}/{repoName}-{branchName}
-  // This must match the logic in src/utils/worktree-path.ts default path
   const { dirname, basename, join } = await import("jsr:@std/path");
   const parentDir = dirname(reactNativePath);
   const repoName = basename(reactNativePath);
   const worktreePath = join(parentDir, `${repoName}-benchmark-worktree`);
+
+  console.log(`  Verifying worktree at ${worktreePath}...`);
+  await verifyWorktree(worktreePath);
+  console.log(`  Verification passed.\n`);
+
+  // Benchmark vibe clean
+  console.log("Benchmarking 'vibe clean'...");
 
   // Clean command must be run from within the worktree to be removed
   const cleanTimes = await runBenchmark(vibeBinary, worktreePath, ["clean", "--verbose"], iterations);
