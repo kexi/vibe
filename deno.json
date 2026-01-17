@@ -1,6 +1,6 @@
 {
   "name": "@kexi/vibe",
-  "version": "0.12.1",
+  "version": "0.12.2",
   "license": "Apache-2.0",
   "repository": "https://github.com/kexi/vibe",
   "exports": "./main.ts",
@@ -35,10 +35,17 @@
     "strict": true
   },
   "lint": {
-    "include": ["src/", "main.ts"],
-    "exclude": ["src/runtime/node/"],
+    "include": [
+      "src/",
+      "main.ts"
+    ],
+    "exclude": [
+      "src/runtime/node/"
+    ],
     "rules": {
-      "tags": ["recommended"]
+      "tags": [
+        "recommended"
+      ]
     }
   },
   "fmt": {
@@ -47,14 +54,23 @@
     "indentWidth": 2,
     "semiColons": true,
     "singleQuote": false,
-    "include": ["src/", "main.ts"]
+    "include": [
+      "src/",
+      "main.ts"
+    ]
   },
   "test": {
-    "include": ["src/"],
-    "exclude": ["tests/e2e/"]
+    "include": [
+      "src/"
+    ],
+    "exclude": [
+      "tests/e2e/"
+    ]
   },
   "publish": {
-    "exclude": ["!src/version.ts"]
+    "exclude": [
+      "!src/version.ts"
+    ]
   },
   "nodeModulesDir": "none",
   "minimumDependencyAge": "P3D"
