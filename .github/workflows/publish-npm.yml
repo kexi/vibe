@@ -188,7 +188,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: npm
-        run: pnpm install
+        run: pnpm install --ignore-scripts
 
       - name: Generate version.ts for npm
         run: |
