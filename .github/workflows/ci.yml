@@ -109,6 +109,39 @@ jobs:
           VERSION=$(deno task get-version)
           deno task build:deb "$VERSION" ${{ matrix.arch }} vibe-test
 
+  build-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+        env:
+          MISE_HTTP_TIMEOUT: "120"
+
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Install dependencies
+        run: pnpm install --filter @kexi/vibe-native --ignore-scripts
+
+      - name: Build native module
+        working-directory: packages/@kexi/vibe-native
+        run: pnpm exec napi build --platform --release --target ${{ matrix.target }}
+
   e2e-test:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -191,7 +224,7 @@ jobs:
         run: pnpm build
 
   build:
-    needs: [build-binaries, build-deb]
+    needs: [build-binaries, build-deb, build-native]
     runs-on: ubuntu-latest
     steps:
       - run: echo "All builds completed successfully"
