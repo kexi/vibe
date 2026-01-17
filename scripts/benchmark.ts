@@ -187,7 +187,16 @@ async function main(): Promise<void> {
 
   // Benchmark vibe clean
   console.log("Benchmarking 'vibe clean'...");
-  const cleanTimes = await runBenchmark(vibeBinary, reactNativePath, ["clean"], iterations);
+
+  // Calculate worktree path: {parentDir}/{repoName}-{branchName}
+  // This must match the logic in src/utils/worktree-path.ts default path
+  const { dirname, basename, join } = await import("jsr:@std/path");
+  const parentDir = dirname(reactNativePath);
+  const repoName = basename(reactNativePath);
+  const worktreePath = join(parentDir, `${repoName}-benchmark-worktree`);
+
+  // Clean command must be run from within the worktree to be removed
+  const cleanTimes = await runBenchmark(vibeBinary, worktreePath, ["clean"], iterations);
   const cleanMedian = calculateMedian(cleanTimes);
   console.log(`  Median: ${cleanMedian.toFixed(2)}s\n`);
 
