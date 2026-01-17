@@ -35,6 +35,22 @@ develop ─┴──●──●──●──●─────┴────
   - Use long options with `--` prefix (e.g., `--verbose`)
   - Use short options with `-` prefix (e.g., `-v`)
 
+## Coding Guidelines
+
+### SOLID Principles
+
+Code should follow SOLID principles:
+
+- **S**ingle Responsibility Principle: A class or function should have only one
+  reason to change
+- **O**pen/Closed Principle: Open for extension, closed for modification
+- **L**iskov Substitution Principle: Subtypes must be substitutable for their
+  base types
+- **I**nterface Segregation Principle: Clients should not be forced to depend on
+  methods they do not use
+- **D**ependency Inversion Principle: High-level modules should not depend on
+  low-level modules; both should depend on abstractions
+
 ## Testing
 
 - Lint check: `deno task lint` or `deno lint`
