@@ -133,10 +133,6 @@ export async function startCommand(
     });
 
     verboseLog(`Resolved worktree path: ${worktreePath}`, outputOpts);
-    // DEBUG: Always log worktree path to help diagnose Windows CI issues
-    if (Deno.build.os === "windows") {
-      console.log(`[DEBUG] Worktree path: ${worktreePath}`);
-    }
 
     // Create progress tracker
     const tracker = new ProgressTracker({
