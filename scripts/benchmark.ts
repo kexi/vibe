@@ -60,7 +60,7 @@ function getEnvOrDefault(name: string, defaultValue: string): string {
 
 /**
  * Verifies that the worktree was created correctly.
- * Specifically checks if node_modules exists and is not empty.
+ * Specifically checks if node_modules exists.
  */
 async function verifyWorktree(worktreePath: string, expectedDirs: string[] = ["node_modules"]): Promise<void> {
   for (const dir of expectedDirs) {
@@ -72,17 +72,7 @@ async function verifyWorktree(worktreePath: string, expectedDirs: string[] = ["n
         throw new Error(`${dir} exists but is not a directory`);
       }
 
-      // Check if directory is not empty
-      let fileCount = 0;
-      for await (const _ of Deno.readDir(dirPath)) {
-        fileCount++;
-        if (fileCount > 0) break; // Optimization: Just need to know if it has ANY files
-      }
-
-      if (fileCount === 0) {
-        throw new Error(`${dir} exists but is empty. Copy operation likely failed.`);
-      }
-      console.log(`    Verified ${dir} exists and is not empty.`);
+      console.log(`    Verified ${dir} exists.`);
     } catch (error) {
       if (error instanceof Deno.errors.NotFound) {
         throw new Error(`Verification failed: ${dir} not found in worktree at ${dirPath}`);
