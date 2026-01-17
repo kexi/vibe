@@ -90,6 +90,15 @@ files = ["this-file-does-not-exist.txt", "another-missing-file.conf"]
     const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
+    // Create some files that will succeed first
+    writeFileSync(join(repoPath, "test.txt"), "test content");
+
+    // Commit test files first
+    execFileSync("git", ["add", "test.txt"], { cwd: repoPath });
+    execFileSync("git", ["commit", "-m", "Add test files"], {
+      cwd: repoPath,
+    });
+
     // Create a .vibe.toml with glob patterns that may partially fail
     const vibeTomlPath = join(repoPath, ".vibe.toml");
     writeFileSync(
@@ -100,14 +109,8 @@ files = ["*.txt", "config/*.json"]
 `,
     );
 
-    // Create some files that will succeed
-    writeFileSync(join(repoPath, "test.txt"), "test content");
-
-    // Commit .vibe.toml and test.txt so they exist in the worktree
-    execFileSync("git", ["add", "."], { cwd: repoPath });
-    execFileSync("git", ["commit", "-m", "Add .vibe.toml and test files"], {
-      cwd: repoPath,
-    });
+    // Commit .vibe.toml using the same pattern as other tests
+    commitVibeToml(repoPath);
 
     // Trust the .vibe.toml file
     const trustRunner = new VibeCommandRunner(getVibePath(), repoPath);
