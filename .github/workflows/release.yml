@@ -34,6 +34,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: jdx/mise-action@v2
+        env:
+          MISE_HTTP_TIMEOUT: "120"
 
       - name: Build release binary
         run: deno task compile:ci --target ${{ matrix.target }} --output ${{ matrix.artifact }} --distribution binary
@@ -59,6 +61,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: jdx/mise-action@v2
+        env:
+          MISE_HTTP_TIMEOUT: "120"
 
       - name: Download Linux binary
         uses: actions/download-artifact@v4
