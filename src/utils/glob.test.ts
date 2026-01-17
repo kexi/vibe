@@ -6,6 +6,10 @@ import {
   isGlobPattern,
 } from "./glob.ts";
 import { join } from "@std/path";
+import { setupRealTestContext } from "../context/testing.ts";
+
+// Initialize test context with real Deno runtime for filesystem tests
+await setupRealTestContext();
 
 Deno.test("isGlobPattern: detects glob patterns", () => {
   // Should detect glob patterns

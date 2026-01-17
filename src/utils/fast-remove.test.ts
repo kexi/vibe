@@ -1,6 +1,10 @@
 import { assertEquals } from "@std/assert";
 import { join } from "@std/path";
 import { cleanupStaleTrash, fastRemoveDirectory, isFastRemoveSupported } from "./fast-remove.ts";
+import { setupRealTestContext } from "../context/testing.ts";
+
+// Initialize test context with real Deno runtime for filesystem tests
+await setupRealTestContext();
 
 /** macOS Trash display path constant for test assertions (matches MACOS_TRASH_DISPLAY_PATH in fast-remove.ts) */
 const MACOS_TRASH_DISPLAY_PATH = "~/.Trash";

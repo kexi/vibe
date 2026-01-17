@@ -243,3 +243,47 @@ export function createMockContext(options: MockAppContextOptions = {}): AppConte
     settings,
   };
 }
+
+// Import these to support setupTestContext
+import { resetGlobalContext, setGlobalContext } from "./index.ts";
+import { getRuntime } from "../runtime/index.ts";
+
+/**
+ * Setup global context for tests with mock runtime.
+ * Use this for unit tests that don't need real filesystem access.
+ *
+ * @example
+ * ```ts
+ * import { setupTestContext } from "../context/testing.ts";
+ * setupTestContext();
+ * ```
+ */
+export function setupTestContext(options: MockAppContextOptions = {}): void {
+  resetGlobalContext();
+  const ctx = createMockContext(options);
+  setGlobalContext(ctx);
+}
+
+/**
+ * Setup global context for tests with real Deno runtime.
+ * Use this for integration tests that need actual filesystem access.
+ *
+ * @example
+ * ```ts
+ * import { setupRealTestContext } from "../context/testing.ts";
+ * await setupRealTestContext();
+ * ```
+ */
+export async function setupRealTestContext(): Promise<void> {
+  resetGlobalContext();
+  const runtime = await getRuntime();
+  setGlobalContext({ runtime });
+}
+
+/**
+ * Cleanup global context after tests.
+ * Call this in afterAll or afterEach if needed.
+ */
+export function cleanupTestContext(): void {
+  resetGlobalContext();
+}

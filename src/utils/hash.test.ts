@@ -1,5 +1,9 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { calculateFileHash, verifyFileHash } from "./hash.ts";
+import { setupRealTestContext } from "../context/testing.ts";
+
+// Initialize test context with real Deno runtime for filesystem tests
+await setupRealTestContext();
 
 Deno.test("calculateFileHash returns consistent hash for same content", async () => {
   // Create temporary file
