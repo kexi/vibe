@@ -328,6 +328,11 @@ git log $(git describe --tags --abbrev=0)..HEAD --pretty=format:"- %s"
 
 リリースノートには、ユーザーが実際に体験する変更のみを記載する。開発プロセスの改善、内部的なリファクタリング、CI/CD変更などは除外すること。
 
+**重要: コントリビューターの功績を称えてメンションする**
+
+- リリースノートには、そのバージョンのコントリビューター全員（ボットは除く）を記載し、功績を称えてメンションすること
+- コントリビューター一覧は直近リリースからのコミットやPRを参照して収集する
+
 Conventional Commitsに基づいてカテゴリ分け（ユーザー向け変更のみ）：
 
 ```markdown
@@ -338,6 +343,10 @@ Conventional Commitsに基づいてカテゴリ分け（ユーザー向け変更
 
 ### Bug Fixes
 - ユーザーに影響するバグ修正の説明
+
+### Contributors
+- @handle
+- @handle
 
 ---
 
@@ -363,6 +372,10 @@ gh release create vX.Y.Z --title "vX.Y.Z" --notes "$(cat <<'EOF'
 ### Bug Fixes
 - fix: bug fix description
 
+### Contributors
+- @handle
+- @handle
+
 ---
 
 ## About vibe
@@ -386,10 +399,16 @@ EOF
 - 主な変更点
 - リリースページへのリンク
 - ハッシュタグ
+- GitHubプロフィールからTwitterアカウントを調べ、コントリビューターをメンションする（@handle 形式）
 
 **含めない:**
 - インストール方法（省略する）
 - Websiteへのリンク（省略する）
+
+**手順:**
+1. リリース対象期間のコントリビューター（ボット除外）をリストアップする
+2. 各コントリビューターのGitHubプロフィールからTwitter/Xアカウントを確認する
+3. 判明した@handleをTwitter投稿本文に含める
 
 **日本語版:**
 
@@ -400,6 +419,8 @@ vibeはCopy-on-Write最適化による超高速なGit worktree管理ツールで
 
 ✨ 主な変更点:
 - 新機能や修正の要約（1-3行）
+
+🙏 Thanks: @handle @handle
 
 🔗 https://github.com/kexi/vibe/releases/tag/vX.Y.Z
 
@@ -415,6 +436,8 @@ vibe is a super fast Git worktree management tool with Copy-on-Write optimizatio
 
 ✨ Highlights:
 - Summary of new features/fixes (1-3 lines)
+
+🙏 Thanks: @handle @handle
 
 🔗 https://github.com/kexi/vibe/releases/tag/vX.Y.Z
 
