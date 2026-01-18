@@ -30,19 +30,16 @@ jobs:
           MISE_HTTP_TIMEOUT: "120"
 
       - name: Install dependencies
-        working-directory: packages/docs
-        run: pnpm install
+        run: pnpm install --filter docs
 
       - name: Lint and check
-        working-directory: packages/docs
         run: |
-          pnpm lint
-          pnpm format
-          pnpm check
+          pnpm -C packages/docs lint
+          pnpm -C packages/docs format
+          pnpm -C packages/docs check
 
       - name: Build documentation
-        working-directory: packages/docs
-        run: pnpm build
+        run: pnpm -C packages/docs build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

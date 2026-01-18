@@ -51,11 +51,9 @@ jobs:
         env:
           MISE_HTTP_TIMEOUT: "120"
       - name: Install dependencies
-        working-directory: npm
-        run: pnpm install
+        run: pnpm install --filter @kexi/vibe
       - name: Run Node.js runtime tests
-        working-directory: npm
-        run: pnpm test
+        run: pnpm -C npm test
 
   build-binaries:
     strategy:
@@ -197,20 +195,15 @@ jobs:
         env:
           MISE_HTTP_TIMEOUT: "120"
       - name: Install dependencies
-        working-directory: packages/docs
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --filter docs --frozen-lockfile
       - name: Lint
-        working-directory: packages/docs
-        run: pnpm lint
+        run: pnpm -C packages/docs lint
       - name: Format check
-        working-directory: packages/docs
-        run: pnpm format
+        run: pnpm -C packages/docs format
       - name: Type check
-        working-directory: packages/docs
-        run: pnpm check
+        run: pnpm -C packages/docs check
       - name: Build
-        working-directory: packages/docs
-        run: pnpm build
+        run: pnpm -C packages/docs build
 
   build:
     needs: [build-binaries, build-deb, build-native]
