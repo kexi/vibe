@@ -113,16 +113,27 @@ post_clean = ["echo 'Cleanup complete'"]
 ```
 src/
 ├── utils/
-│   └── fast-remove.ts    # Trash Strategy 実装
-│       ├── isFastRemoveSupported()    # プラットフォームサポートの確認
-│       ├── generateTrashName()        # 一意のゴミ箱ディレクトリ名を生成
-│       ├── moveToMacOSTrash()         # macOS Finder ゴミ箱
-│       ├── spawnBackgroundDelete()    # デタッチされたバックグラウンド削除
-│       ├── fastRemoveDirectory()      # メインの高速削除関数
-│       └── cleanupStaleTrash()        # 残存ゴミ箱ディレクトリのクリーンアップ
+│   └── fast-remove.ts        # Trash Strategy implementation
+│       ├── isFastRemoveSupported()
+│       ├── generateTrashName()
+│       ├── moveToMacOSTrash()
+│       ├── spawnBackgroundDelete()
+│       ├── fastRemoveDirectory()
+│       └── cleanupStaleTrash()
 └── commands/
-    └── clean.ts          # Clean コマンド実装
+    └── clean.ts              # Clean command implementation
 ```
+
+**関数の説明:**
+
+| 関数 | 説明 |
+| ---- | ---- |
+| `isFastRemoveSupported()` | プラットフォームサポートの確認 |
+| `generateTrashName()` | 一意のゴミ箱ディレクトリ名を生成 |
+| `moveToMacOSTrash()` | macOS Finder ゴミ箱への移動 |
+| `spawnBackgroundDelete()` | デタッチされたバックグラウンド削除 |
+| `fastRemoveDirectory()` | メインの高速削除関数 |
+| `cleanupStaleTrash()` | 残存ゴミ箱ディレクトリのクリーンアップ |
 
 ## Strategy 選択機構
 
