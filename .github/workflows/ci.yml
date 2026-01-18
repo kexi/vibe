@@ -163,15 +163,11 @@ jobs:
 
       # Install Node.js dependencies for E2E tests
       - name: Install E2E test dependencies
-        run: pnpm install
+        run: pnpm install --ignore-scripts
 
-      # Build node-pty native addon from source (prebuilds may not work on arm64)
+      # Build node-pty native addon from source
       - name: Build node-pty
-        run: |
-          cd node_modules/node-pty
-          npm run install -- --build-from-source
-        env:
-          npm_config_build_from_source: true
+        run: pnpm rebuild node-pty
 
       # Verify binary exists and has execute permission
       - name: Verify vibe binary
