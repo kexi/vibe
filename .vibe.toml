@@ -1,3 +1,6 @@
+[copy]
+dirs = ["node_modules"]
+
 [hooks]
 post_start = [
   "mise trust",
