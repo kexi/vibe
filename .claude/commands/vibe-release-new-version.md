@@ -381,20 +381,28 @@ EOF
 
 リリース告知用のTwitter投稿テキストを生成して出力：
 
+**必須要素:**
+- vibeの説明（super fast Git worktree management tool with Copy-on-Write optimization）
+- 主な変更点
+- リリースページへのリンク
+- Websiteへのリンク（https://vibe.kexi.dev）
+- ハッシュタグ
+
+**含めない:**
+- インストール方法（省略する）
+
 **日本語版:**
 
 ```
 🎉 vibe vX.Y.Z をリリースしました！
 
+vibeはCopy-on-Write最適化による超高速なGit worktree管理ツールです。
+
 ✨ 主な変更点:
 - 新機能や修正の要約（1-3行）
 
-📦 インストール:
-brew install kexi/tap/vibe
-# or
-npx @kexi/vibe@latest
-
 🔗 https://github.com/kexi/vibe/releases/tag/vX.Y.Z
+🌐 https://vibe.kexi.dev
 
 #vibe #git #worktree #開発ツール
 ```
@@ -404,15 +412,13 @@ npx @kexi/vibe@latest
 ```
 🎉 vibe vX.Y.Z released!
 
+vibe is a super fast Git worktree management tool with Copy-on-Write optimization.
+
 ✨ Highlights:
 - Summary of new features/fixes (1-3 lines)
 
-📦 Install:
-brew install kexi/tap/vibe
-# or
-npx @kexi/vibe@latest
-
 🔗 https://github.com/kexi/vibe/releases/tag/vX.Y.Z
+🌐 https://vibe.kexi.dev
 
 #vibe #git #worktree #devtools
 ```
