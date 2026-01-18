@@ -16,9 +16,9 @@
   },
   "scripts": {
     "install:all": "pnpm install",
-    "build:npm": "pnpm -C npm build",
+    "build:npm": "pnpm -C packages/npm build",
     "build:native": "pnpm -C packages/native build",
-    "test:npm": "pnpm -C npm test",
+    "test:npm": "pnpm -C packages/npm test",
     "test:e2e": "pnpm -C packages/e2e test",
     "clean": "pnpm -r exec rm -rf node_modules dist"
   }

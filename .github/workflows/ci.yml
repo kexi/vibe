@@ -53,7 +53,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --filter @kexi/vibe --ignore-scripts
       - name: Run Node.js runtime tests
-        run: pnpm -C npm test
+        run: pnpm -C packages/npm test
 
   build-binaries:
     strategy:

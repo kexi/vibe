@@ -1,5 +1,9 @@
 packages:
   - "packages/*"
-  - "npm"
 
 minimumReleaseAge: 4320
+minimumReleaseAgeExclude:
+  - devalue
+  - "@astrojs/*"
+  - fontkitten
+  - "@types/*"
