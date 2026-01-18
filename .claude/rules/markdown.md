@@ -26,6 +26,7 @@ When creating or modifying markdown files, ensure both language versions are kep
 - Translate content naturally, not word-for-word
 - Keep code blocks, file paths, and technical terms unchanged
 - Dates: English uses `YYYY-MM-DD`, Japanese uses `YYYY年M月D日`
+- **ASCII art / Box drawings**: Full-width characters (Japanese, etc.) have different widths than half-width characters, causing alignment issues. When translating diagrams with box-drawing characters (`─`, `│`, `┌`, `└`, etc.), adjust spacing or recreate the diagram to maintain proper alignment
 
 ## Exceptions
 
