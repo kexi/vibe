@@ -1,6 +1,10 @@
 packages:
   - "packages/*"
-  - "npm"
   - "tests/e2e"
 
 minimumReleaseAge: 4320
+minimumReleaseAgeExclude:
+  - devalue
+  - "@astrojs/*"
+  - fontkitten
+  - "@types/*"
