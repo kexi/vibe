@@ -341,4 +341,39 @@ describe("clean command", () => {
       }
     }
   });
+
+  test("Clean worktree with large files", async () => {
+    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+    const parentDir = dirname(repoPath);
+    const repoName = basename(repoPath);
+    const worktreePath = `${parentDir}/${repoName}-feat-large`;
+
+    execFileSync("git", ["worktree", "add", "-b", "feat/large", worktreePath], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    // Create a large file (1MB) to verify background deletion handles it
+    const largeContent = "x".repeat(1024 * 1024);
+    writeFileSync(join(worktreePath, "large-file.txt"), largeContent);
+
+    const runner = new VibeCommandRunner(vibePath, worktreePath);
+    try {
+      await runner.spawn(["clean", "--force"]);
+      await runner.waitForExit();
+
+      assertExitCode(runner.getExitCode(), 0);
+
+      const output = runner.getOutput();
+      assertOutputContains(output, "has been removed");
+
+      // Verify worktree directory no longer exists
+      expect(existsSync(worktreePath)).toBe(false);
+    } finally {
+      runner.dispose();
+    }
+  });
 });
