@@ -385,11 +385,11 @@ EOF
 - vibeの説明（super fast Git worktree management tool with Copy-on-Write optimization）
 - 主な変更点
 - リリースページへのリンク
-- Websiteへのリンク（https://vibe.kexi.dev）
 - ハッシュタグ
 
 **含めない:**
 - インストール方法（省略する）
+- Websiteへのリンク（省略する）
 
 **日本語版:**
 
@@ -402,7 +402,6 @@ vibeはCopy-on-Write最適化による超高速なGit worktree管理ツールで
 - 新機能や修正の要約（1-3行）
 
 🔗 https://github.com/kexi/vibe/releases/tag/vX.Y.Z
-🌐 https://vibe.kexi.dev
 
 #vibe #git #worktree #開発ツール
 ```
@@ -418,7 +417,6 @@ vibe is a super fast Git worktree management tool with Copy-on-Write optimizatio
 - Summary of new features/fixes (1-3 lines)
 
 🔗 https://github.com/kexi/vibe/releases/tag/vX.Y.Z
-🌐 https://vibe.kexi.dev
 
 #vibe #git #worktree #devtools
 ```
