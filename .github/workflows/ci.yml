@@ -51,8 +51,6 @@ jobs:
         with:
           node-version: 22
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
       - name: Install dependencies
         working-directory: npm
         run: pnpm install
@@ -168,8 +166,6 @@ jobs:
 
       # Setup pnpm
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       # Install Node.js dependencies for E2E tests
       - name: Install E2E test dependencies
@@ -205,8 +201,6 @@ jobs:
         with:
           node-version: 22
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
       - name: Install dependencies
         working-directory: packages/docs
         run: pnpm install --frozen-lockfile
