@@ -17,29 +17,32 @@ The runtime abstraction layer provides a unified interface for platform-specific
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     Application Code                         │
-│              (commands, services, utils)                     │
-└─────────────────────────┬───────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      AppContext                              │
-│              (Dependency Injection Container)                │
-└─────────────────────────┬───────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Runtime Interface                         │
-│    (fs, process, env, build, control, io, errors, signals)  │
-└───────────┬─────────────────────────────────┬───────────────┘
-            │                                 │
-            ▼                                 ▼
-┌───────────────────────┐       ┌───────────────────────┐
-│    Deno Runtime       │       │   Node.js Runtime     │
-│   (deno/index.ts)     │       │   (node/index.ts)     │
-└───────────────────────┘       └───────────────────────┘
+```mermaid
+flowchart TD
+    subgraph App["Application Code"]
+        AppDesc["commands, services, utils"]
+    end
+
+    subgraph Ctx["AppContext"]
+        CtxDesc["Dependency Injection Container"]
+    end
+
+    subgraph Runtime["Runtime Interface"]
+        RuntimeDesc["fs, process, env, build, control, io, errors, signals"]
+    end
+
+    subgraph Deno["Deno Runtime"]
+        DenoDesc["deno/index.ts"]
+    end
+
+    subgraph Node["Node.js Runtime"]
+        NodeDesc["node/index.ts"]
+    end
+
+    App --> Ctx
+    Ctx --> Runtime
+    Runtime --> Deno
+    Runtime --> Node
 ```
 
 ## Runtime Interface
