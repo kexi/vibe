@@ -51,9 +51,9 @@ Invokes system calls directly via FFI. This is the fastest option as there is no
 
 **Implementation files:**
 
-- `src/utils/copy/strategies/native-clone.ts`
-- `src/utils/copy/ffi/darwin.ts` (macOS)
-- `src/utils/copy/ffi/linux.ts` (Linux)
+- `packages/core/src/utils/copy/strategies/native-clone.ts`
+- `packages/core/src/utils/copy/ffi/darwin.ts` (macOS)
+- `packages/core/src/utils/copy/ffi/linux.ts` (Linux)
 
 ### Clone
 
@@ -64,19 +64,19 @@ CoW copy using the `cp` command.
 | macOS    | `cp -c`             | `cp -cR`               |
 | Linux    | `cp --reflink=auto` | `cp -r --reflink=auto` |
 
-**Implementation file:** `src/utils/copy/strategies/clone.ts`
+**Implementation file:** `packages/core/src/utils/copy/strategies/clone.ts`
 
 ### Rsync
 
 Uses the `rsync` command. Does not use CoW but excels at incremental copying.
 
-**Implementation file:** `src/utils/copy/strategies/rsync.ts`
+**Implementation file:** `packages/core/src/utils/copy/strategies/rsync.ts`
 
 ### Standard
 
 Uses Deno's standard API (`Deno.copyFile`). This is the final fallback that works on all platforms.
 
-**Implementation file:** `src/utils/copy/strategies/standard.ts`
+**Implementation file:** `packages/core/src/utils/copy/strategies/standard.ts`
 
 ## Filesystem Requirements
 
@@ -99,7 +99,7 @@ On unsupported filesystems, the Standard strategy is automatically used as a fal
 ## File Structure
 
 ```
-src/utils/copy/
+packages/core/src/utils/copy/
 ├── index.ts           # CopyService main class
 ├── types.ts           # Interface definitions
 ├── detector.ts        # Capability detection
@@ -122,7 +122,7 @@ src/utils/copy/
 `CopyService` automatically selects the optimal strategy on the first directory copy operation and caches the result.
 
 ```typescript
-// From src/utils/copy/index.ts
+// From packages/core/src/utils/copy/index.ts
 async getDirectoryStrategy(): Promise<CopyStrategy> {
   // 1. Use NativeClone if available and supports directory cloning
   // 2. Use Clone if available

@@ -67,13 +67,13 @@ The `cleanupStaleTrash()` function scans for and removes any leftover `.vibe-tra
 
 This cleanup runs automatically after each clean operation.
 
-**Implementation file:** `src/utils/fast-remove.ts`
+**Implementation file:** `packages/core/src/utils/fast-remove.ts`
 
 ### Standard Strategy
 
 Uses the standard `git worktree remove` command. This is used as a fallback when the Trash Strategy fails or is disabled.
 
-**Implementation file:** `src/commands/clean.ts`
+**Implementation file:** `packages/core/src/commands/clean.ts`
 
 ## Configuration
 
@@ -111,7 +111,7 @@ post_clean = ["echo 'Cleanup complete'"]
 ## File Structure
 
 ```
-src/
+packages/core/src/
 ├── utils/
 │   └── fast-remove.ts    # Trash Strategy implementation
 │       ├── isFastRemoveSupported()    # Check platform support
@@ -129,7 +129,7 @@ src/
 The clean command automatically selects the appropriate strategy based on user settings:
 
 ```typescript
-// From src/commands/clean.ts
+// From packages/core/src/commands/clean.ts
 const settings = await loadUserSettings(ctx);
 const useFastRemove = settings.clean?.fast_remove ?? true; // Default: true
 

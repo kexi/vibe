@@ -161,7 +161,7 @@ deno task sync-version
 
 同期対象：
 - `npm/package.json`
-- `packages/@kexi/vibe-native/package.json`
+- `packages/native/package.json`
 
 ### 3.4 同期結果確認
 
@@ -250,7 +250,7 @@ deno task sync-version --check
 ### 4.1 変更をステージング
 
 ```bash
-git add deno.json npm/package.json packages/@kexi/vibe-native/package.json docs/src/content/docs/changelog.mdx docs/src/content/docs/ja/changelog.mdx
+git add deno.json npm/package.json packages/native/package.json docs/src/content/docs/changelog.mdx docs/src/content/docs/ja/changelog.mdx
 ```
 
 ### 4.2 コミット作成

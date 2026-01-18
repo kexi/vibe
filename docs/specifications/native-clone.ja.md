@@ -62,7 +62,7 @@ flowchart TD
 DenoはForeign Function Interface用の`Deno.dlopen()`を提供しており、ネイティブコンパイルなしでシステムライブラリを直接呼び出せます：
 
 ```typescript
-// src/utils/copy/ffi/darwin.ts（簡略化）
+// packages/core/src/utils/copy/ffi/darwin.ts（簡略化）
 const lib = Deno.dlopen("libSystem.B.dylib", {
   clonefile: {
     parameters: ["buffer", "buffer", "u32"],
@@ -87,7 +87,7 @@ const lib = Deno.dlopen("libSystem.B.dylib", {
 Node.jsには組み込みのFFIがないため、Rustとnapi-rsを使用してネイティブアドオンを作成しています：
 
 ```rust
-// packages/@kexi/vibe-native/src/lib.rs
+// packages/native/src/lib.rs
 #[napi]
 pub fn clone_sync(src: String, dest: String) -> Result<()> {
     platform::clone_file(Path::new(&src), Path::new(&dest))
@@ -185,7 +185,7 @@ Rust実装には以下のセキュリティ対策が含まれています：
 ## ソースからのビルド
 
 ```bash
-cd packages/@kexi/vibe-native
+cd packages/native
 
 # 依存関係のインストール
 pnpm install
@@ -214,4 +214,4 @@ opt-level = "z"      # サイズ最適化
 
 - [コピー戦略](./copy-strategies.ja.md) - 全体的なコピー戦略の選択
 - [マルチランタイムサポート](./multi-runtime.ja.md) - ランタイム抽象化レイヤー
-- [@kexi/vibe-native README](../../packages/@kexi/vibe-native/README.md) - パッケージAPIドキュメント
+- [@kexi/vibe-native README](../../packages/native/README.md) - パッケージAPIドキュメント
