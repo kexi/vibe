@@ -23,6 +23,6 @@ When creating or modifying markdown files, ensure both language versions are kep
 
 The following files are excluded from this rule:
 
-- `README.md` (single language is acceptable)
 - Files in `node_modules/`
 - Auto-generated files
+- Configuration files (e.g., `.claude/` directory)

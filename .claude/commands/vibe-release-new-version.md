@@ -82,7 +82,7 @@ deno task get-version
 **1. 変更履歴の取得**
 
 ```bash
-git log $(git describe --tags --abbrev=0 2>/dev/null || echo "HEAD~20")..HEAD --oneline
+git log $(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)..HEAD --oneline
 ```
 
 **2. Conventional Commitsに基づく分析**
@@ -185,15 +185,15 @@ deno task sync-version --check
 
 ### Added
 
-- 新機能の説明
+- New feature description
 
 ### Changed
 
-- 変更点の説明
+- Change description
 
 ### Fixed
 
-- 修正点の説明
+- Bug fix description
 
 ---
 ```
@@ -303,7 +303,7 @@ git pull origin main
 前回リリースからの変更を取得：
 
 ```bash
-git log $(git describe --tags --abbrev=0)..HEAD --oneline --pretty=format:"- %s"
+git log $(git describe --tags --abbrev=0)..HEAD --pretty=format:"- %s"
 ```
 
 Conventional Commitsに基づいてカテゴリ分け：
@@ -332,15 +332,31 @@ vibe is a Git worktree management tool with Copy-on-Write optimization.
 
 ### 6.3 GitHub Release作成
 
-```bash
-gh release create vX.Y.Z --title "vX.Y.Z" --notes-file RELEASE_NOTES.md --target main
-```
-
-または、リリースノートを直接指定：
+リリースノートの内容を使用してリリースを作成：
 
 ```bash
-gh release create vX.Y.Z --title "vX.Y.Z" --notes "リリースノート内容" --target main
+gh release create vX.Y.Z --title "vX.Y.Z" --notes "$(cat <<'EOF'
+## What's Changed
+
+### Features
+- feat: feature description
+
+### Bug Fixes
+- fix: bug fix description
+
+---
+
+## About vibe
+
+vibe is a Git worktree management tool with Copy-on-Write optimization.
+
+- [Release vX.Y.Z](https://github.com/kexi/vibe/releases/tag/vX.Y.Z)
+- [Website](https://vibe.kexi.dev)
+EOF
+)" --target main
 ```
+
+**Note:** 上記の `--notes` 内容は Step 6.2 で生成したリリースノートに置き換えてください。
 
 ### 6.4 クリーンアップ
 
