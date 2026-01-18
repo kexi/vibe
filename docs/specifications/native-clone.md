@@ -87,7 +87,7 @@ const lib = Deno.dlopen("libSystem.B.dylib", {
 Node.js doesn't have built-in FFI, so we use Rust with napi-rs to create a native addon:
 
 ```rust
-// packages/@kexi/vibe-native/src/lib.rs
+// packages/native/src/lib.rs
 #[napi]
 pub fn clone_sync(src: String, dest: String) -> Result<()> {
     platform::clone_file(Path::new(&src), Path::new(&dest))
@@ -185,7 +185,7 @@ Only regular files (and directories on macOS) are allowed. Rejected types:
 ## Building from Source
 
 ```bash
-cd packages/@kexi/vibe-native
+cd packages/native
 
 # Install dependencies
 pnpm install
@@ -214,4 +214,4 @@ opt-level = "z"      # Optimize for size
 
 - [Copy Strategies](./copy-strategies.md) - Overall copy strategy selection
 - [Multi-Runtime Support](./multi-runtime.md) - Runtime abstraction layer
-- [@kexi/vibe-native README](../../packages/@kexi/vibe-native/README.md) - Package API documentation
+- [@kexi/vibe-native README](../../packages/native/README.md) - Package API documentation
