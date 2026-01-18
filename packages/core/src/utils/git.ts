@@ -241,6 +241,12 @@ export async function getDefaultBranch(
     throw new Error("Could not determine default branch from GitHub");
   }
 
+  // Defensive validation: ensure branch name doesn't contain newline characters
+  const hasInvalidCharacters = branch.includes("\n") || branch.includes("\r");
+  if (hasInvalidCharacters) {
+    throw new Error("Invalid branch name format: contains newline characters");
+  }
+
   return branch;
 }
 

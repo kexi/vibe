@@ -1,6 +1,7 @@
 import { assertEquals } from "@std/assert";
 import {
   findWorktreeByBranch,
+  getDefaultBranch,
   hasUncommittedChanges,
   normalizeRemoteUrl,
   sanitizeBranchName,
@@ -280,4 +281,168 @@ Deno.test("normalizeRemoteUrl: URL with spaces (edge case)", () => {
 Deno.test("normalizeRemoteUrl: GitLab SSH format", () => {
   const result = normalizeRemoteUrl("git@gitlab.com:group/subgroup/repo.git");
   assertEquals(result, "gitlab.com/group/subgroup/repo");
+});
+
+// ===== getDefaultBranch Tests =====
+
+Deno.test("getDefaultBranch: returns branch name on success", async () => {
+  const ctx = createMockContext({
+    process: {
+      run: (opts) => {
+        const args = opts.args as string[];
+        const isGhCommand = opts.cmd === "gh" && args.includes("repo");
+        if (isGhCommand) {
+          return Promise.resolve({
+            code: 0,
+            success: true,
+            stdout: new TextEncoder().encode("main\n"),
+            stderr: new Uint8Array(),
+          });
+        }
+        return Promise.resolve({
+          code: 1,
+          success: false,
+          stdout: new Uint8Array(),
+          stderr: new Uint8Array(),
+        });
+      },
+    },
+  });
+
+  const result = await getDefaultBranch(ctx);
+  assertEquals(result, "main");
+});
+
+Deno.test("getDefaultBranch: throws error when gh command fails", async () => {
+  const ctx = createMockContext({
+    process: {
+      run: (opts) => {
+        const isGhCommand = opts.cmd === "gh";
+        if (isGhCommand) {
+          return Promise.resolve({
+            code: 1,
+            success: false,
+            stdout: new Uint8Array(),
+            stderr: new TextEncoder().encode("gh: not authenticated"),
+          });
+        }
+        return Promise.resolve({
+          code: 0,
+          success: true,
+          stdout: new Uint8Array(),
+          stderr: new Uint8Array(),
+        });
+      },
+    },
+  });
+
+  let error: Error | null = null;
+  try {
+    await getDefaultBranch(ctx);
+  } catch (e) {
+    error = e as Error;
+  }
+
+  assertEquals(error?.message.includes("Failed to get default branch"), true);
+});
+
+Deno.test("getDefaultBranch: throws error when branch name is empty", async () => {
+  const ctx = createMockContext({
+    process: {
+      run: (opts) => {
+        const isGhCommand = opts.cmd === "gh";
+        if (isGhCommand) {
+          return Promise.resolve({
+            code: 0,
+            success: true,
+            stdout: new TextEncoder().encode(""),
+            stderr: new Uint8Array(),
+          });
+        }
+        return Promise.resolve({
+          code: 0,
+          success: true,
+          stdout: new Uint8Array(),
+          stderr: new Uint8Array(),
+        });
+      },
+    },
+  });
+
+  let error: Error | null = null;
+  try {
+    await getDefaultBranch(ctx);
+  } catch (e) {
+    error = e as Error;
+  }
+
+  assertEquals(error?.message, "Could not determine default branch from GitHub");
+});
+
+Deno.test("getDefaultBranch: throws error when branch name contains newline", async () => {
+  const ctx = createMockContext({
+    process: {
+      run: (opts) => {
+        const isGhCommand = opts.cmd === "gh";
+        if (isGhCommand) {
+          // Simulate malicious response with newline
+          return Promise.resolve({
+            code: 0,
+            success: true,
+            stdout: new TextEncoder().encode("main\nmalicious"),
+            stderr: new Uint8Array(),
+          });
+        }
+        return Promise.resolve({
+          code: 0,
+          success: true,
+          stdout: new Uint8Array(),
+          stderr: new Uint8Array(),
+        });
+      },
+    },
+  });
+
+  let error: Error | null = null;
+  try {
+    await getDefaultBranch(ctx);
+  } catch (e) {
+    error = e as Error;
+  }
+
+  assertEquals(error?.message, "Invalid branch name format: contains newline characters");
+});
+
+Deno.test("getDefaultBranch: throws error when branch name contains carriage return", async () => {
+  const ctx = createMockContext({
+    process: {
+      run: (opts) => {
+        const isGhCommand = opts.cmd === "gh";
+        if (isGhCommand) {
+          // Simulate malicious response with carriage return
+          return Promise.resolve({
+            code: 0,
+            success: true,
+            stdout: new TextEncoder().encode("main\rmalicious"),
+            stderr: new Uint8Array(),
+          });
+        }
+        return Promise.resolve({
+          code: 0,
+          success: true,
+          stdout: new Uint8Array(),
+          stderr: new Uint8Array(),
+        });
+      },
+    },
+  });
+
+  let error: Error | null = null;
+  try {
+    await getDefaultBranch(ctx);
+  } catch (e) {
+    error = e as Error;
+  }
+
+  assertEquals(error?.message, "Invalid branch name format: contains newline characters");
 });
