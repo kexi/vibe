@@ -57,6 +57,10 @@ importers:
 
   npm:
     dependencies:
+      zod:
+        specifier: ^3.23.0
+        version: 3.25.76
+    devDependencies:
       '@jsr/std__cli':
         specifier: ^1.0.0
         version: 1.0.25
@@ -69,10 +73,6 @@ importers:
       '@jsr/std__toml':
         specifier: ^1.0.0
         version: 1.0.11
-      zod:
-        specifier: ^3.23.0
-        version: 3.25.76
-    devDependencies:
       '@types/node':
         specifier: ^22.10.2
         version: 22.19.7
