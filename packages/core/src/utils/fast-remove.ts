@@ -1,16 +1,38 @@
 import { dirname, join } from "@std/path";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
+import { getNativeTrashAdapter, type NativeTrashAdapter } from "../native/index.ts";
 
 /**
- * Display path for macOS Trash returned to callers.
- * This is a user-friendly representation (~/.Trash), not the actual
- * filesystem path. Finder manages the actual trash location internally.
+ * Display path for system Trash returned to callers.
+ * - macOS: ~/.Trash (Finder managed)
+ * - Linux: ~/.local/share/Trash (XDG specification)
  */
-const MACOS_TRASH_DISPLAY_PATH = "~/.Trash";
+export const SYSTEM_TRASH_DISPLAY_PATH = "~/.Trash";
 
 /** Pattern to detect control characters that could cause issues in shell/AppleScript */
 // deno-lint-ignore no-control-regex
 const CONTROL_CHARS_PATTERN = /[\x00-\x1f\x7f]/;
+
+/** Cached native trash adapter instance */
+let cachedNativeTrashAdapter: NativeTrashAdapter | null | undefined;
+
+/**
+ * Reset the trash adapter cache.
+ * Useful for testing to ensure each test gets a fresh adapter state.
+ */
+export function resetTrashAdapterCache(): void {
+  cachedNativeTrashAdapter = undefined;
+}
+
+/**
+ * Get or create the native trash adapter
+ */
+async function getTrashAdapter(): Promise<NativeTrashAdapter | null> {
+  if (cachedNativeTrashAdapter === undefined) {
+    cachedNativeTrashAdapter = await getNativeTrashAdapter();
+  }
+  return cachedNativeTrashAdapter;
+}
 
 /** Length of UUID suffix used in trash directory names for uniqueness */
 const TRASH_UUID_LENGTH = 8;
@@ -24,9 +46,13 @@ export interface FastRemoveResult {
 /**
  * Check if fast remove is supported on the current OS
  *
- * This function exists for API stability and future extensibility.
- * Currently returns true for all platforms, but may be extended to
- * check for specific OS capabilities or configurations.
+ * Currently returns true for all platforms because:
+ * - macOS: Native Trash (Node.js) or AppleScript fallback (Deno)
+ * - Linux: Native XDG Trash (Node.js) or /tmp fallback
+ * - Windows: %TEMP% fallback
+ *
+ * This function exists for API stability. Future versions may
+ * return false for platforms with limited support (e.g., sandboxed environments).
  */
 export function isFastRemoveSupported(): boolean {
   return true;
@@ -40,10 +66,46 @@ function generateTrashName(): string {
 }
 
 /**
- * Move a directory to macOS Trash using Finder (via osascript)
+ * Move a directory to system Trash using native module or platform-specific fallback
+ *
+ * On Node.js: Uses @kexi/vibe-native (trash crate)
+ *   - macOS: Finder Trash
+ *   - Linux: XDG Trash (~/.local/share/Trash)
+ *
+ * On Deno (fallback): Uses osascript on macOS
+ *
  * Returns true if successful, false otherwise
  */
-async function moveToMacOSTrash(
+async function moveToSystemTrash(
+  targetPath: string,
+  ctx: AppContext,
+): Promise<boolean> {
+  // First, try native trash adapter (available on Node.js)
+  const trashAdapter = await getTrashAdapter();
+  if (trashAdapter?.available) {
+    try {
+      await trashAdapter.moveToTrash(targetPath);
+      return true;
+    } catch {
+      // Fall through to platform-specific fallback
+    }
+  }
+
+  // Deno fallback: Use osascript on macOS
+  const isMacOS = ctx.runtime.build.os === "darwin";
+  if (isMacOS) {
+    return moveToMacOSTrashViaAppleScript(targetPath, ctx);
+  }
+
+  // Linux/other: No Deno native trash support, let caller use /tmp fallback
+  return false;
+}
+
+/**
+ * Move a directory to macOS Trash using Finder (via osascript)
+ * This is used as a fallback when native module is not available (Deno runtime)
+ */
+async function moveToMacOSTrashViaAppleScript(
   targetPath: string,
   ctx: AppContext,
 ): Promise<boolean> {
@@ -130,9 +192,13 @@ function getTempDir(ctx: AppContext): string {
 /**
  * Fast remove a directory by moving it to trash or temp location
  *
- * On macOS: Uses Finder to move to system Trash (reliable, OS-managed)
- * On Linux: Uses /tmp with nohup rm -rf (cleaned on reboot)
- * On Windows: Uses temp directory with background deletion
+ * Strategy (in order of preference):
+ * 1. Native trash (via @kexi/vibe-native on Node.js)
+ *    - macOS: Finder Trash
+ *    - Linux: XDG Trash (~/.local/share/Trash)
+ * 2. AppleScript fallback (Deno on macOS)
+ * 3. /tmp + background delete (Linux without desktop, SSH sessions)
+ * 4. Parent directory fallback (cross-device scenarios)
  *
  * Note: If targetPath is a symlink, the symlink itself is removed/moved,
  * not the target it points to. This is the expected behavior for cleaning
@@ -146,19 +212,13 @@ export async function fastRemoveDirectory(
   targetPath: string,
   ctx: AppContext = getGlobalContext(),
 ): Promise<FastRemoveResult> {
-  const { runtime } = ctx;
-  const isMacOS = runtime.build.os === "darwin";
-
   try {
-    // macOS: Use Finder to move to Trash (most reliable)
-    if (isMacOS) {
-      const movedToTrash = await moveToMacOSTrash(targetPath, ctx);
-      if (movedToTrash) {
-        // Finder handles the actual deletion
-        return { success: true, trashedPath: MACOS_TRASH_DISPLAY_PATH };
-      }
-      // Fall through to fallback if Finder fails (e.g., SSH session)
+    // Try system trash first (native module on Node.js, osascript on macOS Deno)
+    const movedToTrash = await moveToSystemTrash(targetPath, ctx);
+    if (movedToTrash) {
+      return { success: true, trashedPath: SYSTEM_TRASH_DISPLAY_PATH };
     }
+    // Fall through to /tmp fallback if trash fails (SSH session, no desktop, etc.)
 
     // Fallback: rename to temp directory + background delete
     const trashName = generateTrashName();
@@ -168,7 +228,7 @@ export async function fastRemoveDirectory(
     // Step 1: Try to rename to temp directory first
     // This is preferred because /tmp is cleaned on reboot
     try {
-      await runtime.fs.rename(targetPath, tempTrashPath);
+      await ctx.runtime.fs.rename(targetPath, tempTrashPath);
       spawnBackgroundDelete(tempTrashPath, ctx);
       return { success: true, trashedPath: tempTrashPath };
     } catch (tempError) {
@@ -187,7 +247,7 @@ export async function fastRemoveDirectory(
     // Step 2: Fallback to parent directory (same filesystem)
     const parentDir = dirname(targetPath);
     const fallbackTrashPath = join(parentDir, trashName);
-    await runtime.fs.rename(targetPath, fallbackTrashPath);
+    await ctx.runtime.fs.rename(targetPath, fallbackTrashPath);
 
     // Spawn detached background process for deletion
     spawnBackgroundDelete(fallbackTrashPath, ctx);

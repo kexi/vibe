@@ -1,13 +1,19 @@
 import { assertEquals } from "@std/assert";
 import { join } from "@std/path";
-import { cleanupStaleTrash, fastRemoveDirectory, isFastRemoveSupported } from "./fast-remove.ts";
+import {
+  cleanupStaleTrash,
+  fastRemoveDirectory,
+  isFastRemoveSupported,
+  resetTrashAdapterCache,
+  SYSTEM_TRASH_DISPLAY_PATH,
+} from "./fast-remove.ts";
 import { setupRealTestContext } from "../context/testing.ts";
 
 // Initialize test context with real Deno runtime for filesystem tests
 await setupRealTestContext();
 
-/** macOS Trash display path constant for test assertions (matches MACOS_TRASH_DISPLAY_PATH in fast-remove.ts) */
-const MACOS_TRASH_DISPLAY_PATH = "~/.Trash";
+// Reset cache state before tests
+resetTrashAdapterCache();
 
 /**
  * Wait for a path to be deleted using polling instead of fixed timeout
@@ -45,15 +51,20 @@ Deno.test({
 
     assertEquals(result.success, true);
     assertEquals(result.trashedPath !== undefined, true);
-    // On macOS: trashedPath is "~/.Trash" (Finder-managed)
-    // On Linux/Windows: trashedPath is in /tmp or parent directory
-    const isMacOS = Deno.build.os === "darwin";
-    if (isMacOS) {
-      assertEquals(result.trashedPath, MACOS_TRASH_DISPLAY_PATH);
-    } else {
-      const isInExpectedLocation = result.trashedPath?.startsWith("/tmp") ||
-        result.trashedPath?.startsWith(tempDir);
-      assertEquals(isInExpectedLocation, true);
+    // On Node.js with native module: trashedPath is "~/.Trash" (system trash)
+    //   - macOS: Finder Trash
+    //   - Linux: XDG Trash (~/.local/share/Trash)
+    // On Deno without native module:
+    //   - macOS: "~/.Trash" (osascript fallback)
+    //   - Linux: /tmp or parent directory
+    // Windows: %TEMP% or parent directory
+    const isSystemTrash = result.trashedPath === SYSTEM_TRASH_DISPLAY_PATH;
+    const isTempLocation = result.trashedPath?.startsWith("/tmp") ||
+      result.trashedPath?.startsWith(tempDir);
+    const isExpectedLocation = isSystemTrash || isTempLocation;
+    assertEquals(isExpectedLocation, true);
+    // If not system trash, it should be a .vibe-trash-* directory
+    if (!isSystemTrash) {
       assertEquals(result.trashedPath?.includes(".vibe-trash-"), true);
     }
 
@@ -67,7 +78,7 @@ Deno.test({
     assertEquals(exists, false);
 
     // Wait for background deletion to complete before cleanup (polling-based)
-    if (result.trashedPath && result.trashedPath !== MACOS_TRASH_DISPLAY_PATH) {
+    if (result.trashedPath && result.trashedPath !== SYSTEM_TRASH_DISPLAY_PATH) {
       await waitForDeletion(result.trashedPath);
     }
 
