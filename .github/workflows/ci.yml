@@ -183,7 +183,7 @@ jobs:
 
       # Run E2E tests with Vitest
       - name: Run E2E tests
-        run: pnpm -C tests/e2e run test
+        run: pnpm -C packages/e2e run test
         env:
           VIBE_BINARY_PATH: ${{ github.workspace }}/vibe-e2e
 

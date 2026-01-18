@@ -1,6 +1,5 @@
 packages:
   - "packages/*"
-  - "tests/e2e"
 
 minimumReleaseAge: 4320
 minimumReleaseAgeExclude:
