@@ -5,6 +5,13 @@
 - `*.md` - English version (default)
 - `*.ja.md` - Japanese version
 
+## Cross-Language Links
+
+Each markdown file must include a link to its counterpart at the top:
+
+- **English version** (`*.md`): Add `> 🇯🇵 [日本語版](./filename.ja.md)` at the top
+- **Japanese version** (`*.ja.md`): Add `> 🇺🇸 [English](./filename.md)` at the top
+
 ## Synchronization Requirements
 
 When creating or modifying markdown files, ensure both language versions are kept in sync:
@@ -12,12 +19,37 @@ When creating or modifying markdown files, ensure both language versions are kep
 1. **Creating a new file**: If you create `example.md`, also create `example.ja.md` with Japanese translation
 2. **Modifying content**: When updating `example.md`, also update `example.ja.md` to reflect the same changes
 3. **Structural consistency**: Both versions must have the same structure (headings, sections, lists)
+4. **Cross-language links**: Both versions must have links to each other at the top
+
+## Diagrams
+
+When creating diagrams, prefer **Mermaid** over ASCII art / box-drawing characters:
+
+1. **Prefer Mermaid**: Use Mermaid syntax for flowcharts, sequence diagrams, class diagrams, etc.
+   - Renders consistently across platforms
+   - No alignment issues with different character widths
+   - Easier to maintain and modify
+
+2. **When to use ASCII art**: Only use box-drawing characters when Mermaid cannot express the diagram (e.g., file tree structures)
+   - Keep text labels in English to maintain alignment
+   - Add a separate explanation table below for translations
+
+**Mermaid example:**
+
+```mermaid
+flowchart TD
+    A[Application Code] --> B[AppContext]
+    B --> C[Runtime Interface]
+    C --> D[Deno Runtime]
+    C --> E[Node.js Runtime]
+```
 
 ## Translation Guidelines
 
 - Translate content naturally, not word-for-word
 - Keep code blocks, file paths, and technical terms unchanged
 - Dates: English uses `YYYY-MM-DD`, Japanese uses `YYYY年M月D日`
+- **Diagrams**: Keep Mermaid diagrams identical in both versions (node labels can be translated if needed). For ASCII art diagrams, keep text in English and provide translations in a separate table below
 
 ## Exceptions
 

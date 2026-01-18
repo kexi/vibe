@@ -15,7 +15,7 @@ deno task dev <command>
 deno task test
 
 # Run a single test file
-deno test --allow-read --allow-env --allow-write --allow-run --allow-ffi src/path/to/test.ts
+deno test --allow-read --allow-env --allow-write --allow-run --allow-ffi packages/core/src/path/to/test.ts
 
 # Enable vibe shell function
 source .vibedev
@@ -31,7 +31,7 @@ source .vibedev
 ### Source Structure
 
 ```
-src/
+packages/core/src/
 ├── commands/   # CLI command implementations
 ├── context/    # Context management
 ├── services/   # Business logic services

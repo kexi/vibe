@@ -40,7 +40,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           REPOSITORY=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('deno.json')).repository)")
           BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
-          cat > src/version.ts << EOF
+          cat > packages/core/src/version.ts << EOF
           // This file is auto-generated during JSR publishing
           export interface BuildInfo {
             version: string;
@@ -68,7 +68,7 @@ jobs:
           export const VERSION = BUILD_INFO.version;
           export const REPOSITORY_URL = BUILD_INFO.repository;
           EOF
-          echo "Generated src/version.ts with VERSION = \"$VERSION\" for JSR distribution"
+          echo "Generated packages/core/src/version.ts with VERSION = \"$VERSION\" for JSR distribution"
 
       - name: Validate JSR package
         run: npx jsr publish --dry-run --allow-dirty

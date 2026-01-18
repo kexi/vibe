@@ -53,7 +53,8 @@ Navigate to the existing worktree? (Y/n)
 `vibe clean` uses a fast removal strategy that moves the worktree directory instead of deleting it synchronously:
 
 - **macOS**: Items are moved to the system Trash via Finder (can be recovered if needed)
-- **Linux/Windows**: Items are moved to a temporary directory and deleted in the background
+- **Linux**: Items are moved to XDG Trash when using Node.js runtime (recoverable from file manager). Falls back to temporary directory on Deno.
+- **Windows**: Items are moved to a temporary directory and deleted in the background
 
 This approach allows `vibe clean` to complete instantly regardless of worktree size.
 
@@ -310,7 +311,7 @@ Vibe automatically selects the best copy strategy based on your system:
 - No configuration needed - the best strategy is auto-detected
 - Automatic fallback ensures copying always works
 
-For detailed information about copy strategies and implementation, see [Copy Strategies](docs/copy-strategies.md).
+For detailed information about copy strategies and implementation, see [Copy Strategies](docs/specifications/copy-strategies.md).
 
 ### Worktree Path Configuration
 

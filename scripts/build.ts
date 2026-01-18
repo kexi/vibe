@@ -109,8 +109,8 @@ export const VERSION = BUILD_INFO.version;
 export const REPOSITORY_URL = BUILD_INFO.repository;
 `;
 
-  await Deno.writeTextFile("src/version.ts", content);
-  console.log(`Generated src/version.ts with VERSION = "${fullVersion}"`);
+  await Deno.writeTextFile("packages/core/src/version.ts", content);
+  console.log(`Generated packages/core/src/version.ts with VERSION = "${fullVersion}"`);
   console.log(
     `  Platform: ${metadata.platform}-${metadata.arch} (${metadata.target})`,
   );

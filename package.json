@@ -1,0 +1,25 @@
+{
+  "name": "vibe-monorepo",
+  "version": "0.14.0",
+  "private": true,
+  "type": "module",
+  "description": "Monorepo for vibe CLI - Git worktree management tool",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kexi/vibe.git"
+  },
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@10.26.2",
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "install:all": "pnpm install",
+    "build:npm": "pnpm -C packages/npm build",
+    "build:native": "pnpm -C packages/native build",
+    "test:npm": "pnpm -C packages/npm test",
+    "test:e2e": "pnpm -C packages/e2e test",
+    "clean": "pnpm -r exec rm -rf node_modules dist"
+  }
+}

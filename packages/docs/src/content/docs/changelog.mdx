@@ -1,0 +1,272 @@
+---
+title: Changelog
+description: Version history and release notes for vibe
+---
+
+All notable changes to vibe are documented here.
+
+## v0.14.0
+
+**Released:** 2026-01-19
+
+### Added
+
+- **XDG Trash support**: `vibe clean` now uses system trash
+  - Linux: XDG Base Directory spec compliant trash
+  - macOS: Integration with Finder's Trash
+
+### Fixed
+
+- Improved `vibe clean` idempotency for concurrent execution stability
+
+---
+
+## v0.13.0
+
+**Released:** 2026-01-18
+
+### Added
+
+- Twitter announcement template for release workflow
+- Markdown file synchronization rules (_.md / _.ja.md pairs)
+- `vibe-release-new-version` Claude Code command for guided releases
+
+### Fixed
+
+- PR review feedback addressed
+- JSR dependencies moved to devDependencies for proper build
+- JSR dependencies bundled to fix npx usage without registry config
+
+---
+
+## v0.12.0
+
+**Released:** 2026-01-18
+
+### Added
+
+- **Multi-runtime support**: Run vibe in Node.js/npm/npx environments
+- **RuntimeAbstractionLayer**: Unified runtime abstraction for Deno and Node.js
+- **AppContext dependency injection**: Improved testability through DI pattern
+
+### Changed
+
+- **vibe-native**: Migrated from C to Rust (napi-rs) for better safety and maintainability
+- **vibe-native**: Consolidated multiple packages into a single unified package
+
+### Fixed
+
+- Improved native module error handling
+- Better Windows detection logic
+- Extended mise HTTP timeout for slower connections
+- Various e2e test fixes and improvements
+
+---
+
+## v0.9.0
+
+**Released:** 2026-01-16
+
+### Added
+
+- GNU Coding Standards compliant CLI options
+  - `--verbose` / `-V`: Enable verbose output
+  - `--quiet` / `-q`: Suppress non-essential output
+  - `-n` short alias for `--dry-run`
+  - Unknown option detection with helpful error messages
+- **Fast remove** for `vibe clean` command
+  - O(1) instant directory removal by renaming to `.vibe-trash-*`
+  - Background cleanup for improved user experience
+  - Benchmark: 29s → 2s (342K files, 14x faster)
+  - `[clean] fast_remove` config option (enabled by default)
+
+### Changed
+
+- Improved help text formatting with `errorLog` function
+
+### Fixed
+
+- Shell injection prevention in `clean` command
+- Security improvements for clean operations
+
+---
+
+## v0.8.0
+
+**Released:** 2026-01-14
+
+### Added
+
+- `vibe upgrade` command to check for updates and show upgrade instructions
+- `--dry-run` option for `vibe start` to preview operations without executing
+- `--delete-branch` / `--keep-branch` options for `vibe clean` command
+- `--force` / `-f` option for `vibe clean` to skip confirmation prompts
+- `[clean] delete_branch` config option in `.vibe.toml`
+
+### Changed
+
+- Claude Actions switched from OAuth to API key authentication
+
+### Fixed
+
+- Add `--force` flag when removing worktree with uncommitted changes
+
+---
+
+## v0.7.0
+
+**Released:** 2026-01-13
+
+### Added
+
+- OGP meta tags for SNS preview on documentation site
+
+### Changed
+
+- Converted to pnpm workspace with docs CI checks
+- Configured minimum release age for supply chain security
+
+### Fixed
+
+- `vibe clean` now outputs cd command to return to main worktree
+
+---
+
+## v0.6.0
+
+**Released:** 2026-01-13
+
+### Added
+
+- **Worktree path customization** via external script
+  - Configure `path_script` to dynamically determine worktree directory path
+  - Environment variables: `VIBE_REPO_NAME`, `VIBE_BRANCH_NAME`, `VIBE_SANITIZED_BRANCH`, `VIBE_REPO_ROOT`
+
+### Changed
+
+- Unified deno compile commands into deno task
+
+---
+
+## v0.5.2
+
+**Released:** 2026-01-13
+
+### Fixed
+
+- Added `--allow-ffi` flag to all compile commands in CI/release workflows
+
+---
+
+## v0.5.1
+
+**Released:** 2026-01-13
+
+### Added
+
+- Documentation site (Starlight-based)
+- GitHub Star button in header
+- Windows, Nushell, PowerShell, and Linux installation guides
+- Automated documentation deployment via GitHub Actions
+
+### Changed
+
+- Parallelized directory copy for improved performance
+- Display copy strategy name during file operations
+
+---
+
+## v0.5.0
+
+**Released:** 2026-01-10
+
+### Added
+
+- `--no-hooks` option to skip hook execution during `vibe start`
+- `--no-copy` option to skip file copying during `vibe start`
+- GitHub Sponsors and Patreon funding configuration
+
+### Changed
+
+- Improved documentation for development workflows
+
+---
+
+## v0.4.0
+
+**Released:** 2026-01-08
+
+### Added
+
+- **Copy strategies** with performance optimization
+  - Native clone using FFI (`clonefile` on macOS, `FICLONE` on Linux)
+  - Copy-on-Write (CoW) support for APFS and Btrfs/XFS
+  - rsync fallback for cross-filesystem copies
+- **Directory copy** support with glob patterns
+- Progress display improvements with new marker format
+
+### Changed
+
+- Refactored CopyService for better performance
+- Enhanced progress display with cleaner output
+
+### Fixed
+
+- Resource leaks in CopyService tests
+- Empty marker lines in progress display
+
+---
+
+## v0.3.0
+
+**Released:** 2026-01-02
+
+### Added
+
+- **Trust system** for repository security
+  - Repositories must be explicitly trusted before running hooks
+  - `vibe trust` command for managing trusted repositories
+  - Security-first approach to prevent malicious hook execution
+- Idempotent `vibe start` - running on existing worktree reuses it
+
+### Changed
+
+- Replaced Japanese UI messages with English for international users
+- Improved repository root path normalization
+
+### Fixed
+
+- Repository root normalization issues
+
+---
+
+## v0.2.0
+
+**Released:** 2025-12-28
+
+### Added
+
+- **Hook system** for automated workflows
+  - `pre_start`, `post_start`, `pre_clean`, `post_clean` hooks
+  - `files` configuration for copying files to worktrees
+- Local configuration support (`.vibe.local.toml`)
+- `vibe config` command for managing settings
+
+### Changed
+
+- Enhanced worktree management
+- Improved shell integration
+
+---
+
+## v0.1.0
+
+**Released:** 2025-12-28
+
+### Added
+
+- Initial release
+- Basic worktree creation with `vibe start`
+- Worktree cleanup with `vibe clean`
+- Multi-shell support (Bash, Zsh, Fish, Nushell, PowerShell)
+- `.vibe.toml` configuration file support

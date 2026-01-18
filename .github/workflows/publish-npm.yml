@@ -51,7 +51,7 @@ jobs:
         run: cargo install cargo-audit
 
       - name: Run security audit
-        working-directory: packages/@kexi/vibe-native
+        working-directory: packages/native
         run: cargo audit
 
   # Build native binaries for each platform using napi-rs
@@ -86,14 +86,14 @@ jobs:
         run: pnpm install --filter @kexi/vibe-native --ignore-scripts
 
       - name: Build native module
-        working-directory: packages/@kexi/vibe-native
+        working-directory: packages/native
         run: pnpm exec napi build --platform --release --target ${{ matrix.target }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: bindings-${{ matrix.target }}
-          path: packages/@kexi/vibe-native/*.node
+          path: packages/native/*.node
           if-no-files-found: error
 
   # Publish @kexi/vibe-native package with all platform binaries
@@ -116,25 +116,25 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          path: packages/@kexi/vibe-native/artifacts
+          path: packages/native/artifacts
 
       - name: Move artifacts to package root
-        working-directory: packages/@kexi/vibe-native
+        working-directory: packages/native
         run: |
           find artifacts -name "*.node" -exec mv {} . \;
           rm -rf artifacts
           ls -la *.node
 
       - name: Install dependencies
-        working-directory: packages/@kexi/vibe-native
+        working-directory: packages/native
         run: pnpm install --ignore-scripts
 
       - name: Generate index.js and index.d.ts
-        working-directory: packages/@kexi/vibe-native
+        working-directory: packages/native
         run: pnpm exec napi build --platform --release --js index.js --dts index.d.ts
 
       - name: Validate version consistency
-        working-directory: packages/@kexi/vibe-native
+        working-directory: packages/native
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           PKG_VERSION=$(node -p "require('./package.json').version")
@@ -149,7 +149,7 @@ jobs:
           echo "Version validation passed: $TAG_VERSION"
 
       - name: Publish @kexi/vibe-native
-        working-directory: packages/@kexi/vibe-native
+        working-directory: packages/native
         run: pnpm publish --access public --provenance --no-git-checks --ignore-scripts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -172,7 +172,7 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - name: Validate version consistency
-        working-directory: npm
+        working-directory: packages/npm
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           PKG_VERSION=$(node -p "require('./package.json').version")
@@ -187,7 +187,7 @@ jobs:
           echo "Version validation passed: $TAG_VERSION"
 
       - name: Install dependencies
-        working-directory: npm
+        working-directory: packages/npm
         run: pnpm install --ignore-scripts
 
       - name: Generate version.ts for npm
@@ -195,7 +195,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           REPOSITORY=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('deno.json')).repository)")
           BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
-          cat > src/version.ts << EOF
+          cat > packages/core/src/version.ts << EOF
           // This file is auto-generated during npm publishing
           export interface BuildInfo {
             version: string;
@@ -223,14 +223,14 @@ jobs:
           export const VERSION = BUILD_INFO.version;
           export const REPOSITORY_URL = BUILD_INFO.repository;
           EOF
-          echo "Generated src/version.ts with VERSION = \"$VERSION\" for npm distribution"
+          echo "Generated packages/core/src/version.ts with VERSION = \"$VERSION\" for npm distribution"
 
       - name: Build CLI
-        working-directory: npm
+        working-directory: packages/npm
         run: pnpm run build
 
       - name: Publish @kexi/vibe
-        working-directory: npm
+        working-directory: packages/npm
         run: pnpm publish --access public --provenance --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

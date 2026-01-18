@@ -1,7 +1,9 @@
 packages:
-  - "docs"
-  - "npm"
-  - "tests/e2e"
-  - "packages/@kexi/vibe-native"
+  - "packages/*"
 
 minimumReleaseAge: 4320
+minimumReleaseAgeExclude:
+  - devalue
+  - "@astrojs/*"
+  - fontkitten
+  - "@types/*"

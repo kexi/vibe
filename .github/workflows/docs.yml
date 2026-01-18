@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "docs/**"
+      - "packages/docs/**"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -24,35 +24,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
+      - name: Setup mise
+        uses: jdx/mise-action@v2
+        env:
+          MISE_HTTP_TIMEOUT: "120"
 
       - name: Install dependencies
-        working-directory: docs
-        run: pnpm install
+        run: pnpm install --filter docs --ignore-scripts
 
       - name: Lint and check
-        working-directory: docs
         run: |
-          pnpm lint
-          pnpm format
-          pnpm check
+          pnpm -C packages/docs lint
+          pnpm -C packages/docs format
+          pnpm -C packages/docs check
 
       - name: Build documentation
-        working-directory: docs
-        run: pnpm build
+        run: pnpm -C packages/docs build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: docs/dist
+          path: packages/docs/dist
 
   deploy:
     needs: build

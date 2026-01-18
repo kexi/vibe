@@ -1,0 +1,65 @@
+{
+  "name": "@kexi/vibe-native",
+  "version": "0.14.0",
+  "description": "Native clone operations for vibe CLI (clonefile on macOS, FICLONE on Linux)",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "napi": {
+    "name": "vibe-native",
+    "triples": {
+      "defaults": false,
+      "additional": [
+        "x86_64-apple-darwin",
+        "aarch64-apple-darwin",
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu"
+      ]
+    }
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "README.md",
+    "*.node"
+  ],
+  "scripts": {
+    "artifacts": "napi artifacts",
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform",
+    "prepublishOnly": "napi prepublish -t npm",
+    "version": "napi version"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^2.18.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kexi/vibe.git",
+    "directory": "packages/native"
+  },
+  "keywords": [
+    "clonefile",
+    "ficlone",
+    "cow",
+    "copy-on-write",
+    "native",
+    "napi-rs"
+  ],
+  "author": "kexi",
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

@@ -19,8 +19,11 @@ const DENO_JSON = "deno.json";
 
 // Targets to sync version to
 const TARGETS = [
-  "npm/package.json",
-  "packages/@kexi/vibe-native/package.json",
+  "package.json",
+  "packages/npm/package.json",
+  "packages/core/package.json",
+  "packages/core/deno.json",
+  "packages/native/package.json",
 ];
 
 interface PackageJson {
