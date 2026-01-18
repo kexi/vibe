@@ -219,6 +219,9 @@ describe("clean command", () => {
       trustRunner.dispose();
     }
 
+    // Wait for trust settings to be persisted (macOS file system sync)
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
     // Verify branch exists
     expect(branchExists(repoPath, branchName)).toBe(true);
 
@@ -274,6 +277,9 @@ describe("clean command", () => {
     } finally {
       trustRunner.dispose();
     }
+
+    // Wait for trust settings to be persisted (macOS file system sync)
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     // Verify branch exists
     expect(branchExists(repoPath, branchName)).toBe(true);
