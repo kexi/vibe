@@ -32,3 +32,21 @@ export declare function supportsDirectory(): boolean
  * Returns "darwin" or "linux"
  */
 export declare function getPlatform(): "darwin" | "linux"
+/**
+ * Move a file or directory to the system trash
+ *
+ * Uses the `trash` crate for cross-platform trash support:
+ * - macOS: Uses Finder Trash
+ * - Linux: Uses XDG Trash (~/.local/share/Trash)
+ * - Windows: Uses Recycle Bin (not currently built on this platform)
+ */
+export declare function moveToTrash(path: string): void
+/**
+ * Move a file or directory to the system trash asynchronously
+ *
+ * Uses the `trash` crate for cross-platform trash support:
+ * - macOS: Uses Finder Trash
+ * - Linux: Uses XDG Trash (~/.local/share/Trash)
+ * - Windows: Uses Recycle Bin (not currently built on this platform)
+ */
+export declare function moveToTrashAsync(path: string): Promise<void>
