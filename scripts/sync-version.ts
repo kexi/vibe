@@ -21,7 +21,9 @@ const DENO_JSON = "deno.json";
 const TARGETS = [
   "package.json",
   "npm/package.json",
-  "packages/@kexi/vibe-native/package.json",
+  "packages/core/package.json",
+  "packages/core/deno.json",
+  "packages/native/package.json",
 ];
 
 interface PackageJson {
