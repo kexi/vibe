@@ -13,6 +13,6 @@
     "outDir": "./dist",
     "rootDir": ".."
   },
-  "include": ["../main.ts", "../src/**/*.ts"],
+  "include": ["../main.ts", "../packages/core/src/**/*.ts"],
   "exclude": ["node_modules", "dist", "../tests"]
 }

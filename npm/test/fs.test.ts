@@ -6,7 +6,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
-import { nodeFS } from "../../src/runtime/node/fs.ts";
+import { nodeFS } from "../../packages/core/src/runtime/node/fs.ts";
 
 let TEST_DIR: string;
 

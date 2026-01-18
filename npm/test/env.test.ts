@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, afterEach } from "vitest";
-import { nodeEnv } from "../../src/runtime/node/env.ts";
+import { nodeEnv } from "../../packages/core/src/runtime/node/env.ts";
 
 describe("nodeEnv", () => {
   // ===== get() Tests =====
