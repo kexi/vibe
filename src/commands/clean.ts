@@ -1,5 +1,8 @@
+import { bold } from "@std/fmt/colors";
 import { dirname, join } from "@std/path";
 import {
+  getCurrentBranch,
+  getDefaultBranch,
   getMainWorktreePath,
   getRepoRoot,
   getWorktreeByPath,
@@ -105,10 +108,33 @@ export async function cleanCommand(
   try {
     const isMain = await isMainWorktree(ctx);
     if (isMain) {
-      console.error(
-        "Error: Cannot clean main worktree. Use this command from a secondary worktree.",
+      // Main worktree: offer to checkout default branch instead of error
+      let defaultBranch: string;
+      try {
+        defaultBranch = await getDefaultBranch(ctx);
+      } catch {
+        // gh is not installed or not logged in - skip checkout offer
+        runtime.control.exit(0);
+        return; // TypeScript requires explicit return after exit()
+      }
+
+      const currentBranch = await getCurrentBranch(ctx);
+      const isAlreadyOnDefaultBranch = currentBranch === defaultBranch;
+      if (isAlreadyOnDefaultBranch) {
+        log(`You're already on the default branch (${bold(defaultBranch)}).`, outputOpts);
+        runtime.control.exit(0);
+      }
+
+      const shouldCheckout = await confirm(
+        `You're in the main worktree. Would you like to checkout ${bold(defaultBranch)}? (Y/n)`,
+        ctx,
       );
-      runtime.control.exit(1);
+
+      if (shouldCheckout) {
+        await runGitCommand(["checkout", defaultBranch], ctx);
+        log(`Switched to ${bold(defaultBranch)}`, outputOpts);
+      }
+      runtime.control.exit(0);
     }
 
     const hasChanges = await hasUncommittedChanges(ctx);
