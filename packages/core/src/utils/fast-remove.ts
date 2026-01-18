@@ -218,6 +218,12 @@ export async function fastRemoveDirectory(
   outputOpts: OutputOptions = {},
 ): Promise<FastRemoveResult> {
   try {
+    // Early check: if target doesn't exist, treat as success (idempotent)
+    const targetExists = await ctx.runtime.fs.exists(targetPath);
+    if (!targetExists) {
+      return { success: true, trashedPath: undefined };
+    }
+
     // Try system trash first (native module on Node.js, osascript on macOS Deno)
     const movedToTrash = await moveToSystemTrash(targetPath, ctx, outputOpts);
     if (movedToTrash) {
@@ -259,6 +265,10 @@ export async function fastRemoveDirectory(
 
     return { success: true, trashedPath: fallbackTrashPath };
   } catch (error) {
+    // NotFound is success (another process already removed it)
+    if (ctx.runtime.errors.isNotFound(error)) {
+      return { success: true, trashedPath: undefined };
+    }
     return {
       success: false,
       error: error instanceof Error ? error : new Error(String(error)),

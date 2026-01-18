@@ -57,15 +57,47 @@ async function removeWorktree(
 
       if (fastResult.success) {
         // Create empty directory with .git file for git worktree remove
-        await runtime.fs.mkdir(worktreePath);
-        await runtime.fs.writeTextFile(gitFilePath, gitFileContent);
+        try {
+          await runtime.fs.mkdir(worktreePath);
+        } catch (mkdirError) {
+          // AlreadyExists: another process created it first -> continue
+          // NotFound: parent directory doesn't exist -> rethrow
+          if (!runtime.errors.isAlreadyExists(mkdirError)) {
+            throw mkdirError;
+          }
+        }
+
+        try {
+          await runtime.fs.writeTextFile(gitFilePath, gitFileContent);
+        } catch (writeError) {
+          // NotFound: directory was removed (another process finished) -> success
+          if (runtime.errors.isNotFound(writeError)) {
+            verboseLog("Worktree already removed by another process", outputOpts);
+            return;
+          }
+          throw writeError;
+        }
 
         // Run git worktree remove on empty directory (very fast)
         // Always use --force since we've already moved the files
         const removeArgs = ["-C", mainPath, "worktree", "remove", "--force"];
         removeArgs.push(worktreePath);
         verboseLog(`Running: git ${removeArgs.join(" ")}`, outputOpts);
-        await runGitCommand(removeArgs, ctx);
+
+        try {
+          await runGitCommand(removeArgs, ctx);
+        } catch (gitError) {
+          // Handle cases where worktree was already removed by another process
+          const errorMsg = gitError instanceof Error ? gitError.message : String(gitError);
+          const isAlreadyRemoved = errorMsg.includes("not a working tree") ||
+            errorMsg.includes("does not exist") ||
+            errorMsg.includes("is not a valid path");
+          if (isAlreadyRemoved) {
+            verboseLog("Worktree already removed from git", outputOpts);
+            return;
+          }
+          throw gitError;
+        }
 
         // Clean up stale trash directories in the background
         const parentDir = dirname(worktreePath);
@@ -134,7 +166,15 @@ export async function cleanCommand(
 
     // Get current branch name before removing worktree
     const worktreeInfo = await getWorktreeByPath(currentWorktreePath, ctx);
-    const currentBranch = worktreeInfo?.branch;
+
+    // Early check: if worktree is already removed (another process finished), exit gracefully
+    if (worktreeInfo === null) {
+      log("Worktree already removed.", outputOpts);
+      console.log(`cd '${mainPath}'`);
+      return;
+    }
+
+    const currentBranch = worktreeInfo.branch;
 
     // Load configuration
     const config = await loadVibeConfig(currentWorktreePath, ctx);
@@ -171,7 +211,13 @@ export async function cleanCommand(
     }
 
     // Change to main worktree before removing (so cwd remains valid after deletion)
-    runtime.control.chdir(mainPath);
+    try {
+      runtime.control.chdir(mainPath);
+    } catch {
+      // mainPath doesn't exist - this is a fatal error
+      console.error(`Error: Cannot change to main worktree: ${mainPath}`);
+      runtime.control.exit(1);
+    }
 
     // Load user settings to check fast_remove preference
     const settings = await loadUserSettings(ctx);

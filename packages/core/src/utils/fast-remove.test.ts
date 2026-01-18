@@ -91,11 +91,13 @@ Deno.test({
   },
 });
 
-Deno.test("fastRemoveDirectory returns failure for non-existent directory", async () => {
+Deno.test("fastRemoveDirectory returns success for non-existent directory (idempotent)", async () => {
+  // Idempotent design: removing a non-existent directory is considered a success
+  // since the desired end state (directory does not exist) is already achieved
   const result = await fastRemoveDirectory("/non/existent/path");
 
-  assertEquals(result.success, false);
-  assertEquals(result.error !== undefined, true);
+  assertEquals(result.success, true);
+  assertEquals(result.trashedPath, undefined);
 });
 
 Deno.test({
