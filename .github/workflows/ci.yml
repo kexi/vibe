@@ -47,18 +47,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
+      - uses: jdx/mise-action@v2
+        env:
+          MISE_HTTP_TIMEOUT: "120"
       - name: Install dependencies
-        working-directory: npm
-        run: pnpm install
+        run: pnpm install --filter @kexi/vibe --ignore-scripts
       - name: Run Node.js runtime tests
-        working-directory: npm
-        run: pnpm test
+        run: pnpm -C npm test
 
   build-binaries:
     strategy:
@@ -166,16 +161,11 @@ jobs:
       - name: Build vibe binary for E2E tests
         run: deno task compile:e2e
 
-      # Setup pnpm
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
       # Install Node.js dependencies for E2E tests
       - name: Install E2E test dependencies
-        run: pnpm install
+        run: pnpm install --ignore-scripts
 
-      # Build node-pty native addon from source (prebuilds may not work on arm64)
+      # Build node-pty native addon from source
       - name: Build node-pty
         run: |
           cd node_modules/node-pty
@@ -201,27 +191,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
+      - uses: jdx/mise-action@v2
+        env:
+          MISE_HTTP_TIMEOUT: "120"
       - name: Install dependencies
-        working-directory: packages/docs
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --filter docs --frozen-lockfile --ignore-scripts
       - name: Lint
-        working-directory: packages/docs
-        run: pnpm lint
+        run: pnpm -C packages/docs lint
       - name: Format check
-        working-directory: packages/docs
-        run: pnpm format
+        run: pnpm -C packages/docs format
       - name: Type check
-        working-directory: packages/docs
-        run: pnpm check
+        run: pnpm -C packages/docs check
       - name: Build
-        working-directory: packages/docs
-        run: pnpm build
+        run: pnpm -C packages/docs build
 
   build:
     needs: [build-binaries, build-deb, build-native]
