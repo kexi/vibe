@@ -167,7 +167,11 @@ jobs:
 
       # Build node-pty native addon from source
       - name: Build node-pty
-        run: pnpm rebuild node-pty
+        run: |
+          cd node_modules/node-pty
+          npm run install -- --build-from-source
+        env:
+          npm_config_build_from_source: true
 
       # Verify binary exists and has execute permission
       - name: Verify vibe binary
