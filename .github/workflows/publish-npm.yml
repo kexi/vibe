@@ -150,7 +150,7 @@ jobs:
 
       - name: Publish @kexi/vibe-native
         working-directory: packages/@kexi/vibe-native
-        run: npm publish --access public --provenance --ignore-scripts
+        run: pnpm publish --access public --provenance --no-git-checks --ignore-scripts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -231,6 +231,6 @@ jobs:
 
       - name: Publish @kexi/vibe
         working-directory: npm
-        run: npm publish --access public --provenance
+        run: pnpm publish --access public --provenance --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
