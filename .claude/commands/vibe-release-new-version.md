@@ -225,6 +225,24 @@ deno task sync-version --check
 - Conventional Commitsのカテゴリに基づいて分類（feat→Added、fix→Fixed、その他→Changed）
 - 既存のエントリのフォーマットを参考にする
 
+**重要: エンドユーザーに関係のない変更は含めない**
+
+以下の変更はchangelogから除外すること：
+- CI/CDワークフローの変更（GitHub Actions等）
+- 開発者向けツール（Claude Codeコマンド、リリーススクリプト等）
+- 内部リファクタリング（ユーザーに見える動作変更がない場合）
+- 開発ドキュメントの更新（CLAUDE.md、CONTRIBUTING.md等）
+- テストの追加/修正
+- コードフォーマット修正
+- 依存関係の更新（セキュリティ修正やユーザーに影響がある場合は除く）
+
+含めるべき変更の例：
+- 新しいCLIコマンドやオプション
+- ユーザーに見えるバグ修正
+- パフォーマンス改善
+- 破壊的変更
+- npx/brew等のインストール方法に影響する修正
+
 ---
 
 ## Step 4: コミット＆プッシュ
@@ -306,19 +324,20 @@ git pull origin main
 git log $(git describe --tags --abbrev=0)..HEAD --pretty=format:"- %s"
 ```
 
-Conventional Commitsに基づいてカテゴリ分け：
+**重要: エンドユーザーに関係のある変更のみ含める**
+
+リリースノートには、ユーザーが実際に体験する変更のみを記載する。開発プロセスの改善、内部的なリファクタリング、CI/CD変更などは除外すること。
+
+Conventional Commitsに基づいてカテゴリ分け（ユーザー向け変更のみ）：
 
 ```markdown
 ## What's Changed
 
 ### Features
-- feat: 新機能の説明
+- 新しいCLIコマンドやオプションの説明
 
 ### Bug Fixes
-- fix: バグ修正の説明
-
-### Other Changes
-- chore/refactor/docs: その他の変更
+- ユーザーに影響するバグ修正の説明
 
 ---
 
