@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "docs/**"
+      - "packages/docs/**"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -35,24 +35,24 @@ jobs:
           version: 10
 
       - name: Install dependencies
-        working-directory: docs
+        working-directory: packages/docs
         run: pnpm install
 
       - name: Lint and check
-        working-directory: docs
+        working-directory: packages/docs
         run: |
           pnpm lint
           pnpm format
           pnpm check
 
       - name: Build documentation
-        working-directory: docs
+        working-directory: packages/docs
         run: pnpm build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: docs/dist
+          path: packages/docs/dist
 
   deploy:
     needs: build
