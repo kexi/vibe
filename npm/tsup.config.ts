@@ -19,6 +19,8 @@ export default defineConfig({
     // Dependencies that are installed via npm
     "zod",
   ],
+  // Include @jsr packages in bundle (not available on npm registry)
+  noExternal: [/^@jsr\/.*/],
   // Handle .ts extension imports and map JSR imports to npm packages
   esbuildOptions(options) {
     options.resolveExtensions = [".ts", ".js", ".mjs", ".cjs"];

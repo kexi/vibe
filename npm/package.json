@@ -27,10 +27,6 @@
     "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
-    "@jsr/std__cli": "^1.0.0",
-    "@jsr/std__fs": "^1.0.0",
-    "@jsr/std__path": "^1.0.0",
-    "@jsr/std__toml": "^1.0.0",
     "zod": "^3.23.0"
   },
   "optionalDependencies": {
