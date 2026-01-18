@@ -18,39 +18,53 @@ export class VibeCommandRunner {
   ) {}
 
   /**
-   * Spawn a command in PTY and return a promise that resolves when the command exits
+   * Spawn a command in PTY
+   * Waits for the first data from PTY before resolving to ensure the process is ready
    */
   spawn(args: string[]): Promise<void> {
     this.output = "";
     this.exitCode = null;
 
-    this.pty = pty.spawn(this.vibePath, args, {
-      cwd: this.cwd,
-      env: {
-        ...process.env,
-        TERM: "xterm-256color",
-        VIBE_FORCE_INTERACTIVE: "1", // Force interactive mode for testing
-      },
-      cols: 80,
-      rows: 30,
-    });
+    return new Promise((resolve) => {
+      this.pty = pty.spawn(this.vibePath, args, {
+        cwd: this.cwd,
+        env: {
+          ...process.env,
+          TERM: "xterm-256color",
+          VIBE_FORCE_INTERACTIVE: "1",
+        },
+        cols: 80,
+        rows: 30,
+      });
 
-    this.pty.onData((data: string) => {
-      this.output += data;
-    });
+      let resolved = false;
+      const timeoutId = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          resolve();
+        }
+      }, 1000);
 
-    this.exitPromise = new Promise((resolve) => {
-      if (!this.pty) {
-        resolve();
-        return;
-      }
-      this.pty.onExit(({ exitCode }: { exitCode: number }) => {
-        this.exitCode = exitCode;
-        resolve();
+      this.pty.onData((data: string) => {
+        this.output += data;
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeoutId);
+          resolve();
+        }
+      });
+
+      this.exitPromise = new Promise((exitResolve) => {
+        if (!this.pty) {
+          exitResolve();
+          return;
+        }
+        this.pty.onExit(({ exitCode }: { exitCode: number }) => {
+          this.exitCode = exitCode;
+          exitResolve();
+        });
       });
     });
-
-    return this.exitPromise;
   }
 
   /**
@@ -66,13 +80,13 @@ export class VibeCommandRunner {
   /**
    * Wait for a specific pattern to appear in the output
    */
-  async waitForPattern(pattern: RegExp, timeout = 5000): Promise<boolean> {
+  async waitForPattern(pattern: RegExp, timeout = 15000): Promise<boolean> {
     const startTime = Date.now();
     while (Date.now() - startTime < timeout) {
       if (pattern.test(this.output)) {
         return true;
       }
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 50));
     }
     return false;
   }

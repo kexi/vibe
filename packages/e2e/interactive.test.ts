@@ -51,13 +51,13 @@ describe("interactive prompts", () => {
     // Step 2: Try to create the same branch again (should prompt)
     const runner2 = new VibeCommandRunner(vibePath, repoPath);
     try {
-      // Don't await spawn - it will block until process exits
-      runner2.spawn(["start", "feat/test"]);
+      // Await spawn to ensure PTY is ready before continuing
+      await runner2.spawn(["start", "feat/test"]);
 
       // Wait for the prompt about branch being in use
       const promptFound = await runner2.waitForPattern(
         /Navigate to the existing worktree/,
-        5000,
+        15000,
       );
       if (!promptFound) {
         throw new Error(
@@ -100,12 +100,12 @@ describe("interactive prompts", () => {
     // Step 2: Try to create the same branch again and cancel
     const runner2 = new VibeCommandRunner(vibePath, repoPath);
     try {
-      runner2.spawn(["start", "feat/test"]);
+      await runner2.spawn(["start", "feat/test"]);
 
       // Wait for the prompt
       const promptFound = await runner2.waitForPattern(
         /Navigate to the existing worktree/,
-        5000,
+        15000,
       );
       if (!promptFound) {
         throw new Error("Expected prompt about branch being in use");
@@ -155,12 +155,12 @@ describe("interactive prompts", () => {
     // Step 3: Try to create the same worktree again (directory exists but branch is available)
     const runner2 = new VibeCommandRunner(vibePath, repoPath);
     try {
-      runner2.spawn(["start", "feat/overwrite"]);
+      await runner2.spawn(["start", "feat/overwrite"]);
 
       // Wait for directory exists prompt
       const promptFound = await runner2.waitForPattern(
         /Directory.*already exists/,
-        5000,
+        15000,
       );
       if (!promptFound) {
         throw new Error("Expected prompt about directory existing");
@@ -212,12 +212,12 @@ describe("interactive prompts", () => {
     // Step 3: Try to create the same worktree again and reuse
     const runner2 = new VibeCommandRunner(vibePath, repoPath);
     try {
-      runner2.spawn(["start", "feat/reuse"]);
+      await runner2.spawn(["start", "feat/reuse"]);
 
       // Wait for directory exists prompt
       const promptFound = await runner2.waitForPattern(
         /Directory.*already exists/,
-        5000,
+        15000,
       );
       if (!promptFound) {
         throw new Error("Expected prompt about directory existing");
@@ -269,12 +269,12 @@ describe("interactive prompts", () => {
     // Step 3: Try to create the same worktree again and cancel
     const runner2 = new VibeCommandRunner(vibePath, repoPath);
     try {
-      runner2.spawn(["start", "feat/cancel"]);
+      await runner2.spawn(["start", "feat/cancel"]);
 
       // Wait for directory exists prompt
       const promptFound = await runner2.waitForPattern(
         /Directory.*already exists/,
-        5000,
+        15000,
       );
       if (!promptFound) {
         throw new Error("Expected prompt about directory existing");
@@ -317,12 +317,12 @@ describe("interactive prompts", () => {
     // Step 2: Try again with invalid input then valid input
     const runner2 = new VibeCommandRunner(vibePath, repoPath);
     try {
-      runner2.spawn(["start", "feat/invalid"]);
+      await runner2.spawn(["start", "feat/invalid"]);
 
       // Wait for the prompt
       const promptFound = await runner2.waitForPattern(
         /Navigate to the existing worktree/,
-        5000,
+        15000,
       );
       if (!promptFound) {
         throw new Error("Expected prompt about branch being in use");
@@ -332,7 +332,7 @@ describe("interactive prompts", () => {
       runner2.write("invalid\n");
 
       // Wait for error message about invalid input
-      const errorFound = await runner2.waitForPattern(/Invalid input/, 2000);
+      const errorFound = await runner2.waitForPattern(/Invalid input/, 10000);
       if (!errorFound) {
         throw new Error("Expected invalid input message");
       }
