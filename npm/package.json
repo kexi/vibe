@@ -1,6 +1,6 @@
 {
   "name": "@kexi/vibe",
-  "version": "0.12.7",
+  "version": "0.13.0",
   "description": "Git worktree helper CLI",
   "type": "module",
   "bin": {
@@ -27,16 +27,16 @@
     "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
-    "@jsr/std__cli": "^1.0.0",
-    "@jsr/std__fs": "^1.0.0",
-    "@jsr/std__path": "^1.0.0",
-    "@jsr/std__toml": "^1.0.0",
     "zod": "^3.23.0"
   },
   "optionalDependencies": {
     "@kexi/vibe-native": "workspace:^"
   },
   "devDependencies": {
+    "@jsr/std__cli": "^1.0.0",
+    "@jsr/std__fs": "^1.0.0",
+    "@jsr/std__path": "^1.0.0",
+    "@jsr/std__toml": "^1.0.0",
     "@types/node": "^22.10.2",
     "tsup": "^8.0.0",
     "typescript": "^5.7.2",
