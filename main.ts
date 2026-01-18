@@ -8,7 +8,12 @@ import { configCommand } from "./packages/core/src/commands/config.ts";
 import { upgradeCommand } from "./packages/core/src/commands/upgrade.ts";
 import { BUILD_INFO } from "./packages/core/src/version.ts";
 import { initRuntime, runtime } from "./packages/core/src/runtime/index.ts";
-import { createAppContext, setGlobalContext } from "./packages/core/src/context/index.ts";
+import {
+  createAppContext,
+  getGlobalContext,
+  setGlobalContext,
+} from "./packages/core/src/context/index.ts";
+import { handleError } from "./packages/core/src/errors/index.ts";
 
 /**
  * Boolean options supported by the CLI.
@@ -208,4 +213,11 @@ async function main(): Promise<void> {
   }
 }
 
-main();
+main().catch((error) => {
+  const ctx = getGlobalContext();
+  const exitCode = handleError(error, {}, ctx);
+  const shouldExit = exitCode !== 0;
+  if (shouldExit) {
+    ctx.runtime.control.exit(exitCode);
+  }
+});
