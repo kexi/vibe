@@ -1,6 +1,7 @@
 import { dirname, join } from "@std/path";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
 import { getNativeTrashAdapter, type NativeTrashAdapter } from "../native/index.ts";
+import { type OutputOptions, verboseLog } from "./output.ts";
 
 /**
  * Display path for system Trash returned to callers.
@@ -79,6 +80,7 @@ function generateTrashName(): string {
 async function moveToSystemTrash(
   targetPath: string,
   ctx: AppContext,
+  outputOpts: OutputOptions = {},
 ): Promise<boolean> {
   // First, try native trash adapter (available on Node.js)
   const trashAdapter = await getTrashAdapter();
@@ -86,8 +88,9 @@ async function moveToSystemTrash(
     try {
       await trashAdapter.moveToTrash(targetPath);
       return true;
-    } catch {
-      // Fall through to platform-specific fallback
+    } catch (error) {
+      // Log error in verbose mode for debugging, then fall through to platform-specific fallback
+      verboseLog(`Native trash failed: ${error}`, outputOpts);
     }
   }
 
@@ -206,15 +209,17 @@ function getTempDir(ctx: AppContext): string {
  *
  * @param targetPath The directory to remove
  * @param ctx Application context
+ * @param outputOpts Output options for verbose logging
  * @returns Result indicating success/failure and the trash path if successful
  */
 export async function fastRemoveDirectory(
   targetPath: string,
   ctx: AppContext = getGlobalContext(),
+  outputOpts: OutputOptions = {},
 ): Promise<FastRemoveResult> {
   try {
     // Try system trash first (native module on Node.js, osascript on macOS Deno)
-    const movedToTrash = await moveToSystemTrash(targetPath, ctx);
+    const movedToTrash = await moveToSystemTrash(targetPath, ctx, outputOpts);
     if (movedToTrash) {
       return { success: true, trashedPath: SYSTEM_TRASH_DISPLAY_PATH };
     }
