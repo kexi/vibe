@@ -114,7 +114,7 @@ describe("clean command", () => {
     }
   });
 
-  test("Error when run from main worktree", async () => {
+  test("Exit gracefully when run from main worktree without gh", async () => {
     const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
@@ -122,22 +122,13 @@ describe("clean command", () => {
     const runner = new VibeCommandRunner(vibePath, repoPath);
 
     try {
-      // Run vibe clean from main worktree (should fail)
+      // Run vibe clean from main worktree
+      // Without gh authentication, it should exit gracefully with code 0
       await runner.spawn(["clean"]);
       await runner.waitForExit();
 
-      // Verify exit code is non-zero
-      const exitCode = runner.getExitCode();
-      if (exitCode === 0) {
-        throw new Error(
-          "Expected non-zero exit code when running clean from main worktree",
-        );
-      }
-
-      const output = runner.getOutput();
-
-      // Verify error message
-      assertOutputContains(output, "Error");
+      // Verify exit code is 0 (graceful exit when gh is unavailable)
+      assertExitCode(runner.getExitCode(), 0);
     } finally {
       runner.dispose();
     }
