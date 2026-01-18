@@ -51,7 +51,7 @@ jobs:
         env:
           MISE_HTTP_TIMEOUT: "120"
       - name: Install dependencies
-        run: pnpm install --filter @kexi/vibe
+        run: pnpm install --filter @kexi/vibe --ignore-scripts
       - name: Run Node.js runtime tests
         run: pnpm -C npm test
 
@@ -195,7 +195,7 @@ jobs:
         env:
           MISE_HTTP_TIMEOUT: "120"
       - name: Install dependencies
-        run: pnpm install --filter docs --frozen-lockfile
+        run: pnpm install --filter docs --frozen-lockfile --ignore-scripts
       - name: Lint
         run: pnpm -C packages/docs lint
       - name: Format check

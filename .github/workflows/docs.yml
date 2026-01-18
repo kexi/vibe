@@ -30,7 +30,7 @@ jobs:
           MISE_HTTP_TIMEOUT: "120"
 
       - name: Install dependencies
-        run: pnpm install --filter docs
+        run: pnpm install --filter docs --ignore-scripts
 
       - name: Lint and check
         run: |
