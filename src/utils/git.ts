@@ -201,6 +201,50 @@ export interface RepoInfo {
 }
 
 /**
+ * Get the current branch name
+ * @returns Current branch name
+ * @throws Error if not on a branch (detached HEAD state)
+ */
+export async function getCurrentBranch(
+  ctx: AppContext = getGlobalContext(),
+): Promise<string> {
+  const branch = await runGitCommand(["rev-parse", "--abbrev-ref", "HEAD"], ctx);
+  if (branch === "HEAD") {
+    throw new Error("Not on a branch (detached HEAD state)");
+  }
+  return branch;
+}
+
+/**
+ * Get the default branch for the repository using GitHub CLI
+ *
+ * @returns Default branch name
+ * @throws Error if gh command fails or is not available
+ */
+export async function getDefaultBranch(
+  ctx: AppContext = getGlobalContext(),
+): Promise<string> {
+  const result = await ctx.runtime.process.run({
+    cmd: "gh",
+    args: ["repo", "view", "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name"],
+    stdout: "piped",
+    stderr: "piped",
+  });
+
+  if (!result.success) {
+    const errorMessage = new TextDecoder().decode(result.stderr).trim();
+    throw new Error(`Failed to get default branch: ${errorMessage}`);
+  }
+
+  const branch = new TextDecoder().decode(result.stdout).trim();
+  if (!branch) {
+    throw new Error("Could not determine default branch from GitHub");
+  }
+
+  return branch;
+}
+
+/**
  * Extract repository information from an absolute file path
  * This function resolves symlinks and determines the git repository containing the file
  *
