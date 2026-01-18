@@ -343,7 +343,8 @@ path_script = "./worktree-path.sh"
       await runner.spawn(["start", "feat/custom-path"]);
       await runner.waitForExit();
 
-      assertExitCode(runner.getExitCode(), 0);
+      const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
 
       // Verify worktree was created at the custom path
       const repoName = basename(repoPath);
@@ -351,7 +352,6 @@ path_script = "./worktree-path.sh"
 
       await assertDirectoryExists(expectedWorktreePath);
 
-      const output = runner.getOutput();
       assertOutputContains(output, expectedWorktreePath);
     } finally {
       runner.dispose();

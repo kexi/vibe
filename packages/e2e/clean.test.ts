@@ -226,7 +226,8 @@ describe("clean command", () => {
       await runner.spawn(["clean", "--keep-branch"]);
       await runner.waitForExit();
 
-      assertExitCode(runner.getExitCode(), 0);
+      const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
 
       // Verify worktree directory no longer exists
       expect(existsSync(worktreePath)).toBe(false);
