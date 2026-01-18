@@ -1,3 +1,5 @@
+> 🇯🇵 [日本語版](./clean-strategies.ja.md)
+
 # Clean Strategies
 
 vibe uses a fast removal strategy called "Trash Strategy" for the `vibe clean` command to improve user experience through instant response times.

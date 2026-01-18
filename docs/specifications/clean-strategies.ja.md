@@ -1,3 +1,5 @@
+> 🇺🇸 [English](./clean-strategies.md)
+
 # Clean Strategies
 
 vibe は `vibe clean` コマンドにおいて、「Trash Strategy（ゴミ箱戦略）」と呼ばれる高速削除戦略を使用し、即座に応答を返すことでユーザー体験を向上させています。

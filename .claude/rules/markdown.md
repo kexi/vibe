@@ -5,6 +5,13 @@
 - `*.md` - English version (default)
 - `*.ja.md` - Japanese version
 
+## Cross-Language Links
+
+Each markdown file must include a link to its counterpart at the top:
+
+- **English version** (`*.md`): Add `> 🇯🇵 [日本語版](./filename.ja.md)` at the top
+- **Japanese version** (`*.ja.md`): Add `> 🇺🇸 [English](./filename.md)` at the top
+
 ## Synchronization Requirements
 
 When creating or modifying markdown files, ensure both language versions are kept in sync:
@@ -12,6 +19,7 @@ When creating or modifying markdown files, ensure both language versions are kep
 1. **Creating a new file**: If you create `example.md`, also create `example.ja.md` with Japanese translation
 2. **Modifying content**: When updating `example.md`, also update `example.ja.md` to reflect the same changes
 3. **Structural consistency**: Both versions must have the same structure (headings, sections, lists)
+4. **Cross-language links**: Both versions must have links to each other at the top
 
 ## Translation Guidelines
 

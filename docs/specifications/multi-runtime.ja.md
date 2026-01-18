@@ -1,3 +1,5 @@
+> 🇺🇸 [English](./multi-runtime.md)
+
 # Multi-Runtime Support
 
 vibe は、Deno、Node.js、Bun を含む複数の JavaScript/TypeScript ランタイムで CLI を実行できるランタイム抽象化レイヤーを提供します。

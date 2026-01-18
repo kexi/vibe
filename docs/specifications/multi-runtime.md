@@ -1,3 +1,5 @@
+> 🇯🇵 [日本語版](./multi-runtime.ja.md)
+
 # Multi-Runtime Support
 
 vibe provides a runtime abstraction layer that enables the CLI to run on multiple JavaScript/TypeScript runtimes including Deno, Node.js, and Bun.
