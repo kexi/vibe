@@ -5,7 +5,7 @@ import {
   normalizeRemoteUrl,
   sanitizeBranchName,
 } from "./git.ts";
-import { setupRealTestContext } from "../context/testing.ts";
+import { createMockContext, setupRealTestContext } from "../context/testing.ts";
 
 // Initialize test context with real Deno runtime for filesystem tests
 await setupRealTestContext();
@@ -170,13 +170,64 @@ Deno.test("hasUncommittedChanges returns true when there are untracked files", a
   }
 });
 
-Deno.test({
-  name: "findWorktreeByBranch returns null when branch is not found",
-  ignore: true, // Requires actual git repository, ignored for automated tests
-  async fn() {
-    const result = await findWorktreeByBranch("non-existent-branch");
-    assertEquals(result, null);
-  },
+Deno.test("findWorktreeByBranch returns null when branch is not found", async () => {
+  const ctx = createMockContext({
+    process: {
+      run: (opts) => {
+        const args = opts.args as string[];
+        const isWorktreeListCommand = args.includes("worktree") && args.includes("list");
+        if (isWorktreeListCommand) {
+          // Return worktrees without the target branch
+          const output = `worktree /test/repo\nHEAD abc123\nbranch refs/heads/main\n\n`;
+          return Promise.resolve({
+            code: 0,
+            success: true,
+            stdout: new TextEncoder().encode(output),
+            stderr: new Uint8Array(),
+          });
+        }
+        return Promise.resolve({
+          code: 0,
+          success: true,
+          stdout: new Uint8Array(),
+          stderr: new Uint8Array(),
+        });
+      },
+    },
+  });
+
+  const result = await findWorktreeByBranch("non-existent-branch", ctx);
+  assertEquals(result, null);
+});
+
+Deno.test("findWorktreeByBranch returns path when branch is found", async () => {
+  const ctx = createMockContext({
+    process: {
+      run: (opts) => {
+        const args = opts.args as string[];
+        const isWorktreeListCommand = args.includes("worktree") && args.includes("list");
+        if (isWorktreeListCommand) {
+          const output =
+            `worktree /test/repo\nHEAD abc123\nbranch refs/heads/main\n\nworktree /test/worktrees/feature\nHEAD def456\nbranch refs/heads/feature-branch\n\n`;
+          return Promise.resolve({
+            code: 0,
+            success: true,
+            stdout: new TextEncoder().encode(output),
+            stderr: new Uint8Array(),
+          });
+        }
+        return Promise.resolve({
+          code: 0,
+          success: true,
+          stdout: new Uint8Array(),
+          stderr: new Uint8Array(),
+        });
+      },
+    },
+  });
+
+  const result = await findWorktreeByBranch("feature-branch", ctx);
+  assertEquals(result, "/test/worktrees/feature");
 });
 
 // ===== URL Normalization Tests =====
