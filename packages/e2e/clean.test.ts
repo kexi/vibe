@@ -213,6 +213,8 @@ describe("clean command", () => {
     try {
       await trustRunner.spawn(["trust"]);
       await trustRunner.waitForExit();
+      const trustOutput = trustRunner.getOutput();
+      assertExitCode(trustRunner.getExitCode(), 0, trustOutput);
     } finally {
       trustRunner.dispose();
     }
@@ -267,6 +269,8 @@ describe("clean command", () => {
     try {
       await trustRunner.spawn(["trust"]);
       await trustRunner.waitForExit();
+      const trustOutput = trustRunner.getOutput();
+      assertExitCode(trustRunner.getExitCode(), 0, trustOutput);
     } finally {
       trustRunner.dispose();
     }
@@ -280,9 +284,9 @@ describe("clean command", () => {
       await runner.spawn(["clean"]);
       await runner.waitForExit();
 
-      assertExitCode(runner.getExitCode(), 0);
-
       const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
+
       assertOutputContains(output, "has been removed");
       assertOutputContains(output, "has been deleted");
 
