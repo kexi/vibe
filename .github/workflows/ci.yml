@@ -208,19 +208,19 @@ jobs:
         with:
           version: 10
       - name: Install dependencies
-        working-directory: docs
+        working-directory: packages/docs
         run: pnpm install --frozen-lockfile
       - name: Lint
-        working-directory: docs
+        working-directory: packages/docs
         run: pnpm lint
       - name: Format check
-        working-directory: docs
+        working-directory: packages/docs
         run: pnpm format
       - name: Type check
-        working-directory: docs
+        working-directory: packages/docs
         run: pnpm check
       - name: Build
-        working-directory: docs
+        working-directory: packages/docs
         run: pnpm build
 
   build:

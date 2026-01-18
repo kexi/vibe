@@ -310,7 +310,7 @@ Vibe automatically selects the best copy strategy based on your system:
 - No configuration needed - the best strategy is auto-detected
 - Automatic fallback ensures copying always works
 
-For detailed information about copy strategies and implementation, see [Copy Strategies](docs/copy-strategies.md).
+For detailed information about copy strategies and implementation, see [Copy Strategies](docs/specifications/copy-strategies.md).
 
 ### Worktree Path Configuration
 
