@@ -64,7 +64,7 @@
       "packages/core/src/"
     ],
     "exclude": [
-      "tests/e2e/"
+      "packages/e2e/"
     ]
   },
   "publish": {

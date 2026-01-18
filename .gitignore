@@ -34,7 +34,7 @@ package-lock.json
 
 # Build output
 dist/
-npm/dist/
+packages/npm/dist/
 
 # Native module build artifacts
 packages/native/build/

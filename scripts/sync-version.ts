@@ -20,7 +20,7 @@ const DENO_JSON = "deno.json";
 // Targets to sync version to
 const TARGETS = [
   "package.json",
-  "npm/package.json",
+  "packages/npm/package.json",
   "packages/core/package.json",
   "packages/core/deno.json",
   "packages/native/package.json",
