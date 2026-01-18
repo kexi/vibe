@@ -19,7 +19,7 @@
     "build:npm": "pnpm -C npm build",
     "build:native": "pnpm -C packages/native build",
     "test:npm": "pnpm -C npm test",
-    "test:e2e": "pnpm -C tests/e2e test",
+    "test:e2e": "pnpm -C packages/e2e test",
     "clean": "pnpm -r exec rm -rf node_modules dist"
   }
 }
