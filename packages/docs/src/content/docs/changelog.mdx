@@ -5,6 +5,22 @@ description: Version history and release notes for vibe
 
 All notable changes to vibe are documented here.
 
+## v0.14.0
+
+**Released:** 2026-01-19
+
+### Added
+
+- **XDG Trash support**: `vibe clean` now uses system trash
+  - Linux: XDG Base Directory spec compliant trash
+  - macOS: Integration with Finder's Trash
+
+### Fixed
+
+- Improved `vibe clean` idempotency for concurrent execution stability
+
+---
+
 ## v0.12.0
 
 **Released:** 2026-01-18
