@@ -15,6 +15,8 @@ interface VibeNativeModule {
   isAvailable(): boolean;
   supportsDirectory(): boolean;
   getPlatform(): "darwin" | "linux" | "unknown";
+  moveToTrash(path: string): void;
+  moveToTrashAsync(path: string): Promise<void>;
 }
 
 // Lazy load the native module
@@ -114,4 +116,45 @@ export class NodeNativeClone implements NativeClone {
  */
 export function createNodeNativeClone(): NativeClone {
   return new NodeNativeClone();
+}
+
+/**
+ * Native trash interface
+ */
+export interface NativeTrash {
+  readonly available: boolean;
+  moveToTrash(path: string): Promise<void>;
+}
+
+/**
+ * Node.js native trash implementation using @kexi/vibe-native
+ *
+ * Uses the trash crate for cross-platform trash support:
+ * - macOS: Uses Finder Trash
+ * - Linux: Uses XDG Trash (~/.local/share/Trash)
+ */
+export class NodeNativeTrash implements NativeTrash {
+  readonly available: boolean;
+  private readonly native: VibeNativeModule | null;
+
+  constructor() {
+    this.native = tryLoadNative();
+    // Trash is available if the native module is loaded
+    // (trash crate works on all platforms where the module compiles)
+    this.available = this.native !== null;
+  }
+
+  async moveToTrash(path: string): Promise<void> {
+    if (!this.available || this.native === null) {
+      throw new Error("Native trash not available");
+    }
+    return this.native.moveToTrashAsync(path);
+  }
+}
+
+/**
+ * Get an instance of NodeNativeTrash
+ */
+export function createNodeNativeTrash(): NativeTrash {
+  return new NodeNativeTrash();
 }

@@ -11,6 +11,26 @@
 import { IS_DENO, IS_NODE, runtime } from "../runtime/index.ts";
 
 /**
+ * Native trash operation interface
+ */
+export interface NativeTrashAdapter {
+  /** Whether the native trash module is available */
+  readonly available: boolean;
+
+  /** The runtime type (deno or node) */
+  readonly runtimeType: "deno" | "node";
+
+  /**
+   * Move a file or directory to the system trash
+   * - macOS: Uses Finder Trash
+   * - Linux: Uses XDG Trash (~/.local/share/Trash)
+   * - Windows: Uses Recycle Bin
+   * @param path Path to the file or directory to move to trash
+   */
+  moveToTrash(path: string): Promise<void>;
+}
+
+/**
  * Native clone operation interface
  */
 export interface NativeCloneAdapter {
@@ -69,6 +89,48 @@ export function getNativeCloneAdapter(): Promise<NativeCloneAdapter | null> {
   }
 
   return Promise.resolve(null);
+}
+
+/**
+ * Get the native trash adapter for the current runtime
+ *
+ * Returns null if:
+ * - The runtime doesn't support native trash
+ * - Native module is not installed (Node.js @kexi/vibe-native)
+ *
+ * Note: Deno doesn't support FFI-based trash operations currently.
+ * It falls back to platform-specific methods (osascript on macOS, /tmp on Linux).
+ */
+export function getNativeTrashAdapter(): Promise<NativeTrashAdapter | null> {
+  if (IS_NODE) {
+    return getNodeTrashAdapter();
+  }
+
+  // Deno: No native trash support via FFI
+  // Fall back to platform-specific methods in fast-remove.ts
+  return Promise.resolve(null);
+}
+
+/**
+ * Get the Node.js trash adapter
+ */
+async function getNodeTrashAdapter(): Promise<NativeTrashAdapter | null> {
+  try {
+    const { createNodeNativeTrash } = await import("../runtime/node/native.ts");
+    const trash = createNodeNativeTrash();
+    const isAvailable = trash.available;
+    if (!isAvailable) {
+      return null;
+    }
+
+    return {
+      available: trash.available,
+      runtimeType: "node" as const,
+      moveToTrash: (path: string) => trash.moveToTrash(path),
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**
