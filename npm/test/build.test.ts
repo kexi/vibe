@@ -10,10 +10,13 @@
 
 import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 describe("build output", () => {
-  const distPath = join(import.meta.dirname, "../dist/main.js");
+  // Use fileURLToPath for Node.js 18 compatibility (import.meta.dirname requires Node 20.11+)
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const distPath = join(__dirname, "../dist/main.js");
   const distExists = existsSync(distPath);
 
   it.skipIf(!distExists)(

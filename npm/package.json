@@ -33,6 +33,10 @@
     "@kexi/vibe-native": "workspace:^"
   },
   "devDependencies": {
+    "@jsr/std__cli": "^1.0.0",
+    "@jsr/std__fs": "^1.0.0",
+    "@jsr/std__path": "^1.0.0",
+    "@jsr/std__toml": "^1.0.0",
     "@types/node": "^22.10.2",
     "tsup": "^8.0.0",
     "typescript": "^5.7.2",
