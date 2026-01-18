@@ -21,15 +21,13 @@ flowchart TD
     end
 
     subgraph "Native Modules"
-        D --> F[FFI - libc/syscalls]
-        E --> G["@kexi/vibe-native (N-API)"]
+        D --> F["@kexi/vibe-native (N-API)"]
+        E --> F
     end
 
     subgraph "Platform Operations"
         F --> H[clonefile/FICLONE]
-        G --> H
-        F --> I[XDG Trash]
-        G --> I
+        F --> I[Trash Operations]
     end
 ```
 
@@ -40,8 +38,9 @@ flowchart TD
 | CLI Commands | ユーザー向けコマンド（start、clean、trust など） |
 | AppContext | ランタイム、設定、ユーザー設定の依存性注入コンテナ |
 | Runtime Interface | ファイルシステム、プロセス、環境操作の抽象インターフェース |
-| Deno Runtime | ネイティブ Deno API の実装 |
-| Node.js Runtime | ネイティブモジュールをサポートした Node.js API の実装 |
+| Deno Runtime | N-API ネイティブモジュールをサポートした Deno API の実装 |
+| Node.js Runtime | N-API ネイティブモジュールをサポートした Node.js API の実装 |
+| @kexi/vibe-native | Copy-on-Write とゴミ箱操作用の共有 N-API モジュール |
 
 ## コピー戦略
 
