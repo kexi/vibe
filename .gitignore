@@ -3,7 +3,7 @@ vibe
 vibe-e2e
 
 # Auto-generated files
-src/version.ts
+packages/core/src/version.ts
 
 # OS
 .DS_Store

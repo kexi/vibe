@@ -51,9 +51,9 @@ FFI経由でシステムコールを直接呼び出します。プロセス生�
 
 **実装ファイル:**
 
-- `src/utils/copy/strategies/native-clone.ts`
-- `src/utils/copy/ffi/darwin.ts` (macOS)
-- `src/utils/copy/ffi/linux.ts` (Linux)
+- `packages/core/src/utils/copy/strategies/native-clone.ts`
+- `packages/core/src/utils/copy/ffi/darwin.ts` (macOS)
+- `packages/core/src/utils/copy/ffi/linux.ts` (Linux)
 
 ### Clone
 
@@ -64,19 +64,19 @@ FFI経由でシステムコールを直接呼び出します。プロセス生�
 | macOS            | `cp -c`             | `cp -cR`                |
 | Linux            | `cp --reflink=auto` | `cp -r --reflink=auto`  |
 
-**実装ファイル:** `src/utils/copy/strategies/clone.ts`
+**実装ファイル:** `packages/core/src/utils/copy/strategies/clone.ts`
 
 ### Rsync
 
 `rsync`コマンドを使用。CoWは使用しませんが、差分コピーに優れています。
 
-**実装ファイル:** `src/utils/copy/strategies/rsync.ts`
+**実装ファイル:** `packages/core/src/utils/copy/strategies/rsync.ts`
 
 ### Standard
 
 Denoの標準API（`Deno.copyFile`）を使用。すべてのプラットフォームで動作する最終フォールバックです。
 
-**実装ファイル:** `src/utils/copy/strategies/standard.ts`
+**実装ファイル:** `packages/core/src/utils/copy/strategies/standard.ts`
 
 ## ファイルシステム要件
 
@@ -99,7 +99,7 @@ CoWには互換性のあるファイルシステムが必要です。
 ## ファイル構成
 
 ```
-src/utils/copy/
+packages/core/src/utils/copy/
 ├── index.ts           # CopyServiceメインクラス
 ├── types.ts           # インターフェース定義
 ├── detector.ts        # 機能検出
@@ -122,7 +122,7 @@ src/utils/copy/
 `CopyService`は最初のディレクトリコピー操作時に最適な戦略を自動選択し、結果をキャッシュします。
 
 ```typescript
-// src/utils/copy/index.ts より
+// packages/core/src/utils/copy/index.ts より
 async getDirectoryStrategy(): Promise<CopyStrategy> {
   // 1. NativeCloneが利用可能でディレクトリクローニングをサポートしている場合は使用
   // 2. Cloneが利用可能な場合は使用

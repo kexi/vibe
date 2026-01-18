@@ -47,7 +47,7 @@ flowchart TD
 
 ## Runtime インターフェース
 
-`Runtime` インターフェース（`src/runtime/types.ts`）は、すべてのランタイム実装の契約を定義します：
+`Runtime` インターフェース（`packages/core/src/runtime/types.ts`）は、すべてのランタイム実装の契約を定義します：
 
 | モジュール   | 説明                                 | メソッド例                             |
 | ------------ | ------------------------------------ | -------------------------------------- |
@@ -66,7 +66,7 @@ flowchart TD
 ランタイムはモジュール読み込み時に自動的に検出されます：
 
 ```typescript
-// src/runtime/index.ts より
+// packages/core/src/runtime/index.ts より
 function detectRuntime(): "deno" | "node" | "bun" {
   // Deno のチェック
   if (typeof globalThis.Deno !== "undefined") {
@@ -97,7 +97,7 @@ function detectRuntime(): "deno" | "node" | "bun" {
 Deno の組み込み API を直接使用します：
 
 ```typescript
-// src/runtime/deno/fs.ts
+// packages/core/src/runtime/deno/fs.ts
 export const denoFS: RuntimeFS = {
   readFile(path: string): Promise<Uint8Array> {
     return Deno.readFile(path);
@@ -119,7 +119,7 @@ export const denoFS: RuntimeFS = {
 Node.js API を Runtime インターフェースに合わせてラップします：
 
 ```typescript
-// src/runtime/node/fs.ts
+// packages/core/src/runtime/node/fs.ts
 import * as fs from "node:fs/promises";
 
 export const nodeFS: RuntimeFS = {
@@ -149,7 +149,7 @@ export const nodeFS: RuntimeFS = {
 `AppContext` はランタイムの依存性注入を提供します：
 
 ```typescript
-// src/context/index.ts
+// packages/core/src/context/index.ts
 export interface AppContext {
   readonly runtime: Runtime;
   config?: VibeConfig;
@@ -224,7 +224,7 @@ await someFunction(options, testCtx);
 ## ファイル構造
 
 ```
-src/runtime/
+packages/core/src/runtime/
 ├── index.ts           # Runtime detection and initialization
 ├── types.ts           # Runtime interface definitions
 ├── deno/
@@ -245,7 +245,7 @@ src/runtime/
     ├── errors.ts      # Error types implementation
     └── signals.ts     # Signal handling implementation
 
-src/context/
+packages/core/src/context/
 └── index.ts           # AppContext definition and management
 ```
 

@@ -62,7 +62,7 @@ flowchart TD
 Deno provides `Deno.dlopen()` for Foreign Function Interface, allowing direct calls to system libraries without native compilation:
 
 ```typescript
-// src/utils/copy/ffi/darwin.ts (simplified)
+// packages/core/src/utils/copy/ffi/darwin.ts (simplified)
 const lib = Deno.dlopen("libSystem.B.dylib", {
   clonefile: {
     parameters: ["buffer", "buffer", "u32"],

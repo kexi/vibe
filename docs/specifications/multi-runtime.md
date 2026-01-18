@@ -47,7 +47,7 @@ flowchart TD
 
 ## Runtime Interface
 
-The `Runtime` interface (`src/runtime/types.ts`) defines the contract for all runtime implementations:
+The `Runtime` interface (`packages/core/src/runtime/types.ts`) defines the contract for all runtime implementations:
 
 | Module       | Description                          | Example Methods                        |
 | ------------ | ------------------------------------ | -------------------------------------- |
@@ -66,7 +66,7 @@ The `Runtime` interface (`src/runtime/types.ts`) defines the contract for all ru
 The runtime is automatically detected at module load time:
 
 ```typescript
-// From src/runtime/index.ts
+// From packages/core/src/runtime/index.ts
 function detectRuntime(): "deno" | "node" | "bun" {
   // Check for Deno
   if (typeof globalThis.Deno !== "undefined") {
@@ -97,7 +97,7 @@ function detectRuntime(): "deno" | "node" | "bun" {
 Uses Deno's built-in APIs directly:
 
 ```typescript
-// src/runtime/deno/fs.ts
+// packages/core/src/runtime/deno/fs.ts
 export const denoFS: RuntimeFS = {
   readFile(path: string): Promise<Uint8Array> {
     return Deno.readFile(path);
@@ -119,7 +119,7 @@ export const denoFS: RuntimeFS = {
 Wraps Node.js APIs to match the Runtime interface:
 
 ```typescript
-// src/runtime/node/fs.ts
+// packages/core/src/runtime/node/fs.ts
 import * as fs from "node:fs/promises";
 
 export const nodeFS: RuntimeFS = {
@@ -149,7 +149,7 @@ export const nodeFS: RuntimeFS = {
 The `AppContext` provides dependency injection for the runtime:
 
 ```typescript
-// src/context/index.ts
+// packages/core/src/context/index.ts
 export interface AppContext {
   readonly runtime: Runtime;
   config?: VibeConfig;
@@ -224,7 +224,7 @@ await someFunction(options, testCtx);
 ## File Structure
 
 ```
-src/runtime/
+packages/core/src/runtime/
 ├── index.ts           # Runtime detection and initialization
 ├── types.ts           # Runtime interface definitions
 ├── deno/
@@ -245,7 +245,7 @@ src/runtime/
     ├── errors.ts      # Error types implementation
     └── signals.ts     # Signal handling implementation
 
-src/context/
+packages/core/src/context/
 └── index.ts           # AppContext definition and management
 ```
 
