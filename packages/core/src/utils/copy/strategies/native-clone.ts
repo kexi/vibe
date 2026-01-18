@@ -6,7 +6,7 @@ import { validatePath } from "../validation.ts";
 import { runtime } from "../../../runtime/index.ts";
 
 /**
- * Native clone strategy using FFI-based system calls.
+ * Native clone strategy using @kexi/vibe-native (N-API).
  * - macOS: Uses clonefile() for both files and directories
  * - Linux: Uses FICLONE ioctl for files only (directories not supported)
  */
@@ -81,7 +81,7 @@ export class NativeCloneStrategy implements CopyStrategy {
   }
 
   /**
-   * Release FFI resources
+   * Release native resources
    */
   close(): void {
     this.nativeClone?.close();

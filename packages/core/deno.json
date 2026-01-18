@@ -46,6 +46,6 @@
       "src/"
     ]
   },
-  "nodeModulesDir": "none",
-  "minimumDependencyAge": "P3D"
+  "nodeModulesDir": "auto",
+  "minimumDependencyAge": "P1D"
 }

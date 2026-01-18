@@ -4,8 +4,8 @@
  * Provides a consistent interface for native Copy-on-Write cloning
  * across different runtimes (Deno, Node.js) and platforms (macOS, Linux).
  *
- * Deno uses FFI to call system libraries directly.
- * Node.js uses @kexi/vibe-native N-API module.
+ * Both Deno and Node.js use @kexi/vibe-native N-API module.
+ * Deno 2.x supports N-API modules via npm: specifier.
  */
 
 import { IS_DENO, IS_NODE, runtime } from "../runtime/index.ts";
@@ -137,17 +137,8 @@ async function getNodeTrashAdapter(): Promise<NativeTrashAdapter | null> {
  * Check if native cloning is available for the current runtime/platform
  */
 export function isNativeCloneAvailable(): boolean {
-  if (IS_DENO) {
-    try {
-      const ffi = runtime.ffi;
-      return ffi?.available ?? false;
-    } catch {
-      return false;
-    }
-  }
-
-  if (IS_NODE) {
-    // For Node.js, actual availability is checked when adapter is created
+  // For both Deno and Node.js, actual availability is checked when adapter is created
+  if (IS_DENO || IS_NODE) {
     return true;
   }
 
@@ -155,43 +146,39 @@ export function isNativeCloneAvailable(): boolean {
 }
 
 /**
- * Get the Deno FFI adapter
+ * Get the Deno adapter using N-API (@kexi/vibe-native)
+ *
+ * Deno 2.x supports N-API native modules via npm: specifier,
+ * allowing us to share the same binary with Node.js.
  */
 async function getDenoAdapter(): Promise<NativeCloneAdapter | null> {
-  // Check FFI permission
-  const ffiAvailable = runtime.ffi?.available ?? false;
-  if (!ffiAvailable) {
+  try {
+    // Import @kexi/vibe-native via npm specifier (Deno 2.x N-API support)
+    const native = await import("@kexi/vibe-native");
+
+    const isAvailable = native.isAvailable();
+    if (!isAvailable) {
+      return null;
+    }
+
+    const platform = native.getPlatform();
+    const platformType = platform === "darwin" || platform === "linux"
+      ? platform
+      : "unsupported" as const;
+
+    return {
+      available: true,
+      runtimeType: "deno" as const,
+      platformType,
+      cloneFile: (src: string, dest: string) => native.cloneAsync(src, dest),
+      cloneDirectory: (src: string, dest: string) => native.cloneAsync(src, dest),
+      supportsDirectoryClone: () => native.supportsDirectory(),
+      close: () => {}, // N-API uses GC, no manual cleanup needed
+    };
+  } catch {
+    // Native module not available (e.g., missing binary, unsupported platform)
     return null;
   }
-
-  const os = runtime.build.os;
-  const runtimeType = "deno" as const;
-
-  const isMacOS = os === "darwin";
-  if (isMacOS) {
-    const { DarwinClone } = await import("../utils/copy/ffi/darwin.ts");
-    const clone = new DarwinClone();
-    const isAvailable = clone.available;
-    if (!isAvailable) {
-      clone.close();
-      return null;
-    }
-    return wrapNativeClone(clone, runtimeType, "darwin");
-  }
-
-  const isLinux = os === "linux";
-  if (isLinux) {
-    const { LinuxClone } = await import("../utils/copy/ffi/linux.ts");
-    const clone = new LinuxClone();
-    const isAvailable = clone.available;
-    if (!isAvailable) {
-      clone.close();
-      return null;
-    }
-    return wrapNativeClone(clone, runtimeType, "linux");
-  }
-
-  return null;
 }
 
 /**
@@ -217,7 +204,7 @@ async function getNodeAdapter(): Promise<NativeCloneAdapter | null> {
 }
 
 /**
- * Internal NativeClone interface (from utils/copy/ffi/types.ts)
+ * Internal NativeClone interface for wrapping native module implementations
  */
 interface InternalNativeClone {
   readonly available: boolean;
