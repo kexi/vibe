@@ -47,10 +47,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - uses: pnpm/action-setup@v4
+      - uses: jdx/mise-action@v2
+        env:
+          MISE_HTTP_TIMEOUT: "120"
       - name: Install dependencies
         working-directory: npm
         run: pnpm install
@@ -164,9 +163,6 @@ jobs:
       - name: Build vibe binary for E2E tests
         run: deno task compile:e2e
 
-      # Setup pnpm
-      - uses: pnpm/action-setup@v4
-
       # Install Node.js dependencies for E2E tests
       - name: Install E2E test dependencies
         run: pnpm install
@@ -197,10 +193,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - uses: pnpm/action-setup@v4
+      - uses: jdx/mise-action@v2
+        env:
+          MISE_HTTP_TIMEOUT: "120"
       - name: Install dependencies
         working-directory: packages/docs
         run: pnpm install --frozen-lockfile
