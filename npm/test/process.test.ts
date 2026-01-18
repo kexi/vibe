@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { nodeProcess } from "../../src/runtime/node/process.ts";
+import { nodeProcess } from "../../packages/core/src/runtime/node/process.ts";
 
 describe("nodeProcess", () => {
   // ===== run() Tests =====

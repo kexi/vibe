@@ -134,7 +134,7 @@ jobs:
         run: pnpm install --filter @kexi/vibe-native --ignore-scripts
 
       - name: Build native module
-        working-directory: packages/@kexi/vibe-native
+        working-directory: packages/native
         run: pnpm exec napi build --platform --release --target ${{ matrix.target }}
 
   e2e-test:

@@ -1,14 +1,14 @@
 import { parseArgs } from "@std/cli/parse-args";
-import { startCommand } from "./src/commands/start.ts";
-import { cleanCommand } from "./src/commands/clean.ts";
-import { trustCommand } from "./src/commands/trust.ts";
-import { untrustCommand } from "./src/commands/untrust.ts";
-import { verifyCommand } from "./src/commands/verify.ts";
-import { configCommand } from "./src/commands/config.ts";
-import { upgradeCommand } from "./src/commands/upgrade.ts";
-import { BUILD_INFO } from "./src/version.ts";
-import { initRuntime, runtime } from "./src/runtime/index.ts";
-import { createAppContext, setGlobalContext } from "./src/context/index.ts";
+import { startCommand } from "./packages/core/src/commands/start.ts";
+import { cleanCommand } from "./packages/core/src/commands/clean.ts";
+import { trustCommand } from "./packages/core/src/commands/trust.ts";
+import { untrustCommand } from "./packages/core/src/commands/untrust.ts";
+import { verifyCommand } from "./packages/core/src/commands/verify.ts";
+import { configCommand } from "./packages/core/src/commands/config.ts";
+import { upgradeCommand } from "./packages/core/src/commands/upgrade.ts";
+import { BUILD_INFO } from "./packages/core/src/version.ts";
+import { initRuntime, runtime } from "./packages/core/src/runtime/index.ts";
+import { createAppContext, setGlobalContext } from "./packages/core/src/context/index.ts";
 
 /**
  * Boolean options supported by the CLI.

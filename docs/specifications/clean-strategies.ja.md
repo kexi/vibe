@@ -67,13 +67,13 @@ Trash Strategy は、対象ディレクトリを一時的な場所に rename し
 
 このクリーンアップは各 clean 操作後に自動的に実行されます。
 
-**実装ファイル:** `src/utils/fast-remove.ts`
+**実装ファイル:** `packages/core/src/utils/fast-remove.ts`
 
 ### Standard Strategy
 
 標準の `git worktree remove` コマンドを使用します。Trash Strategy が失敗した場合や無効化されている場合のフォールバックとして使用されます。
 
-**実装ファイル:** `src/commands/clean.ts`
+**実装ファイル:** `packages/core/src/commands/clean.ts`
 
 ## 設定
 
@@ -111,7 +111,7 @@ post_clean = ["echo 'Cleanup complete'"]
 ## ファイル構造
 
 ```
-src/
+packages/core/src/
 ├── utils/
 │   └── fast-remove.ts        # Trash Strategy implementation
 │       ├── isFastRemoveSupported()
@@ -140,7 +140,7 @@ src/
 clean コマンドはユーザー設定に基づいて適切な strategy を自動選択します：
 
 ```typescript
-// src/commands/clean.ts より
+// packages/core/src/commands/clean.ts より
 const settings = await loadUserSettings(ctx);
 const useFastRemove = settings.clean?.fast_remove ?? true; // デフォルト: true
 

@@ -18,7 +18,7 @@
     "lint": "deno lint",
     "fmt": "deno fmt",
     "fmt:check": "deno fmt --check",
-    "check": "deno check main.ts src/**/*.ts",
+    "check": "deno check main.ts packages/core/src/**/*.ts",
     "ci": "deno task fmt:check && deno task lint && deno task check && deno task test",
     "check:all": "deno task ci",
     "sync-version": "deno run --allow-read --allow-write scripts/sync-version.ts"
@@ -37,11 +37,11 @@
   },
   "lint": {
     "include": [
-      "src/",
+      "packages/core/src/",
       "main.ts"
     ],
     "exclude": [
-      "src/runtime/node/"
+      "packages/core/src/runtime/node/"
     ],
     "rules": {
       "tags": [
@@ -56,13 +56,13 @@
     "semiColons": true,
     "singleQuote": false,
     "include": [
-      "src/",
+      "packages/core/src/",
       "main.ts"
     ]
   },
   "test": {
     "include": [
-      "src/"
+      "packages/core/src/"
     ],
     "exclude": [
       "tests/e2e/"
@@ -70,7 +70,7 @@
   },
   "publish": {
     "exclude": [
-      "!src/version.ts"
+      "!packages/core/src/version.ts"
     ]
   },
   "nodeModulesDir": "none",

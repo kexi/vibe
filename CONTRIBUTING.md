@@ -180,18 +180,18 @@ When contributing to vibe, please keep these security considerations in mind:
 ### Input Validation
 
 - Always validate user inputs, especially file paths and branch names
-- Use `validatePath()` from `src/utils/copy/validation.ts` for path validation
+- Use `validatePath()` from `packages/core/src/utils/copy/validation.ts` for path validation
 - Check for null bytes, newlines, and shell command substitution patterns
 
 ### External Command Execution
 
 - Use `Deno.Command` with argument arrays, not shell strings, to prevent injection
 - Never pass untrusted input directly to shell commands
-- The `runHooks()` function in `src/utils/hooks.ts` executes user-defined commands - this is intentional, but the trust mechanism must be respected
+- The `runHooks()` function in `packages/core/src/utils/hooks.ts` executes user-defined commands - this is intentional, but the trust mechanism must be respected
 
 ### Trust Mechanism
 
-- The trust system (`src/utils/settings.ts`) uses SHA-256 hashes to verify configuration file integrity
+- The trust system (`packages/core/src/utils/settings.ts`) uses SHA-256 hashes to verify configuration file integrity
 - Trust is repository-based (identified by remote URL or repo root)
 - Always require explicit user consent before executing hook commands from untrusted sources
 
