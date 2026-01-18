@@ -10,11 +10,18 @@ export function assertOutputContains(output: string, expected: string): void {
 
 /**
  * Assert that the exit code matches the expected value
+ * @param actual - The actual exit code
+ * @param expected - The expected exit code
+ * @param output - Optional output to include in error message for debugging
  */
 export function assertExitCode(
   actual: number | null,
   expected: number,
+  output?: string,
 ): void {
+  if (actual !== expected && output) {
+    console.error(`Exit code mismatch. Command output:\n${output}`);
+  }
   expect(actual).toBe(expected);
 }
 

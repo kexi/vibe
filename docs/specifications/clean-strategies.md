@@ -18,24 +18,42 @@ Trash Strategy moves directories to a temporary location instead of deleting the
 
 | Strategy     | Implementation             | macOS              | Linux                 | Windows               |
 | ------------ | -------------------------- | ------------------ | --------------------- | --------------------- |
-| **Trash**    | mv + background delete     | Finder Trash       | /tmp + nohup rm       | %TEMP% + background   |
+| **Trash**    | Native trash + fallback    | Finder Trash       | XDG Trash / /tmp      | %TEMP% + background   |
 | **Standard** | git worktree remove        | Supported          | Supported             | Supported             |
+
+### Native Trash Support
+
+vibe uses the [trash crate](https://lib.rs/crates/trash) (via `@kexi/vibe-native`) for cross-platform trash support:
+
+- **macOS**: Finder Trash (same as before)
+- **Linux**: XDG Trash (`~/.local/share/Trash`) following [FreeDesktop.org specification](https://specifications.freedesktop.org/trash-spec/trashspec-latest.html)
+- **Windows**: Recycle Bin (not currently built)
+
+Files moved to XDG Trash appear in your desktop environment's trash folder (GNOME Files, Dolphin, Nautilus, etc.) and can be restored.
 
 ## Platform-specific Behavior
 
 ### macOS
 
-1. **Primary**: Move to Finder Trash via AppleScript (`osascript`)
-   - Uses the native macOS trash mechanism
+1. **Primary (Node.js)**: Move to Finder Trash via native module (`@kexi/vibe-native`)
+   - Uses the Rust `trash` crate internally
    - Appears in Finder's Trash folder
-2. **Fallback**: If Finder is unavailable (e.g., SSH session), falls back to /tmp + background deletion
+2. **Fallback (Deno)**: Move to Finder Trash via AppleScript (`osascript`)
+3. **Fallback**: If both fail (e.g., SSH session), falls back to /tmp + background deletion
 
 ### Linux
 
-1. **Primary**: Rename to `/tmp/.vibe-trash-{timestamp}-{uuid}` + `nohup rm -rf`
+1. **Primary (Node.js)**: Move to XDG Trash via native module (`@kexi/vibe-native`)
+   - Uses the Rust `trash` crate implementing [XDG Trash specification](https://specifications.freedesktop.org/trash-spec/trashspec-latest.html)
+   - Files moved to `~/.local/share/Trash/files/`
+   - Metadata stored in `~/.local/share/Trash/info/`
+   - Appears in desktop file manager's Trash (GNOME Files, Dolphin, Nautilus, etc.)
+   - Can be restored from the file manager
+2. **Fallback**: If native trash fails (SSH session, no desktop environment):
+   - Rename to `/tmp/.vibe-trash-{timestamp}-{uuid}` + `nohup rm -rf`
    - `/tmp` is cleaned on reboot
    - `nohup` ensures deletion continues even after parent process exits
-2. **Fallback**: If cross-device error (EXDEV) occurs, rename to parent directory instead
+3. **Fallback**: If cross-device error (EXDEV) occurs, rename to parent directory instead
 
 ### Windows
 
@@ -111,17 +129,27 @@ post_clean = ["echo 'Cleanup complete'"]
 ## File Structure
 
 ```
-packages/core/src/
-├── utils/
-│   └── fast-remove.ts    # Trash Strategy implementation
-│       ├── isFastRemoveSupported()    # Check platform support
-│       ├── generateTrashName()        # Generate unique trash dir name
-│       ├── moveToMacOSTrash()         # macOS Finder trash
-│       ├── spawnBackgroundDelete()    # Detached background deletion
-│       ├── fastRemoveDirectory()      # Main fast removal function
-│       └── cleanupStaleTrash()        # Cleanup leftover trash dirs
-└── commands/
-    └── clean.ts          # Clean command implementation
+packages/
+├── native/
+│   ├── Cargo.toml        # Rust dependencies (includes trash crate)
+│   ├── src/lib.rs        # Native module (moveToTrash, moveToTrashAsync)
+│   └── index.d.ts        # TypeScript type definitions
+└── core/src/
+    ├── native/
+    │   └── index.ts      # NativeTrashAdapter interface
+    ├── runtime/node/
+    │   └── native.ts     # NodeNativeTrash implementation
+    ├── utils/
+    │   └── fast-remove.ts    # Trash Strategy implementation
+    │       ├── isFastRemoveSupported()
+    │       ├── generateTrashName()
+    │       ├── moveToSystemTrash()        # Native trash + platform fallback
+    │       ├── moveToMacOSTrashViaAppleScript()  # Deno macOS fallback
+    │       ├── spawnBackgroundDelete()
+    │       ├── fastRemoveDirectory()
+    │       └── cleanupStaleTrash()
+    └── commands/
+        └── clean.ts          # Clean command implementation
 ```
 
 ## Strategy Selection Mechanism

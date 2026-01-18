@@ -53,7 +53,8 @@ $ vibe start feat/new-feature
 `vibe clean` は、worktreeディレクトリを同期的に削除する代わりに移動する高速削除戦略を使用します：
 
 - **macOS**: Finderを通じてシステムのゴミ箱に移動（必要に応じて復元可能）
-- **Linux/Windows**: 一時ディレクトリに移動し、バックグラウンドで削除
+- **Linux**: Node.jsランタイム使用時はXDGゴミ箱に移動（ファイルマネージャーから復元可能）。Denoでは一時ディレクトリにフォールバック
+- **Windows**: 一時ディレクトリに移動し、バックグラウンドで削除
 
 これにより、worktreeのサイズに関係なく `vibe clean` が即座に完了します。
 

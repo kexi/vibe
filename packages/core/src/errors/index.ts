@@ -161,3 +161,6 @@ export class TrustError extends VibeError {
     this.filePath = filePath;
   }
 }
+
+// Re-export error handler utilities
+export { handleError, withErrorHandler } from "./handler.ts";

@@ -53,7 +53,7 @@ async function removeWorktree(
     }
 
     if (gitFileContent) {
-      const fastResult = await fastRemoveDirectory(worktreePath, ctx);
+      const fastResult = await fastRemoveDirectory(worktreePath, ctx, outputOpts);
 
       if (fastResult.success) {
         // Create empty directory with .git file for git worktree remove

@@ -16,26 +16,44 @@ Trash Strategy は、ディレクトリを即座に削除するのではなく�
 
 ## Strategy 概要
 
-| Strategy     | 実装方式                  | macOS              | Linux                 | Windows               |
-| ------------ | ------------------------- | ------------------ | --------------------- | --------------------- |
-| **Trash**    | mv + バックグラウンド削除 | Finder Trash       | /tmp + nohup rm       | %TEMP% + background   |
-| **Standard** | git worktree remove       | サポート           | サポート              | サポート              |
+| Strategy     | 実装方式                     | macOS              | Linux                 | Windows               |
+| ------------ | ---------------------------- | ------------------ | --------------------- | --------------------- |
+| **Trash**    | ネイティブゴミ箱 + fallback  | Finder Trash       | XDG Trash / /tmp      | %TEMP% + background   |
+| **Standard** | git worktree remove          | サポート           | サポート              | サポート              |
+
+### ネイティブゴミ箱サポート
+
+vibe は [trash crate](https://lib.rs/crates/trash) (`@kexi/vibe-native` 経由) を使用してクロスプラットフォームのゴミ箱機能を提供します：
+
+- **macOS**: Finder Trash（従来と同じ）
+- **Linux**: XDG Trash (`~/.local/share/Trash`) [FreeDesktop.org 仕様](https://specifications.freedesktop.org/trash-spec/trashspec-latest.html)準拠
+- **Windows**: ごみ箱（現在ビルド対象外）
+
+XDG Trash に移動されたファイルは、デスクトップ環境のゴミ箱フォルダ（GNOME Files、Dolphin、Nautilus など）に表示され、復元可能です。
 
 ## プラットフォーム固有の動作
 
 ### macOS
 
-1. **主要**: AppleScript (`osascript`) 経由で Finder Trash に移動
-   - macOS ネイティブのゴミ箱機能を使用
+1. **主要 (Node.js)**: ネイティブモジュール (`@kexi/vibe-native`) 経由で Finder Trash に移動
+   - 内部的に Rust の `trash` crate を使用
    - Finder のゴミ箱フォルダに表示される
-2. **フォールバック**: Finder が利用できない場合（例：SSH セッション）、/tmp + バックグラウンド削除にフォールバック
+2. **フォールバック (Deno)**: AppleScript (`osascript`) 経由で Finder Trash に移動
+3. **フォールバック**: 両方とも失敗した場合（例：SSH セッション）、/tmp + バックグラウンド削除にフォールバック
 
 ### Linux
 
-1. **主要**: `/tmp/.vibe-trash-{timestamp}-{uuid}` へ rename + `nohup rm -rf`
+1. **主要 (Node.js)**: ネイティブモジュール (`@kexi/vibe-native`) 経由で XDG Trash に移動
+   - [XDG Trash 仕様](https://specifications.freedesktop.org/trash-spec/trashspec-latest.html)を実装した Rust の `trash` crate を使用
+   - ファイルは `~/.local/share/Trash/files/` に移動
+   - メタデータは `~/.local/share/Trash/info/` に保存
+   - デスクトップファイルマネージャーのゴミ箱に表示（GNOME Files、Dolphin、Nautilus など）
+   - ファイルマネージャーから復元可能
+2. **フォールバック**: ネイティブゴミ箱が失敗した場合（SSH セッション、デスクトップ環境なし）：
+   - `/tmp/.vibe-trash-{timestamp}-{uuid}` へ rename + `nohup rm -rf`
    - `/tmp` は再起動時にクリーンアップされる
    - `nohup` により親プロセス終了後も削除が継続される
-2. **フォールバック**: クロスデバイスエラー（EXDEV）発生時は、代わりに親ディレクトリへ rename
+3. **フォールバック**: クロスデバイスエラー（EXDEV）発生時は、代わりに親ディレクトリへ rename
 
 ### Windows
 
@@ -111,17 +129,27 @@ post_clean = ["echo 'Cleanup complete'"]
 ## ファイル構造
 
 ```
-packages/core/src/
-├── utils/
-│   └── fast-remove.ts        # Trash Strategy implementation
-│       ├── isFastRemoveSupported()
-│       ├── generateTrashName()
-│       ├── moveToMacOSTrash()
-│       ├── spawnBackgroundDelete()
-│       ├── fastRemoveDirectory()
-│       └── cleanupStaleTrash()
-└── commands/
-    └── clean.ts              # Clean command implementation
+packages/
+├── native/
+│   ├── Cargo.toml        # Rust 依存関係（trash crate を含む）
+│   ├── src/lib.rs        # ネイティブモジュール（moveToTrash, moveToTrashAsync）
+│   └── index.d.ts        # TypeScript 型定義
+└── core/src/
+    ├── native/
+    │   └── index.ts      # NativeTrashAdapter インターフェース
+    ├── runtime/node/
+    │   └── native.ts     # NodeNativeTrash 実装
+    ├── utils/
+    │   └── fast-remove.ts    # Trash Strategy 実装
+    │       ├── isFastRemoveSupported()
+    │       ├── generateTrashName()
+    │       ├── moveToSystemTrash()
+    │       ├── moveToMacOSTrashViaAppleScript()
+    │       ├── spawnBackgroundDelete()
+    │       ├── fastRemoveDirectory()
+    │       └── cleanupStaleTrash()
+    └── commands/
+        └── clean.ts          # Clean command 実装
 ```
 
 **関数の説明:**
@@ -130,7 +158,8 @@ packages/core/src/
 | ---- | ---- |
 | `isFastRemoveSupported()` | プラットフォームサポートの確認 |
 | `generateTrashName()` | 一意のゴミ箱ディレクトリ名を生成 |
-| `moveToMacOSTrash()` | macOS Finder ゴミ箱への移動 |
+| `moveToSystemTrash()` | ネイティブゴミ箱 + プラットフォーム固有フォールバック |
+| `moveToMacOSTrashViaAppleScript()` | Deno macOS フォールバック |
 | `spawnBackgroundDelete()` | デタッチされたバックグラウンド削除 |
 | `fastRemoveDirectory()` | メインの高速削除関数 |
 | `cleanupStaleTrash()` | 残存ゴミ箱ディレクトリのクリーンアップ |

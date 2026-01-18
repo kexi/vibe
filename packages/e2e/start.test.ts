@@ -145,6 +145,8 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.post-hook-ran"]
     try {
       await trustRunner.spawn(["trust"]);
       await trustRunner.waitForExit();
+      const trustOutput = trustRunner.getOutput();
+      assertExitCode(trustRunner.getExitCode(), 0, trustOutput);
     } finally {
       trustRunner.dispose();
     }
@@ -155,7 +157,8 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.post-hook-ran"]
       await runner.spawn(["start", "feat/test-no-hooks", "--no-hooks"]);
       await runner.waitForExit();
 
-      assertExitCode(runner.getExitCode(), 0);
+      const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
 
       // Verify worktree was created
       const parentDir = dirname(repoPath);
@@ -204,6 +207,8 @@ files = [".env.local"]
     try {
       await trustRunner.spawn(["trust"]);
       await trustRunner.waitForExit();
+      const trustOutput = trustRunner.getOutput();
+      assertExitCode(trustRunner.getExitCode(), 0, trustOutput);
     } finally {
       trustRunner.dispose();
     }
@@ -214,7 +219,8 @@ files = [".env.local"]
       await runner.spawn(["start", "feat/test-no-copy", "--no-copy"]);
       await runner.waitForExit();
 
-      assertExitCode(runner.getExitCode(), 0);
+      const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
 
       // Verify worktree was created
       const parentDir = dirname(repoPath);
@@ -262,6 +268,8 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.hook-ran"]
     try {
       await trustRunner.spawn(["trust"]);
       await trustRunner.waitForExit();
+      const trustOutput = trustRunner.getOutput();
+      assertExitCode(trustRunner.getExitCode(), 0, trustOutput);
     } finally {
       trustRunner.dispose();
     }
@@ -277,7 +285,8 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.hook-ran"]
       ]);
       await runner.waitForExit();
 
-      assertExitCode(runner.getExitCode(), 0);
+      const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
 
       // Verify worktree was created
       const parentDir = dirname(repoPath);
@@ -333,6 +342,8 @@ path_script = "./worktree-path.sh"
     try {
       await trustRunner.spawn(["trust"]);
       await trustRunner.waitForExit();
+      const trustOutput = trustRunner.getOutput();
+      assertExitCode(trustRunner.getExitCode(), 0, trustOutput);
     } finally {
       trustRunner.dispose();
     }
@@ -343,7 +354,8 @@ path_script = "./worktree-path.sh"
       await runner.spawn(["start", "feat/custom-path"]);
       await runner.waitForExit();
 
-      assertExitCode(runner.getExitCode(), 0);
+      const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
 
       // Verify worktree was created at the custom path
       const repoName = basename(repoPath);
@@ -351,7 +363,6 @@ path_script = "./worktree-path.sh"
 
       await assertDirectoryExists(expectedWorktreePath);
 
-      const output = runner.getOutput();
       assertOutputContains(output, expectedWorktreePath);
     } finally {
       runner.dispose();
@@ -418,6 +429,8 @@ path_script = "./local-path.sh"
     try {
       await trustRunner.spawn(["trust"]);
       await trustRunner.waitForExit();
+      const trustOutput = trustRunner.getOutput();
+      assertExitCode(trustRunner.getExitCode(), 0, trustOutput);
     } finally {
       trustRunner.dispose();
     }
@@ -428,7 +441,8 @@ path_script = "./local-path.sh"
       await runner.spawn(["start", "feat/precedence-test"]);
       await runner.waitForExit();
 
-      assertExitCode(runner.getExitCode(), 0);
+      const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
 
       // Verify worktree was created at the LOCAL path (not base)
       const repoName = basename(repoPath);
@@ -436,7 +450,6 @@ path_script = "./local-path.sh"
 
       await assertDirectoryExists(expectedWorktreePath);
 
-      const output = runner.getOutput();
       assertOutputContains(output, expectedWorktreePath);
 
       // Verify it was NOT created at the base path

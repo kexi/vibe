@@ -73,6 +73,7 @@ mod darwin;
 mod linux;
 
 use napi::bindgen_prelude::*;
+use napi::Status;
 use napi_derive::napi;
 use std::path::Path;
 
@@ -132,4 +133,44 @@ pub fn supports_directory() -> bool {
 #[napi]
 pub fn get_platform() -> String {
     platform::get_platform().to_string()
+}
+
+/// Move a file or directory to the system trash
+///
+/// Uses the `trash` crate for cross-platform trash support:
+/// - macOS: Uses Finder Trash
+/// - Linux: Uses XDG Trash (~/.local/share/Trash)
+/// - Windows: Uses Recycle Bin (not currently built on this platform)
+#[napi]
+pub fn move_to_trash(path: String) -> Result<()> {
+    trash::delete(&path).map_err(|e| {
+        napi::Error::new(
+            Status::GenericFailure,
+            format!("Failed to move to trash: {}", e),
+        )
+    })
+}
+
+/// Move a file or directory to the system trash asynchronously
+///
+/// Uses the `trash` crate for cross-platform trash support:
+/// - macOS: Uses Finder Trash
+/// - Linux: Uses XDG Trash (~/.local/share/Trash)
+/// - Windows: Uses Recycle Bin (not currently built on this platform)
+#[napi]
+pub async fn move_to_trash_async(path: String) -> Result<()> {
+    tokio::task::spawn_blocking(move || trash::delete(&path))
+        .await
+        .map_err(|e| {
+            napi::Error::new(
+                Status::GenericFailure,
+                format!("Task join error: {}", e),
+            )
+        })?
+        .map_err(|e| {
+            napi::Error::new(
+                Status::GenericFailure,
+                format!("Failed to move to trash: {}", e),
+            )
+        })
 }
