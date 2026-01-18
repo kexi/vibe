@@ -358,7 +358,49 @@ EOF
 
 **Note:** 上記の `--notes` 内容は Step 6.2 で生成したリリースノートに置き換えてください。
 
-### 6.4 クリーンアップ
+### 6.4 Twitter投稿用テキスト生成
+
+リリース告知用のTwitter投稿テキストを生成して出力：
+
+**日本語版:**
+
+```
+🎉 vibe vX.Y.Z をリリースしました！
+
+✨ 主な変更点:
+- 新機能や修正の要約（1-3行）
+
+📦 インストール:
+brew install kexi/tap/vibe
+# or
+npx @kexi/vibe@latest
+
+🔗 https://github.com/kexi/vibe/releases/tag/vX.Y.Z
+
+#vibe #git #worktree #開発ツール
+```
+
+**英語版:**
+
+```
+🎉 vibe vX.Y.Z released!
+
+✨ Highlights:
+- Summary of new features/fixes (1-3 lines)
+
+📦 Install:
+brew install kexi/tap/vibe
+# or
+npx @kexi/vibe@latest
+
+🔗 https://github.com/kexi/vibe/releases/tag/vX.Y.Z
+
+#vibe #git #worktree #devtools
+```
+
+**Note:** 280文字制限に注意。必要に応じて要約を調整してください。
+
+### 6.5 クリーンアップ
 
 リリースブランチを削除：
 
