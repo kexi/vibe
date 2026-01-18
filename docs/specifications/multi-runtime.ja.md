@@ -31,11 +31,11 @@ flowchart TD
         RuntimeDesc["fs, process, env, build, control, io, errors, signals"]
     end
 
-    subgraph Deno["Deno Runtime"]
+    subgraph Deno["🦕 Deno Runtime"]
         DenoDesc["deno/index.ts"]
     end
 
-    subgraph Node["Node.js Runtime"]
+    subgraph Node["💚 Node.js Runtime"]
         NodeDesc["node/index.ts"]
     end
 
