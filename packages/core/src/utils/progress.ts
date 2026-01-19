@@ -378,14 +378,15 @@ export class ProgressTracker {
     this.scheduleWrite(AnsiRenderer.HIDE_CURSOR);
 
     // Start spinner animation loop with throttled rendering
+    // The needsRender flag batches state updates from startTask/completeTask/failTask
+    // to be rendered on the next interval tick, reducing I/O pressure
     this.spinnerInterval = setInterval(() => {
       this.spinnerFrameIndex = (this.spinnerFrameIndex + 1) % this.spinnerFrames.length;
-      this.needsRender = true;
 
-      if (this.needsRender) {
-        this.render();
-        this.needsRender = false;
-      }
+      // Always render on interval to update spinner frame
+      // This also picks up any needsRender flags set by state update methods
+      this.render();
+      this.needsRender = false;
     }, this.updateInterval);
 
     // Initial render
@@ -394,8 +395,9 @@ export class ProgressTracker {
 
   /**
    * Stop the progress animation and show final state
+   * Waits for pending writes to complete to ensure terminal state is restored
    */
-  finish(): void {
+  async finish(): Promise<void> {
     if (!this.enabled || this.finished) return;
     this.finished = true;
 
@@ -413,6 +415,10 @@ export class ProgressTracker {
 
     // Add newline after progress
     this.scheduleWrite("\n");
+
+    // Wait for all pending writes to complete before returning
+    // This ensures cursor is restored even if process exits immediately
+    await this.pendingWrite;
 
     // Remove signal handlers
     this.removeSignalHandlers();
@@ -463,12 +469,13 @@ export class ProgressTracker {
 
   private scheduleWrite(text: string): void {
     const data = this.textEncoder.encode(text);
+    const writeFn = this.stream.write;
 
-    const hasAsyncWrite = this.stream.write !== undefined;
-    if (hasAsyncWrite) {
+    if (writeFn) {
       // Async write with order guarantee via Promise chain
+      // Using captured writeFn avoids non-null assertion and ensures type safety
       this.pendingWrite = this.pendingWrite.then(async () => {
-        await this.stream.write!(data);
+        await writeFn.call(this.stream, data);
       }).catch(() => {
         // Ignore write errors (might happen if stderr is closed)
       });

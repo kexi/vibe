@@ -313,7 +313,7 @@ async function runConfigAndHooks(
   }
 
   if (shouldStartTracker) {
-    tracker.finish();
+    await tracker.finish();
   }
 }
 
