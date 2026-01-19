@@ -226,8 +226,10 @@ export class ProgressTracker {
     if (!this.enabled) return;
 
     this.cleanupHandler = () => {
-      this.finish();
-      this.runtime.control.exit(0);
+      // Wait for finish() to complete before exiting to ensure terminal state is restored
+      void this.finish().then(() => {
+        this.runtime.control.exit(0);
+      });
     };
 
     try {
