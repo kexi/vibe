@@ -4,6 +4,7 @@ import { basename, dirname } from "path";
 import { afterEach, describe, expect, test } from "vitest";
 import { getVibePath, VibeCommandRunner } from "./helpers/pty.js";
 import { setupTestGitRepo } from "./helpers/git-setup.js";
+import { waitForPathRemoval } from "./helpers/assertions.js";
 
 describe("concurrent clean command", () => {
   let cleanup: (() => Promise<void>) | null = null;
@@ -72,8 +73,8 @@ describe("concurrent clean command", () => {
       expect(isValidExit1).toBe(true);
       expect(isValidExit2).toBe(true);
 
-      // Wait for background deletion to complete (fast-remove uses background deletion)
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // Wait for background deletion to complete using polling
+      await waitForPathRemoval(worktreePath, { timeout: 5000, interval: 100 });
 
       // Worktree directory should no longer exist
       expect(existsSync(worktreePath)).toBe(false);
