@@ -1,4 +1,4 @@
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertRejects } from "@std/assert";
 import { join } from "@std/path";
 import {
   _internal,
@@ -370,12 +370,7 @@ Deno.test("Concurrent addTrustedPath calls handle race conditions", async () => 
   }
 });
 
-Deno.test("loadUserSettings handles corrupted JSON gracefully", async () => {
-  const tempSettingsPath = await Deno.makeTempFile({ suffix: ".json" });
-
-  // Write corrupted JSON
-  await Deno.writeTextFile(tempSettingsPath, "{ invalid json ");
-
+Deno.test("loadUserSettings throws error for corrupted JSON", async () => {
   // Override USER_SETTINGS_FILE temporarily using environment
   const originalHome = Deno.env.get("HOME");
   const tempDir = await Deno.makeTempDir();
@@ -387,11 +382,11 @@ Deno.test("loadUserSettings handles corrupted JSON gracefully", async () => {
     const corruptedFile = `${configDir}/settings.json`;
     await Deno.writeTextFile(corruptedFile, "{ invalid json ");
 
-    // Should return default settings instead of crashing
-    const settings = await loadUserSettings();
-    assertEquals(settings.version, _internal.CURRENT_SCHEMA_VERSION);
-    assertEquals(Array.isArray(settings.permissions.allow), true);
-    assertEquals(Array.isArray(settings.permissions.deny), true);
+    // Should throw error for corrupted JSON (not silently return defaults)
+    await assertRejects(
+      async () => await loadUserSettings(),
+      SyntaxError,
+    );
   } finally {
     // Restore original HOME
     if (originalHome) {
@@ -401,8 +396,6 @@ Deno.test("loadUserSettings handles corrupted JSON gracefully", async () => {
     }
     await Deno.remove(tempDir, { recursive: true });
   }
-
-  await Deno.remove(tempSettingsPath);
 });
 
 // ===== JSON Schema URL Tests =====

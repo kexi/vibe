@@ -89,9 +89,15 @@ export async function getMainWorktreePath(
 export async function isMainWorktree(
   ctx: AppContext = getGlobalContext(),
 ): Promise<boolean> {
-  const currentRoot = await getRepoRoot(ctx);
-  const mainPath = await getMainWorktreePath(ctx);
-  return currentRoot === mainPath;
+  const [currentRoot, worktrees] = await Promise.all([
+    getRepoRoot(ctx),
+    getWorktreeList(ctx),
+  ]);
+  const mainWorktree = worktrees[0];
+  if (!mainWorktree) {
+    throw new Error("Could not find main worktree");
+  }
+  return currentRoot === mainWorktree.path;
 }
 
 export function sanitizeBranchName(branchName: string): string {

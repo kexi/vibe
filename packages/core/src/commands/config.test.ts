@@ -48,6 +48,9 @@ Deno.test("configCommand displays settings with default values when file not fou
       os: "darwin",
       arch: "aarch64",
     },
+    errors: {
+      isNotFound: (error: unknown) => error instanceof Error && error.message === "File not found",
+    },
   });
 
   await configCommand(ctx);
