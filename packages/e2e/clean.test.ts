@@ -315,11 +315,15 @@ describe("clean command", () => {
       verifyRunner.dispose();
     }
 
-    // Additional sync wait for trust configuration persistence
-    await waitForCondition(
-      () => existsSync(join(worktreePath, ".vibe.toml")),
-      { timeout: 5000, interval: 100 },
-    );
+    // Additional sync wait - verify trust is stable with a second check
+    const verifyRunner2 = new VibeCommandRunner(vibePath, worktreePath);
+    try {
+      await verifyRunner2.spawn(["verify"]);
+      await verifyRunner2.waitForExit();
+      assertExitCode(verifyRunner2.getExitCode(), 0, verifyRunner2.getOutput());
+    } finally {
+      verifyRunner2.dispose();
+    }
 
     // Verify branch exists
     expect(branchExists(repoPath, branchName)).toBe(true);
