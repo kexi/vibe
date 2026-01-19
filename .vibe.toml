@@ -1,7 +1,6 @@
 [hooks]
 post_start = [
-  "mise trust",
-  "mise install",
+  "pnpm install",
   "deno task generate-version"
 ]
 
