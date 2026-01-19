@@ -3,7 +3,7 @@ import { existsSync, writeFileSync } from "fs";
 import { join } from "path";
 import { afterEach, describe, test } from "vitest";
 import { getVibePath, VibeCommandRunner } from "../helpers/pty.js";
-import { assertOutputContains, waitForCondition } from "../helpers/assertions.js";
+import { assertExitCode, assertOutputContains, waitForCondition } from "../helpers/assertions.js";
 import { setupTestGitRepo } from "../helpers/git-setup.js";
 
 /**
@@ -117,6 +117,7 @@ files = ["*.txt", "config/*.json"]
     try {
       await trustRunner.spawn(["trust"]);
       await trustRunner.waitForExit();
+      assertExitCode(trustRunner.getExitCode(), 0, trustRunner.getOutput());
     } finally {
       trustRunner.dispose();
     }
@@ -126,6 +127,16 @@ files = ["*.txt", "config/*.json"]
       () => existsSync(join(repoPath, ".vibe.toml")),
       { timeout: 5000, interval: 100 },
     );
+
+    // Verify trust was successful before proceeding
+    const verifyRunner = new VibeCommandRunner(getVibePath(), repoPath);
+    try {
+      await verifyRunner.spawn(["verify"]);
+      await verifyRunner.waitForExit();
+      assertExitCode(verifyRunner.getExitCode(), 0, verifyRunner.getOutput());
+    } finally {
+      verifyRunner.dispose();
+    }
 
     const vibePath = getVibePath();
     const runner = new VibeCommandRunner(vibePath, repoPath);
