@@ -1,7 +1,7 @@
 import { dirname } from "@std/path";
 import type { CopyStrategy } from "../types.ts";
-import type { NativeClone } from "../ffi/types.ts";
-import { getNativeClone } from "../ffi/detector.ts";
+import type { NativeClone } from "../native/types.ts";
+import { getNativeClone } from "../native/detector.ts";
 import { validatePath } from "../validation.ts";
 import { runtime } from "../../../runtime/index.ts";
 
