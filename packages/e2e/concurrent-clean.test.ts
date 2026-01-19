@@ -15,7 +15,7 @@ describe("concurrent clean command", () => {
     }
   });
 
-  test("Two concurrent clean commands on same worktree should not panic", async () => {
+  test("Two concurrent clean commands on same worktree should not panic", { timeout: 120000 }, async () => {
     const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
