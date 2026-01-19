@@ -161,13 +161,20 @@ flowchart TB
 
 ### Shell Function Setup
 
-Users source the `.vibedev` file to enable this functionality:
+Users add the following function to their shell configuration file (`~/.bashrc` or `~/.zshrc`):
+
+```bash
+# Add to ~/.bashrc or ~/.zshrc
+vibe() { eval "$(command vibe "$@")"; }
+```
+
+This defines a shell function that wraps the `vibe` command and evaluates its output when appropriate.
+
+For developers working on Vibe itself, source the `.vibedev` file instead:
 
 ```bash
 source .vibedev
 ```
-
-This defines a shell function that wraps the `vibe` command and evaluates its output when appropriate.
 
 ### Similar Tools Using This Pattern
 
