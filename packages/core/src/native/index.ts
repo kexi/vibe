@@ -76,8 +76,7 @@ export interface NativeCloneAdapter {
  * Returns null if:
  * - The runtime doesn't support native cloning
  * - The platform doesn't support Copy-on-Write
- * - Required permissions are missing (Deno --allow-ffi)
- * - Native module is not installed (Node.js @kexi/vibe-native)
+ * - Native module (@kexi/vibe-native) is not installed or unavailable
  */
 export function getNativeCloneAdapter(): Promise<NativeCloneAdapter | null> {
   if (IS_NODE) {
