@@ -81,7 +81,15 @@ Deno.test("verifyCommand shows file path when config file exists", async () => {
         // Second call is for .vibe.local.toml - not found
         return Promise.reject(new Error("File not found"));
       },
-      readTextFile: () => Promise.resolve(""),
+      readTextFile: (path: string | URL) => {
+        // Settings file should return NotFound
+        const pathStr = typeof path === "string" ? path : path.toString();
+        const isSettingsFile = pathStr.includes("settings.json");
+        if (isSettingsFile) {
+          return Promise.reject(new Error("File not found"));
+        }
+        return Promise.resolve("");
+      },
     },
     process: {
       run: (opts) => {
@@ -119,6 +127,18 @@ Deno.test("verifyCommand shows file path when config file exists", async () => {
       chdir: () => {},
       execPath: () => "/mock/exec",
       args: [],
+    },
+    env: {
+      get: (key: string) => {
+        if (key === "HOME") return "/tmp/home";
+        return undefined;
+      },
+      set: () => {},
+      delete: () => {},
+      toObject: () => ({}),
+    },
+    errors: {
+      isNotFound: (error: unknown) => error instanceof Error && error.message === "File not found",
     },
   });
 

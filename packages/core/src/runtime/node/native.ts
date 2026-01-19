@@ -5,7 +5,7 @@
  * by wrapping the @kexi/vibe-native N-API module.
  */
 
-import type { NativeClone } from "../../utils/copy/ffi/types.ts";
+import type { NativeClone } from "../../utils/copy/native/types.ts";
 
 /** Type for the @kexi/vibe-native module */
 interface VibeNativeModule {

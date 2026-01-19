@@ -34,13 +34,15 @@ export async function calculateFileHash(
  * Verify if file hash matches expected hash
  * @param filePath File path
  * @param expectedHash Expected hash value
+ * @param ctx Application context
  * @returns true if hash matches
  * @throws Error if file cannot be read
  */
 export async function verifyFileHash(
   filePath: string,
   expectedHash: string,
+  ctx: AppContext = getGlobalContext(),
 ): Promise<boolean> {
-  const actualHash = await calculateFileHash(filePath);
+  const actualHash = await calculateFileHash(filePath, ctx);
   return actualHash === expectedHash;
 }

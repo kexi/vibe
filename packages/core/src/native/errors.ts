@@ -1,8 +1,8 @@
 /**
  * Unified native operation errors
  *
- * These errors provide consistent error handling across
- * Deno FFI and Node.js N-API implementations.
+ * These errors provide consistent error handling for
+ * native Clone-on-Write operations via @kexi/vibe-native (N-API).
  */
 
 /**

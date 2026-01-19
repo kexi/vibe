@@ -274,6 +274,21 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.hook-ran"]
       trustRunner.dispose();
     }
 
+    // Verify trust was successful before proceeding
+    const verifyRunner = new VibeCommandRunner(vibePath, repoPath);
+    try {
+      await verifyRunner.spawn(["verify"]);
+      await verifyRunner.waitForExit();
+      const verifyOutput = verifyRunner.getOutput();
+      assertExitCode(verifyRunner.getExitCode(), 0, verifyOutput);
+    } finally {
+      verifyRunner.dispose();
+    }
+
+    // Additional delay for macOS CI file system sync
+    // macOS CI has slower file system sync, need longer delay
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
     // Run vibe start with both --no-hooks and --no-copy
     const runner = new VibeCommandRunner(vibePath, repoPath);
     try {

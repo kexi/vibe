@@ -219,8 +219,16 @@ describe("clean command", () => {
       trustRunner.dispose();
     }
 
-    // Wait for trust settings to be persisted (macOS file system sync)
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // Verify trust was successful before proceeding
+    const verifyRunner = new VibeCommandRunner(vibePath, worktreePath);
+    try {
+      await verifyRunner.spawn(["verify"]);
+      await verifyRunner.waitForExit();
+      const verifyOutput = verifyRunner.getOutput();
+      assertExitCode(verifyRunner.getExitCode(), 0, verifyOutput);
+    } finally {
+      verifyRunner.dispose();
+    }
 
     // Verify branch exists
     expect(branchExists(repoPath, branchName)).toBe(true);
@@ -278,8 +286,16 @@ describe("clean command", () => {
       trustRunner.dispose();
     }
 
-    // Wait for trust settings to be persisted (macOS file system sync)
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // Verify trust was successful before proceeding
+    const verifyRunner = new VibeCommandRunner(vibePath, worktreePath);
+    try {
+      await verifyRunner.spawn(["verify"]);
+      await verifyRunner.waitForExit();
+      const verifyOutput = verifyRunner.getOutput();
+      assertExitCode(verifyRunner.getExitCode(), 0, verifyOutput);
+    } finally {
+      verifyRunner.dispose();
+    }
 
     // Verify branch exists
     expect(branchExists(repoPath, branchName)).toBe(true);
