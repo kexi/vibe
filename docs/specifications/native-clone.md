@@ -24,19 +24,20 @@ Rust was chosen because:
 
 ## Architecture Overview
 
+As of Deno 2.x, both runtimes use the same `@kexi/vibe-native` N-API module for native CoW operations. This unification simplifies maintenance and ensures consistent behavior across runtimes.
+
 ```mermaid
 flowchart TD
     subgraph App["vibe CLI"]
         CopyService["CopyService"]
     end
 
-    subgraph Deno["🦕 Deno Runtime"]
-        DenoFFI["Deno.dlopen()"]
-        DenoSyscall["Direct syscall via FFI"]
+    subgraph Runtime["JavaScript Runtime"]
+        Deno["🦕 Deno 2.x"]
+        Node["💚 Node.js"]
     end
 
-    subgraph Node["💚 Node.js Runtime"]
-        NativeAddon["@kexi/vibe-native"]
+    subgraph Native["@kexi/vibe-native (N-API)"]
         NapiRs["napi-rs (Rust)"]
     end
 
@@ -45,46 +46,30 @@ flowchart TD
         Linux["Linux: FICLONE ioctl"]
     end
 
-    CopyService --> DenoFFI
-    CopyService --> NativeAddon
-    DenoFFI --> DenoSyscall
-    DenoSyscall --> Darwin
-    DenoSyscall --> Linux
-    NativeAddon --> NapiRs
+    CopyService --> Deno
+    CopyService --> Node
+    Deno --> NapiRs
+    Node --> NapiRs
     NapiRs --> Darwin
     NapiRs --> Linux
 ```
 
-## Deno FFI vs Node.js N-API
+## Unified N-API Implementation
 
-### Deno: Direct FFI
+### Why N-API for Both Runtimes?
 
-Deno provides `Deno.dlopen()` for Foreign Function Interface, allowing direct calls to system libraries without native compilation:
+Deno 2.x added support for N-API modules (via `npm:` specifier), enabling us to unify the implementation:
 
-```typescript
-// packages/core/src/utils/copy/ffi/darwin.ts (simplified)
-const lib = Deno.dlopen("libSystem.B.dylib", {
-  clonefile: {
-    parameters: ["buffer", "buffer", "u32"],
-    result: "i32",
-  },
-});
-```
+| Aspect | Previous (Deno FFI) | Current (Unified N-API) |
+|--------|---------------------|-------------------------|
+| Code duplication | ~400 lines FFI code | Single Rust implementation |
+| Maintenance | Two codepaths | One shared module |
+| Security flags | Separate implementations | Unified `CLONE_NOFOLLOW` handling |
+| Performance | FFI overhead per call | Optimized N-API binding |
 
-**Advantages:**
+### Rust Native Addon (N-API)
 
-- No compilation step required
-- Works immediately on any Deno installation
-- Source code is directly readable
-
-**Disadvantages:**
-
-- Requires `--allow-ffi` permission
-- FFI overhead for each call
-
-### Node.js: Rust Native Addon (N-API)
-
-Node.js doesn't have built-in FFI, so we use Rust with napi-rs to create a native addon:
+Both Deno 2.x and Node.js use the same Rust-based native addon:
 
 ```rust
 // packages/native/src/lib.rs
@@ -99,12 +84,13 @@ pub fn clone_sync(src: String, dest: String) -> Result<()> {
 
 - Better performance (no FFI marshalling per call)
 - Type-safe Rust implementation
-- Prebuilt binaries for common platforms
+- Prebuilt binaries for common platforms (macOS x64/arm64, Linux x64/arm64)
+- Consistent behavior across Deno and Node.js
 
-**Disadvantages:**
+**Requirements:**
 
-- Requires compilation or prebuilt binaries
-- Larger package size
+- Deno 2.x or Node.js 18+
+- Prebuilt binaries or Rust toolchain for compilation
 
 ## Platform-Specific Implementation
 
