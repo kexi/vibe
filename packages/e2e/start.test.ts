@@ -367,6 +367,12 @@ path_script = "./worktree-path.sh"
       trustRunner.dispose();
     }
 
+    // Wait for trust configuration to be synced before proceeding
+    await waitForCondition(
+      () => existsSync(join(repoPath, ".vibe.toml")),
+      { timeout: 5000, interval: 100 },
+    );
+
     // Run vibe start
     const runner = new VibeCommandRunner(vibePath, repoPath);
     try {

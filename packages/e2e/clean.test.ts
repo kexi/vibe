@@ -219,6 +219,12 @@ describe("clean command", () => {
       trustRunner.dispose();
     }
 
+    // Wait for trust configuration to be synced before proceeding
+    await waitForCondition(
+      () => existsSync(join(worktreePath, ".vibe.toml")),
+      { timeout: 5000, interval: 100 },
+    );
+
     // Verify trust was successful before proceeding
     const verifyRunner = new VibeCommandRunner(vibePath, worktreePath);
     try {
@@ -229,6 +235,12 @@ describe("clean command", () => {
     } finally {
       verifyRunner.dispose();
     }
+
+    // Additional sync wait for trust configuration persistence
+    await waitForCondition(
+      () => existsSync(join(worktreePath, ".vibe.toml")),
+      { timeout: 5000, interval: 100 },
+    );
 
     // Verify branch exists
     expect(branchExists(repoPath, branchName)).toBe(true);
