@@ -1,5 +1,5 @@
 import type { NativeClone } from "./types.ts";
-import { IS_DENO, IS_NODE } from "../../../runtime/index.ts";
+import { IS_DENO, IS_NODE, runtime } from "../../../runtime/index.ts";
 
 /**
  * Check if native clone module is potentially available
@@ -7,7 +7,7 @@ import { IS_DENO, IS_NODE } from "../../../runtime/index.ts";
  * Returns true if the runtime could support native cloning.
  * Actual availability is checked when getNativeClone() is called.
  */
-export function isFFIAvailable(): boolean {
+export function isNativeCloneAvailable(): boolean {
   // Both Deno and Node.js use N-API (@kexi/vibe-native)
   // Actual availability is checked when getNativeClone() is called
   return IS_DENO || IS_NODE;
@@ -30,7 +30,11 @@ export async function getNativeClone(): Promise<NativeClone | null> {
         return clone;
       }
       return null;
-    } catch {
+    } catch (error) {
+      const isDebug = runtime.env.get("VIBE_DEBUG") === "1";
+      if (isDebug) {
+        console.warn("[vibe] Failed to load native clone module (Node.js):", error);
+      }
       return null;
     }
   }
@@ -53,7 +57,11 @@ export async function getNativeClone(): Promise<NativeClone | null> {
         supportsDirectoryClone: () => native.supportsDirectory(),
         close: () => {}, // N-API uses GC, no manual cleanup needed
       };
-    } catch {
+    } catch (error) {
+      const isDebug = runtime.env.get("VIBE_DEBUG") === "1";
+      if (isDebug) {
+        console.warn("[vibe] Failed to load native clone module (Deno):", error);
+      }
       return null;
     }
   }

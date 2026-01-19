@@ -1,2 +1,2 @@
 export type { NativeClone } from "./types.ts";
-export { getNativeClone, isFFIAvailable } from "./detector.ts";
+export { getNativeClone, isNativeCloneAvailable } from "./detector.ts";

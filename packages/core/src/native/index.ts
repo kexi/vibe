@@ -128,7 +128,11 @@ async function getNodeTrashAdapter(): Promise<NativeTrashAdapter | null> {
       runtimeType: "node" as const,
       moveToTrash: (path: string) => trash.moveToTrash(path),
     };
-  } catch {
+  } catch (error) {
+    const isDebug = runtime.env.get("VIBE_DEBUG") === "1";
+    if (isDebug) {
+      console.warn("[vibe] Failed to load native trash module (Node.js):", error);
+    }
     return null;
   }
 }
@@ -175,8 +179,11 @@ async function getDenoAdapter(): Promise<NativeCloneAdapter | null> {
       supportsDirectoryClone: () => native.supportsDirectory(),
       close: () => {}, // N-API uses GC, no manual cleanup needed
     };
-  } catch {
-    // Native module not available (e.g., missing binary, unsupported platform)
+  } catch (error) {
+    const isDebug = runtime.env.get("VIBE_DEBUG") === "1";
+    if (isDebug) {
+      console.warn("[vibe] Failed to load native clone module (Deno):", error);
+    }
     return null;
   }
 }
@@ -198,7 +205,11 @@ async function getNodeAdapter(): Promise<NativeCloneAdapter | null> {
     const platformType = os === "darwin" || os === "linux" ? os : "unsupported" as const;
 
     return wrapNativeClone(clone, "node", platformType);
-  } catch {
+  } catch (error) {
+    const isDebug = runtime.env.get("VIBE_DEBUG") === "1";
+    if (isDebug) {
+      console.warn("[vibe] Failed to load native clone module (Node.js):", error);
+    }
     return null;
   }
 }
