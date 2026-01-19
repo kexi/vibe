@@ -80,3 +80,51 @@ export function assertPermissionError(output: string): void {
   );
   expect(hasPermissionError).toBe(true);
 }
+
+/**
+ * Wait for a condition to be true using polling
+ */
+export async function waitForCondition(
+  condition: () => boolean | Promise<boolean>,
+  options: {
+    timeout?: number;
+    interval?: number;
+    errorMessage?: string;
+  } = {},
+): Promise<void> {
+  const { timeout = 5000, interval = 100, errorMessage } = options;
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < timeout) {
+    const result = await condition();
+    if (result) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, interval));
+  }
+
+  const message = errorMessage ?? "Timeout waiting for condition";
+  throw new Error(message);
+}
+
+/**
+ * Wait for a path to not exist (be deleted)
+ */
+export async function waitForPathRemoval(
+  path: string,
+  options: {
+    timeout?: number;
+    interval?: number;
+  } = {},
+): Promise<void> {
+  const isRemoved = !existsSync(path);
+  if (isRemoved) return;
+
+  await waitForCondition(
+    () => !existsSync(path),
+    {
+      ...options,
+      errorMessage: `Timeout waiting for path to be removed: ${path}`,
+    },
+  );
+}

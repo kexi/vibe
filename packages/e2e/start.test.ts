@@ -8,6 +8,7 @@ import {
   assertDirectoryExists,
   assertExitCode,
   assertOutputContains,
+  waitForCondition,
 } from "./helpers/assertions.js";
 
 describe("start command", () => {
@@ -285,9 +286,12 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.hook-ran"]
       verifyRunner.dispose();
     }
 
-    // Additional delay for macOS CI file system sync
-    // macOS CI has slower file system sync, need longer delay
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // Wait for trust configuration to be synced before proceeding
+    // Uses polling instead of fixed delay for reliability across CI environments
+    await waitForCondition(
+      () => existsSync(join(repoPath, ".vibe.toml")),
+      { timeout: 5000, interval: 100 },
+    );
 
     // Run vibe start with both --no-hooks and --no-copy
     const runner = new VibeCommandRunner(vibePath, repoPath);
