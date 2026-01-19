@@ -303,6 +303,12 @@ describe("clean command", () => {
       verifyRunner.dispose();
     }
 
+    // Additional sync wait for trust configuration persistence
+    await waitForCondition(
+      () => existsSync(join(worktreePath, ".vibe.toml")),
+      { timeout: 5000, interval: 100 },
+    );
+
     // Verify branch exists
     expect(branchExists(repoPath, branchName)).toBe(true);
 
