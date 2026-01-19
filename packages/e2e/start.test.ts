@@ -285,6 +285,9 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.hook-ran"]
       verifyRunner.dispose();
     }
 
+    // Additional delay for macOS CI file system sync
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
     // Run vibe start with both --no-hooks and --no-copy
     const runner = new VibeCommandRunner(vibePath, repoPath);
     try {

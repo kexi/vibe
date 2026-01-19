@@ -70,6 +70,9 @@ describe("concurrent clean command", () => {
       expect(isValidExit1).toBe(true);
       expect(isValidExit2).toBe(true);
 
+      // Wait for background deletion to complete (fast-remove uses background deletion)
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
       // Worktree directory should no longer exist
       expect(existsSync(worktreePath)).toBe(false);
     } finally {
