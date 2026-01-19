@@ -274,6 +274,17 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.hook-ran"]
       trustRunner.dispose();
     }
 
+    // Verify trust was successful before proceeding
+    const verifyRunner = new VibeCommandRunner(vibePath, repoPath);
+    try {
+      await verifyRunner.spawn(["verify"]);
+      await verifyRunner.waitForExit();
+      const verifyOutput = verifyRunner.getOutput();
+      assertExitCode(verifyRunner.getExitCode(), 0, verifyOutput);
+    } finally {
+      verifyRunner.dispose();
+    }
+
     // Run vibe start with both --no-hooks and --no-copy
     const runner = new VibeCommandRunner(vibePath, repoPath);
     try {
