@@ -207,7 +207,7 @@ export async function cleanCommand(
       );
 
       // Finish progress tracking
-      tracker.finish();
+      await tracker.finish();
     }
 
     // Change to main worktree before removing (so cwd remains valid after deletion)

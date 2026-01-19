@@ -82,22 +82,22 @@ Deno.test("ProgressTracker - failTask throws for non-existent task", () => {
   tracker.failTask("non-existent-id");
 });
 
-Deno.test("ProgressTracker - finish can be called multiple times safely", () => {
+Deno.test("ProgressTracker - finish can be called multiple times safely", async () => {
   const tracker = new ProgressTracker({ enabled: false });
-  tracker.finish();
-  tracker.finish();
-  tracker.finish();
+  await tracker.finish();
+  await tracker.finish();
+  await tracker.finish();
   // Should not throw
 });
 
-Deno.test("ProgressTracker - start and finish work correctly", () => {
+Deno.test("ProgressTracker - start and finish work correctly", async () => {
   const tracker = new ProgressTracker({ enabled: false });
   tracker.start();
-  tracker.finish();
+  await tracker.finish();
   // Should not throw
 });
 
-Deno.test("ProgressTracker - complete workflow", () => {
+Deno.test("ProgressTracker - complete workflow", async () => {
   const tracker = new ProgressTracker({ enabled: false });
 
   // Add phases and tasks
@@ -122,22 +122,22 @@ Deno.test("ProgressTracker - complete workflow", () => {
   tracker.failTask(task3, "Test error");
 
   // Finish
-  tracker.finish();
+  await tracker.finish();
 
   // Should not throw
 });
 
-Deno.test("ProgressTracker - TTY detection defaults correctly", () => {
+Deno.test("ProgressTracker - TTY detection defaults correctly", async () => {
   // Create tracker without explicit enabled option
   const tracker = new ProgressTracker();
 
   // Should detect TTY status from Deno.stderr.isTerminal()
   assertEquals(tracker.isEnabled(), Deno.stderr.isTerminal());
 
-  tracker.finish();
+  await tracker.finish();
 });
 
-Deno.test("ProgressTracker - custom title is used", () => {
+Deno.test("ProgressTracker - custom title is used", async () => {
   const customTitle = "Custom Operation";
   const tracker = new ProgressTracker({
     enabled: false,
@@ -146,5 +146,5 @@ Deno.test("ProgressTracker - custom title is used", () => {
 
   // Can't directly test the title rendering without mocking,
   // but constructor should accept it without error
-  tracker.finish();
+  await tracker.finish();
 });
