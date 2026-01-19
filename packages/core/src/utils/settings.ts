@@ -321,12 +321,12 @@ export async function loadUserSettings(
     );
     return createDefaultSettings();
   } catch (error) {
-    // ファイルが存在しない場合はデフォルト値を返す
+    // Return default settings if file doesn't exist
     const isNotFound = ctx.runtime.errors.isNotFound(error);
     if (isNotFound) {
       return createDefaultSettings();
     }
-    // 予期しないエラー（権限エラー、JSONパースエラー等）は再スロー
+    // Rethrow unexpected errors (permission errors, JSON parse errors, etc.)
     throw error;
   }
 }
