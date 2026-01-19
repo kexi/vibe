@@ -1,9 +1,9 @@
 import { execFileSync } from "child_process";
-import { writeFileSync } from "fs";
+import { existsSync, writeFileSync } from "fs";
 import { join } from "path";
 import { afterEach, describe, test } from "vitest";
 import { getVibePath, VibeCommandRunner } from "../helpers/pty.js";
-import { assertOutputContains } from "../helpers/assertions.js";
+import { assertOutputContains, waitForCondition } from "../helpers/assertions.js";
 import { setupTestGitRepo } from "../helpers/git-setup.js";
 
 /**
@@ -120,6 +120,12 @@ files = ["*.txt", "config/*.json"]
     } finally {
       trustRunner.dispose();
     }
+
+    // Wait for trust configuration to be synced before proceeding
+    await waitForCondition(
+      () => existsSync(join(repoPath, ".vibe.toml")),
+      { timeout: 5000, interval: 100 },
+    );
 
     const vibePath = getVibePath();
     const runner = new VibeCommandRunner(vibePath, repoPath);

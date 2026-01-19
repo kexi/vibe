@@ -4,7 +4,7 @@ import { basename, dirname, join } from "path";
 import { afterEach, describe, expect, test } from "vitest";
 import { getVibePath, VibeCommandRunner } from "./helpers/pty.js";
 import { setupTestGitRepo } from "./helpers/git-setup.js";
-import { assertExitCode, assertOutputContains } from "./helpers/assertions.js";
+import { assertExitCode, assertOutputContains, waitForCondition } from "./helpers/assertions.js";
 
 function branchExists(repoPath: string, branchName: string): boolean {
   try {
@@ -285,6 +285,12 @@ describe("clean command", () => {
     } finally {
       trustRunner.dispose();
     }
+
+    // Wait for trust configuration to be synced before proceeding
+    await waitForCondition(
+      () => existsSync(join(worktreePath, ".vibe.toml")),
+      { timeout: 5000, interval: 100 },
+    );
 
     // Verify trust was successful before proceeding
     const verifyRunner = new VibeCommandRunner(vibePath, worktreePath);
