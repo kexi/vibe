@@ -5,8 +5,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Development Commands
 
 ```bash
-# Run all checks (fmt:check, lint, check, test)
+# Run ALL checks for ALL packages (REQUIRED before creating PR)
+pnpm run check:all
+
+# Run checks for core package only (Deno)
 deno task ci
+
+# Run checks for docs package only
+pnpm run check:docs
+
+# Run checks for video package only
+pnpm run check:video
 
 # Run in development mode
 deno task dev <command>
@@ -50,6 +59,7 @@ packages/core/src/
 
 ## PR/Commit Guidelines
 
+- **IMPORTANT**: Before creating a PR, always run `pnpm run check:all` and ensure all checks pass
 - **Title format**: `<type>: <description>`
   - Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
 - Write in English
