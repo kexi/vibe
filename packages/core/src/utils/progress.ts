@@ -19,6 +19,7 @@ export interface ProgressNode {
 // Simple writer interface for compatibility
 interface Writer {
   writeSync(p: Uint8Array): number;
+  write?(p: Uint8Array): Promise<number>; // Optional async write
 }
 
 export interface ProgressOptions {
@@ -166,8 +167,10 @@ export class ProgressTracker {
   private spinnerInterval?: ReturnType<typeof setInterval>;
   private spinnerFrameIndex = 0;
   private finished = false;
+  private needsRender = false;
 
   private textEncoder = new TextEncoder();
+  private pendingWrite: Promise<void> = Promise.resolve();
   private cleanupHandler?: () => void;
   private runtime: Runtime;
 
@@ -223,8 +226,10 @@ export class ProgressTracker {
     if (!this.enabled) return;
 
     this.cleanupHandler = () => {
-      this.finish();
-      this.runtime.control.exit(0);
+      // Wait for finish() to complete before exiting to ensure terminal state is restored
+      void this.finish().then(() => {
+        this.runtime.control.exit(0);
+      });
     };
 
     try {
@@ -310,7 +315,7 @@ export class ProgressTracker {
       task.parent.startTime = Date.now();
     }
 
-    this.render();
+    this.needsRender = true;
   }
 
   /**
@@ -338,7 +343,7 @@ export class ProgressTracker {
       }
     }
 
-    this.render();
+    this.needsRender = true;
   }
 
   /**
@@ -362,7 +367,7 @@ export class ProgressTracker {
       task.parent.endTime = Date.now();
     }
 
-    this.render();
+    this.needsRender = true;
   }
 
   /**
@@ -372,12 +377,18 @@ export class ProgressTracker {
     if (!this.enabled) return;
 
     // Hide cursor for cleaner animation
-    this.write(AnsiRenderer.HIDE_CURSOR);
+    this.scheduleWrite(AnsiRenderer.HIDE_CURSOR);
 
-    // Start spinner animation loop
+    // Start spinner animation loop with throttled rendering
+    // The needsRender flag batches state updates from startTask/completeTask/failTask
+    // to be rendered on the next interval tick, reducing I/O pressure
     this.spinnerInterval = setInterval(() => {
       this.spinnerFrameIndex = (this.spinnerFrameIndex + 1) % this.spinnerFrames.length;
+
+      // Always render on interval to update spinner frame
+      // This also picks up any needsRender flags set by state update methods
       this.render();
+      this.needsRender = false;
     }, this.updateInterval);
 
     // Initial render
@@ -386,8 +397,9 @@ export class ProgressTracker {
 
   /**
    * Stop the progress animation and show final state
+   * Waits for pending writes to complete to ensure terminal state is restored
    */
-  finish(): void {
+  async finish(): Promise<void> {
     if (!this.enabled || this.finished) return;
     this.finished = true;
 
@@ -401,10 +413,14 @@ export class ProgressTracker {
     this.render();
 
     // Show cursor
-    this.write(AnsiRenderer.SHOW_CURSOR);
+    this.scheduleWrite(AnsiRenderer.SHOW_CURSOR);
 
     // Add newline after progress
-    this.write("\n");
+    this.scheduleWrite("\n");
+
+    // Wait for all pending writes to complete before returning
+    // This ensures cursor is restored even if process exits immediately
+    await this.pendingWrite;
 
     // Remove signal handlers
     this.removeSignalHandlers();
@@ -421,7 +437,7 @@ export class ProgressTracker {
       const clearSequence = AnsiRenderer.clearLastRender(
         this.lastRenderLineCount,
       );
-      this.write(clearSequence);
+      this.scheduleWrite(clearSequence);
     }
 
     // Build output lines
@@ -447,19 +463,31 @@ export class ProgressTracker {
 
     // Write output
     const output = lines.join("\n") + "\n";
-    this.write(output);
+    this.scheduleWrite(output);
 
     // Update line count
     this.lastRenderLineCount = lines.length;
   }
 
-  private write(text: string): void {
-    try {
-      this.stream.writeSync(this.textEncoder.encode(text));
-    } catch (error) {
-      // Ignore write errors (might happen if stderr is closed)
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`Progress write error: ${errorMessage}`);
+  private scheduleWrite(text: string): void {
+    const data = this.textEncoder.encode(text);
+    const writeFn = this.stream.write;
+
+    if (writeFn) {
+      // Async write with order guarantee via Promise chain
+      // Using captured writeFn avoids non-null assertion and ensures type safety
+      this.pendingWrite = this.pendingWrite.then(async () => {
+        await writeFn.call(this.stream, data);
+      }).catch(() => {
+        // Ignore write errors (might happen if stderr is closed)
+      });
+    } else {
+      // Fallback: sync write
+      try {
+        this.stream.writeSync(data);
+      } catch {
+        // Ignore write errors (might happen if stderr is closed)
+      }
     }
   }
 

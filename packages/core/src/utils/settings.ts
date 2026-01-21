@@ -320,8 +320,14 @@ export async function loadUserSettings(
       result.error.message,
     );
     return createDefaultSettings();
-  } catch {
-    return createDefaultSettings();
+  } catch (error) {
+    // Return default settings if file doesn't exist
+    const isNotFound = ctx.runtime.errors.isNotFound(error);
+    if (isNotFound) {
+      return createDefaultSettings();
+    }
+    // Rethrow unexpected errors (permission errors, JSON parse errors, etc.)
+    throw error;
   }
 }
 

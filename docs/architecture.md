@@ -21,15 +21,13 @@ flowchart TD
     end
 
     subgraph "Native Modules"
-        D --> F[FFI - libc/syscalls]
-        E --> G["@kexi/vibe-native (N-API)"]
+        D --> F["@kexi/vibe-native (N-API)"]
+        E --> F
     end
 
     subgraph "Platform Operations"
         F --> H[clonefile/FICLONE]
-        G --> H
-        F --> I[XDG Trash]
-        G --> I
+        F --> I[Trash Operations]
     end
 ```
 
@@ -40,8 +38,9 @@ flowchart TD
 | CLI Commands | User-facing commands (start, clean, trust, etc.) |
 | AppContext | Dependency injection container for runtime, config, and settings |
 | Runtime Interface | Abstract interface for filesystem, process, environment operations |
-| Deno Runtime | Native Deno APIs implementation |
-| Node.js Runtime | Node.js APIs implementation with native module support |
+| Deno Runtime | Deno APIs implementation with N-API native module support |
+| Node.js Runtime | Node.js APIs implementation with N-API native module support |
+| @kexi/vibe-native | Shared N-API module for Copy-on-Write and trash operations |
 
 ## Copy Strategy
 
@@ -130,3 +129,60 @@ flowchart LR
 1. **Testability**: Commands can be tested with mock contexts
 2. **Flexibility**: Runtime can be swapped without changing command logic
 3. **Configuration**: Settings and config are accessible throughout the application
+
+## Shell Wrapper Architecture
+
+Vibe uses a shell wrapper pattern to enable directory changes after command execution.
+
+### UNIX Process Model Constraint
+
+In UNIX-like operating systems, a child process cannot modify the environment (including the current working directory) of its parent process. This is a fundamental security and process isolation feature of the operating system.
+
+```mermaid
+flowchart TB
+    subgraph Shell["Shell (Parent Process)"]
+        CWD["Current Directory: /projects/myapp"]
+    end
+    subgraph Vibe["vibe start (Child Process)"]
+        Create["Create worktree"]
+        Output["Output: cd '/path/to/worktree'"]
+    end
+    Shell -->|spawn| Vibe
+    Vibe -.->|cannot modify directly| CWD
+    Output -->|eval in shell context| CWD
+```
+
+### How Vibe Solves This
+
+1. The `vibe start` command creates a worktree and outputs a shell command (e.g., `cd '/path/to/worktree'`)
+2. The shell wrapper function captures this output
+3. The wrapper evaluates the output in the parent shell's context
+4. This allows the directory change to take effect in the user's shell
+
+### Shell Function Setup
+
+Users add the following function to their shell configuration file (`~/.bashrc` or `~/.zshrc`):
+
+```bash
+# Add to ~/.bashrc or ~/.zshrc
+vibe() { eval "$(command vibe "$@")"; }
+```
+
+This defines a shell function that wraps the `vibe` command and evaluates its output when appropriate.
+
+For developers working on Vibe itself, source the `.vibedev` file instead:
+
+```bash
+source .vibedev
+```
+
+### Similar Tools Using This Pattern
+
+Other tools that need to modify the parent shell's environment use similar patterns:
+
+| Tool | Purpose |
+|------|---------|
+| nvm | Node.js version manager - modifies PATH |
+| rbenv | Ruby version manager - modifies PATH |
+| direnv | Directory-specific environment variables |
+| pyenv | Python version manager - modifies PATH |

@@ -4,7 +4,7 @@ import { basename, dirname, join } from "path";
 import { afterEach, describe, expect, test } from "vitest";
 import { getVibePath, VibeCommandRunner } from "./helpers/pty.js";
 import { setupTestGitRepo } from "./helpers/git-setup.js";
-import { assertExitCode, assertOutputContains } from "./helpers/assertions.js";
+import { assertExitCode, assertOutputContains, waitForCondition } from "./helpers/assertions.js";
 
 function branchExists(repoPath: string, branchName: string): boolean {
   try {
@@ -219,8 +219,28 @@ describe("clean command", () => {
       trustRunner.dispose();
     }
 
-    // Wait for trust settings to be persisted (macOS file system sync)
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // Wait for trust configuration to be synced before proceeding
+    await waitForCondition(
+      () => existsSync(join(worktreePath, ".vibe.toml")),
+      { timeout: 5000, interval: 100 },
+    );
+
+    // Verify trust was successful before proceeding
+    const verifyRunner = new VibeCommandRunner(vibePath, worktreePath);
+    try {
+      await verifyRunner.spawn(["verify"]);
+      await verifyRunner.waitForExit();
+      const verifyOutput = verifyRunner.getOutput();
+      assertExitCode(verifyRunner.getExitCode(), 0, verifyOutput);
+    } finally {
+      verifyRunner.dispose();
+    }
+
+    // Additional sync wait for trust configuration persistence
+    await waitForCondition(
+      () => existsSync(join(worktreePath, ".vibe.toml")),
+      { timeout: 5000, interval: 100 },
+    );
 
     // Verify branch exists
     expect(branchExists(repoPath, branchName)).toBe(true);
@@ -278,8 +298,32 @@ describe("clean command", () => {
       trustRunner.dispose();
     }
 
-    // Wait for trust settings to be persisted (macOS file system sync)
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // Wait for trust configuration to be synced before proceeding
+    await waitForCondition(
+      () => existsSync(join(worktreePath, ".vibe.toml")),
+      { timeout: 5000, interval: 100 },
+    );
+
+    // Verify trust was successful before proceeding
+    const verifyRunner = new VibeCommandRunner(vibePath, worktreePath);
+    try {
+      await verifyRunner.spawn(["verify"]);
+      await verifyRunner.waitForExit();
+      const verifyOutput = verifyRunner.getOutput();
+      assertExitCode(verifyRunner.getExitCode(), 0, verifyOutput);
+    } finally {
+      verifyRunner.dispose();
+    }
+
+    // Additional sync wait - verify trust is stable with a second check
+    const verifyRunner2 = new VibeCommandRunner(vibePath, worktreePath);
+    try {
+      await verifyRunner2.spawn(["verify"]);
+      await verifyRunner2.waitForExit();
+      assertExitCode(verifyRunner2.getExitCode(), 0, verifyRunner2.getOutput());
+    } finally {
+      verifyRunner2.dispose();
+    }
 
     // Verify branch exists
     expect(branchExists(repoPath, branchName)).toBe(true);

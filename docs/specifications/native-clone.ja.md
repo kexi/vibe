@@ -24,19 +24,20 @@ Rustを選択した理由：
 
 ## アーキテクチャ概要
 
+Deno 2.x以降、両ランタイムはネイティブCoW操作に同じ`@kexi/vibe-native` N-APIモジュールを使用しています。この統一により、メンテナンスが簡素化され、ランタイム間で一貫した動作が保証されます。
+
 ```mermaid
 flowchart TD
     subgraph App["vibe CLI"]
         CopyService["CopyService"]
     end
 
-    subgraph Deno["🦕 Deno Runtime"]
-        DenoFFI["Deno.dlopen()"]
-        DenoSyscall["FFI経由の直接システムコール"]
+    subgraph Runtime["JavaScript Runtime"]
+        Deno["🦕 Deno 2.x"]
+        Node["💚 Node.js"]
     end
 
-    subgraph Node["💚 Node.js Runtime"]
-        NativeAddon["@kexi/vibe-native"]
+    subgraph Native["@kexi/vibe-native (N-API)"]
         NapiRs["napi-rs (Rust)"]
     end
 
@@ -45,46 +46,30 @@ flowchart TD
         Linux["Linux: FICLONE ioctl"]
     end
 
-    CopyService --> DenoFFI
-    CopyService --> NativeAddon
-    DenoFFI --> DenoSyscall
-    DenoSyscall --> Darwin
-    DenoSyscall --> Linux
-    NativeAddon --> NapiRs
+    CopyService --> Deno
+    CopyService --> Node
+    Deno --> NapiRs
+    Node --> NapiRs
     NapiRs --> Darwin
     NapiRs --> Linux
 ```
 
-## Deno FFI vs Node.js N-API
+## 統一されたN-API実装
 
-### Deno: 直接FFI
+### なぜ両ランタイムでN-APIなのか？
 
-DenoはForeign Function Interface用の`Deno.dlopen()`を提供しており、ネイティブコンパイルなしでシステムライブラリを直接呼び出せます：
+Deno 2.xでN-APIモジュールのサポートが追加され（`npm:`指定子経由）、実装を統一できるようになりました：
 
-```typescript
-// packages/core/src/utils/copy/ffi/darwin.ts（簡略化）
-const lib = Deno.dlopen("libSystem.B.dylib", {
-  clonefile: {
-    parameters: ["buffer", "buffer", "u32"],
-    result: "i32",
-  },
-});
-```
+| 観点 | 以前（Deno FFI） | 現在（統一N-API） |
+|------|------------------|-------------------|
+| コード重複 | FFIコード約400行 | 単一のRust実装 |
+| メンテナンス | 2つのコードパス | 1つの共有モジュール |
+| セキュリティフラグ | 個別の実装 | 統一された`CLONE_NOFOLLOW`処理 |
+| パフォーマンス | 呼び出しごとのFFIオーバーヘッド | 最適化されたN-APIバインディング |
 
-**メリット:**
+### Rustネイティブアドオン（N-API）
 
-- コンパイルステップが不要
-- 任意のDenoインストール環境で即座に動作
-- ソースコードが直接読める
-
-**デメリット:**
-
-- `--allow-ffi`パーミッションが必要
-- 各呼び出しでFFIオーバーヘッドが発生
-
-### Node.js: Rustネイティブアドオン（N-API）
-
-Node.jsには組み込みのFFIがないため、Rustとnapi-rsを使用してネイティブアドオンを作成しています：
+Deno 2.xとNode.jsの両方が同じRustベースのネイティブアドオンを使用しています：
 
 ```rust
 // packages/native/src/lib.rs
@@ -99,12 +84,13 @@ pub fn clone_sync(src: String, dest: String) -> Result<()> {
 
 - 高いパフォーマンス（呼び出しごとのFFIマーシャリングなし）
 - 型安全なRust実装
-- 一般的なプラットフォーム向けのプリビルドバイナリ
+- 一般的なプラットフォーム向けのプリビルドバイナリ（macOS x64/arm64、Linux x64/arm64）
+- DenoとNode.js間で一貫した動作
 
-**デメリット:**
+**要件:**
 
-- コンパイルまたはプリビルドバイナリが必要
-- パッケージサイズが大きい
+- Deno 2.x または Node.js 18+
+- プリビルドバイナリ、またはコンパイル用のRustツールチェーン
 
 ## プラットフォーム固有の実装
 

@@ -45,6 +45,9 @@
   "dependencies": {
     "zod": "^3.23.0"
   },
+  "optionalDependencies": {
+    "@kexi/vibe-native": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "tsup": "^8.0.0",

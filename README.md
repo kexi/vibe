@@ -97,10 +97,10 @@ deno install -A --global jsr:@kexi/vibe
 **Permissions**: For more security, you can specify exact permissions instead of `-A`:
 
 ```bash
-deno install --global --allow-run --allow-read --allow-write --allow-env --allow-ffi jsr:@kexi/vibe
+deno install --global --allow-run --allow-read --allow-write --allow-env jsr:@kexi/vibe
 ```
 
-> Note: `--allow-ffi` enables optimized Copy-on-Write file cloning on macOS (APFS) and Linux (Btrfs/XFS). The tool works without it but may be slightly slower for directory copies.
+> Note: Copy-on-Write file cloning on macOS (APFS) and Linux (Btrfs/XFS) is enabled automatically via the N-API native module when available.
 
 ### mise
 
@@ -167,7 +167,7 @@ $path = [Environment]::GetEnvironmentVariable("Path", "User")
 ### Manual Build
 
 ```bash
-deno compile --allow-run --allow-read --allow-write --allow-env --allow-ffi --output vibe main.ts
+deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts
 ```
 
 ## Setup

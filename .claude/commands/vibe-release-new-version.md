@@ -343,11 +343,20 @@ Conventional Commitsに基づいてカテゴリ分け（ユーザー向け変更
 
 ## About vibe
 
-vibe is a Git worktree management tool with Copy-on-Write optimization.
+vibe is a super fast Git worktree management tool with Copy-on-Write optimization.
 
 - [Release vX.Y.Z](https://github.com/kexi/vibe/releases/tag/vX.Y.Z)
 - [Website](https://vibe.kexi.dev)
 ```
+
+**リリースノート必須チェックリスト:**
+
+- [ ] `## What's Changed` セクション
+- [ ] `### Features` または `### Bug Fixes`（該当する変更がある場合）
+- [ ] `---` 区切り線
+- [ ] `## About vibe` セクション（必須）
+- [ ] Release リンク
+- [ ] Website リンク
 
 ### 6.3 GitHub Release作成
 
@@ -367,7 +376,7 @@ gh release create vX.Y.Z --title "vX.Y.Z" --notes "$(cat <<'EOF'
 
 ## About vibe
 
-vibe is a Git worktree management tool with Copy-on-Write optimization.
+vibe is a super fast Git worktree management tool with Copy-on-Write optimization.
 
 - [Release vX.Y.Z](https://github.com/kexi/vibe/releases/tag/vX.Y.Z)
 - [Website](https://vibe.kexi.dev)

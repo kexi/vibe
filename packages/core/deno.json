@@ -46,6 +46,6 @@
       "src/"
     ]
   },
-  "nodeModulesDir": "none",
+  "nodeModulesDir": "auto",
   "minimumDependencyAge": "P3D"
 }

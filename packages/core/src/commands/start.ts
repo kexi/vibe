@@ -313,7 +313,7 @@ async function runConfigAndHooks(
   }
 
   if (shouldStartTracker) {
-    tracker.finish();
+    await tracker.finish();
   }
 }
 
@@ -427,6 +427,29 @@ async function copyFiles(
   }
 }
 
+const DEFAULT_COPY_CONCURRENCY = 4;
+
+/**
+ * Execute tasks with concurrency limit.
+ * Limits the number of concurrent operations to avoid overwhelming system resources.
+ */
+async function withConcurrencyLimit<T>(
+  items: T[],
+  limit: number,
+  handler: (item: T, index: number) => Promise<void>,
+): Promise<void> {
+  let index = 0;
+  const executeNext = async (): Promise<void> => {
+    if (index >= items.length) return;
+    const currentIndex = index++;
+    await handler(items[currentIndex], currentIndex);
+    await executeNext();
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, executeNext),
+  );
+}
+
 /**
  * Copy directories from origin to worktree
  */
@@ -459,22 +482,24 @@ async function copyDirectories(
   const phaseId = tracker.addPhase(`Copying directories (${dirStrategy.name})`);
   const taskIds = directoriesToCopy.map((dir) => tracker.addTask(phaseId, dir));
 
-  const copyPromises = directoriesToCopy.map(async (dir, i) => {
-    const src = join(repoRoot, dir);
-    const dest = join(worktreePath, dir);
+  await withConcurrencyLimit(
+    directoriesToCopy,
+    DEFAULT_COPY_CONCURRENCY,
+    async (dir, i) => {
+      const src = join(repoRoot, dir);
+      const dest = join(worktreePath, dir);
 
-    tracker.startTask(taskIds[i]);
-    try {
-      await copyService.copyDirectory(src, dest);
-      tracker.completeTask(taskIds[i]);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      tracker.failTask(taskIds[i], errorMessage);
-      console.warn(`Warning: Failed to copy directory ${dir}: ${errorMessage}`);
-    }
-  });
-
-  await Promise.all(copyPromises);
+      tracker.startTask(taskIds[i]);
+      try {
+        await copyService.copyDirectory(src, dest);
+        tracker.completeTask(taskIds[i]);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        tracker.failTask(taskIds[i], errorMessage);
+        console.warn(`Warning: Failed to copy directory ${dir}: ${errorMessage}`);
+      }
+    },
+  );
 }
 
 /**

@@ -185,6 +185,20 @@ Deno.test("startCommand dry-run mode does not create worktree", async () => {
       execPath: () => "/mock/exec",
       args: [],
     },
+    env: {
+      get: (key: string) => {
+        if (key === "HOME") return "/tmp/home";
+        return undefined;
+      },
+      set: () => {},
+      delete: () => {},
+      toObject: () => ({}),
+    },
+    errors: {
+      isNotFound: (error: unknown) =>
+        error instanceof Error &&
+        (error.message === "File not found" || error.message === "Not found"),
+    },
   });
 
   await startCommand("feat/test-branch", { dryRun: true }, ctx);

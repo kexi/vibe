@@ -8,6 +8,7 @@ import {
   assertDirectoryExists,
   assertExitCode,
   assertOutputContains,
+  waitForCondition,
 } from "./helpers/assertions.js";
 
 describe("start command", () => {
@@ -274,6 +275,24 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.hook-ran"]
       trustRunner.dispose();
     }
 
+    // Verify trust was successful before proceeding
+    const verifyRunner = new VibeCommandRunner(vibePath, repoPath);
+    try {
+      await verifyRunner.spawn(["verify"]);
+      await verifyRunner.waitForExit();
+      const verifyOutput = verifyRunner.getOutput();
+      assertExitCode(verifyRunner.getExitCode(), 0, verifyOutput);
+    } finally {
+      verifyRunner.dispose();
+    }
+
+    // Wait for trust configuration to be synced before proceeding
+    // Uses polling instead of fixed delay for reliability across CI environments
+    await waitForCondition(
+      () => existsSync(join(repoPath, ".vibe.toml")),
+      { timeout: 5000, interval: 100 },
+    );
+
     // Run vibe start with both --no-hooks and --no-copy
     const runner = new VibeCommandRunner(vibePath, repoPath);
     try {
@@ -347,6 +366,12 @@ path_script = "./worktree-path.sh"
     } finally {
       trustRunner.dispose();
     }
+
+    // Wait for trust configuration to be synced before proceeding
+    await waitForCondition(
+      () => existsSync(join(repoPath, ".vibe.toml")),
+      { timeout: 5000, interval: 100 },
+    );
 
     // Run vibe start
     const runner = new VibeCommandRunner(vibePath, repoPath);

@@ -21,15 +21,13 @@ flowchart TD
     end
 
     subgraph "Native Modules"
-        D --> F[FFI - libc/syscalls]
-        E --> G["@kexi/vibe-native (N-API)"]
+        D --> F["@kexi/vibe-native (N-API)"]
+        E --> F
     end
 
     subgraph "Platform Operations"
         F --> H[clonefile/FICLONE]
-        G --> H
-        F --> I[XDG Trash]
-        G --> I
+        F --> I[Trash Operations]
     end
 ```
 
@@ -40,8 +38,9 @@ flowchart TD
 | CLI Commands | ユーザー向けコマンド（start、clean、trust など） |
 | AppContext | ランタイム、設定、ユーザー設定の依存性注入コンテナ |
 | Runtime Interface | ファイルシステム、プロセス、環境操作の抽象インターフェース |
-| Deno Runtime | ネイティブ Deno API の実装 |
-| Node.js Runtime | ネイティブモジュールをサポートした Node.js API の実装 |
+| Deno Runtime | N-API ネイティブモジュールをサポートした Deno API の実装 |
+| Node.js Runtime | N-API ネイティブモジュールをサポートした Node.js API の実装 |
+| @kexi/vibe-native | Copy-on-Write とゴミ箱操作用の共有 N-API モジュール |
 
 ## コピー戦略
 
@@ -130,3 +129,60 @@ flowchart LR
 1. **テスト容易性**: モックコンテキストを使用してコマンドをテスト可能
 2. **柔軟性**: コマンドロジックを変更せずにランタイムを切り替え可能
 3. **設定アクセス**: アプリケーション全体で設定やユーザー設定にアクセス可能
+
+## シェルラッパーアーキテクチャ
+
+Vibe はコマンド実行後にディレクトリ変更を有効にするため、シェルラッパーパターンを使用しています。
+
+### UNIX プロセスモデルの制約
+
+UNIX 系オペレーティングシステムでは、子プロセスは親プロセスの環境（カレントディレクトリを含む）を変更できません。これはオペレーティングシステムの基本的なセキュリティおよびプロセス分離機能です。
+
+```mermaid
+flowchart TB
+    subgraph Shell["Shell (Parent Process)"]
+        CWD["Current Directory: /projects/myapp"]
+    end
+    subgraph Vibe["vibe start (Child Process)"]
+        Create["Create worktree"]
+        Output["Output: cd '/path/to/worktree'"]
+    end
+    Shell -->|spawn| Vibe
+    Vibe -.->|cannot modify directly| CWD
+    Output -->|eval in shell context| CWD
+```
+
+### Vibe の解決策
+
+1. `vibe start` コマンドは worktree を作成し、シェルコマンド（例: `cd '/path/to/worktree'`）を出力する
+2. シェルラッパー関数がこの出力をキャプチャする
+3. ラッパーが親シェルのコンテキストでその出力を評価する
+4. これによりユーザーのシェルでディレクトリ変更が有効になる
+
+### シェル関数のセットアップ
+
+ユーザーはシェル設定ファイル（`~/.bashrc` または `~/.zshrc`）に以下の関数を追加します：
+
+```bash
+# ~/.bashrc または ~/.zshrc に追加
+vibe() { eval "$(command vibe "$@")"; }
+```
+
+これにより `vibe` コマンドをラップし、適切な場合にその出力を評価するシェル関数が定義されます。
+
+Vibe 自体の開発者は、代わりに `.vibedev` ファイルを source します：
+
+```bash
+source .vibedev
+```
+
+### 同様のパターンを使用する他のツール
+
+親シェルの環境を変更する必要がある他のツールも同様のパターンを使用しています：
+
+| ツール | 目的 |
+|--------|------|
+| nvm | Node.js バージョンマネージャー - PATH を変更 |
+| rbenv | Ruby バージョンマネージャー - PATH を変更 |
+| direnv | ディレクトリ固有の環境変数 |
+| pyenv | Python バージョンマネージャー - PATH を変更 |
