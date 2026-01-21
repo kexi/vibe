@@ -1,5 +1,6 @@
 import * as pty from "node-pty";
-import { join } from "path";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
 
 type IPty = pty.IPty;
 
@@ -15,6 +16,7 @@ export class VibeCommandRunner {
   constructor(
     private vibePath: string,
     private cwd: string,
+    private homePath?: string,
   ) {}
 
   /**
@@ -30,6 +32,7 @@ export class VibeCommandRunner {
         cwd: this.cwd,
         env: {
           ...process.env,
+          HOME: this.homePath ?? process.env.HOME,
           TERM: "xterm-256color",
           VIBE_FORCE_INTERACTIVE: "1",
         },
@@ -138,6 +141,8 @@ export function getVibePath(): string {
     return process.env.VIBE_BINARY_PATH;
   }
 
-  // Use process.cwd() which will be the repo root when tests run
-  return join(process.cwd(), "vibe-e2e");
+  // Get repo root by going up from packages/e2e/helpers directory
+  const currentDir = dirname(fileURLToPath(import.meta.url));
+  const repoRoot = join(currentDir, "..", "..", "..");
+  return join(repoRoot, "vibe-e2e");
 }

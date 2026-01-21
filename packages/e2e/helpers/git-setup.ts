@@ -8,9 +8,11 @@ import { join } from "path";
  */
 export async function setupTestGitRepo(): Promise<{
   repoPath: string;
+  homePath: string;
   cleanup: () => Promise<void>;
 }> {
   const tempDir = mkdtempSync(join(tmpdir(), "vibe-e2e-test-"));
+  const homePath = mkdtempSync(join(tmpdir(), "vibe-e2e-home-"));
 
   // Initialize Git repository
   runCommand(["git", "init"], tempDir);
@@ -36,15 +38,20 @@ export async function setupTestGitRepo(): Promise<{
       // Ignore errors during cleanup
     }
 
-    // Remove temporary directory
+    // Remove temporary directories
     try {
       rmSync(tempDir, { recursive: true, force: true });
     } catch {
       // Ignore errors if directory is already removed
     }
+    try {
+      rmSync(homePath, { recursive: true, force: true });
+    } catch {
+      // Ignore errors if directory is already removed
+    }
   };
 
-  return { repoPath: tempDir, cleanup };
+  return { repoPath: tempDir, homePath, cleanup };
 }
 
 /**

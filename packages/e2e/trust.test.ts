@@ -16,11 +16,11 @@ describe("trust/untrust/verify commands", () => {
   });
 
   test("trust: Add .vibe.toml to trusted list", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
-    const runner = new VibeCommandRunner(vibePath, repoPath);
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
 
     try {
       // Create .vibe.toml
@@ -47,7 +47,7 @@ describe("trust/untrust/verify commands", () => {
   });
 
   test("verify: Display trust status and hash history", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
@@ -58,13 +58,13 @@ describe("trust/untrust/verify commands", () => {
       '[hooks]\npost_start = ["echo test"]\n',
     );
 
-    const trustRunner = new VibeCommandRunner(vibePath, repoPath);
+    const trustRunner = new VibeCommandRunner(vibePath, repoPath, homePath);
     await trustRunner.spawn(["trust"]);
     await trustRunner.waitForExit();
     trustRunner.dispose();
 
     // Run vibe verify
-    const verifyRunner = new VibeCommandRunner(vibePath, repoPath);
+    const verifyRunner = new VibeCommandRunner(vibePath, repoPath, homePath);
     await verifyRunner.spawn(["verify"]);
     await verifyRunner.waitForExit();
 
@@ -81,7 +81,7 @@ describe("trust/untrust/verify commands", () => {
   });
 
   test("untrust: Remove from trusted list", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
@@ -92,13 +92,13 @@ describe("trust/untrust/verify commands", () => {
       '[hooks]\npost_start = ["echo test"]\n',
     );
 
-    const trustRunner = new VibeCommandRunner(vibePath, repoPath);
+    const trustRunner = new VibeCommandRunner(vibePath, repoPath, homePath);
     await trustRunner.spawn(["trust"]);
     await trustRunner.waitForExit();
     trustRunner.dispose();
 
     // Run vibe untrust
-    const untrustRunner = new VibeCommandRunner(vibePath, repoPath);
+    const untrustRunner = new VibeCommandRunner(vibePath, repoPath, homePath);
     await untrustRunner.spawn(["untrust"]);
     await untrustRunner.waitForExit();
 
@@ -115,11 +115,11 @@ describe("trust/untrust/verify commands", () => {
   });
 
   test("trust: Handle .vibe.local.toml", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
-    const runner = new VibeCommandRunner(vibePath, repoPath);
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
 
     try {
       // Create .vibe.local.toml
