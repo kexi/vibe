@@ -19,7 +19,7 @@ describe("concurrent clean command", () => {
   // Skip this test in CI as it's flaky due to file system locking on macOS CI
   // The test works locally but times out in GitHub Actions
   test.skip("Two concurrent clean commands on same worktree should not panic", { timeout: 120000 }, async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
@@ -35,8 +35,8 @@ describe("concurrent clean command", () => {
     });
 
     // Run two clean commands concurrently
-    const runner1 = new VibeCommandRunner(vibePath, worktreePath);
-    const runner2 = new VibeCommandRunner(vibePath, worktreePath);
+    const runner1 = new VibeCommandRunner(vibePath, worktreePath, homePath);
+    const runner2 = new VibeCommandRunner(vibePath, worktreePath, homePath);
 
     try {
       // Spawn both processes nearly simultaneously
@@ -85,7 +85,7 @@ describe("concurrent clean command", () => {
   });
 
   test("Second clean command after first completes should handle gracefully", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
@@ -101,7 +101,7 @@ describe("concurrent clean command", () => {
     });
 
     // Run first clean command
-    const runner1 = new VibeCommandRunner(vibePath, worktreePath);
+    const runner1 = new VibeCommandRunner(vibePath, worktreePath, homePath);
     try {
       await runner1.spawn(["clean", "--force"]);
       await runner1.waitForExit();
@@ -116,7 +116,7 @@ describe("concurrent clean command", () => {
     // This simulates the case where another process already cleaned up
     // Note: This will fail because we can't cd to a non-existent directory
     // but the important thing is it should not panic
-    const runner2 = new VibeCommandRunner(vibePath, repoPath);
+    const runner2 = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await runner2.spawn(["clean"]);
       await runner2.waitForExit();

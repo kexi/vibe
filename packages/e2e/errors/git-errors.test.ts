@@ -24,11 +24,11 @@ describe("git configuration errors", () => {
   });
 
   test("Error when not in a git repository", async () => {
-    const { dirPath, cleanup: dirCleanup } = await setupNonGitDirectory();
+    const { dirPath, homePath, cleanup: dirCleanup } = await setupNonGitDirectory();
     cleanup = dirCleanup;
 
     const vibePath = getVibePath();
-    const runner = new VibeCommandRunner(vibePath, dirPath);
+    const runner = new VibeCommandRunner(vibePath, dirPath, homePath);
 
     try {
       await runner.spawn(["start", "feat/test"]);
@@ -47,12 +47,12 @@ describe("git configuration errors", () => {
   });
 
   test("Error when git user.email is missing", async () => {
-    const { repoPath, cleanup: repoCleanup } =
+    const { repoPath, homePath, cleanup: repoCleanup } =
       await setupGitRepoWithoutUserConfig();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
-    const runner = new VibeCommandRunner(vibePath, repoPath);
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
 
     try {
       await runner.spawn(["start", "feat/test"]);
@@ -76,11 +76,11 @@ describe("git configuration errors", () => {
   });
 
   test("Error when .git/config is corrupted", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupCorruptedGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupCorruptedGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
-    const runner = new VibeCommandRunner(vibePath, repoPath);
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
 
     try {
       await runner.spawn(["start", "feat/test"]);
@@ -100,11 +100,11 @@ describe("git configuration errors", () => {
   });
 
   test("Handle detached HEAD state", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupDetachedHeadRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupDetachedHeadRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
-    const runner = new VibeCommandRunner(vibePath, repoPath);
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
 
     try {
       await runner.spawn(["start", "feat/test"]);
@@ -126,11 +126,11 @@ describe("git configuration errors", () => {
   });
 
   test("Error when branch name contains invalid characters", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
-    const runner = new VibeCommandRunner(vibePath, repoPath);
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
 
     try {
       // Try to create a branch with path traversal characters
@@ -151,11 +151,11 @@ describe("git configuration errors", () => {
   });
 
   test("Error when branch name has special characters", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
-    const runner = new VibeCommandRunner(vibePath, repoPath);
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
 
     try {
       // Try to create a branch with spaces and special chars
