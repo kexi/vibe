@@ -6,7 +6,8 @@
   "scripts": {
     "start": "remotion studio",
     "render": "remotion render VibeCLIDemo out/vibe-demo.mp4",
-    "upgrade": "remotion upgrade"
+    "upgrade": "remotion upgrade",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@remotion/cli": "4.0.246",
