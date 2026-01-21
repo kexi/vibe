@@ -2,6 +2,7 @@ import type { APIRoute, GetStaticPaths } from "astro";
 import { getCollection } from "astro:content";
 import satori from "satori";
 import { Resvg } from "@resvg/resvg-js";
+import type { ReactNode } from "react";
 
 const GOOGLE_FONTS_API_URL =
   "https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@700&display=swap";
@@ -158,7 +159,7 @@ export const GET: APIRoute<Props> = async ({ props }) => {
             },
           ],
         },
-      },
+      } as ReactNode,
       {
         width: 1200,
         height: 630,
