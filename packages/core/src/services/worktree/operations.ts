@@ -45,7 +45,7 @@ export async function createWorktree(
   if (branchExists) {
     await runGitCommand(["worktree", "add", worktreePath, branchName], ctx);
   } else if (baseRef) {
-    await runGitCommand(["worktree", "add", "-b", branchName, "--", worktreePath, baseRef], ctx);
+    await runGitCommand(["worktree", "add", "-b", branchName, worktreePath, baseRef], ctx);
   } else {
     await runGitCommand(["worktree", "add", "-b", branchName, worktreePath], ctx);
   }
@@ -79,7 +79,7 @@ export function getCreateWorktreeCommand(options: CreateWorktreeOptions): string
     return `git worktree add '${worktreePath}' ${branchName}`;
   }
   if (baseRef) {
-    return `git worktree add -b ${branchName} -- '${worktreePath}' ${baseRef}`;
+    return `git worktree add -b ${branchName} '${worktreePath}' ${baseRef}`;
   }
   return `git worktree add -b ${branchName} '${worktreePath}'`;
 }

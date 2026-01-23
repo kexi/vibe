@@ -126,7 +126,7 @@ export async function revisionExists(
   ctx: AppContext = getGlobalContext(),
 ): Promise<boolean> {
   try {
-    await runGitCommand(["rev-parse", "--verify", "--quiet", "--", ref], ctx);
+    await runGitCommand(["rev-parse", "--verify", "--quiet", ref], ctx);
     return true;
   } catch {
     return false;
