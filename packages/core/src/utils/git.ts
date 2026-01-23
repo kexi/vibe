@@ -121,6 +121,18 @@ export async function branchExists(
   }
 }
 
+export async function revisionExists(
+  ref: string,
+  ctx: AppContext = getGlobalContext(),
+): Promise<boolean> {
+  try {
+    await runGitCommand(["rev-parse", "--verify", "--quiet", "--", ref], ctx);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Check if the worktree has any uncommitted changes
  * @returns true if there are changes, false otherwise

@@ -34,6 +34,10 @@ const BOOLEAN_OPTIONS = [
   "check",
 ] as const;
 
+const STRING_OPTIONS = [
+  "base",
+] as const;
+
 const HELP_TEXT = `vibe - git worktree helper
 
 Installation:
@@ -70,6 +74,7 @@ Global Options:
 
 Command Options:
   --reuse           Use existing branch instead of creating a new one (start)
+  --base <ref>      Base branch/commit for new branch (start)
   --no-hooks        Skip pre-start and post-start hooks (start)
   --no-copy         Skip copying files and directories (start)
   -n, --dry-run     Show what would be executed without making changes (start)
@@ -91,6 +96,7 @@ Examples:
   vibe upgrade --check
   vibe start feat/new-feature
   vibe start feat/existing --reuse
+  vibe start feat/new-feature --base main
   vibe clean
 `;
 
@@ -101,8 +107,10 @@ async function main(): Promise<void> {
   // Set up global context for dependency injection
   setGlobalContext(createAppContext(rt));
 
-  const args = parseArgs([...runtime.control.args], {
+  const rawArgs = [...runtime.control.args];
+  const args = parseArgs(rawArgs, {
     boolean: [...BOOLEAN_OPTIONS],
+    string: [...STRING_OPTIONS],
     alias: {
       h: "help",
       v: "version",
@@ -115,7 +123,12 @@ async function main(): Promise<void> {
 
   // Check for unknown options (includes "_" for positional args and alias keys)
   const ALIAS_KEYS = ["h", "v", "V", "q", "n", "f"] as const;
-  const knownOptions = new Set<string>([...BOOLEAN_OPTIONS, "_", ...ALIAS_KEYS]);
+  const knownOptions = new Set<string>([
+    ...BOOLEAN_OPTIONS,
+    ...STRING_OPTIONS,
+    "_",
+    ...ALIAS_KEYS,
+  ]);
 
   for (const key of Object.keys(args)) {
     const isUnknownOption = !knownOptions.has(key);
@@ -166,7 +179,22 @@ async function main(): Promise<void> {
       const dryRun = args["dry-run"];
       const verbose = args.verbose;
       const quiet = args.quiet;
-      await startCommand(branchName, { reuse, noHooks, noCopy, dryRun, verbose, quiet });
+      const base = typeof args.base === "string"
+        ? args.base
+        : args.base === undefined
+        ? undefined
+        : "";
+      const baseFromEquals = rawArgs.some((arg) => arg.startsWith("--base="));
+      await startCommand(branchName, {
+        reuse,
+        noHooks,
+        noCopy,
+        dryRun,
+        verbose,
+        quiet,
+        base,
+        baseFromEquals,
+      });
       break;
     }
     case "clean": {
