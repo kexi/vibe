@@ -20,11 +20,14 @@ vibe start <branch> [options]
 | Option            | Description                               |                          |
 | ----------------- | ----------------------------------------- | ------------------------ |
 | `--reuse`         | Use an existing branch (don't create new) |                          |
+| `--base <ref>`    | Base branch/commit for new branch         |                          |
 | `--no-hooks`      | Skip pre-start and post-start hooks       | <Badge text="v0.5.0+" /> |
 | `--no-copy`       | Skip file and directory copying           | <Badge text="v0.5.0+" /> |
 | `-n`, `--dry-run` | Preview operations without executing      | <Badge text="v0.8.0+" /> |
 | `-V`, `--verbose` | Show detailed output                      | <Badge text="v0.8.0+" /> |
 | `-q`, `--quiet`   | Suppress non-essential output             | <Badge text="v0.8.0+" /> |
+
+Note: `--base` only applies when creating a new branch. If the branch already exists, it is ignored.
 
 ## Examples
 
@@ -34,6 +37,9 @@ vibe start feat/new-feature
 
 # Use an existing branch
 vibe start feat/existing-branch
+
+# Create a new branch from a base branch
+vibe start feat/from-main --base main
 
 # Quick start without hooks
 vibe start feat/quick-fix --no-hooks

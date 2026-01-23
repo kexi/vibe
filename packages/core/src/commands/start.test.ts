@@ -218,6 +218,357 @@ Deno.test("startCommand dry-run mode does not create worktree", async () => {
   assertEquals(exitCode, null);
 });
 
+Deno.test("startCommand dry-run uses base ref for new branch", async () => {
+  let exitCode: number | null = null;
+  const stderr = captureStderr();
+
+  const ctx = createMockContext({
+    process: {
+      run: (opts) => {
+        const args = opts.args as string[];
+        if (args.includes("rev-parse") && args.includes("--show-toplevel")) {
+          return Promise.resolve({
+            code: 0,
+            success: true,
+            stdout: new TextEncoder().encode("/tmp/mock-repo\n"),
+            stderr: new Uint8Array(),
+          } as RunResult);
+        }
+        if (args.includes("rev-parse") && args.includes("--verify")) {
+          return Promise.resolve({
+            code: 0,
+            success: true,
+            stdout: new TextEncoder().encode("abc123\n"),
+            stderr: new Uint8Array(),
+          } as RunResult);
+        }
+        if (args.includes("worktree") && args.includes("list")) {
+          return Promise.resolve({
+            code: 0,
+            success: true,
+            stdout: new TextEncoder().encode(
+              "worktree /tmp/mock-repo\nHEAD abc123\nbranch refs/heads/main\n\n",
+            ),
+            stderr: new Uint8Array(),
+          } as RunResult);
+        }
+        if (args.includes("show-ref") && args.includes("--verify")) {
+          return Promise.resolve({
+            code: 1,
+            success: false,
+            stdout: new Uint8Array(),
+            stderr: new TextEncoder().encode("fatal: bad ref\n"),
+          } as RunResult);
+        }
+        return Promise.resolve({
+          code: 0,
+          success: true,
+          stdout: new Uint8Array(),
+          stderr: new Uint8Array(),
+        } as RunResult);
+      },
+    },
+    fs: {
+      readTextFile: () => Promise.reject(new Error("File not found")),
+      stat: () => Promise.reject(new Error("Not found")),
+    },
+    control: {
+      exit: ((code: number) => {
+        exitCode = code;
+      }) as never,
+      cwd: () => "/tmp/mock-repo",
+      chdir: () => {},
+      execPath: () => "/mock/exec",
+      args: [],
+    },
+    env: {
+      get: (key: string) => {
+        if (key === "HOME") return "/tmp/home";
+        return undefined;
+      },
+      set: () => {},
+      delete: () => {},
+      toObject: () => ({}),
+    },
+    errors: {
+      isNotFound: (error: unknown) =>
+        error instanceof Error &&
+        (error.message === "File not found" || error.message === "Not found"),
+    },
+  });
+
+  await startCommand("feat/base-branch", { dryRun: true, base: "main" }, ctx);
+
+  stderr.restore();
+
+  const hasBaseCommand = stderr.output.some((line) =>
+    line.includes("git worktree add -b feat/base-branch") && line.includes(" main")
+  );
+  assertEquals(
+    hasBaseCommand,
+    true,
+    `Expected base ref in dry-run command but got: ${stderr.output.join("\n")}`,
+  );
+  assertEquals(exitCode, null);
+});
+
+Deno.test("startCommand warns and ignores base when branch exists", async () => {
+  let exitCode: number | null = null;
+  const stderr = captureStderr();
+
+  const ctx = createMockContext({
+    process: {
+      run: (opts) => {
+        const args = opts.args as string[];
+        if (args.includes("rev-parse") && args.includes("--show-toplevel")) {
+          return Promise.resolve({
+            code: 0,
+            success: true,
+            stdout: new TextEncoder().encode("/tmp/mock-repo\n"),
+            stderr: new Uint8Array(),
+          } as RunResult);
+        }
+        if (args.includes("worktree") && args.includes("list")) {
+          return Promise.resolve({
+            code: 0,
+            success: true,
+            stdout: new TextEncoder().encode(
+              "worktree /tmp/mock-repo\nHEAD abc123\nbranch refs/heads/main\n\n",
+            ),
+            stderr: new Uint8Array(),
+          } as RunResult);
+        }
+        if (args.includes("show-ref") && args.includes("--verify")) {
+          return Promise.resolve({
+            code: 0,
+            success: true,
+            stdout: new Uint8Array(),
+            stderr: new Uint8Array(),
+          } as RunResult);
+        }
+        return Promise.resolve({
+          code: 0,
+          success: true,
+          stdout: new Uint8Array(),
+          stderr: new Uint8Array(),
+        } as RunResult);
+      },
+    },
+    fs: {
+      readTextFile: () => Promise.reject(new Error("File not found")),
+      stat: () => Promise.reject(new Error("Not found")),
+    },
+    control: {
+      exit: ((code: number) => {
+        exitCode = code;
+      }) as never,
+      cwd: () => "/tmp/mock-repo",
+      chdir: () => {},
+      execPath: () => "/mock/exec",
+      args: [],
+    },
+    env: {
+      get: (key: string) => {
+        if (key === "HOME") return "/tmp/home";
+        return undefined;
+      },
+      set: () => {},
+      delete: () => {},
+      toObject: () => ({}),
+    },
+    errors: {
+      isNotFound: (error: unknown) =>
+        error instanceof Error &&
+        (error.message === "File not found" || error.message === "Not found"),
+    },
+  });
+
+  await startCommand("feat/existing", { dryRun: true, base: "main" }, ctx);
+
+  stderr.restore();
+
+  const hasWarning = stderr.output.some((line) =>
+    line.includes("Warning: Branch 'feat/existing' already exists; --base is ignored.")
+  );
+  assertEquals(hasWarning, true, `Expected warning but got: ${stderr.output.join("\n")}`);
+
+  const baseUsed = stderr.output.some((line) =>
+    line.includes("git worktree add") && line.includes(" main")
+  );
+  assertEquals(baseUsed, false, `Did not expect base in command: ${stderr.output.join("\n")}`);
+  assertEquals(exitCode, null);
+});
+
+Deno.test("startCommand exits with error when base value looks like option", async () => {
+  let exitCode: number | null = null;
+  const stderr = captureStderr();
+
+  const ctx = createMockContext({
+    process: {
+      run: (opts) => {
+        const args = opts.args as string[];
+        if (args.includes("rev-parse") && args.includes("--show-toplevel")) {
+          return Promise.resolve({
+            code: 0,
+            success: true,
+            stdout: new TextEncoder().encode("/tmp/mock-repo\n"),
+            stderr: new Uint8Array(),
+          } as RunResult);
+        }
+        if (args.includes("worktree") && args.includes("list")) {
+          return Promise.resolve({
+            code: 0,
+            success: true,
+            stdout: new TextEncoder().encode(
+              "worktree /tmp/mock-repo\nHEAD abc123\nbranch refs/heads/main\n\n",
+            ),
+            stderr: new Uint8Array(),
+          } as RunResult);
+        }
+        if (args.includes("show-ref") && args.includes("--verify")) {
+          return Promise.resolve({
+            code: 0,
+            success: true,
+            stdout: new Uint8Array(),
+            stderr: new Uint8Array(),
+          } as RunResult);
+        }
+        return Promise.resolve({
+          code: 0,
+          success: true,
+          stdout: new Uint8Array(),
+          stderr: new Uint8Array(),
+        } as RunResult);
+      },
+    },
+    fs: {
+      readTextFile: () => Promise.reject(new Error("File not found")),
+      stat: () => Promise.reject(new Error("Not found")),
+    },
+    control: {
+      exit: ((code: number) => {
+        exitCode = code;
+      }) as never,
+      cwd: () => "/tmp/mock-repo",
+      chdir: () => {},
+      execPath: () => "/mock/exec",
+      args: [],
+    },
+    env: {
+      get: (key: string) => {
+        if (key === "HOME") return "/tmp/home";
+        return undefined;
+      },
+      set: () => {},
+      delete: () => {},
+      toObject: () => ({}),
+    },
+    errors: {
+      isNotFound: (error: unknown) =>
+        error instanceof Error &&
+        (error.message === "File not found" || error.message === "Not found"),
+    },
+  });
+
+  await startCommand("feat/invalid-base", { dryRun: true, base: "--no-hooks" }, ctx);
+
+  stderr.restore();
+
+  assertEquals(exitCode, 1);
+  const hasError = stderr.output.some((line) => line.includes("Error: --base requires a value"));
+  assertEquals(hasError, true, `Expected base error but got: ${stderr.output.join("\n")}`);
+});
+
+Deno.test("startCommand exits with error when base ref is invalid", async () => {
+  let exitCode: number | null = null;
+  const stderr = captureStderr();
+
+  const ctx = createMockContext({
+    process: {
+      run: (opts) => {
+        const args = opts.args as string[];
+        if (args.includes("rev-parse") && args.includes("--show-toplevel")) {
+          return Promise.resolve({
+            code: 0,
+            success: true,
+            stdout: new TextEncoder().encode("/tmp/mock-repo\n"),
+            stderr: new Uint8Array(),
+          } as RunResult);
+        }
+        if (args.includes("rev-parse") && args.includes("--verify")) {
+          return Promise.resolve({
+            code: 1,
+            success: false,
+            stdout: new Uint8Array(),
+            stderr: new TextEncoder().encode("fatal: bad object\n"),
+          } as RunResult);
+        }
+        if (args.includes("worktree") && args.includes("list")) {
+          return Promise.resolve({
+            code: 0,
+            success: true,
+            stdout: new TextEncoder().encode(
+              "worktree /tmp/mock-repo\nHEAD abc123\nbranch refs/heads/main\n\n",
+            ),
+            stderr: new Uint8Array(),
+          } as RunResult);
+        }
+        if (args.includes("show-ref") && args.includes("--verify")) {
+          return Promise.resolve({
+            code: 1,
+            success: false,
+            stdout: new Uint8Array(),
+            stderr: new TextEncoder().encode("fatal: bad ref\n"),
+          } as RunResult);
+        }
+        return Promise.resolve({
+          code: 0,
+          success: true,
+          stdout: new Uint8Array(),
+          stderr: new Uint8Array(),
+        } as RunResult);
+      },
+    },
+    fs: {
+      readTextFile: () => Promise.reject(new Error("File not found")),
+      stat: () => Promise.reject(new Error("Not found")),
+    },
+    control: {
+      exit: ((code: number) => {
+        exitCode = code;
+      }) as never,
+      cwd: () => "/tmp/mock-repo",
+      chdir: () => {},
+      execPath: () => "/mock/exec",
+      args: [],
+    },
+    env: {
+      get: (key: string) => {
+        if (key === "HOME") return "/tmp/home";
+        return undefined;
+      },
+      set: () => {},
+      delete: () => {},
+      toObject: () => ({}),
+    },
+    errors: {
+      isNotFound: (error: unknown) =>
+        error instanceof Error &&
+        (error.message === "File not found" || error.message === "Not found"),
+    },
+  });
+
+  await startCommand("feat/invalid-base", { dryRun: true, base: "no-such-ref" }, ctx);
+
+  stderr.restore();
+
+  assertEquals(exitCode, 1);
+  const hasError = stderr.output.some((line) =>
+    line.includes("Error: Base 'no-such-ref' not found")
+  );
+  assertEquals(hasError, true, `Expected base error but got: ${stderr.output.join("\n")}`);
+});
+
 Deno.test("startCommand shows error on exception", async () => {
   let exitCode: number | null = null;
   const stderr = captureStderr();

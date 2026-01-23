@@ -17,14 +17,17 @@ vibe start <branch> [options]
 
 ## オプション
 
-| オプション        | 説明                                     |                          |
-| ----------------- | ---------------------------------------- | ------------------------ |
-| `--reuse`         | 既存ブランチを使用（新規作成しない）     |                          |
-| `--no-hooks`      | pre-startとpost-startフックをスキップ    | <Badge text="v0.5.0+" /> |
-| `--no-copy`       | ファイル・ディレクトリのコピーをスキップ | <Badge text="v0.5.0+" /> |
-| `-n`, `--dry-run` | 実行せずに操作内容をプレビュー           | <Badge text="v0.8.0+" /> |
-| `-V`, `--verbose` | 詳細な出力を表示                         | <Badge text="v0.8.0+" /> |
-| `-q`, `--quiet`   | 不要な出力を抑制                         | <Badge text="v0.8.0+" /> |
+| オプション        | 説明                                      |                          |
+| ----------------- | ----------------------------------------- | ------------------------ |
+| `--reuse`         | 既存ブランチを使用（新規作成しない）      |                          |
+| `--base <ref>`    | 新規ブランチのベース（ブランチ/コミット） |                          |
+| `--no-hooks`      | pre-startとpost-startフックをスキップ     | <Badge text="v0.5.0+" /> |
+| `--no-copy`       | ファイル・ディレクトリのコピーをスキップ  | <Badge text="v0.5.0+" /> |
+| `-n`, `--dry-run` | 実行せずに操作内容をプレビュー            | <Badge text="v0.8.0+" /> |
+| `-V`, `--verbose` | 詳細な出力を表示                          | <Badge text="v0.8.0+" /> |
+| `-q`, `--quiet`   | 不要な出力を抑制                          | <Badge text="v0.8.0+" /> |
+
+※`--base`は新規ブランチ作成時のみ有効です。既存ブランチの場合は無視されます。
 
 ## 例
 
@@ -34,6 +37,9 @@ vibe start feat/new-feature
 
 # 既存ブランチを使用
 vibe start feat/existing-branch
+
+# ベースブランチから新規作成
+vibe start feat/from-main --base main
 
 # フックなしでクイックスタート
 vibe start feat/quick-fix --no-hooks
