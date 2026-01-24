@@ -1,6 +1,6 @@
 # vibe
 
-Git Worktreeを簡単に管理するCLIツール。
+Git Worktreeを簡単かつ超高速に管理するCLIツール。
 
 [English](README.md)
 
