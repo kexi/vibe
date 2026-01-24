@@ -18,6 +18,8 @@ export default defineConfig({
     /^node:.*/,
     // Dependencies that are installed via npm
     "zod",
+    // Native module (optional dependency, loaded dynamically at runtime)
+    "@kexi/vibe-native",
   ],
   // Include @jsr packages in bundle (not available on npm registry)
   noExternal: [/^@jsr\/.*/],

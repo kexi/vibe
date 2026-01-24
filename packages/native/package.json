@@ -1,6 +1,6 @@
 {
   "name": "@kexi/vibe-native",
-  "version": "0.15.0",
+  "version": "0.15.1",
   "description": "Native clone operations for vibe CLI (clonefile on macOS, FICLONE on Linux)",
   "main": "index.js",
   "types": "index.d.ts",
