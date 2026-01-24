@@ -14,11 +14,11 @@ describe("config command", () => {
   });
 
   test("Display settings in JSON format", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
-    const runner = new VibeCommandRunner(vibePath, repoPath);
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
 
     try {
       // Run vibe config

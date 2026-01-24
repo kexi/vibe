@@ -33,7 +33,7 @@ describe("permission errors", () => {
   });
 
   test("Handle permission errors gracefully", async () => {
-    const { repoPath, cleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup } = await setupTestGitRepo();
     repoCleanup = cleanup;
 
     // Note: We cannot reliably test parent directory permissions on macOS
@@ -41,7 +41,7 @@ describe("permission errors", () => {
     // This test validates that the command handles permission issues gracefully.
 
     const vibePath = getVibePath();
-    const runner = new VibeCommandRunner(vibePath, repoPath);
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
 
     try {
       // Just run a normal start command to verify no permission issues
@@ -61,7 +61,7 @@ describe("permission errors", () => {
   });
 
   test("Error when .vibe.toml is not readable", async () => {
-    const { repoPath, cleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup } = await setupTestGitRepo();
     repoCleanup = cleanup;
 
     // Create a .vibe.toml file
@@ -79,7 +79,7 @@ files = ["README.md"]
     permissionCleanup = await makeInaccessible(vibeTomlPath);
 
     const vibePath = getVibePath();
-    const runner = new VibeCommandRunner(vibePath, repoPath);
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
 
     try {
       await runner.spawn(["start", "feat/test"]);
@@ -100,7 +100,7 @@ files = ["README.md"]
   });
 
   test("Warning when config file cannot be copied (non-fatal)", async () => {
-    const { repoPath, cleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup } = await setupTestGitRepo();
     repoCleanup = cleanup;
 
     // Create a .vibe.toml with a copy configuration
@@ -118,7 +118,7 @@ files = ["nonexistent.txt"]
     writeFileSync(testFilePath, "test content");
 
     const vibePath = getVibePath();
-    const runner = new VibeCommandRunner(vibePath, repoPath);
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
 
     try {
       await runner.spawn(["start", "feat/test"]);
@@ -141,13 +141,13 @@ files = ["nonexistent.txt"]
   });
 
   test("Handle permission errors during worktree operations", async () => {
-    const { repoPath, cleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup } = await setupTestGitRepo();
     repoCleanup = cleanup;
 
     const vibePath = getVibePath();
 
     // First create a worktree normally
-    const runner1 = new VibeCommandRunner(vibePath, repoPath);
+    const runner1 = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await runner1.spawn(["start", "feat/permission-test"]);
       await runner1.waitForExit();

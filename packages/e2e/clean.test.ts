@@ -29,7 +29,7 @@ describe("clean command", () => {
   });
 
   test("Remove worktree when no uncommitted changes", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
@@ -45,7 +45,7 @@ describe("clean command", () => {
     });
 
     // Run vibe clean from the worktree
-    const runner = new VibeCommandRunner(vibePath, worktreePath);
+    const runner = new VibeCommandRunner(vibePath, worktreePath, homePath);
     try {
       await runner.spawn(["clean"]);
       await runner.waitForExit();
@@ -66,7 +66,7 @@ describe("clean command", () => {
   });
 
   test("Remove worktree with uncommitted changes using --force", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
@@ -94,7 +94,7 @@ describe("clean command", () => {
     fs.writeFileSync(`${worktreePath}/uncommitted.txt`, "uncommitted changes");
 
     // Run vibe clean with --force from the worktree
-    const runner = new VibeCommandRunner(vibePath, worktreePath);
+    const runner = new VibeCommandRunner(vibePath, worktreePath, homePath);
     try {
       await runner.spawn(["clean", "--force"]);
       await runner.waitForExit();
@@ -115,11 +115,11 @@ describe("clean command", () => {
   });
 
   test("Error when run from main worktree", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
-    const runner = new VibeCommandRunner(vibePath, repoPath);
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
 
     try {
       // Run vibe clean from main worktree (should fail)
@@ -144,7 +144,7 @@ describe("clean command", () => {
   });
 
   test("Delete branch with --delete-branch option", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
@@ -164,7 +164,7 @@ describe("clean command", () => {
     expect(branchExists(repoPath, branchName)).toBe(true);
 
     // Run vibe clean with --delete-branch
-    const runner = new VibeCommandRunner(vibePath, worktreePath);
+    const runner = new VibeCommandRunner(vibePath, worktreePath, homePath);
     try {
       await runner.spawn(["clean", "--delete-branch"]);
       await runner.waitForExit();
@@ -186,7 +186,7 @@ describe("clean command", () => {
   });
 
   test("Keep branch with --keep-branch option even when config has delete_branch=true", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
@@ -209,7 +209,7 @@ describe("clean command", () => {
     });
 
     // Trust the config from worktree path (trust is path-based)
-    const trustRunner = new VibeCommandRunner(vibePath, worktreePath);
+    const trustRunner = new VibeCommandRunner(vibePath, worktreePath, homePath);
     try {
       await trustRunner.spawn(["trust"]);
       await trustRunner.waitForExit();
@@ -226,7 +226,7 @@ describe("clean command", () => {
     );
 
     // Verify trust was successful before proceeding
-    const verifyRunner = new VibeCommandRunner(vibePath, worktreePath);
+    const verifyRunner = new VibeCommandRunner(vibePath, worktreePath, homePath);
     try {
       await verifyRunner.spawn(["verify"]);
       await verifyRunner.waitForExit();
@@ -246,7 +246,7 @@ describe("clean command", () => {
     expect(branchExists(repoPath, branchName)).toBe(true);
 
     // Run vibe clean with --keep-branch (should override config)
-    const runner = new VibeCommandRunner(vibePath, worktreePath);
+    const runner = new VibeCommandRunner(vibePath, worktreePath, homePath);
     try {
       await runner.spawn(["clean", "--keep-branch"]);
       await runner.waitForExit();
@@ -265,7 +265,7 @@ describe("clean command", () => {
   });
 
   test("Delete branch when config has delete_branch=true", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
@@ -288,7 +288,7 @@ describe("clean command", () => {
     });
 
     // Trust the config from worktree path (trust is path-based)
-    const trustRunner = new VibeCommandRunner(vibePath, worktreePath);
+    const trustRunner = new VibeCommandRunner(vibePath, worktreePath, homePath);
     try {
       await trustRunner.spawn(["trust"]);
       await trustRunner.waitForExit();
@@ -305,7 +305,7 @@ describe("clean command", () => {
     );
 
     // Verify trust was successful before proceeding
-    const verifyRunner = new VibeCommandRunner(vibePath, worktreePath);
+    const verifyRunner = new VibeCommandRunner(vibePath, worktreePath, homePath);
     try {
       await verifyRunner.spawn(["verify"]);
       await verifyRunner.waitForExit();
@@ -316,7 +316,7 @@ describe("clean command", () => {
     }
 
     // Additional sync wait - verify trust is stable with a second check
-    const verifyRunner2 = new VibeCommandRunner(vibePath, worktreePath);
+    const verifyRunner2 = new VibeCommandRunner(vibePath, worktreePath, homePath);
     try {
       await verifyRunner2.spawn(["verify"]);
       await verifyRunner2.waitForExit();
@@ -329,7 +329,7 @@ describe("clean command", () => {
     expect(branchExists(repoPath, branchName)).toBe(true);
 
     // Run vibe clean (should use config)
-    const runner = new VibeCommandRunner(vibePath, worktreePath);
+    const runner = new VibeCommandRunner(vibePath, worktreePath, homePath);
     try {
       await runner.spawn(["clean"]);
       await runner.waitForExit();
@@ -351,7 +351,7 @@ describe("clean command", () => {
   });
 
   test("Error when --delete-branch and --keep-branch are used together", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
@@ -367,7 +367,7 @@ describe("clean command", () => {
     });
 
     // Run vibe clean with both --delete-branch and --keep-branch (should fail)
-    const runner = new VibeCommandRunner(vibePath, worktreePath);
+    const runner = new VibeCommandRunner(vibePath, worktreePath, homePath);
     try {
       await runner.spawn(["clean", "--delete-branch", "--keep-branch"]);
       await runner.waitForExit();
@@ -398,7 +398,7 @@ describe("clean command", () => {
   });
 
   test("Clean worktree with large files", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
@@ -415,7 +415,7 @@ describe("clean command", () => {
     const largeContent = "x".repeat(1024 * 1024);
     writeFileSync(join(worktreePath, "large-file.txt"), largeContent);
 
-    const runner = new VibeCommandRunner(vibePath, worktreePath);
+    const runner = new VibeCommandRunner(vibePath, worktreePath, homePath);
     try {
       await runner.spawn(["clean", "--force"]);
       await runner.waitForExit();

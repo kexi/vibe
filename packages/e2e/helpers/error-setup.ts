@@ -9,9 +9,11 @@ import { dirname, join } from "path";
  */
 export async function setupNonGitDirectory(): Promise<{
   dirPath: string;
+  homePath: string;
   cleanup: () => Promise<void>;
 }> {
   const tempDir = mkdtempSync(join(tmpdir(), "vibe-e2e-non-git-"));
+  const homePath = mkdtempSync(join(tmpdir(), "vibe-e2e-home-"));
 
   const cleanup = async () => {
     try {
@@ -19,9 +21,14 @@ export async function setupNonGitDirectory(): Promise<{
     } catch {
       // Ignore errors if directory is already removed
     }
+    try {
+      rmSync(homePath, { recursive: true, force: true });
+    } catch {
+      // Ignore errors if directory is already removed
+    }
   };
 
-  return { dirPath: tempDir, cleanup };
+  return { dirPath: tempDir, homePath, cleanup };
 }
 
 /**
@@ -30,9 +37,11 @@ export async function setupNonGitDirectory(): Promise<{
  */
 export async function setupGitRepoWithoutUserConfig(): Promise<{
   repoPath: string;
+  homePath: string;
   cleanup: () => Promise<void>;
 }> {
   const tempDir = mkdtempSync(join(tmpdir(), "vibe-e2e-no-config-"));
+  const homePath = mkdtempSync(join(tmpdir(), "vibe-e2e-home-"));
 
   // Initialize Git repository WITHOUT user config
   execFileSync("git", ["init"], { cwd: tempDir, stdio: "pipe" });
@@ -69,9 +78,14 @@ export async function setupGitRepoWithoutUserConfig(): Promise<{
     } catch {
       // Ignore errors if directory is already removed
     }
+    try {
+      rmSync(homePath, { recursive: true, force: true });
+    } catch {
+      // Ignore errors if directory is already removed
+    }
   };
 
-  return { repoPath: tempDir, cleanup };
+  return { repoPath: tempDir, homePath, cleanup };
 }
 
 /**
@@ -80,9 +94,11 @@ export async function setupGitRepoWithoutUserConfig(): Promise<{
  */
 export async function setupCorruptedGitRepo(): Promise<{
   repoPath: string;
+  homePath: string;
   cleanup: () => Promise<void>;
 }> {
   const tempDir = mkdtempSync(join(tmpdir(), "vibe-e2e-corrupted-"));
+  const homePath = mkdtempSync(join(tmpdir(), "vibe-e2e-home-"));
 
   // Initialize a normal git repository first
   execFileSync("git", ["init"], { cwd: tempDir, stdio: "pipe" });
@@ -135,9 +151,14 @@ export async function setupCorruptedGitRepo(): Promise<{
     } catch {
       // Ignore errors if directory is already removed
     }
+    try {
+      rmSync(homePath, { recursive: true, force: true });
+    } catch {
+      // Ignore errors if directory is already removed
+    }
   };
 
-  return { repoPath: tempDir, cleanup };
+  return { repoPath: tempDir, homePath, cleanup };
 }
 
 /**
@@ -146,9 +167,11 @@ export async function setupCorruptedGitRepo(): Promise<{
  */
 export async function setupDetachedHeadRepo(): Promise<{
   repoPath: string;
+  homePath: string;
   cleanup: () => Promise<void>;
 }> {
   const tempDir = mkdtempSync(join(tmpdir(), "vibe-e2e-detached-"));
+  const homePath = mkdtempSync(join(tmpdir(), "vibe-e2e-home-"));
 
   // Initialize Git repository
   execFileSync("git", ["init"], { cwd: tempDir, stdio: "pipe" });
@@ -195,9 +218,14 @@ export async function setupDetachedHeadRepo(): Promise<{
     } catch {
       // Ignore errors if directory is already removed
     }
+    try {
+      rmSync(homePath, { recursive: true, force: true });
+    } catch {
+      // Ignore errors if directory is already removed
+    }
   };
 
-  return { repoPath: tempDir, cleanup };
+  return { repoPath: tempDir, homePath, cleanup };
 }
 
 /**

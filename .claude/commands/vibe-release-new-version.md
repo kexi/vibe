@@ -388,11 +388,56 @@ EOF
 
 ### 6.4 Twitter投稿用テキスト生成
 
-リリース告知用のTwitter投稿テキストを生成して出力：
+リリース告知用のTwitter投稿テキストを生成して出力します。コントリビューターへの感謝を込めてTwitterメンションを含めます。
+
+#### 6.4.1 コントリビューター情報の取得
+
+前回リリースからのコントリビューターを取得：
+
+```bash
+# 前回タグを取得
+PREV_TAG=$(git describe --tags --abbrev=0)
+
+# リポジトリオーナーを取得
+REPO_OWNER=$(gh repo view --json owner --jq '.owner.login')
+
+# コントリビューターを取得（オーナー除外）
+gh api "repos/kexi/vibe/compare/${PREV_TAG}...HEAD" \
+  --jq "[.commits[].author.login] | unique | map(select(. != \"${REPO_OWNER}\")) | .[]"
+```
+
+#### 6.4.2 TwitterユーザーIDの抽出
+
+各コントリビューターのTwitterアカウントを取得：
+
+```bash
+# 各コントリビューターに対して実行
+gh api "users/{username}" --jq '.twitter_username // empty'
+```
+
+**エラーハンドリング:**
+
+| シナリオ | 対応 |
+|---------|------|
+| 前回タグが存在しない | メンション機能をスキップ |
+| GitHub API呼び出し失敗 | 警告を表示し、メンションなしで続行 |
+| コントリビューターが0名 | メンションなしで続行 |
+| 全員Twitterユーザー名なし | メンションなしのテンプレートを使用 |
+
+#### 6.4.3 Twitter投稿テンプレート生成
+
+**メンションの処理ルール:**
+
+| メンション数 | 対応 |
+|-------------|------|
+| 0名 | メンションなしのテンプレート |
+| 1-2名（約50文字以内） | メインツイートに含める |
+| 3名以上 | 別ツイート（リプライ）として分離 |
 
 **必須要素:**
 - vibeの説明（super fast Git worktree management tool with Copy-on-Write optimization）
 - 主な変更点
+- コントリビューターへの感謝（該当者がいる場合）
 - リリースページへのリンク
 - ハッシュタグ
 
@@ -400,7 +445,7 @@ EOF
 - インストール方法（省略する）
 - Websiteへのリンク（省略する）
 
-**日本語版:**
+**日本語版（メンションあり）:**
 
 ```
 🎉 vibe vX.Y.Z をリリースしました！
@@ -410,12 +455,14 @@ vibeはCopy-on-Write最適化による超高速なGit worktree管理ツールで
 ✨ 主な変更点:
 - 新機能や修正の要約（1-3行）
 
+🙏 Thanks to @contributor!
+
 🔗 https://github.com/kexi/vibe/releases/tag/vX.Y.Z
 
 #vibe #git #worktree #開発ツール
 ```
 
-**英語版:**
+**英語版（メンションあり）:**
 
 ```
 🎉 vibe vX.Y.Z released!
@@ -425,9 +472,22 @@ vibe is a super fast Git worktree management tool with Copy-on-Write optimizatio
 ✨ Highlights:
 - Summary of new features/fixes (1-3 lines)
 
+🙏 Thanks to @contributor!
+
 🔗 https://github.com/kexi/vibe/releases/tag/vX.Y.Z
 
 #vibe #git #worktree #devtools
+```
+
+**3名以上のコントリビューターがいる場合（リプライ用）:**
+
+メインツイートにはメンションを含めず、リプライとして以下を投稿：
+
+```
+🙏 Special thanks to our contributors:
+@contributor1 @contributor2 @contributor3 @contributor4
+
+Your contributions make vibe better! 🎉
 ```
 
 **Note:** 280文字制限に注意。必要に応じて要約を調整してください。

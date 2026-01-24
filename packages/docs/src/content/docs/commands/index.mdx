@@ -9,14 +9,14 @@ vibe provides a simple set of commands for managing Git Worktrees.
 
 ## Command Summary
 
-| Command               | Description                                     |
-| --------------------- | ----------------------------------------------- |
-| `vibe start <branch>` | Create a worktree with a new or existing branch |
-| `vibe clean`          | Delete current worktree and return to main      |
-| `vibe trust`          | Trust configuration files                       |
-| `vibe untrust`        | Untrust configuration files                     |
-| `vibe config`         | Show current configuration                      |
-| `vibe upgrade`        | Check for updates and show upgrade instructions |
+| Command                              | Description                                     |
+| ------------------------------------ | ----------------------------------------------- |
+| `vibe start <branch> [--base <ref>]` | Create a worktree with a new or existing branch |
+| `vibe clean`                         | Delete current worktree and return to main      |
+| `vibe trust`                         | Trust configuration files                       |
+| `vibe untrust`                       | Untrust configuration files                     |
+| `vibe config`                        | Show current configuration                      |
+| `vibe upgrade`                       | Check for updates and show upgrade instructions |
 
 ## Quick Reference
 
@@ -26,6 +26,9 @@ vibe start feat/new-feature
 
 # Use an existing branch
 vibe start feat/existing-branch
+
+# Create from a specific base branch
+vibe start feat/new-feature --base main
 
 # Clean up when done
 vibe clean

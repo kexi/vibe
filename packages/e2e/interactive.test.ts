@@ -29,7 +29,7 @@ describe("interactive prompts", () => {
   });
 
   test("Navigate to existing worktree when branch in use (Y response)", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
@@ -39,7 +39,7 @@ describe("interactive prompts", () => {
     const repoName = basename(repoPath);
     const worktreePath = `${parentDir}/${repoName}-feat-test`;
 
-    const runner1 = new VibeCommandRunner(vibePath, repoPath);
+    const runner1 = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await runner1.spawn(["start", "feat/test"]);
       await runner1.waitForExit();
@@ -49,7 +49,7 @@ describe("interactive prompts", () => {
     }
 
     // Step 2: Try to create the same branch again (should prompt)
-    const runner2 = new VibeCommandRunner(vibePath, repoPath);
+    const runner2 = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       // Await spawn to ensure PTY is ready before continuing
       await runner2.spawn(["start", "feat/test"]);
@@ -82,13 +82,13 @@ describe("interactive prompts", () => {
   });
 
   test("Cancel when branch in use (n response)", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
 
     // Step 1: Create a worktree with branch "feat/test"
-    const runner1 = new VibeCommandRunner(vibePath, repoPath);
+    const runner1 = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await runner1.spawn(["start", "feat/test"]);
       await runner1.waitForExit();
@@ -98,7 +98,7 @@ describe("interactive prompts", () => {
     }
 
     // Step 2: Try to create the same branch again and cancel
-    const runner2 = new VibeCommandRunner(vibePath, repoPath);
+    const runner2 = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await runner2.spawn(["start", "feat/test"]);
 
@@ -126,7 +126,7 @@ describe("interactive prompts", () => {
   });
 
   test("Overwrite existing directory (choice 1)", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
@@ -136,7 +136,7 @@ describe("interactive prompts", () => {
     const repoName = basename(repoPath);
     const worktreePath = `${parentDir}/${repoName}-feat-overwrite`;
 
-    const runner1 = new VibeCommandRunner(vibePath, repoPath);
+    const runner1 = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await runner1.spawn(["start", "feat/overwrite"]);
       await runner1.waitForExit();
@@ -153,7 +153,7 @@ describe("interactive prompts", () => {
     execFileSync("git", ["branch", "-D", originalBranch], { cwd: repoPath, stdio: "pipe" });
 
     // Step 3: Try to create the same worktree again (directory exists but branch is available)
-    const runner2 = new VibeCommandRunner(vibePath, repoPath);
+    const runner2 = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await runner2.spawn(["start", "feat/overwrite"]);
 
@@ -183,7 +183,7 @@ describe("interactive prompts", () => {
   });
 
   test("Reuse existing directory (choice 2)", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
@@ -193,7 +193,7 @@ describe("interactive prompts", () => {
     const repoName = basename(repoPath);
     const worktreePath = `${parentDir}/${repoName}-feat-reuse`;
 
-    const runner1 = new VibeCommandRunner(vibePath, repoPath);
+    const runner1 = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await runner1.spawn(["start", "feat/reuse"]);
       await runner1.waitForExit();
@@ -210,7 +210,7 @@ describe("interactive prompts", () => {
     execFileSync("git", ["branch", "-D", originalBranch], { cwd: repoPath, stdio: "pipe" });
 
     // Step 3: Try to create the same worktree again and reuse
-    const runner2 = new VibeCommandRunner(vibePath, repoPath);
+    const runner2 = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await runner2.spawn(["start", "feat/reuse"]);
 
@@ -240,7 +240,7 @@ describe("interactive prompts", () => {
   });
 
   test("Cancel when directory exists (choice 3)", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
@@ -250,7 +250,7 @@ describe("interactive prompts", () => {
     const repoName = basename(repoPath);
     const worktreePath = `${parentDir}/${repoName}-feat-cancel`;
 
-    const runner1 = new VibeCommandRunner(vibePath, repoPath);
+    const runner1 = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await runner1.spawn(["start", "feat/cancel"]);
       await runner1.waitForExit();
@@ -267,7 +267,7 @@ describe("interactive prompts", () => {
     execFileSync("git", ["branch", "-D", originalBranch], { cwd: repoPath, stdio: "pipe" });
 
     // Step 3: Try to create the same worktree again and cancel
-    const runner2 = new VibeCommandRunner(vibePath, repoPath);
+    const runner2 = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await runner2.spawn(["start", "feat/cancel"]);
 
@@ -295,7 +295,7 @@ describe("interactive prompts", () => {
   });
 
   test("Handle invalid input gracefully in confirmation", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
@@ -305,7 +305,7 @@ describe("interactive prompts", () => {
     const repoName = basename(repoPath);
     const worktreePath = `${parentDir}/${repoName}-feat-invalid`;
 
-    const runner1 = new VibeCommandRunner(vibePath, repoPath);
+    const runner1 = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await runner1.spawn(["start", "feat/invalid"]);
       await runner1.waitForExit();
@@ -315,7 +315,7 @@ describe("interactive prompts", () => {
     }
 
     // Step 2: Try again with invalid input then valid input
-    const runner2 = new VibeCommandRunner(vibePath, repoPath);
+    const runner2 = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await runner2.spawn(["start", "feat/invalid"]);
 

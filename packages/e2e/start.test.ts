@@ -22,11 +22,11 @@ describe("start command", () => {
   });
 
   test("Create worktree with new branch", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
-    const runner = new VibeCommandRunner(vibePath, repoPath);
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
 
     try {
       // Run vibe start feat/new-feature
@@ -52,8 +52,53 @@ describe("start command", () => {
     }
   });
 
+  test("Create worktree with base branch", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+
+    // Create a base branch with a unique commit
+    execFileSync("git", ["checkout", "-b", "base-branch"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+    writeFileSync(join(repoPath, "BASE_MARKER.txt"), "base\n");
+    execFileSync("git", ["add", "BASE_MARKER.txt"], { cwd: repoPath, stdio: "pipe" });
+    execFileSync("git", ["commit", "-m", "Add base marker"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+    execFileSync("git", ["checkout", "main"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
+    try {
+      // Run vibe start with --base
+      await runner.spawn(["start", "feat/from-base", "--base", "base-branch"]);
+      await runner.waitForExit();
+
+      const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
+
+      const parentDir = dirname(repoPath);
+      const repoName = basename(repoPath);
+      const worktreePath = `${parentDir}/${repoName}-feat-from-base`;
+
+      await assertDirectoryExists(worktreePath);
+
+      // Verify worktree includes the base branch commit
+      const markerPath = join(worktreePath, "BASE_MARKER.txt");
+      expect(existsSync(markerPath)).toBe(true);
+    } finally {
+      runner.dispose();
+    }
+  });
+
   test("Use --reuse flag with existing branch", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
@@ -69,7 +114,7 @@ describe("start command", () => {
     });
 
     // Run vibe start existing-branch --reuse
-    const runner = new VibeCommandRunner(vibePath, repoPath);
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await runner.spawn(["start", "existing-branch", "--reuse"]);
       await runner.waitForExit();
@@ -94,11 +139,11 @@ describe("start command", () => {
   });
 
   test("Error when branch name is missing", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
-    const runner = new VibeCommandRunner(vibePath, repoPath);
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
 
     try {
       // Run vibe start without branch name
@@ -123,7 +168,7 @@ describe("start command", () => {
   });
 
   test("--no-hooks skips pre-start and post-start hooks", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
@@ -142,7 +187,7 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.post-hook-ran"]
     });
 
     // Trust the config
-    const trustRunner = new VibeCommandRunner(vibePath, repoPath);
+    const trustRunner = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await trustRunner.spawn(["trust"]);
       await trustRunner.waitForExit();
@@ -153,7 +198,7 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.post-hook-ran"]
     }
 
     // Run vibe start with --no-hooks
-    const runner = new VibeCommandRunner(vibePath, repoPath);
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await runner.spawn(["start", "feat/test-no-hooks", "--no-hooks"]);
       await runner.waitForExit();
@@ -180,7 +225,7 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.post-hook-ran"]
   });
 
   test("--no-copy skips file copying", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
@@ -204,7 +249,7 @@ files = [".env.local"]
     });
 
     // Trust the config
-    const trustRunner = new VibeCommandRunner(vibePath, repoPath);
+    const trustRunner = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await trustRunner.spawn(["trust"]);
       await trustRunner.waitForExit();
@@ -215,7 +260,7 @@ files = [".env.local"]
     }
 
     // Run vibe start with --no-copy
-    const runner = new VibeCommandRunner(vibePath, repoPath);
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await runner.spawn(["start", "feat/test-no-copy", "--no-copy"]);
       await runner.waitForExit();
@@ -239,7 +284,7 @@ files = [".env.local"]
   });
 
   test("--no-hooks and --no-copy can be combined", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
@@ -265,7 +310,7 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.hook-ran"]
     });
 
     // Trust the config
-    const trustRunner = new VibeCommandRunner(vibePath, repoPath);
+    const trustRunner = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await trustRunner.spawn(["trust"]);
       await trustRunner.waitForExit();
@@ -276,7 +321,7 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.hook-ran"]
     }
 
     // Verify trust was successful before proceeding
-    const verifyRunner = new VibeCommandRunner(vibePath, repoPath);
+    const verifyRunner = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await verifyRunner.spawn(["verify"]);
       await verifyRunner.waitForExit();
@@ -294,7 +339,7 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.hook-ran"]
     );
 
     // Run vibe start with both --no-hooks and --no-copy
-    const runner = new VibeCommandRunner(vibePath, repoPath);
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await runner.spawn([
         "start",
@@ -326,7 +371,7 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.hook-ran"]
   });
 
   test("worktree.path_script in .vibe.toml determines worktree path", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
@@ -357,7 +402,7 @@ path_script = "./worktree-path.sh"
     });
 
     // Trust the config
-    const trustRunner = new VibeCommandRunner(vibePath, repoPath);
+    const trustRunner = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await trustRunner.spawn(["trust"]);
       await trustRunner.waitForExit();
@@ -374,7 +419,7 @@ path_script = "./worktree-path.sh"
     );
 
     // Run vibe start
-    const runner = new VibeCommandRunner(vibePath, repoPath);
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await runner.spawn(["start", "feat/custom-path"]);
       await runner.waitForExit();
@@ -395,7 +440,7 @@ path_script = "./worktree-path.sh"
   });
 
   test(".vibe.local.toml path_script takes precedence over .vibe.toml", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();
@@ -450,7 +495,7 @@ path_script = "./local-path.sh"
     });
 
     // Trust the configs
-    const trustRunner = new VibeCommandRunner(vibePath, repoPath);
+    const trustRunner = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await trustRunner.spawn(["trust"]);
       await trustRunner.waitForExit();
@@ -461,7 +506,7 @@ path_script = "./local-path.sh"
     }
 
     // Run vibe start
-    const runner = new VibeCommandRunner(vibePath, repoPath);
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
       await runner.spawn(["start", "feat/precedence-test"]);
       await runner.waitForExit();

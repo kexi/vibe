@@ -1,5 +1,5 @@
 import { join } from "@std/path";
-import { getRepoName, getRepoRoot, sanitizeBranchName } from "../utils/git.ts";
+import { getRepoName, getRepoRoot, revisionExists, sanitizeBranchName } from "../utils/git.ts";
 import type { VibeConfig } from "../types/config.ts";
 import { loadVibeConfig } from "../utils/config.ts";
 import { type HookTrackerInfo, runHooks } from "../utils/hooks.ts";
@@ -24,6 +24,8 @@ interface StartOptions extends OutputOptions {
   noHooks?: boolean;
   noCopy?: boolean;
   dryRun?: boolean;
+  base?: string;
+  baseFromEquals?: boolean;
 }
 
 interface ConfigAndHooksOptions {
@@ -45,13 +47,35 @@ export async function startCommand(
   ctx: AppContext = getGlobalContext(),
 ): Promise<void> {
   const { runtime } = ctx;
-  const { noHooks = false, noCopy = false, dryRun = false, verbose = false, quiet = false } =
-    options;
+  const {
+    noHooks = false,
+    noCopy = false,
+    dryRun = false,
+    verbose = false,
+    quiet = false,
+    base,
+    baseFromEquals = false,
+  } = options;
   const outputOpts: OutputOptions = { verbose, quiet };
 
   const isBranchNameEmpty = !branchName;
   if (isBranchNameEmpty) {
     console.error("Error: Branch name is required");
+    runtime.control.exit(1);
+  }
+
+  const isBaseProvided = base !== undefined;
+  if (isBaseProvided && typeof base !== "string") {
+    console.error("Error: --base requires a value");
+    runtime.control.exit(1);
+  }
+  const baseRef = typeof base === "string" ? base.trim() : undefined;
+  if (isBaseProvided && baseRef === "") {
+    console.error("Error: --base requires a value");
+    runtime.control.exit(1);
+  }
+  if (isBaseProvided && baseRef && baseRef.startsWith("-") && !baseFromEquals) {
+    console.error("Error: --base requires a value");
     runtime.control.exit(1);
   }
 
@@ -76,6 +100,20 @@ export async function startCommand(
         ctx,
       );
       if (handled) return;
+    }
+
+    if (baseRef && validation.branchExists) {
+      console.error(
+        `Warning: Branch '${branchName}' already exists; --base is ignored.`,
+      );
+    }
+
+    if (baseRef && !validation.branchExists) {
+      const baseExists = await revisionExists(baseRef, ctx);
+      if (!baseExists) {
+        console.error(`Error: Base '${baseRef}' not found`);
+        runtime.control.exit(1);
+      }
     }
 
     // Load settings and config
@@ -131,6 +169,7 @@ export async function startCommand(
       branchName,
       worktreePath,
       branchExists: validation.branchExists,
+      baseRef: baseRef && !validation.branchExists ? baseRef : undefined,
     };
 
     if (dryRun) {

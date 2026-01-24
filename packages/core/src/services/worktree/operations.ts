@@ -17,6 +17,8 @@ export interface CreateWorktreeOptions {
   worktreePath: string;
   /** Whether the branch already exists (false = create new branch) */
   branchExists: boolean;
+  /** Optional base reference for creating a new branch */
+  baseRef?: string;
 }
 
 /**
@@ -32,16 +34,18 @@ export interface RemoveWorktreeOptions {
 /**
  * Create a new git worktree
  *
- * If the branch doesn't exist, it will be created with -b flag.
+ * If the branch doesn't exist, it will be created with -b (optionally from a base ref).
  */
 export async function createWorktree(
   options: CreateWorktreeOptions,
   ctx: AppContext = getGlobalContext(),
 ): Promise<void> {
-  const { branchName, worktreePath, branchExists } = options;
+  const { branchName, worktreePath, branchExists, baseRef } = options;
 
   if (branchExists) {
     await runGitCommand(["worktree", "add", worktreePath, branchName], ctx);
+  } else if (baseRef) {
+    await runGitCommand(["worktree", "add", "-b", branchName, worktreePath, baseRef], ctx);
   } else {
     await runGitCommand(["worktree", "add", "-b", branchName, worktreePath], ctx);
   }
@@ -69,10 +73,13 @@ export async function removeWorktree(
  * (for dry-run logging)
  */
 export function getCreateWorktreeCommand(options: CreateWorktreeOptions): string {
-  const { branchName, worktreePath, branchExists } = options;
+  const { branchName, worktreePath, branchExists, baseRef } = options;
 
   if (branchExists) {
     return `git worktree add '${worktreePath}' ${branchName}`;
+  }
+  if (baseRef) {
+    return `git worktree add -b ${branchName} '${worktreePath}' ${baseRef}`;
   }
   return `git worktree add -b ${branchName} '${worktreePath}'`;
 }

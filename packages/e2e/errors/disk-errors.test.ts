@@ -32,7 +32,7 @@ describe("disk space errors", () => {
   });
 
   test("Warning when file copy fails (simulating disk space issues)", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     // Create a .vibe.toml that tries to copy a non-existent file
@@ -50,7 +50,7 @@ files = ["this-file-does-not-exist.txt", "another-missing-file.conf"]
     commitVibeToml(repoPath);
 
     // Trust the .vibe.toml file using vibe trust command
-    const trustRunner = new VibeCommandRunner(getVibePath(), repoPath);
+    const trustRunner = new VibeCommandRunner(getVibePath(), repoPath, homePath);
     try {
       await trustRunner.spawn(["trust"]);
       await trustRunner.waitForExit();
@@ -59,7 +59,7 @@ files = ["this-file-does-not-exist.txt", "another-missing-file.conf"]
     }
 
     const vibePath = getVibePath();
-    const runner = new VibeCommandRunner(vibePath, repoPath);
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
 
     try {
       await runner.spawn(["start", "feat/test-disk-error"]);
@@ -87,7 +87,7 @@ files = ["this-file-does-not-exist.txt", "another-missing-file.conf"]
   });
 
   test("Worktree creation succeeds despite copy failures", async () => {
-    const { repoPath, cleanup: repoCleanup } = await setupTestGitRepo();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
 
     // Create some files that will succeed first
@@ -113,7 +113,7 @@ files = ["*.txt", "config/*.json"]
     commitVibeToml(repoPath);
 
     // Trust the .vibe.toml file
-    const trustRunner = new VibeCommandRunner(getVibePath(), repoPath);
+    const trustRunner = new VibeCommandRunner(getVibePath(), repoPath, homePath);
     try {
       await trustRunner.spawn(["trust"]);
       await trustRunner.waitForExit();
@@ -129,7 +129,7 @@ files = ["*.txt", "config/*.json"]
     );
 
     // Verify trust was successful before proceeding
-    const verifyRunner = new VibeCommandRunner(getVibePath(), repoPath);
+    const verifyRunner = new VibeCommandRunner(getVibePath(), repoPath, homePath);
     try {
       await verifyRunner.spawn(["verify"]);
       await verifyRunner.waitForExit();
@@ -139,7 +139,7 @@ files = ["*.txt", "config/*.json"]
     }
 
     const vibePath = getVibePath();
-    const runner = new VibeCommandRunner(vibePath, repoPath);
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
 
     try {
       await runner.spawn(["start", "feat/partial-copy"]);
