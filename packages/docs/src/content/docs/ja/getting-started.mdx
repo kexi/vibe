@@ -40,6 +40,22 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     :::
 
   </TabItem>
+  <TabItem label="Bun">
+    ```bash frame="terminal"
+    # グローバルインストール
+    bun add -g @kexi/vibe
+
+    # またはbunxで直接実行
+    bunx @kexi/vibe start feat/my-feature
+    ```
+    :::note
+    シェル設定（ステップ2）が必要です。bunxを使用する場合は「bunx用」のコマンドを選択してください。
+    :::
+    :::tip
+    頻繁に使用する場合はグローバルインストールを推奨します。bunxはパッケージ解決のため起動が遅くなります。
+    :::
+
+  </TabItem>
   <TabItem label="Deno">
     ```bash frame="terminal"
     deno install -A --global jsr:@kexi/vibe
@@ -77,11 +93,13 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     ```bash frame="terminal"
     # ~/.zshrc に追加（いずれか1つを選択）
 
-    # グローバルインストール用（Homebrew, npm -g, Deno）
+    # グローバルインストール用（Homebrew, npm -g, bun -g, Deno）
     vibe() { eval "$(command vibe "$@")" }
 
     # npx用（グローバルインストールなし）
     vibe() { eval "$(npx @kexi/vibe "$@")" }
+    # bunx用:
+    # vibe() { eval "$(bunx @kexi/vibe "$@")" }
     ```
 
   </TabItem>
@@ -89,11 +107,13 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     ```bash frame="terminal"
     # ~/.bashrc に追加（いずれか1つを選択）
 
-    # グローバルインストール用（Homebrew, npm -g, Deno）
+    # グローバルインストール用（Homebrew, npm -g, bun -g, Deno）
     vibe() { eval "$(command vibe "$@")"; }
 
     # npx用（グローバルインストールなし）
     vibe() { eval "$(npx @kexi/vibe "$@")"; }
+    # bunx用:
+    # vibe() { eval "$(bunx @kexi/vibe "$@")"; }
     ```
 
   </TabItem>
@@ -101,7 +121,7 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     ```fish frame="terminal"
     # ~/.config/fish/config.fish に追加（いずれか1つを選択）
 
-    # グローバルインストール用（Homebrew, npm -g, Deno）
+    # グローバルインストール用（Homebrew, npm -g, bun -g, Deno）
     function vibe
         eval (command vibe $argv)
     end
@@ -110,6 +130,10 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     function vibe
         eval (npx @kexi/vibe $argv)
     end
+    # bunx用:
+    # function vibe
+    #     eval (bunx @kexi/vibe $argv)
+    # end
     ```
 
   </TabItem>
@@ -117,7 +141,7 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     ```nu frame="terminal"
     # ~/.config/nushell/config.nu に追加（いずれか1つを選択）
 
-    # グローバルインストール用（Homebrew, npm -g, Deno）
+    # グローバルインストール用（Homebrew, npm -g, bun -g, Deno）
     def --env vibe [...args] {
         ^vibe ...$args | lines | each { |line| nu -c $line }
     }
@@ -126,6 +150,10 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     def --env vibe [...args] {
         npx @kexi/vibe ...$args | lines | each { |line| nu -c $line }
     }
+    # bunx用:
+    # def --env vibe [...args] {
+    #     bunx @kexi/vibe ...$args | lines | each { |line| nu -c $line }
+    # }
     ```
 
   </TabItem>
@@ -133,11 +161,13 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     ```powershell frame="terminal"
     # $PROFILE に追加（いずれか1つを選択）
 
-    # グローバルインストール用（Homebrew, npm -g, Deno）
+    # グローバルインストール用（Homebrew, npm -g, bun -g, Deno）
     function vibe { Invoke-Expression (& vibe.exe $args) }
 
     # npx用（グローバルインストールなし）
     function vibe { Invoke-Expression (& npx @kexi/vibe $args) }
+    # bunx用:
+    # function vibe { Invoke-Expression (& bunx @kexi/vibe $args) }
     ```
 
   </TabItem>

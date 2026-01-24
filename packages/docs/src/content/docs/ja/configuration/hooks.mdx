@@ -102,6 +102,17 @@ post_start = [
 pre_clean = ["git stash --include-untracked"]
 ```
 
+### Bunプロジェクト
+
+```toml
+[hooks]
+post_start = [
+  "bun install",
+  "bun run build"
+]
+pre_clean = ["git stash --include-untracked"]
+```
+
 ### データベースマイグレーション
 
 ```toml
