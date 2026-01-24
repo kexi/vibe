@@ -12,7 +12,7 @@ Git Worktreeを簡単に管理するCLIツール。
 
 | コマンド                       | 説明                                                  |
 | ------------------------------ | ----------------------------------------------------- |
-| `vibe start <branch>`          | 新規または既存ブランチでworktreeを作成（冪等）        |
+| `vibe start <branch> [--base <ref>]` | 新規または既存ブランチでworktreeを作成（冪等）        |
 | `vibe clean`                   | 現在のworktreeを削除してメインに戻る（未コミットの変更がある場合は確認）                  |
 | `vibe trust`                   | `.vibe.toml`と`.vibe.local.toml`ファイルを信頼登録    |
 | `vibe untrust`                 | `.vibe.toml`と`.vibe.local.toml`ファイルの信頼を解除  |
@@ -25,6 +25,9 @@ vibe start feat/new-feature
 
 # 既存ブランチを使用（またはworktreeが既に存在する場合も再実行可能）
 vibe start feat/existing-branch
+
+# 特定のブランチをベースにworktreeを作成
+vibe start feat/new-feature --base main
 
 # 作業完了後、worktreeを削除
 vibe clean
@@ -47,6 +50,14 @@ $ vibe start feat/new-feature
 ブランチ 'feat/new-feature' は既にworktree '/path/to/repo-feat-new-feature' で使用中です。
 既存のworktreeに移動しますか? (Y/n)
 ```
+
+### ベースブランチオプション
+
+`--base`オプションは新しいブランチの開始点を指定します：
+
+- **新規ブランチ**: 指定されたベース（ブランチ、タグ、またはコミット）からブランチを作成
+- **既存ブランチ**: `--base`オプションは警告と共に無視される
+- **無効なベース**: 指定された参照が存在しない場合はエラーで終了
 
 ### クリーンアップ動作
 

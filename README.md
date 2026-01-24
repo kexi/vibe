@@ -12,7 +12,7 @@ A CLI tool for easy Git Worktree management.
 
 | Command                      | Description                                         |
 | ---------------------------- | --------------------------------------------------- |
-| `vibe start <branch>`        | Create a worktree with a new or existing branch (idempotent) |
+| `vibe start <branch> [--base <ref>]` | Create a worktree with a new or existing branch (idempotent) |
 | `vibe clean`                 | Delete current worktree and return to main (prompts if uncommitted changes exist) |
 | `vibe trust`                 | Trust `.vibe.toml` and `.vibe.local.toml` files     |
 | `vibe untrust`               | Untrust `.vibe.toml` and `.vibe.local.toml` files   |
@@ -25,6 +25,9 @@ vibe start feat/new-feature
 
 # Use an existing branch (or re-run if worktree already exists)
 vibe start feat/existing-branch
+
+# Create a worktree from a specific base branch
+vibe start feat/new-feature --base main
 
 # After work is done, delete the worktree
 vibe clean
@@ -47,6 +50,14 @@ $ vibe start feat/new-feature
 Branch 'feat/new-feature' is already in use by worktree '/path/to/repo-feat-new-feature'.
 Navigate to the existing worktree? (Y/n)
 ```
+
+### Base Branch Option
+
+The `--base` option specifies the starting point for a new branch:
+
+- **New branch**: Creates the branch from the specified base (branch, tag, or commit)
+- **Existing branch**: The `--base` option is ignored with a warning
+- **Invalid base**: Exits with an error if the specified ref doesn't exist
 
 ### Cleanup Behavior
 
