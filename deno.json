@@ -1,6 +1,6 @@
 {
   "name": "@kexi/vibe",
-  "version": "0.12.7",
+  "version": "0.15.0",
   "license": "Apache-2.0",
   "repository": "https://github.com/kexi/vibe",
   "exports": "./main.ts",
