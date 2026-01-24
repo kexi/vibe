@@ -99,6 +99,18 @@ npx @kexi/vibe start feat/my-feature
 
 > 注意: npmパッケージにはmacOS (APFS)とLinux (Btrfs/XFS)で最適化されたCopy-on-Writeファイルクローニング用のオプショナルなネイティブバインディング（`@kexi/vibe-native`）が含まれています。利用可能な場合は自動的に使用されます。
 
+### Bun (1.2.0+)
+
+```bash
+# グローバルインストール
+bun add -g @kexi/vibe
+
+# またはbunxで直接実行
+bunx @kexi/vibe start feat/my-feature
+```
+
+> 注意: BunはNode.jsと同じnpmパッケージを使用します。Copy-on-Writeファイルクローニング用のネイティブバインディングは利用可能な場合に自動的に使用されます。
+
 ### Deno (JSR)
 
 ```bash
