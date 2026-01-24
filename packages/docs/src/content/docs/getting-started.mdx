@@ -40,6 +40,22 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     :::
 
   </TabItem>
+  <TabItem label="Bun">
+    ```bash frame="terminal"
+    # Global install
+    bun add -g @kexi/vibe
+
+    # Or run directly with bunx
+    bunx @kexi/vibe start feat/my-feature
+    ```
+    :::note
+    Shell setup (Step 2) is required. Select the "bunx" option for bunx usage.
+    :::
+    :::tip
+    Global install is recommended for frequent use. bunx has slower startup due to package resolution overhead.
+    :::
+
+  </TabItem>
   <TabItem label="Deno">
     ```bash frame="terminal"
     deno install -A --global jsr:@kexi/vibe
@@ -77,11 +93,13 @@ Add **one** of the following to your shell configuration (choose based on your i
     ```bash frame="terminal"
     # Add to ~/.zshrc (choose one)
 
-    # For global install (Homebrew, npm -g, Deno)
+    # For global install (Homebrew, npm -g, bun -g, Deno)
     vibe() { eval "$(command vibe "$@")" }
 
     # For npx (without global install)
     vibe() { eval "$(npx @kexi/vibe "$@")" }
+    # Or for bunx:
+    # vibe() { eval "$(bunx @kexi/vibe "$@")" }
     ```
 
   </TabItem>
@@ -89,11 +107,13 @@ Add **one** of the following to your shell configuration (choose based on your i
     ```bash frame="terminal"
     # Add to ~/.bashrc (choose one)
 
-    # For global install (Homebrew, npm -g, Deno)
+    # For global install (Homebrew, npm -g, bun -g, Deno)
     vibe() { eval "$(command vibe "$@")"; }
 
     # For npx (without global install)
     vibe() { eval "$(npx @kexi/vibe "$@")"; }
+    # Or for bunx:
+    # vibe() { eval "$(bunx @kexi/vibe "$@")"; }
     ```
 
   </TabItem>
@@ -101,7 +121,7 @@ Add **one** of the following to your shell configuration (choose based on your i
     ```fish frame="terminal"
     # Add to ~/.config/fish/config.fish (choose one)
 
-    # For global install (Homebrew, npm -g, Deno)
+    # For global install (Homebrew, npm -g, bun -g, Deno)
     function vibe
         eval (command vibe $argv)
     end
@@ -110,6 +130,10 @@ Add **one** of the following to your shell configuration (choose based on your i
     function vibe
         eval (npx @kexi/vibe $argv)
     end
+    # Or for bunx:
+    # function vibe
+    #     eval (bunx @kexi/vibe $argv)
+    # end
     ```
 
   </TabItem>
@@ -117,7 +141,7 @@ Add **one** of the following to your shell configuration (choose based on your i
     ```nu frame="terminal"
     # Add to ~/.config/nushell/config.nu (choose one)
 
-    # For global install (Homebrew, npm -g, Deno)
+    # For global install (Homebrew, npm -g, bun -g, Deno)
     def --env vibe [...args] {
         ^vibe ...$args | lines | each { |line| nu -c $line }
     }
@@ -126,6 +150,10 @@ Add **one** of the following to your shell configuration (choose based on your i
     def --env vibe [...args] {
         npx @kexi/vibe ...$args | lines | each { |line| nu -c $line }
     }
+    # Or for bunx:
+    # def --env vibe [...args] {
+    #     bunx @kexi/vibe ...$args | lines | each { |line| nu -c $line }
+    # }
     ```
 
   </TabItem>
@@ -133,11 +161,13 @@ Add **one** of the following to your shell configuration (choose based on your i
     ```powershell frame="terminal"
     # Add to your $PROFILE (choose one)
 
-    # For global install (Homebrew, npm -g, Deno)
+    # For global install (Homebrew, npm -g, bun -g, Deno)
     function vibe { Invoke-Expression (& vibe.exe $args) }
 
     # For npx (without global install)
     function vibe { Invoke-Expression (& npx @kexi/vibe $args) }
+    # Or for bunx:
+    # function vibe { Invoke-Expression (& bunx @kexi/vibe $args) }
     ```
 
   </TabItem>
