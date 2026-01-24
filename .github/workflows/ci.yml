@@ -63,7 +63,7 @@ jobs:
         env:
           MISE_HTTP_TIMEOUT: "120"
       - name: Install dependencies
-        run: bun install --filter @kexi/vibe
+        run: pnpm install --filter @kexi/vibe --ignore-scripts
       - name: Run Bun runtime tests
         run: pnpm -C packages/npm test:bun
 
