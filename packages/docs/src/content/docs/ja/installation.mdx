@@ -27,6 +27,20 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     :::
 
   </TabItem>
+  <TabItem label="Bun">
+    ```bash frame="terminal"
+    # グローバルインストール
+    bun add -g @kexi/vibe
+
+    # またはbunxで直接実行
+    bunx @kexi/vibe start feat/my-feature
+    ```
+
+    :::note
+    Bun 1.2.0以降が必要です。npmパッケージにはmacOS (APFS)とLinux (Btrfs/XFS)で最適化されたCopy-on-Writeファイルクローニング用のオプショナルなネイティブバインディング（`@kexi/vibe-native`）が含まれています。利用可能な場合は自動的に使用されます。
+    :::
+
+  </TabItem>
   <TabItem label="Deno (JSR)">
     ```bash frame="terminal"
     deno install -A --global jsr:@kexi/vibe

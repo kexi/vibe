@@ -23,6 +23,7 @@
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
     "test": "vitest run",
+    "test:bun": "bun test test/bun/",
     "test:watch": "vitest",
     "prepublishOnly": "pnpm run build"
   },
