@@ -99,6 +99,18 @@ npx @kexi/vibe start feat/my-feature
 
 > Note: The npm package includes optional native bindings (`@kexi/vibe-native`) for optimized Copy-on-Write file cloning on macOS (APFS) and Linux (Btrfs/XFS). These are automatically used when available.
 
+### Bun (1.2.0+)
+
+```bash
+# Global install
+bun add -g @kexi/vibe
+
+# Or run directly with bunx
+bunx @kexi/vibe start feat/my-feature
+```
+
+> Note: Bun uses the same npm package as Node.js. Native bindings for Copy-on-Write file cloning are automatically used when available.
+
 ### Deno (JSR)
 
 ```bash
