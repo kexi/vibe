@@ -9,14 +9,14 @@ vibeはGit Worktreeを管理するためのシンプルなコマンドセット�
 
 ## コマンド一覧
 
-| コマンド              | 説明                                       |
-| --------------------- | ------------------------------------------ |
-| `vibe start <branch>` | 新規または既存ブランチでWorktreeを作成     |
-| `vibe clean`          | 現在のWorktreeを削除してメインに戻る       |
-| `vibe trust`          | 設定ファイルを信頼登録                     |
-| `vibe untrust`        | 設定ファイルの信頼を解除                   |
-| `vibe config`         | 現在の設定を表示                           |
-| `vibe upgrade`        | アップデートを確認しアップグレード方法表示 |
+| コマンド                             | 説明                                       |
+| ------------------------------------ | ------------------------------------------ |
+| `vibe start <branch> [--base <ref>]` | 新規または既存ブランチでWorktreeを作成     |
+| `vibe clean`                         | 現在のWorktreeを削除してメインに戻る       |
+| `vibe trust`                         | 設定ファイルを信頼登録                     |
+| `vibe untrust`                       | 設定ファイルの信頼を解除                   |
+| `vibe config`                        | 現在の設定を表示                           |
+| `vibe upgrade`                       | アップデートを確認しアップグレード方法表示 |
 
 ## クイックリファレンス
 
@@ -26,6 +26,9 @@ vibe start feat/new-feature
 
 # 既存ブランチを使用
 vibe start feat/existing-branch
+
+# 特定のブランチをベースに作成
+vibe start feat/new-feature --base main
 
 # 作業完了後にクリーンアップ
 vibe clean
