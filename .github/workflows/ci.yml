@@ -55,6 +55,18 @@ jobs:
       - name: Run Node.js runtime tests
         run: pnpm -C packages/npm test
 
+  test-bun:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        env:
+          MISE_HTTP_TIMEOUT: "120"
+      - name: Install dependencies
+        run: bun install --filter @kexi/vibe
+      - name: Run Bun runtime tests
+        run: pnpm -C packages/npm test:bun
+
   build-binaries:
     strategy:
       matrix:
