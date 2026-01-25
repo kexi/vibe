@@ -1,4 +1,4 @@
-import { defineConfig } from "tsup";
+import { defineConfig } from "tsdown";
 
 export default defineConfig({
   entry: {
@@ -11,14 +11,12 @@ export default defineConfig({
   },
   format: ["esm"],
   dts: true,
-  splitting: false,
   sourcemap: true,
   clean: true,
   target: "node18",
   external: ["zod"],
-  esbuildOptions(options) {
-    options.define = {
-      "Deno": "undefined",
-    };
-  },
+  outExtensions: () => ({
+    js: ".js",
+    dts: ".d.ts",
+  }),
 });
