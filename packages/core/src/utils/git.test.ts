@@ -1,5 +1,6 @@
 import { assertEquals } from "@std/assert";
 import {
+  detectBrokenWorktreeLink,
   findWorktreeByBranch,
   hasUncommittedChanges,
   normalizeRemoteUrl,
@@ -280,4 +281,96 @@ Deno.test("normalizeRemoteUrl: URL with spaces (edge case)", () => {
 Deno.test("normalizeRemoteUrl: GitLab SSH format", () => {
   const result = normalizeRemoteUrl("git@gitlab.com:group/subgroup/repo.git");
   assertEquals(result, "gitlab.com/group/subgroup/repo");
+});
+
+// ===== detectBrokenWorktreeLink Tests =====
+
+Deno.test("detectBrokenWorktreeLink returns isBroken=false when .git is a directory (main worktree)", async () => {
+  const ctx = createMockContext({
+    fs: {
+      stat: () =>
+        Promise.resolve({
+          isFile: false,
+          isDirectory: true,
+          isSymlink: false,
+          size: 0,
+          mtime: null,
+          atime: null,
+          birthtime: null,
+          mode: null,
+        }),
+    },
+    control: {
+      cwd: () => "/test/main-repo",
+      exit: (() => {}) as never,
+      chdir: () => {},
+      execPath: () => "/mock/exec",
+      args: [],
+    },
+  });
+
+  const result = await detectBrokenWorktreeLink(ctx);
+  assertEquals(result.isBroken, false);
+});
+
+Deno.test("detectBrokenWorktreeLink returns isBroken=false when gitdir target exists", async () => {
+  const ctx = createMockContext({
+    fs: {
+      stat: () =>
+        Promise.resolve({
+          isFile: true,
+          isDirectory: false,
+          isSymlink: false,
+          size: 0,
+          mtime: null,
+          atime: null,
+          birthtime: null,
+          mode: null,
+        }),
+      readTextFile: () => Promise.resolve("gitdir: /test/main-repo/.git/worktrees/feature\n"),
+      exists: () => Promise.resolve(true),
+    },
+    control: {
+      cwd: () => "/test/worktrees/feature",
+      exit: (() => {}) as never,
+      chdir: () => {},
+      execPath: () => "/mock/exec",
+      args: [],
+    },
+  });
+
+  const result = await detectBrokenWorktreeLink(ctx);
+  assertEquals(result.isBroken, false);
+});
+
+Deno.test("detectBrokenWorktreeLink returns isBroken=true when gitdir target does not exist", async () => {
+  const ctx = createMockContext({
+    fs: {
+      stat: () =>
+        Promise.resolve({
+          isFile: true,
+          isDirectory: false,
+          isSymlink: false,
+          size: 0,
+          mtime: null,
+          atime: null,
+          birthtime: null,
+          mode: null,
+        }),
+      readTextFile: () => Promise.resolve("gitdir: /test/main-repo/.git/worktrees/feature\n"),
+      exists: () => Promise.resolve(false),
+    },
+    control: {
+      cwd: () => "/test/worktrees/feature",
+      exit: (() => {}) as never,
+      chdir: () => {},
+      execPath: () => "/mock/exec",
+      args: [],
+    },
+  });
+
+  const result = await detectBrokenWorktreeLink(ctx);
+  assertEquals(result.isBroken, true);
+  assertEquals(result.gitDir, "/test/main-repo/.git/worktrees/feature");
+  assertEquals(result.mainWorktreePath, "/test/main-repo");
 });

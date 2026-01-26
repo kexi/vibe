@@ -1,4 +1,4 @@
-import { basename, dirname, isAbsolute, normalize, relative, SEPARATOR } from "@std/path";
+import { basename, dirname, isAbsolute, join, normalize, relative, SEPARATOR } from "@std/path";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
 
 export async function runGitCommand(
@@ -98,6 +98,63 @@ export async function isMainWorktree(
     throw new Error("Could not find main worktree");
   }
   return currentRoot === mainWorktree.path;
+}
+
+/**
+ * Detect if the current working directory is a secondary worktree
+ * whose main worktree has been deleted (broken .git link).
+ *
+ * Secondary worktrees have a `.git` file (not directory) containing
+ * `gitdir: /path/to/main/.git/worktrees/<name>`. If that path no longer
+ * exists, git commands will all fail with confusing errors.
+ */
+export async function detectBrokenWorktreeLink(
+  ctx: AppContext = getGlobalContext(),
+): Promise<{ isBroken: boolean; gitDir?: string; mainWorktreePath?: string }> {
+  const { runtime } = ctx;
+  const cwd = runtime.control.cwd();
+  const gitPath = join(cwd, ".git");
+
+  // Check if .git is a file (secondary worktree indicator)
+  let stat;
+  try {
+    stat = await runtime.fs.stat(gitPath);
+  } catch {
+    return { isBroken: false };
+  }
+
+  const isGitDirectory = stat.isDirectory;
+  if (isGitDirectory) {
+    // Main worktree has a .git directory, not a file
+    return { isBroken: false };
+  }
+
+  // Read the gitdir reference from the .git file
+  let content;
+  try {
+    content = await runtime.fs.readTextFile(gitPath);
+  } catch {
+    return { isBroken: false };
+  }
+
+  const match = content.trim().match(/^gitdir:\s*(.+)$/);
+  if (!match) {
+    return { isBroken: false };
+  }
+
+  const gitDir = match[1];
+
+  // Check if the referenced gitdir path exists
+  const gitDirExists = await runtime.fs.exists(gitDir);
+  if (gitDirExists) {
+    return { isBroken: false };
+  }
+
+  // Derive main worktree path: gitdir is typically /main/.git/worktrees/<name>
+  // dirname x3: worktrees/<name> -> worktrees -> .git -> main
+  const mainWorktreePath = dirname(dirname(dirname(gitDir)));
+
+  return { isBroken: true, gitDir, mainWorktreePath };
 }
 
 export function sanitizeBranchName(branchName: string): string {
