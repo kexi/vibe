@@ -1,6 +1,6 @@
 {
   "name": "@kexi/vibe",
-  "version": "0.15.1",
+  "version": "0.16.0",
   "license": "Apache-2.0",
   "repository": "https://github.com/kexi/vibe",
   "exports": "./main.ts",
@@ -29,7 +29,8 @@
     "@std/path": "jsr:@std/path@^1.0.0",
     "@std/toml": "jsr:@std/toml@^1.0.0",
     "@std/assert": "jsr:@std/assert@^1.0.0",
-    "zod": "npm:zod@^3.23.0"
+    "zod": "npm:zod@^3.23.0",
+    "@kexi/vibe-native": "npm:@kexi/vibe-native@^0.15.0"
   },
   "compilerOptions": {
     "strict": true
@@ -72,6 +73,6 @@
       "!packages/core/src/version.ts"
     ]
   },
-  "nodeModulesDir": "none",
+  "nodeModulesDir": "auto",
   "minimumDependencyAge": "P3D"
 }

@@ -267,12 +267,12 @@ git push -u origin release/vX.Y.Z
 
 ---
 
-## Step 5: PR作成
+## Step 5: PR作成（release → develop）
 
 ### 5.1 PR作成
 
 ```bash
-gh pr create --base main --title "chore: release vX.Y.Z" --body "$(cat <<'EOF'
+gh pr create --base develop --title "chore: release vX.Y.Z" --body "$(cat <<'EOF'
 ## Summary
 
 - Release version X.Y.Z
@@ -288,8 +288,10 @@ gh pr create --base main --title "chore: release vX.Y.Z" --body "$(cat <<'EOF'
 ---
 
 After merging this PR:
-1. Create a GitHub Release with tag `vX.Y.Z`
-2. CI will automatically publish to npm and JSR
+1. Create a PR from `develop` to `main`
+2. Merge the `develop` → `main` PR
+3. Create a GitHub Release with tag `vX.Y.Z`
+4. CI will automatically publish to npm and JSR
 EOF
 )"
 ```
@@ -299,24 +301,63 @@ EOF
 PR URLを表示し、以下を伝えてください：
 
 1. PR をレビューしてマージしてください
-2. マージ後、Step 6 を実行してリリースを完了します
+2. マージ後、Step 6 で `develop` → `main` のPRを作成します
 
 **注意**: PRがマージされるまで待機してください。マージ後に `/vibe-release-new-version` を再度呼び出すか、Step 6 を手動で実行してください。
 
 ---
 
-## Step 6: リリース作成（PRマージ後）
+## Step 6: develop → main のPR作成（release PR マージ後）
+
+release PRがdevelopにマージされた後、以下を実行：
+
+### 6.1 developブランチに切り替え
+
+```bash
+git checkout develop
+git pull origin develop
+```
+
+### 6.2 PR作成
+
+```bash
+gh pr create --base main --head develop --title "chore: merge develop into main for vX.Y.Z" --body "$(cat <<'EOF'
+## Summary
+
+- Merge develop into main for release vX.Y.Z
+
+---
+
+After merging this PR:
+1. Create a GitHub Release with tag `vX.Y.Z`
+2. CI will automatically publish to npm and JSR
+EOF
+)"
+```
+
+### 6.3 ユーザーに案内
+
+PR URLを表示し、以下を伝えてください：
+
+1. PR をレビューしてマージしてください
+2. マージ後、Step 7 を実行してリリースを完了します
+
+**注意**: PRがマージされるまで待機してください。マージ後に `/vibe-release-new-version` を再度呼び出すか、Step 7 を手動で実行してください。
+
+---
+
+## Step 7: リリース作成（develop → main PR マージ後）
 
 PRがマージされた後、以下を実行：
 
-### 6.1 mainブランチに切り替え
+### 7.1 mainブランチに切り替え
 
 ```bash
 git checkout main
 git pull origin main
 ```
 
-### 6.2 リリースノート生成
+### 7.2 リリースノート生成
 
 前回リリースからの変更を取得：
 
@@ -358,7 +399,7 @@ vibe is a super fast Git worktree management tool with Copy-on-Write optimizatio
 - [ ] Release リンク
 - [ ] Website リンク
 
-### 6.3 GitHub Release作成
+### 7.3 GitHub Release作成
 
 リリースノートの内容を使用してリリースを作成：
 
@@ -384,13 +425,13 @@ EOF
 )" --target main
 ```
 
-**Note:** 上記の `--notes` 内容は Step 6.2 で生成したリリースノートに置き換えてください。
+**Note:** 上記の `--notes` 内容は Step 7.2 で生成したリリースノートに置き換えてください。
 
-### 6.4 Twitter投稿用テキスト生成
+### 7.4 Twitter投稿用テキスト生成
 
 リリース告知用のTwitter投稿テキストを生成して出力します。コントリビューターへの感謝を込めてTwitterメンションを含めます。
 
-#### 6.4.1 コントリビューター情報の取得
+#### 7.4.1 コントリビューター情報の取得
 
 前回リリースからのコントリビューターを取得：
 
@@ -406,7 +447,7 @@ gh api "repos/kexi/vibe/compare/${PREV_TAG}...HEAD" \
   --jq "[.commits[].author.login] | unique | map(select(. != \"${REPO_OWNER}\")) | .[]"
 ```
 
-#### 6.4.2 TwitterユーザーIDの抽出
+#### 7.4.2 TwitterユーザーIDの抽出
 
 各コントリビューターのTwitterアカウントを取得：
 
@@ -424,7 +465,7 @@ gh api "users/{username}" --jq '.twitter_username // empty'
 | コントリビューターが0名 | メンションなしで続行 |
 | 全員Twitterユーザー名なし | メンションなしのテンプレートを使用 |
 
-#### 6.4.3 Twitter投稿テンプレート生成
+#### 7.4.3 Twitter投稿テンプレート生成
 
 **メンションの処理ルール:**
 
@@ -492,7 +533,7 @@ Your contributions make vibe better! 🎉
 
 **Note:** 280文字制限に注意。必要に応じて要約を調整してください。
 
-### 6.5 クリーンアップ
+### 7.5 クリーンアップ
 
 リリースブランチを削除：
 

@@ -9,6 +9,7 @@
     "jsr:@std/path@1": "1.1.4",
     "jsr:@std/path@^1.1.4": "1.1.4",
     "jsr:@std/toml@1": "1.0.11",
+    "npm:@kexi/vibe-native@0.15": "0.15.1",
     "npm:zod@^3.23.0": "3.25.76"
   },
   "jsr": {
@@ -19,7 +20,10 @@
       ]
     },
     "@std/cli@1.0.25": {
-      "integrity": "1f85051b370c97a7a9dfc6ba626e7ed57a91bea8c081597276d1e78d929d8c91"
+      "integrity": "1f85051b370c97a7a9dfc6ba626e7ed57a91bea8c081597276d1e78d929d8c91",
+      "dependencies": [
+        "jsr:@std/internal"
+      ]
     },
     "@std/collections@1.1.3": {
       "integrity": "bf8b0818886df6a32b64c7d3b037a425111f28278d69fd0995aeb62777c986b0"
@@ -48,6 +52,11 @@
     }
   },
   "npm": {
+    "@kexi/vibe-native@0.15.1": {
+      "integrity": "sha512-Pd5pv4cIEao+MP9Hz2kALrTc5dA0Me7Yuqpv2NJw8ANN6xJvabz/Egg+o/DikUMsM1D1iO4DPKplKb9JhlsKJg==",
+      "os": ["darwin", "linux"],
+      "cpu": ["x64", "arm64"]
+    },
     "zod@3.25.76": {
       "integrity": "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="
     }
@@ -59,6 +68,7 @@
       "jsr:@std/fs@1",
       "jsr:@std/path@1",
       "jsr:@std/toml@1",
+      "npm:@kexi/vibe-native@0.15",
       "npm:zod@^3.23.0"
     ]
   }
