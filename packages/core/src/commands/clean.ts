@@ -1,5 +1,6 @@
 import { dirname, join } from "@std/path";
 import {
+  detectBrokenWorktreeLink,
   getMainWorktreePath,
   getRepoRoot,
   getWorktreeByPath,
@@ -7,6 +8,7 @@ import {
   isMainWorktree,
   runGitCommand,
 } from "../utils/git.ts";
+import { WorktreeError } from "../errors/index.ts";
 import { loadVibeConfig } from "../utils/config.ts";
 import { type HookTrackerInfo, runHooks } from "../utils/hooks.ts";
 import { confirm } from "../utils/prompt.ts";
@@ -135,6 +137,20 @@ export async function cleanCommand(
   const outputOpts: OutputOptions = { verbose, quiet };
 
   try {
+    const worktreeLink = await detectBrokenWorktreeLink(ctx);
+    const isBrokenWorktreeLink = worktreeLink.isBroken;
+    if (isBrokenWorktreeLink) {
+      throw new WorktreeError(
+        "The main worktree appears to have been deleted.\n" +
+          `Expected git directory: ${worktreeLink.gitDir}\n\n` +
+          "To clean up manually:\n" +
+          `  1. Remove this worktree directory: rm -rf '${runtime.control.cwd()}'\n` +
+          "  2. If the main repository still exists elsewhere, run: git worktree prune\n\n" +
+          "This worktree cannot be cleaned automatically because the git repository link is broken.",
+        runtime.control.cwd(),
+      );
+    }
+
     const isMain = await isMainWorktree(ctx);
     if (isMain) {
       console.error(

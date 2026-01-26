@@ -183,3 +183,66 @@ Deno.test("cleanCommand exits gracefully when worktree already removed", async (
   const hasCdCommand = stdout.output.some((line) => line.includes("cd '"));
   assertEquals(hasCdCommand, true, `Expected cd command but got: ${stdout.output.join("\n")}`);
 });
+
+Deno.test("cleanCommand shows actionable error when main worktree is deleted", async () => {
+  let exitCode: number | null = null;
+  const stderr = captureStderr();
+
+  const ctx = createMockContext({
+    fs: {
+      stat: () =>
+        Promise.resolve({
+          isFile: true,
+          isDirectory: false,
+          isSymlink: false,
+          size: 0,
+          mtime: null,
+          atime: null,
+          birthtime: null,
+          mode: null,
+        }),
+      readTextFile: () =>
+        Promise.resolve("gitdir: /tmp/deleted-main/.git/worktrees/feature-branch\n"),
+      exists: () => Promise.resolve(false),
+    },
+    control: {
+      exit: ((code: number) => {
+        exitCode = code;
+      }) as never,
+      cwd: () => "/tmp/worktrees/feature-branch",
+      chdir: () => {},
+      execPath: () => "/mock/exec",
+      args: [],
+    },
+  });
+
+  await cleanCommand({}, ctx);
+
+  stderr.restore();
+
+  assertEquals(exitCode, 1);
+
+  const errorOutput = stderr.output.join("\n");
+  const hasMainWorktreeDeletedMessage = errorOutput.includes(
+    "main worktree appears to have been deleted",
+  );
+  assertEquals(
+    hasMainWorktreeDeletedMessage,
+    true,
+    `Expected 'main worktree appears to have been deleted' but got: ${errorOutput}`,
+  );
+
+  const hasRmRfInstruction = errorOutput.includes("rm -rf");
+  assertEquals(
+    hasRmRfInstruction,
+    true,
+    `Expected 'rm -rf' instruction but got: ${errorOutput}`,
+  );
+
+  const hasWorktreePruneInstruction = errorOutput.includes("git worktree prune");
+  assertEquals(
+    hasWorktreePruneInstruction,
+    true,
+    `Expected 'git worktree prune' instruction but got: ${errorOutput}`,
+  );
+});
