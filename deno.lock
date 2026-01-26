@@ -9,6 +9,7 @@
     "jsr:@std/path@1": "1.1.4",
     "jsr:@std/path@^1.1.4": "1.1.4",
     "jsr:@std/toml@1": "1.0.11",
+    "npm:@kexi/vibe-native@0.15": "0.15.1",
     "npm:zod@^3.23.0": "3.25.76"
   },
   "jsr": {
@@ -51,6 +52,11 @@
     }
   },
   "npm": {
+    "@kexi/vibe-native@0.15.1": {
+      "integrity": "sha512-Pd5pv4cIEao+MP9Hz2kALrTc5dA0Me7Yuqpv2NJw8ANN6xJvabz/Egg+o/DikUMsM1D1iO4DPKplKb9JhlsKJg==",
+      "os": ["darwin", "linux"],
+      "cpu": ["x64", "arm64"]
+    },
     "zod@3.25.76": {
       "integrity": "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="
     }
@@ -62,6 +68,7 @@
       "jsr:@std/fs@1",
       "jsr:@std/path@1",
       "jsr:@std/toml@1",
+      "npm:@kexi/vibe-native@0.15",
       "npm:zod@^3.23.0"
     ]
   }
