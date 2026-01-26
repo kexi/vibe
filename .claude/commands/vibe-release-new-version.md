@@ -380,6 +380,12 @@ Conventional Commitsに基づいてカテゴリ分け（ユーザー向け変更
 ### Bug Fixes
 - ユーザーに影響するバグ修正の説明
 
+## Contributors
+
+Thanks to all contributors for this release! 🎉
+
+* @contributor (#PR_NUMBER)
+
 ---
 
 ## About vibe
@@ -394,6 +400,7 @@ vibe is a super fast Git worktree management tool with Copy-on-Write optimizatio
 
 - [ ] `## What's Changed` セクション
 - [ ] `### Features` または `### Bug Fixes`（該当する変更がある場合）
+- [ ] `## Contributors` セクション（該当者がいる場合）
 - [ ] `---` 区切り線
 - [ ] `## About vibe` セクション（必須）
 - [ ] Release リンク
@@ -412,6 +419,12 @@ gh release create vX.Y.Z --title "vX.Y.Z" --notes "$(cat <<'EOF'
 
 ### Bug Fixes
 - fix: bug fix description
+
+## Contributors
+
+Thanks to all contributors for this release! 🎉
+
+* @contributor (#PR_NUMBER)
 
 ---
 
@@ -449,21 +462,31 @@ gh api "repos/kexi/vibe/compare/${PREV_TAG}...HEAD" \
 
 #### 7.4.2 TwitterユーザーIDの抽出
 
-各コントリビューターのTwitterアカウントを取得：
+各コントリビューターのTwitterアカウントを以下の優先順位で取得：
+
+**1. GitHub API から取得（優先）:**
 
 ```bash
 # 各コントリビューターに対して実行
 gh api "users/{username}" --jq '.twitter_username // empty'
 ```
 
+**2. CLAUDE.md の People セクションからフォールバック:**
+
+GitHub API で `twitter_username` が取得できなかった場合、プロジェクトの `CLAUDE.md` および `~/.claude/CLAUDE.md` の `## People` セクションを参照する。
+
+マッピング形式: `GitHub: {username} → Twitter: @{handle}`
+
+例: `GitHub: 7tsuno → Twitter: @7_tsuno` → GitHubユーザー `7tsuno` に対して `@7_tsuno` を使用
+
 **エラーハンドリング:**
 
 | シナリオ | 対応 |
 |---------|------|
 | 前回タグが存在しない | メンション機能をスキップ |
-| GitHub API呼び出し失敗 | 警告を表示し、メンションなしで続行 |
+| GitHub API呼び出し失敗 | CLAUDE.md フォールバックを試行し、それも失敗した場合は警告を表示しメンションなしで続行 |
 | コントリビューターが0名 | メンションなしで続行 |
-| 全員Twitterユーザー名なし | メンションなしのテンプレートを使用 |
+| GitHub API・CLAUDE.md 両方でTwitterユーザー名なし | メンションなしのテンプレートを使用 |
 
 #### 7.4.3 Twitter投稿テンプレート生成
 
@@ -486,24 +509,7 @@ gh api "users/{username}" --jq '.twitter_username // empty'
 - インストール方法（省略する）
 - Websiteへのリンク（省略する）
 
-**日本語版（メンションあり）:**
-
-```
-🎉 vibe vX.Y.Z をリリースしました！
-
-vibeはCopy-on-Write最適化による超高速なGit worktree管理ツールです。
-
-✨ 主な変更点:
-- 新機能や修正の要約（1-3行）
-
-🙏 Thanks to @contributor!
-
-🔗 https://github.com/kexi/vibe/releases/tag/vX.Y.Z
-
-#vibe #git #worktree #開発ツール
-```
-
-**英語版（メンションあり）:**
+**英語版（メイン・メンションあり）:**
 
 ```
 🎉 vibe vX.Y.Z released!
@@ -518,6 +524,23 @@ vibe is a super fast Git worktree management tool with Copy-on-Write optimizatio
 🔗 https://github.com/kexi/vibe/releases/tag/vX.Y.Z
 
 #vibe #git #worktree #devtools
+```
+
+**日本語版（オプション・メンションあり）:**
+
+```
+🎉 vibe vX.Y.Z をリリースしました！
+
+vibeはCopy-on-Write最適化による超高速なGit worktree管理ツールです。
+
+✨ 主な変更点:
+- 新機能や修正の要約（1-3行）
+
+🙏 Thanks to @contributor!
+
+🔗 https://github.com/kexi/vibe/releases/tag/vX.Y.Z
+
+#vibe #git #worktree #開発ツール
 ```
 
 **3名以上のコントリビューターがいる場合（リプライ用）:**
