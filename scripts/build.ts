@@ -119,12 +119,12 @@ interface PackageJsonInfo {
 }
 
 async function getPackageJsonInfo(): Promise<PackageJsonInfo> {
-  // Read version from deno.json (will be migrated to package.json later)
-  const content = await readFile("deno.json", "utf-8");
+  const content = await readFile("package.json", "utf-8");
   const json = JSON.parse(content);
   return {
     version: json.version,
-    repository: json.repository,
+    repository:
+      typeof json.repository === "string" ? json.repository : (json.repository?.url ?? ""),
   };
 }
 

@@ -2,8 +2,8 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    include: ["packages/core/src/**/*.test.ts", "packages/e2e/**/*.test.ts"],
-    exclude: ["packages/core/src/runtime/deno/**"],
+    include: ["packages/core/src/**/*.test.ts"],
+    exclude: ["packages/e2e/**"],
     testTimeout: 30000,
     hookTimeout: 30000,
     teardownTimeout: 30000,
