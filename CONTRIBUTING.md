@@ -57,6 +57,7 @@ deno task ci
 ```
 
 This runs:
+
 1. Format check (`deno task fmt:check`)
 2. Linter (`deno task lint`)
 3. Type check (`deno task check`)
@@ -76,6 +77,7 @@ See [AGENTS.md](./AGENTS.md) for detailed branching workflow.
 ### Releasing a New Version
 
 1. **Prepare the release on develop:**
+
    ```bash
    # Ensure you're on develop and up to date
    git checkout develop
@@ -107,6 +109,7 @@ See [AGENTS.md](./AGENTS.md) for detailed branching workflow.
    After the PR is merged:
 
 3. **Create and push the tag:**
+
    ```bash
    # Checkout main and pull the merged changes
    git checkout main

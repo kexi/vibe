@@ -84,11 +84,7 @@ export const nodeProcess: RuntimeProcess = {
     const spawnOptions: NodeSpawnOptions = {
       cwd: options.cwd,
       env: options.env ? { ...process.env, ...options.env } : undefined,
-      stdio: [
-        toNodeStdio(options.stdin),
-        toNodeStdio(options.stdout),
-        toNodeStdio(options.stderr),
-      ],
+      stdio: [toNodeStdio(options.stdin), toNodeStdio(options.stdout), toNodeStdio(options.stderr)],
       detached: options.detached ?? false,
     };
 

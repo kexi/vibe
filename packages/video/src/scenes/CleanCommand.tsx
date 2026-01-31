@@ -23,7 +23,10 @@ export const CleanCommand: React.FC = () => {
   // cdコマンドは表示されず、自動的にmain worktreeに移動する
   const outputLines = [
     { text: "", delay: 0 },
-    { text: "Worktree /Users/kei/worktrees/vibe-feat-new-ui has been removed.", color: COLORS.text },
+    {
+      text: "Worktree /Users/kei/worktrees/vibe-feat-new-ui has been removed.",
+      color: COLORS.text,
+    },
     { text: "", delay: 15 },
   ];
 
@@ -81,11 +84,7 @@ export const CleanCommand: React.FC = () => {
 
       {/* Output */}
       {commandTypingComplete && (
-        <CommandOutput
-          lines={outputLines}
-          startFrame={outputStartFrame}
-          lineDelay={3}
-        />
+        <CommandOutput lines={outputLines} startFrame={outputStartFrame} lineDelay={3} />
       )}
 
       {/* New prompt after moving to main repo */}

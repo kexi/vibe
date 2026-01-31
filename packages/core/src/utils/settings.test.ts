@@ -1,5 +1,7 @@
-import { assertEquals, assertRejects } from "@std/assert";
-import { join } from "@std/path";
+import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { mkdtemp, writeFile, rm, mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import {
   _internal,
   addTrustedPath,
@@ -12,7 +14,9 @@ import { getRepoInfoFromPath } from "./git.ts";
 import { setupRealTestContext } from "../context/testing.ts";
 
 // Initialize test context with real Deno runtime for filesystem tests
-await setupRealTestContext();
+beforeAll(async () => {
+  await setupRealTestContext();
+});
 
 // Helper function to find entry by file path in v3 schema
 async function findEntryByPath(
@@ -23,51 +27,63 @@ async function findEntryByPath(
   if (!repoInfo) return undefined;
 
   return settings.permissions.allow.find((e) => {
-    return e.relativePath === repoInfo.relativePath &&
-      (
-        (e.repoId.remoteUrl && repoInfo.remoteUrl &&
-          e.repoId.remoteUrl === repoInfo.remoteUrl) ||
-        (e.repoId.repoRoot && repoInfo.repoRoot &&
-          e.repoId.repoRoot === repoInfo.repoRoot)
-      );
+    return (
+      e.relativePath === repoInfo.relativePath &&
+      ((e.repoId.remoteUrl && repoInfo.remoteUrl && e.repoId.remoteUrl === repoInfo.remoteUrl) ||
+        (e.repoId.repoRoot && repoInfo.repoRoot && e.repoId.repoRoot === repoInfo.repoRoot))
+    );
   });
 }
 
-Deno.test("loadUserSettings returns default settings when file not exists", async () => {
-  const settings = await loadUserSettings();
-  assertEquals(settings.version, _internal.CURRENT_SCHEMA_VERSION);
-  // Note: This test returns existing settings if the settings file exists,
-  // so the allow list may not be empty
-  assertEquals(Array.isArray(settings.permissions.allow), true);
-  assertEquals(Array.isArray(settings.permissions.deny), true);
+describe("loadUserSettings", () => {
+  it("returns default settings when file not exists", async () => {
+    const settings = await loadUserSettings();
+    expect(settings.version).toBe(_internal.CURRENT_SCHEMA_VERSION);
+    // Note: This test returns existing settings if the settings file exists,
+    // so the allow list may not be empty
+    expect(Array.isArray(settings.permissions.allow)).toBe(true);
+    expect(Array.isArray(settings.permissions.deny)).toBe(true);
+  });
 });
 
-// ===== Migration Tests =====
+describe("getSchemaVersion", () => {
+  it("returns 0 for legacy settings without version", () => {
+    const legacyData = {
+      permissions: { allow: [], deny: [] },
+    };
+    expect(_internal.getSchemaVersion(legacyData)).toBe(0);
+  });
 
-Deno.test("getSchemaVersion returns 0 for legacy settings without version", () => {
-  const legacyData = {
-    permissions: { allow: [], deny: [] },
-  };
-  assertEquals(_internal.getSchemaVersion(legacyData), 0);
+  it("returns correct version for versioned settings", () => {
+    const v1Data = {
+      version: 1,
+      permissions: { allow: [], deny: [] },
+    };
+    expect(_internal.getSchemaVersion(v1Data)).toBe(1);
+  });
 });
 
-Deno.test("getSchemaVersion returns correct version for versioned settings", () => {
-  const v1Data = {
-    version: 1,
-    permissions: { allow: [], deny: [] },
-  };
-  assertEquals(_internal.getSchemaVersion(v1Data), 1);
-});
+describe("migrateSettings", () => {
+  let tempFile: string;
 
-// This test is skipped (hash calculation fails because file doesn't exist)
-// Legacy→v1→v2 migration is covered by the next test
+  afterEach(async () => {
+    if (tempFile) {
+      try {
+        await rm(tempFile);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+  });
 
-Deno.test("migrateSettings migrates v1 to v3 (via v2) with repository info", async () => {
-  // Create temporary file in git repository
-  const tempFile = join(Deno.cwd(), `.test-migration-${Date.now()}.tmp`);
-  await Deno.writeTextFile(tempFile, "test content");
+  // This test is skipped (hash calculation fails because file doesn't exist)
+  // Legacy->v1->v2 migration is covered by the next test
 
-  try {
+  it("migrates v1 to v3 (via v2) with repository info", async () => {
+    // Create temporary file in git repository
+    tempFile = join(process.cwd(), `.test-migration-${Date.now()}.tmp`);
+    await writeFile(tempFile, "test content");
+
     const v1Data = {
       version: 1,
       permissions: {
@@ -76,177 +92,233 @@ Deno.test("migrateSettings migrates v1 to v3 (via v2) with repository info", asy
       },
     };
 
-    const migrated = await _internal.migrateSettings(v1Data) as Awaited<
+    const migrated = (await _internal.migrateSettings(v1Data)) as Awaited<
       ReturnType<typeof loadUserSettings>
     >;
 
-    assertEquals(migrated.version, _internal.CURRENT_SCHEMA_VERSION);
-    assertEquals(migrated.permissions.allow.length, 1);
+    expect(migrated.version).toBe(_internal.CURRENT_SCHEMA_VERSION);
+    expect(migrated.permissions.allow.length).toBe(1);
 
     // v3 should have repoId and relativePath
     const entry = migrated.permissions.allow[0];
-    assertEquals(typeof entry.repoId, "object");
-    assertEquals(typeof entry.relativePath, "string");
-    assertEquals(Array.isArray(entry.hashes), true);
-    assertEquals(entry.hashes.length, 1);
-    assertEquals(typeof entry.hashes[0], "string");
-    assertEquals(entry.hashes[0].length, 64);
-  } finally {
-    await Deno.remove(tempFile);
-  }
+    expect(typeof entry.repoId).toBe("object");
+    expect(typeof entry.relativePath).toBe("string");
+    expect(Array.isArray(entry.hashes)).toBe(true);
+    expect(entry.hashes.length).toBe(1);
+    expect(typeof entry.hashes[0]).toBe("string");
+    expect(entry.hashes[0].length).toBe(64);
+  });
 });
 
-Deno.test("createDefaultSettings returns settings with current version", () => {
-  const defaults = _internal.createDefaultSettings();
-  assertEquals(defaults.version, _internal.CURRENT_SCHEMA_VERSION);
-  assertEquals(defaults.permissions.allow, []);
-  assertEquals(defaults.permissions.deny, []);
+describe("createDefaultSettings", () => {
+  it("returns settings with current version", () => {
+    const defaults = _internal.createDefaultSettings();
+    expect(defaults.version).toBe(_internal.CURRENT_SCHEMA_VERSION);
+    expect(defaults.permissions.allow).toEqual([]);
+    expect(defaults.permissions.deny).toEqual([]);
+  });
 });
 
-Deno.test("addTrustedPath and isTrusted work correctly", async () => {
-  // Create temp file in git repository (current directory)
-  const tempFile = join(Deno.cwd(), `.test-${Date.now()}.tmp`);
-  await Deno.writeTextFile(tempFile, "test content");
+describe("addTrustedPath and isTrusted", () => {
+  let tempFile: string;
 
-  try {
+  afterEach(async () => {
+    if (tempFile) {
+      try {
+        await removeTrustedPath(tempFile);
+      } catch {
+        // Ignore cleanup errors
+      }
+      try {
+        await rm(tempFile);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+  });
+
+  it("work correctly", async () => {
+    // Create temp file in git repository (current directory)
+    tempFile = join(process.cwd(), `.test-${Date.now()}.tmp`);
+    await writeFile(tempFile, "test content");
+
     // Initially not trusted
     const beforeTrust = await isTrusted(tempFile);
-    assertEquals(beforeTrust, false);
+    expect(beforeTrust).toBe(false);
 
     // Add trust
     await addTrustedPath(tempFile);
 
     // Now trusted
     const afterTrust = await isTrusted(tempFile);
-    assertEquals(afterTrust, true);
-
-    // Cleanup
-    await removeTrustedPath(tempFile);
-  } finally {
-    await Deno.remove(tempFile);
-  }
+    expect(afterTrust).toBe(true);
+  });
 });
 
-Deno.test("removeTrustedPath removes path from allow list", async () => {
-  const tempFile = join(Deno.cwd(), `.test-${Date.now()}.tmp`);
-  await Deno.writeTextFile(tempFile, "test content");
+describe("removeTrustedPath", () => {
+  let tempFile: string;
 
-  try {
+  afterEach(async () => {
+    if (tempFile) {
+      try {
+        await rm(tempFile);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+  });
+
+  it("removes path from allow list", async () => {
+    tempFile = join(process.cwd(), `.test-${Date.now()}.tmp`);
+    await writeFile(tempFile, "test content");
+
     // Add trust
     await addTrustedPath(tempFile);
     const afterAdd = await isTrusted(tempFile);
-    assertEquals(afterAdd, true);
+    expect(afterAdd).toBe(true);
 
     // Remove trust
     await removeTrustedPath(tempFile);
     const afterRemove = await isTrusted(tempFile);
-    assertEquals(afterRemove, false);
-  } finally {
-    await Deno.remove(tempFile);
-  }
+    expect(afterRemove).toBe(false);
+  });
 });
 
-Deno.test("addTrustedPath adds hash to existing path without duplicates", async () => {
-  const tempFile = join(Deno.cwd(), `.test-${Date.now()}.tmp`);
-  await Deno.writeTextFile(tempFile, "content");
+describe("addTrustedPath hash management", () => {
+  let tempFile: string;
 
-  try {
+  afterEach(async () => {
+    if (tempFile) {
+      try {
+        await removeTrustedPath(tempFile);
+      } catch {
+        // Ignore cleanup errors
+      }
+      try {
+        await rm(tempFile);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+  });
+
+  it("adds hash to existing path without duplicates", async () => {
+    tempFile = join(process.cwd(), `.test-${Date.now()}.tmp`);
+    await writeFile(tempFile, "content");
+
     // First trust
     await addTrustedPath(tempFile);
     let settings = await loadUserSettings();
     const entry1 = await findEntryByPath(settings, tempFile);
-    assertEquals(entry1 !== undefined, true);
-    assertEquals(entry1!.hashes.length, 1);
+    expect(entry1 !== undefined).toBe(true);
+    expect(entry1!.hashes.length).toBe(1);
 
     // Trust again with same content (no duplicate)
     await addTrustedPath(tempFile);
     settings = await loadUserSettings();
     const entry2 = await findEntryByPath(settings, tempFile);
-    assertEquals(entry2 !== undefined, true);
-    assertEquals(entry2!.hashes.length, 1);
+    expect(entry2 !== undefined).toBe(true);
+    expect(entry2!.hashes.length).toBe(1);
 
     // Modify content and trust (new hash is added)
-    await Deno.writeTextFile(tempFile, "modified content");
+    await writeFile(tempFile, "modified content");
     await addTrustedPath(tempFile);
     settings = await loadUserSettings();
     const entry3 = await findEntryByPath(settings, tempFile);
-    assertEquals(entry3 !== undefined, true);
-    assertEquals(entry3!.hashes.length, 2);
-
-    // Cleanup
-    await removeTrustedPath(tempFile);
-  } finally {
-    await Deno.remove(tempFile);
-  }
+    expect(entry3 !== undefined).toBe(true);
+    expect(entry3!.hashes.length).toBe(2);
+  });
 });
 
-Deno.test("isTrusted returns true for any matching hash", async () => {
-  const tempFile = join(Deno.cwd(), `.test-${Date.now()}.tmp`);
-  await Deno.writeTextFile(tempFile, "original content");
+describe("isTrusted hash matching", () => {
+  let tempFile: string;
 
-  try {
+  afterEach(async () => {
+    if (tempFile) {
+      try {
+        await removeTrustedPath(tempFile);
+      } catch {
+        // Ignore cleanup errors
+      }
+      try {
+        await rm(tempFile);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+  });
+
+  it("returns true for any matching hash", async () => {
+    tempFile = join(process.cwd(), `.test-${Date.now()}.tmp`);
+    await writeFile(tempFile, "original content");
+
     // First trust
     await addTrustedPath(tempFile);
     let trusted = await isTrusted(tempFile);
-    assertEquals(trusted, true);
+    expect(trusted).toBe(true);
 
     // Modify and trust
-    await Deno.writeTextFile(tempFile, "modified content");
+    await writeFile(tempFile, "modified content");
     await addTrustedPath(tempFile);
     trusted = await isTrusted(tempFile);
-    assertEquals(trusted, true);
+    expect(trusted).toBe(true);
 
     // Revert to original content (verified with first hash)
-    await Deno.writeTextFile(tempFile, "original content");
+    await writeFile(tempFile, "original content");
     trusted = await isTrusted(tempFile);
-    assertEquals(trusted, true);
+    expect(trusted).toBe(true);
 
     // Change to unknown content (no hash matches)
-    await Deno.writeTextFile(tempFile, "unknown content");
+    await writeFile(tempFile, "unknown content");
     trusted = await isTrusted(tempFile);
-    assertEquals(trusted, false);
-
-    // Cleanup
-    await removeTrustedPath(tempFile);
-  } finally {
-    await Deno.remove(tempFile);
-  }
+    expect(trusted).toBe(false);
+  });
 });
 
-Deno.test("isTrusted skips hash check when skipHashCheck is true (path level)", async () => {
-  const tempFile = join(Deno.cwd(), `.test-${Date.now()}.tmp`);
-  await Deno.writeTextFile(tempFile, "original content");
+describe("skipHashCheck", () => {
+  let tempFile: string;
 
-  try {
+  afterEach(async () => {
+    if (tempFile) {
+      try {
+        await removeTrustedPath(tempFile);
+      } catch {
+        // Ignore cleanup errors
+      }
+      try {
+        await rm(tempFile);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+  });
+
+  it("skips hash check when skipHashCheck is true (path level)", async () => {
+    tempFile = join(process.cwd(), `.test-${Date.now()}.tmp`);
+    await writeFile(tempFile, "original content");
+
     // Trust
     await addTrustedPath(tempFile);
 
     // Set skipHashCheck to true
     const settings = await loadUserSettings();
     const entry = await findEntryByPath(settings, tempFile);
-    assertEquals(entry !== undefined, true);
+    expect(entry !== undefined).toBe(true);
     entry!.skipHashCheck = true;
     await saveUserSettings(settings);
 
     // Modify file (hash mismatch)
-    await Deno.writeTextFile(tempFile, "modified content");
+    await writeFile(tempFile, "modified content");
 
     // skipHashCheck=true, so trusted even with hash mismatch
     const trusted = await isTrusted(tempFile);
-    assertEquals(trusted, true);
+    expect(trusted).toBe(true);
+  });
 
-    // Cleanup
-    await removeTrustedPath(tempFile);
-  } finally {
-    await Deno.remove(tempFile);
-  }
-});
+  it("skips hash check when skipHashCheck is true (global level)", async () => {
+    tempFile = join(process.cwd(), `.test-${Date.now()}.tmp`);
+    await writeFile(tempFile, "original content");
 
-Deno.test("isTrusted skips hash check when skipHashCheck is true (global level)", async () => {
-  const tempFile = join(Deno.cwd(), `.test-${Date.now()}.tmp`);
-  await Deno.writeTextFile(tempFile, "original content");
-
-  try {
     // Trust
     await addTrustedPath(tempFile);
 
@@ -256,26 +328,21 @@ Deno.test("isTrusted skips hash check when skipHashCheck is true (global level)"
     await saveUserSettings(settings);
 
     // Modify file (hash mismatch)
-    await Deno.writeTextFile(tempFile, "modified content");
+    await writeFile(tempFile, "modified content");
 
     // Global skipHashCheck=true, so trusted even with hash mismatch
     const trusted = await isTrusted(tempFile);
-    assertEquals(trusted, true);
+    expect(trusted).toBe(true);
 
     // Cleanup
     settings.skipHashCheck = false;
     await saveUserSettings(settings);
-    await removeTrustedPath(tempFile);
-  } finally {
-    await Deno.remove(tempFile);
-  }
-});
+  });
 
-Deno.test("path-level skipHashCheck overrides global skipHashCheck", async () => {
-  const tempFile = join(Deno.cwd(), `.test-${Date.now()}.tmp`);
-  await Deno.writeTextFile(tempFile, "original content");
+  it("path-level skipHashCheck overrides global skipHashCheck", async () => {
+    tempFile = join(process.cwd(), `.test-${Date.now()}.tmp`);
+    await writeFile(tempFile, "original content");
 
-  try {
     // Trust
     await addTrustedPath(tempFile);
 
@@ -283,38 +350,52 @@ Deno.test("path-level skipHashCheck overrides global skipHashCheck", async () =>
     const settings = await loadUserSettings();
     settings.skipHashCheck = true;
     const entry = await findEntryByPath(settings, tempFile);
-    assertEquals(entry !== undefined, true);
+    expect(entry !== undefined).toBe(true);
     entry!.skipHashCheck = false;
     await saveUserSettings(settings);
 
     // Modify file (hash mismatch)
-    await Deno.writeTextFile(tempFile, "modified content");
+    await writeFile(tempFile, "modified content");
 
     // Path-level skipHashCheck=false takes priority, so hash check is performed
     const trusted = await isTrusted(tempFile);
-    assertEquals(trusted, false);
+    expect(trusted).toBe(false);
 
     // Cleanup
     settings.skipHashCheck = false;
     await saveUserSettings(settings);
-    await removeTrustedPath(tempFile);
-  } finally {
-    await Deno.remove(tempFile);
-  }
+  });
 });
 
-Deno.test("Hash history follows FIFO when exceeding MAX_HASH_HISTORY", async () => {
-  const tempFile = join(Deno.cwd(), `.test-fifo-${Date.now()}.tmp`);
+describe("Hash history FIFO", () => {
+  let tempFile: string;
 
-  try {
+  afterEach(async () => {
+    if (tempFile) {
+      try {
+        await removeTrustedPath(tempFile);
+      } catch {
+        // Ignore cleanup errors
+      }
+      try {
+        await rm(tempFile);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+  });
+
+  it("follows FIFO when exceeding MAX_HASH_HISTORY", { timeout: 120000 }, async () => {
+    tempFile = join(process.cwd(), `.test-fifo-${Date.now()}.tmp`);
+
     // Add 101 different hashes (exceeding MAX_HASH_HISTORY of 100)
     const hashes: string[] = [];
     for (let i = 0; i < 101; i++) {
-      await Deno.writeTextFile(tempFile, `content ${i}`);
+      await writeFile(tempFile, `content ${i}`);
       await addTrustedPath(tempFile);
 
       const hash = await isTrusted(tempFile);
-      assertEquals(hash, true);
+      expect(hash).toBe(true);
 
       // Record the hash for later verification
       const settings = await loadUserSettings();
@@ -327,33 +408,43 @@ Deno.test("Hash history follows FIFO when exceeding MAX_HASH_HISTORY", async () 
     // Verify that only 100 hashes are kept
     const settings = await loadUserSettings();
     const entry = await findEntryByPath(settings, tempFile);
-    assertEquals(entry !== undefined, true);
-    assertEquals(entry!.hashes.length, 100);
+    expect(entry !== undefined).toBe(true);
+    expect(entry!.hashes.length).toBe(100);
 
     // Verify that the first hash was removed (FIFO)
     const firstHashRemoved = !entry!.hashes.includes(hashes[0]);
-    assertEquals(firstHashRemoved, true);
+    expect(firstHashRemoved).toBe(true);
 
     // Verify that the last 100 hashes are kept
     for (let i = 1; i <= 100; i++) {
       const hashPresent = entry!.hashes.includes(hashes[i]);
-      assertEquals(hashPresent, true);
+      expect(hashPresent).toBe(true);
     }
-
-    // Cleanup
-    await removeTrustedPath(tempFile);
-  } finally {
-    await Deno.remove(tempFile);
-  }
+  });
 });
 
-// ===== Additional Test Coverage =====
+describe("Concurrent operations", () => {
+  let tempFile: string;
 
-Deno.test("Concurrent addTrustedPath calls handle race conditions", async () => {
-  const tempFile = join(Deno.cwd(), `.test-concurrent-${Date.now()}.tmp`);
-  await Deno.writeTextFile(tempFile, "test content");
+  afterEach(async () => {
+    if (tempFile) {
+      try {
+        await removeTrustedPath(tempFile);
+      } catch {
+        // Ignore cleanup errors
+      }
+      try {
+        await rm(tempFile);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+  });
 
-  try {
+  it("concurrent addTrustedPath calls handle race conditions", async () => {
+    tempFile = join(process.cwd(), `.test-concurrent-${Date.now()}.tmp`);
+    await writeFile(tempFile, "test content");
+
     // Execute 10 concurrent addTrustedPath calls
     const promises = Array.from({ length: 10 }, () => addTrustedPath(tempFile));
     await Promise.all(promises);
@@ -361,67 +452,69 @@ Deno.test("Concurrent addTrustedPath calls handle race conditions", async () => 
     // Should have only one hash (duplicate prevention works)
     const settings = await loadUserSettings();
     const entry = await findEntryByPath(settings, tempFile);
-    assertEquals(entry !== undefined, true);
-    assertEquals(entry!.hashes.length, 1);
-
-    await removeTrustedPath(tempFile);
-  } finally {
-    await Deno.remove(tempFile);
-  }
+    expect(entry !== undefined).toBe(true);
+    expect(entry!.hashes.length).toBe(1);
+  });
 });
 
-Deno.test("loadUserSettings throws error for corrupted JSON", async () => {
-  // Override USER_SETTINGS_FILE temporarily using environment
-  const originalHome = Deno.env.get("HOME");
-  const tempDir = await Deno.makeTempDir();
-  Deno.env.set("HOME", tempDir);
+describe("loadUserSettings error handling", () => {
+  let tempDir: string;
+  let originalHome: string | undefined;
 
-  try {
-    const configDir = `${tempDir}/.config/vibe`;
-    await Deno.mkdir(configDir, { recursive: true });
-    const corruptedFile = `${configDir}/settings.json`;
-    await Deno.writeTextFile(corruptedFile, "{ invalid json ");
-
-    // Should throw error for corrupted JSON (not silently return defaults)
-    await assertRejects(
-      async () => await loadUserSettings(),
-      SyntaxError,
-    );
-  } finally {
+  afterEach(async () => {
     // Restore original HOME
     if (originalHome) {
-      Deno.env.set("HOME", originalHome);
+      process.env.HOME = originalHome;
     } else {
-      Deno.env.delete("HOME");
+      delete process.env.HOME;
     }
-    await Deno.remove(tempDir, { recursive: true });
-  }
+    if (tempDir) {
+      try {
+        await rm(tempDir, { recursive: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+  });
+
+  it("throws error for corrupted JSON", async () => {
+    // Override USER_SETTINGS_FILE temporarily using environment
+    originalHome = process.env.HOME;
+    tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
+    process.env.HOME = tempDir;
+
+    const configDir = `${tempDir}/.config/vibe`;
+    await mkdir(configDir, { recursive: true });
+    const corruptedFile = `${configDir}/settings.json`;
+    await writeFile(corruptedFile, "{ invalid json ");
+
+    // Should throw error for corrupted JSON (not silently return defaults)
+    await expect(loadUserSettings()).rejects.toThrow(SyntaxError);
+  });
 });
 
-// ===== JSON Schema URL Tests =====
+describe("getSettingsSchemaUrl", () => {
+  it("extracts semver from VERSION string", () => {
+    const url = _internal.getSettingsSchemaUrl();
 
-Deno.test("getSettingsSchemaUrl extracts semver from VERSION string", () => {
-  const url = _internal.getSettingsSchemaUrl();
+    // URL should contain version tag pattern
+    const isValidUrl = url.startsWith("https://raw.githubusercontent.com/kexi/vibe/v");
+    expect(isValidUrl).toBe(true);
 
-  // URL should contain version tag pattern
-  const isValidUrl = url.startsWith(
-    "https://raw.githubusercontent.com/kexi/vibe/v",
-  );
-  assertEquals(isValidUrl, true);
+    // URL should end with schema file path
+    const hasSchemaPath = url.endsWith("/schemas/settings.schema.json");
+    expect(hasSchemaPath).toBe(true);
 
-  // URL should end with schema file path
-  const hasSchemaPath = url.endsWith("/schemas/settings.schema.json");
-  assertEquals(hasSchemaPath, true);
+    // Extract version from URL (e.g., "v0.10.0" from full URL)
+    const versionMatch = url.match(/\/v(\d+\.\d+\.\d+)\//);
+    const hasValidSemver = versionMatch !== null;
+    expect(hasValidSemver).toBe(true);
 
-  // Extract version from URL (e.g., "v0.10.0" from full URL)
-  const versionMatch = url.match(/\/v(\d+\.\d+\.\d+)\//);
-  const hasValidSemver = versionMatch !== null;
-  assertEquals(hasValidSemver, true);
-
-  // Version should not contain build metadata (no "+" in version part)
-  if (versionMatch) {
-    const versionPart = versionMatch[1];
-    const hasNoBuildMetadata = !versionPart.includes("+");
-    assertEquals(hasNoBuildMetadata, true);
-  }
+    // Version should not contain build metadata (no "+" in version part)
+    if (versionMatch) {
+      const versionPart = versionMatch[1];
+      const hasNoBuildMetadata = !versionPart.includes("+");
+      expect(hasNoBuildMetadata).toBe(true);
+    }
+  });
 });

@@ -33,14 +33,14 @@ flowchart TD
 
 ### 主要コンポーネント
 
-| コンポーネント | 説明 |
-|----------------|------|
-| CLI Commands | ユーザー向けコマンド（start、clean、trust など） |
-| AppContext | ランタイム、設定、ユーザー設定の依存性注入コンテナ |
-| Runtime Interface | ファイルシステム、プロセス、環境操作の抽象インターフェース |
-| Deno Runtime | N-API ネイティブモジュールをサポートした Deno API の実装 |
-| Node.js Runtime | N-API ネイティブモジュールをサポートした Node.js API の実装 |
-| @kexi/vibe-native | Copy-on-Write とゴミ箱操作用の共有 N-API モジュール |
+| コンポーネント    | 説明                                                        |
+| ----------------- | ----------------------------------------------------------- |
+| CLI Commands      | ユーザー向けコマンド（start、clean、trust など）            |
+| AppContext        | ランタイム、設定、ユーザー設定の依存性注入コンテナ          |
+| Runtime Interface | ファイルシステム、プロセス、環境操作の抽象インターフェース  |
+| Deno Runtime      | N-API ネイティブモジュールをサポートした Deno API の実装    |
+| Node.js Runtime   | N-API ネイティブモジュールをサポートした Node.js API の実装 |
+| @kexi/vibe-native | Copy-on-Write とゴミ箱操作用の共有 N-API モジュール         |
 
 ## コピー戦略
 
@@ -62,11 +62,11 @@ flowchart TD
 
 ### 戦略選択
 
-| 戦略 | プラットフォーム | 説明 |
-|------|------------------|------|
+| 戦略                | プラットフォーム                 | 説明                           |
+| ------------------- | -------------------------------- | ------------------------------ |
 | NativeCloneStrategy | macOS (APFS)、Linux (Btrfs, XFS) | Copy-on-Write による即時コピー |
-| RsyncStrategy | Unix 系 | rsync による効率的なコピー |
-| StandardStrategy | すべて | 再帰的なファイル単位コピー |
+| RsyncStrategy       | Unix 系                          | rsync による効率的なコピー     |
+| StandardStrategy    | すべて                           | 再帰的なファイル単位コピー     |
 
 ## クリーン戦略
 
@@ -94,12 +94,12 @@ flowchart TD
 
 ### ゴミ箱処理
 
-| 方法 | プラットフォーム | 説明 |
-|------|------------------|------|
-| Native Trash | Node.js（全プラットフォーム） | trash crate を使用した @kexi/vibe-native |
-| AppleScript | Deno on macOS | osascript 経由の Finder フォールバック |
-| /tmp + Background | Linux（デスクトップなし） | /tmp に移動後、バックグラウンドで削除 |
-| Parent Dir + Background | クロスデバイス | ネットワークマウント用の同一ファイルシステムフォールバック |
+| 方法                    | プラットフォーム              | 説明                                                       |
+| ----------------------- | ----------------------------- | ---------------------------------------------------------- |
+| Native Trash            | Node.js（全プラットフォーム） | trash crate を使用した @kexi/vibe-native                   |
+| AppleScript             | Deno on macOS                 | osascript 経由の Finder フォールバック                     |
+| /tmp + Background       | Linux（デスクトップなし）     | /tmp に移動後、バックグラウンドで削除                      |
+| Parent Dir + Background | クロスデバイス                | ネットワークマウント用の同一ファイルシステムフォールバック |
 
 ## コンテキストと依存性注入
 
@@ -180,9 +180,9 @@ source .vibedev
 
 親シェルの環境を変更する必要がある他のツールも同様のパターンを使用しています：
 
-| ツール | 目的 |
-|--------|------|
-| nvm | Node.js バージョンマネージャー - PATH を変更 |
-| rbenv | Ruby バージョンマネージャー - PATH を変更 |
-| direnv | ディレクトリ固有の環境変数 |
-| pyenv | Python バージョンマネージャー - PATH を変更 |
+| ツール | 目的                                         |
+| ------ | -------------------------------------------- |
+| nvm    | Node.js バージョンマネージャー - PATH を変更 |
+| rbenv  | Ruby バージョンマネージャー - PATH を変更    |
+| direnv | ディレクトリ固有の環境変数                   |
+| pyenv  | Python バージョンマネージャー - PATH を変更  |

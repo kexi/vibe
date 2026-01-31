@@ -2,9 +2,9 @@
 
 ## Branch Strategy
 
-| Branch    | Purpose                                        |
-| --------- | ---------------------------------------------- |
-| `main`    | For releases. Stable versions only.            |
+| Branch    | Purpose                                           |
+| --------- | ------------------------------------------------- |
+| `main`    | For releases. Stable versions only.               |
 | `develop` | For development. Merge target for topic branches. |
 
 ### Workflow
@@ -25,21 +25,21 @@ develop ─┴──●──●──●──●─────┴────
 
 ### OS
 
-| OS      | Architectures   | Notes                          |
-| ------- | --------------- | ------------------------------ |
-| macOS   | x64, ARM64      | Homebrew available             |
-| Linux   | x64, ARM64      | .deb package available (Ubuntu/Debian) |
-| Windows | x64             | PowerShell installation        |
+| OS      | Architectures | Notes                                  |
+| ------- | ------------- | -------------------------------------- |
+| macOS   | x64, ARM64    | Homebrew available                     |
+| Linux   | x64, ARM64    | .deb package available (Ubuntu/Debian) |
+| Windows | x64           | PowerShell installation                |
 
 WSL2 is supported via Linux binaries.
 
 ### Filesystem (Copy-on-Write Optimization)
 
-| Filesystem | Platform | CoW Support |
-| ---------- | -------- | ----------- |
-| APFS       | macOS    | Yes         |
-| Btrfs      | Linux    | Yes         |
-| XFS        | Linux    | Yes         |
+| Filesystem | Platform | CoW Support               |
+| ---------- | -------- | ------------------------- |
+| APFS       | macOS    | Yes                       |
+| Btrfs      | Linux    | Yes                       |
+| XFS        | Linux    | Yes                       |
 | Others     | All      | Fallback to standard copy |
 
 ### Shell

@@ -1,4 +1,4 @@
-import { dirname, join } from "@std/path";
+import { dirname, join } from "node:path";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
 import { getNativeTrashAdapter, type NativeTrashAdapter } from "../native/index.ts";
 import { type OutputOptions, verboseLog } from "./output.ts";
@@ -11,7 +11,7 @@ import { type OutputOptions, verboseLog } from "./output.ts";
 export const SYSTEM_TRASH_DISPLAY_PATH = "~/.Trash";
 
 /** Pattern to detect control characters that could cause issues in shell/AppleScript */
-// deno-lint-ignore no-control-regex
+// eslint-disable-next-line no-control-regex
 const CONTROL_CHARS_PATTERN = /[\x00-\x1f\x7f]/;
 
 /** Cached native trash adapter instance */
@@ -123,10 +123,7 @@ async function moveToMacOSTrashViaAppleScript(
     const escapedPath = targetPath.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
     const child = ctx.runtime.process.spawn({
       cmd: "osascript",
-      args: [
-        "-e",
-        `tell application "Finder" to delete POSIX file "${escapedPath}"`,
-      ],
+      args: ["-e", `tell application "Finder" to delete POSIX file "${escapedPath}"`],
       stdin: "null",
       stdout: "null",
       stderr: "null",
@@ -186,8 +183,7 @@ function getTempDir(ctx: AppContext): string {
   const { runtime } = ctx;
   const isWindows = runtime.build.os === "windows";
   if (isWindows) {
-    return runtime.env.get("TEMP") || runtime.env.get("TMP") ||
-      "C:\\Windows\\Temp";
+    return runtime.env.get("TEMP") || runtime.env.get("TMP") || "C:\\Windows\\Temp";
   }
   return "/tmp";
 }
@@ -248,8 +244,8 @@ export async function fastRemoveDirectory(
       // (e.g., Docker volumes, network mounts, separate partitions)
       // Check error message since Deno doesn't have a specific CrossDeviceLink error type
       const errorMessage = String(tempError);
-      const isCrossDeviceError = errorMessage.includes("cross-device") ||
-        errorMessage.includes("EXDEV");
+      const isCrossDeviceError =
+        errorMessage.includes("cross-device") || errorMessage.includes("EXDEV");
       if (!isCrossDeviceError) {
         throw tempError;
       }
@@ -283,8 +279,7 @@ async function cleanupTrashInDir(dir: string, ctx: AppContext): Promise<void> {
   const { runtime } = ctx;
   try {
     for await (const entry of runtime.fs.readDir(dir)) {
-      const isVibeTrash = entry.isDirectory &&
-        entry.name.startsWith(".vibe-trash-");
+      const isVibeTrash = entry.isDirectory && entry.name.startsWith(".vibe-trash-");
       if (isVibeTrash) {
         const trashPath = join(dir, entry.name);
         // Spawn detached background process for cleanup
@@ -310,8 +305,5 @@ export async function cleanupStaleTrash(
 ): Promise<void> {
   // Clean up in both parent directory and temp directory
   const tempDir = getTempDir(ctx);
-  await Promise.all([
-    cleanupTrashInDir(parentDir, ctx),
-    cleanupTrashInDir(tempDir, ctx),
-  ]);
+  await Promise.all([cleanupTrashInDir(parentDir, ctx), cleanupTrashInDir(tempDir, ctx)]);
 }

@@ -6,7 +6,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write  # Required for npm provenance
+  id-token: write # Required for npm provenance
 
 jobs:
   # Verify all versions are in sync before any build/publish

@@ -10,11 +10,11 @@ vibe uses Rust (via [napi-rs](https://napi.rs/)) for the `@kexi/vibe-native` pac
 
 ### Comparison with Alternatives
 
-| Language | Pros | Cons |
-|----------|------|------|
-| **Rust** | Memory safety, napi-rs ecosystem, strong typing | Longer compile times |
-| C/C++ | Direct FFI, no runtime overhead | Manual memory management, security risks |
-| Zig | Simple C interop, small binaries | Smaller ecosystem for Node.js bindings |
+| Language | Pros                                            | Cons                                     |
+| -------- | ----------------------------------------------- | ---------------------------------------- |
+| **Rust** | Memory safety, napi-rs ecosystem, strong typing | Longer compile times                     |
+| C/C++    | Direct FFI, no runtime overhead                 | Manual memory management, security risks |
+| Zig      | Simple C interop, small binaries                | Smaller ecosystem for Node.js bindings   |
 
 Rust was chosen because:
 
@@ -60,12 +60,12 @@ flowchart TD
 
 Deno 2.x added support for N-API modules (via `npm:` specifier), enabling us to unify the implementation:
 
-| Aspect | Previous (Deno FFI) | Current (Unified N-API) |
-|--------|---------------------|-------------------------|
-| Code duplication | ~400 lines FFI code | Single Rust implementation |
-| Maintenance | Two codepaths | One shared module |
-| Security flags | Separate implementations | Unified `CLONE_NOFOLLOW` handling |
-| Performance | FFI overhead per call | Optimized N-API binding |
+| Aspect           | Previous (Deno FFI)      | Current (Unified N-API)           |
+| ---------------- | ------------------------ | --------------------------------- |
+| Code duplication | ~400 lines FFI code      | Single Rust implementation        |
+| Maintenance      | Two codepaths            | One shared module                 |
+| Security flags   | Separate implementations | Unified `CLONE_NOFOLLOW` handling |
+| Performance      | FFI overhead per call    | Optimized N-API binding           |
 
 ### Rust Native Addon (N-API)
 
@@ -96,13 +96,13 @@ pub fn clone_sync(src: String, dest: String) -> Result<()> {
 
 ### macOS: clonefile()
 
-| Aspect | Detail |
-|--------|--------|
-| System Call | `clonefile()` |
-| Filesystem | APFS required |
-| File Support | Yes |
-| Directory Support | Yes |
-| Security Flag | `CLONE_NOFOLLOW` (prevents symlink following) |
+| Aspect            | Detail                                        |
+| ----------------- | --------------------------------------------- |
+| System Call       | `clonefile()`                                 |
+| Filesystem        | APFS required                                 |
+| File Support      | Yes                                           |
+| Directory Support | Yes                                           |
+| Security Flag     | `CLONE_NOFOLLOW` (prevents symlink following) |
 
 ```rust
 // darwin.rs (simplified)
@@ -120,13 +120,13 @@ pub fn clone_file(src: &Path, dest: &Path) -> CloneResult<()> {
 
 ### Linux: FICLONE ioctl
 
-| Aspect | Detail |
-|--------|--------|
-| System Call | `ioctl(FICLONE)` |
-| Filesystem | Btrfs, XFS (with reflink) |
-| File Support | Yes |
-| Directory Support | No |
-| Security Flag | `O_NOFOLLOW` on open |
+| Aspect            | Detail                    |
+| ----------------- | ------------------------- |
+| System Call       | `ioctl(FICLONE)`          |
+| Filesystem        | Btrfs, XFS (with reflink) |
+| File Support      | Yes                       |
+| Directory Support | No                        |
+| Security Flag     | `O_NOFOLLOW` on open      |
 
 ```rust
 // linux.rs (simplified)
@@ -150,13 +150,13 @@ The Rust implementation includes several security measures:
 
 Only regular files (and directories on macOS) are allowed. Rejected types:
 
-| Type | Reason |
-|------|--------|
-| Symlinks | Prevent path traversal attacks (CWE-59, CWE-61) |
-| Block devices | Prevent access to /dev/sda, etc. |
-| Character devices | Prevent access to /dev/mem, etc. |
-| Sockets | Prevent IPC exploitation |
-| FIFOs | Prevent named pipe manipulation |
+| Type              | Reason                                          |
+| ----------------- | ----------------------------------------------- |
+| Symlinks          | Prevent path traversal attacks (CWE-59, CWE-61) |
+| Block devices     | Prevent access to /dev/sda, etc.                |
+| Character devices | Prevent access to /dev/mem, etc.                |
+| Sockets           | Prevent IPC exploitation                        |
+| FIFOs             | Prevent named pipe manipulation                 |
 
 ### Race Condition Prevention
 

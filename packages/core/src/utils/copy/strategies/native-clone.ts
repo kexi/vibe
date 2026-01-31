@@ -1,4 +1,4 @@
-import { dirname } from "@std/path";
+import { dirname } from "node:path";
 import type { CopyStrategy } from "../types.ts";
 import type { NativeClone } from "../native/types.ts";
 import { getNativeClone } from "../native/detector.ts";

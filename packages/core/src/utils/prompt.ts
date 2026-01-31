@@ -34,13 +34,11 @@ export async function confirm(
   // that Deno.stdin.isTerminal() doesn't recognize as a true TTY. Without this flag,
   // interactive prompts would fail in E2E tests even though they're running in a PTY.
   const forceInteractive = runtime.env.get("VIBE_FORCE_INTERACTIVE") === "1";
-  const isInteractive = forceInteractive || (runtime.io.stdin.isTerminal());
+  const isInteractive = forceInteractive || runtime.io.stdin.isTerminal();
 
   // In non-interactive environments (CI, scripts), automatically return false
   if (!isInteractive) {
-    console.error(
-      "Error: Cannot run in non-interactive mode with uncommitted changes.",
-    );
+    console.error("Error: Cannot run in non-interactive mode with uncommitted changes.");
     return false;
   }
 
@@ -82,7 +80,7 @@ export async function select(
   // that Deno.stdin.isTerminal() doesn't recognize as a true TTY. Without this flag,
   // interactive prompts would fail in E2E tests even though they're running in a PTY.
   const forceInteractive = runtime.env.get("VIBE_FORCE_INTERACTIVE") === "1";
-  const isInteractive = forceInteractive || (runtime.io.stdin.isTerminal());
+  const isInteractive = forceInteractive || runtime.io.stdin.isTerminal();
 
   // In non-interactive environments, throw an error (select() requires interaction)
   if (!isInteractive) {

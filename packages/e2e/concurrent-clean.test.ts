@@ -18,71 +18,75 @@ describe("concurrent clean command", () => {
 
   // Skip this test in CI as it's flaky due to file system locking on macOS CI
   // The test works locally but times out in GitHub Actions
-  test.skip("Two concurrent clean commands on same worktree should not panic", { timeout: 120000 }, async () => {
-    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
-    cleanup = repoCleanup;
+  test.skip(
+    "Two concurrent clean commands on same worktree should not panic",
+    { timeout: 120000 },
+    async () => {
+      const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+      cleanup = repoCleanup;
 
-    const vibePath = getVibePath();
+      const vibePath = getVibePath();
 
-    // Create a worktree
-    const parentDir = dirname(repoPath);
-    const repoName = basename(repoPath);
-    const worktreePath = `${parentDir}/${repoName}-feat-concurrent`;
+      // Create a worktree
+      const parentDir = dirname(repoPath);
+      const repoName = basename(repoPath);
+      const worktreePath = `${parentDir}/${repoName}-feat-concurrent`;
 
-    execFileSync("git", ["worktree", "add", "-b", "feat/concurrent", worktreePath], {
-      cwd: repoPath,
-      stdio: "pipe",
-    });
+      execFileSync("git", ["worktree", "add", "-b", "feat/concurrent", worktreePath], {
+        cwd: repoPath,
+        stdio: "pipe",
+      });
 
-    // Run two clean commands concurrently
-    const runner1 = new VibeCommandRunner(vibePath, worktreePath, homePath);
-    const runner2 = new VibeCommandRunner(vibePath, worktreePath, homePath);
+      // Run two clean commands concurrently
+      const runner1 = new VibeCommandRunner(vibePath, worktreePath, homePath);
+      const runner2 = new VibeCommandRunner(vibePath, worktreePath, homePath);
 
-    try {
-      // Spawn both processes nearly simultaneously
-      await Promise.all([
-        runner1.spawn(["clean", "--force"]),
-        runner2.spawn(["clean", "--force"]),
-      ]);
+      try {
+        // Spawn both processes nearly simultaneously
+        await Promise.all([
+          runner1.spawn(["clean", "--force"]),
+          runner2.spawn(["clean", "--force"]),
+        ]);
 
-      // Wait for both to complete
-      await Promise.all([runner1.waitForExit(), runner2.waitForExit()]);
+        // Wait for both to complete
+        await Promise.all([runner1.waitForExit(), runner2.waitForExit()]);
 
-      const exitCode1 = runner1.getExitCode();
-      const exitCode2 = runner2.getExitCode();
-      const output1 = runner1.getOutput();
-      const output2 = runner2.getOutput();
+        const exitCode1 = runner1.getExitCode();
+        const exitCode2 = runner2.getExitCode();
+        const output1 = runner1.getOutput();
+        const output2 = runner2.getOutput();
 
-      // Neither process should panic
-      const noPanic1 = !output1.includes("panicked") && !output1.includes("PANIC");
-      const noPanic2 = !output2.includes("panicked") && !output2.includes("PANIC");
+        // Neither process should panic
+        const noPanic1 = !output1.includes("panicked") && !output1.includes("PANIC");
+        const noPanic2 = !output2.includes("panicked") && !output2.includes("PANIC");
 
-      expect(noPanic1).toBe(true);
-      expect(noPanic2).toBe(true);
+        expect(noPanic1).toBe(true);
+        expect(noPanic2).toBe(true);
 
-      // At least one should succeed with exit code 0
-      // The other may succeed or gracefully handle "already removed"
-      const atLeastOneSuccess = exitCode1 === 0 || exitCode2 === 0;
-      expect(atLeastOneSuccess).toBe(true);
+        // At least one should succeed with exit code 0
+        // The other may succeed or gracefully handle "already removed"
+        const atLeastOneSuccess = exitCode1 === 0 || exitCode2 === 0;
+        expect(atLeastOneSuccess).toBe(true);
 
-      // Neither should crash with non-zero due to race condition
-      // Both should either succeed (0) or be non-zero without panic
-      const validExitCodes = [0, null]; // null means process may not have exited cleanly
-      const isValidExit1 = validExitCodes.includes(exitCode1) || exitCode1 !== null;
-      const isValidExit2 = validExitCodes.includes(exitCode2) || exitCode2 !== null;
-      expect(isValidExit1).toBe(true);
-      expect(isValidExit2).toBe(true);
+        // Neither should crash with non-zero due to race condition
+        // Both should either succeed (0) or be non-zero without panic
+        const validExitCodes = [0, null]; // null means process may not have exited cleanly
+        const isValidExit1 = validExitCodes.includes(exitCode1) || exitCode1 !== null;
+        const isValidExit2 = validExitCodes.includes(exitCode2) || exitCode2 !== null;
+        expect(isValidExit1).toBe(true);
+        expect(isValidExit2).toBe(true);
 
-      // Wait for background deletion to complete using polling
-      await waitForPathRemoval(worktreePath, { timeout: 5000, interval: 100 });
+        // Wait for background deletion to complete using polling
+        await waitForPathRemoval(worktreePath, { timeout: 5000, interval: 100 });
 
-      // Worktree directory should no longer exist
-      expect(existsSync(worktreePath)).toBe(false);
-    } finally {
-      runner1.dispose();
-      runner2.dispose();
-    }
-  });
+        // Worktree directory should no longer exist
+        expect(existsSync(worktreePath)).toBe(false);
+      } finally {
+        runner1.dispose();
+        runner2.dispose();
+      }
+    },
+  );
 
   test("Second clean command after first completes should handle gracefully", async () => {
     const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();

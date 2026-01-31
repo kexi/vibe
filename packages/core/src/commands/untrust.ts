@@ -1,4 +1,4 @@
-import { join } from "@std/path";
+import { join } from "node:path";
 import { getRepoRoot } from "../utils/git.ts";
 import { getSettingsPath, removeTrustedPath } from "../utils/trust.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
@@ -6,9 +6,7 @@ import { type AppContext, getGlobalContext } from "../context/index.ts";
 const VIBE_TOML = ".vibe.toml";
 const VIBE_LOCAL_TOML = ".vibe.local.toml";
 
-export async function untrustCommand(
-  ctx: AppContext = getGlobalContext(),
-): Promise<void> {
+export async function untrustCommand(ctx: AppContext = getGlobalContext()): Promise<void> {
   const { runtime } = ctx;
 
   try {
@@ -21,9 +19,7 @@ export async function untrustCommand(
 
     const hasAnyFile = vibeTomlExists || vibeLocalTomlExists;
     if (!hasAnyFile) {
-      console.error(
-        `Error: Neither .vibe.toml nor .vibe.local.toml found in ${repoRoot}`,
-      );
+      console.error(`Error: Neither .vibe.toml nor .vibe.local.toml found in ${repoRoot}`);
       runtime.control.exit(1);
     }
 

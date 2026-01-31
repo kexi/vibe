@@ -47,8 +47,7 @@ describe("git configuration errors", () => {
   });
 
   test("Error when git user.email is missing", async () => {
-    const { repoPath, homePath, cleanup: repoCleanup } =
-      await setupGitRepoWithoutUserConfig();
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupGitRepoWithoutUserConfig();
     cleanup = repoCleanup;
 
     const vibePath = getVibePath();

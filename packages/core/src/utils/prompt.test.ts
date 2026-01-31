@@ -6,41 +6,36 @@
  * Here we only verify that functions are correctly exported.
  */
 
+import { describe, it, expect, beforeAll } from "vitest";
 import { confirm, select } from "./prompt.ts";
-import { assertEquals } from "@std/assert";
 import { setupTestContext } from "../context/testing.ts";
 
 // Initialize test context for modules that depend on getGlobalContext()
-setupTestContext();
-
-Deno.test("confirm function is exported", () => {
-  const isConfirmFunction = typeof confirm === "function";
-  assertEquals(isConfirmFunction, true);
+beforeAll(() => {
+  setupTestContext();
 });
 
-Deno.test("select function is exported", () => {
-  const isSelectFunction = typeof select === "function";
-  assertEquals(isSelectFunction, true);
-});
+describe("prompt utilities", () => {
+  it("confirm function is exported", () => {
+    expect(typeof confirm).toBe("function");
+  });
 
-Deno.test({
-  name: "confirm returns false in non-interactive mode",
-  fn: async () => {
+  it("select function is exported", () => {
+    expect(typeof select).toBe("function");
+  });
+
+  it("confirm returns false in non-interactive mode", async () => {
     // This test verifies that confirm handles non-interactive environments
-    // In actual CI/test environments, Deno.stdin.isTerminal() returns false
-    // We can't easily mock isTerminal(), so this is more of a documentation test
+    // In actual CI/test environments, stdin.isTTY is false
+    // We can't easily mock isTTY, so this is more of a documentation test
 
-    // Skip this test if we're in an interactive terminal
-    const isInteractive = Deno.stdin.isTerminal?.() ?? false;
-    if (isInteractive) {
-      // In interactive mode, we can't test the non-interactive path
-      // without mocking, which is complex with Deno.stdin
+    // In non-interactive mode (like CI), confirm should return false
+    // Skip test in interactive environments
+    if (process.stdin.isTTY) {
       return;
     }
 
     const result = await confirm("Test prompt");
-    assertEquals(result, false);
-  },
-  sanitizeResources: false,
-  sanitizeOps: false,
+    expect(result).toBe(false);
+  });
 });

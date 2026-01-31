@@ -129,9 +129,7 @@ describe("clean command", () => {
       // Verify exit code is non-zero
       const exitCode = runner.getExitCode();
       if (exitCode === 0) {
-        throw new Error(
-          "Expected non-zero exit code when running clean from main worktree",
-        );
+        throw new Error("Expected non-zero exit code when running clean from main worktree");
       }
 
       const output = runner.getOutput();
@@ -220,10 +218,10 @@ describe("clean command", () => {
     }
 
     // Wait for trust configuration to be synced before proceeding
-    await waitForCondition(
-      () => existsSync(join(worktreePath, ".vibe.toml")),
-      { timeout: 5000, interval: 100 },
-    );
+    await waitForCondition(() => existsSync(join(worktreePath, ".vibe.toml")), {
+      timeout: 5000,
+      interval: 100,
+    });
 
     // Verify trust was successful before proceeding
     const verifyRunner = new VibeCommandRunner(vibePath, worktreePath, homePath);
@@ -237,10 +235,10 @@ describe("clean command", () => {
     }
 
     // Additional sync wait for trust configuration persistence
-    await waitForCondition(
-      () => existsSync(join(worktreePath, ".vibe.toml")),
-      { timeout: 5000, interval: 100 },
-    );
+    await waitForCondition(() => existsSync(join(worktreePath, ".vibe.toml")), {
+      timeout: 5000,
+      interval: 100,
+    });
 
     // Verify branch exists
     expect(branchExists(repoPath, branchName)).toBe(true);
@@ -299,10 +297,10 @@ describe("clean command", () => {
     }
 
     // Wait for trust configuration to be synced before proceeding
-    await waitForCondition(
-      () => existsSync(join(worktreePath, ".vibe.toml")),
-      { timeout: 5000, interval: 100 },
-    );
+    await waitForCondition(() => existsSync(join(worktreePath, ".vibe.toml")), {
+      timeout: 5000,
+      interval: 100,
+    });
 
     // Verify trust was successful before proceeding
     const verifyRunner = new VibeCommandRunner(vibePath, worktreePath, homePath);

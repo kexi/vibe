@@ -24,10 +24,7 @@ describe("trust/untrust/verify commands", () => {
 
     try {
       // Create .vibe.toml
-      writeFileSync(
-        join(repoPath, ".vibe.toml"),
-        '[hooks]\npost_start = ["echo test"]\n',
-      );
+      writeFileSync(join(repoPath, ".vibe.toml"), '[hooks]\npost_start = ["echo test"]\n');
 
       // Run vibe trust
       await runner.spawn(["trust"]);
@@ -53,10 +50,7 @@ describe("trust/untrust/verify commands", () => {
     const vibePath = getVibePath();
 
     // Create and trust .vibe.toml
-    writeFileSync(
-      join(repoPath, ".vibe.toml"),
-      '[hooks]\npost_start = ["echo test"]\n',
-    );
+    writeFileSync(join(repoPath, ".vibe.toml"), '[hooks]\npost_start = ["echo test"]\n');
 
     const trustRunner = new VibeCommandRunner(vibePath, repoPath, homePath);
     await trustRunner.spawn(["trust"]);
@@ -87,10 +81,7 @@ describe("trust/untrust/verify commands", () => {
     const vibePath = getVibePath();
 
     // Create and trust .vibe.toml
-    writeFileSync(
-      join(repoPath, ".vibe.toml"),
-      '[hooks]\npost_start = ["echo test"]\n',
-    );
+    writeFileSync(join(repoPath, ".vibe.toml"), '[hooks]\npost_start = ["echo test"]\n');
 
     const trustRunner = new VibeCommandRunner(vibePath, repoPath, homePath);
     await trustRunner.spawn(["trust"]);

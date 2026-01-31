@@ -1,4 +1,4 @@
-import { dirname } from "@std/path";
+import { dirname } from "node:path";
 import { detectCapabilities } from "../detector.ts";
 import type { CopyStrategy } from "../types.ts";
 import { validatePath } from "../validation.ts";
@@ -57,20 +57,14 @@ export class CloneStrategy implements CopyStrategy {
 
     if (!result.success) {
       const stderr = new TextDecoder().decode(result.stderr);
-      throw new Error(
-        `Clone directory copy failed: ${src} -> ${dest}: ${stderr}`,
-      );
+      throw new Error(`Clone directory copy failed: ${src} -> ${dest}: ${stderr}`);
     }
   }
 
   /**
    * Get the appropriate cp arguments for the current OS
    */
-  private getCloneArgs(
-    src: string,
-    dest: string,
-    recursive: boolean,
-  ): string[] {
+  private getCloneArgs(src: string, dest: string, recursive: boolean): string[] {
     const os = runtime.build.os;
 
     if (os === "darwin") {

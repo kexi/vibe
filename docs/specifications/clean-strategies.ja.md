@@ -16,10 +16,10 @@ Trash Strategy は、ディレクトリを即座に削除するのではなく�
 
 ## Strategy 概要
 
-| Strategy     | 実装方式                     | macOS              | Linux                 | Windows               |
-| ------------ | ---------------------------- | ------------------ | --------------------- | --------------------- |
-| **Trash**    | ネイティブゴミ箱 + fallback  | Finder Trash       | XDG Trash / /tmp      | %TEMP% + background   |
-| **Standard** | git worktree remove          | サポート           | サポート              | サポート              |
+| Strategy     | 実装方式                    | macOS        | Linux            | Windows             |
+| ------------ | --------------------------- | ------------ | ---------------- | ------------------- |
+| **Trash**    | ネイティブゴミ箱 + fallback | Finder Trash | XDG Trash / /tmp | %TEMP% + background |
+| **Standard** | git worktree remove         | サポート     | サポート         | サポート            |
 
 ### ネイティブゴミ箱サポート
 
@@ -80,6 +80,7 @@ Trash Strategy は、対象ディレクトリを一時的な場所に rename し
 **クリーンアップ機構:**
 
 `cleanupStaleTrash()` 関数は、残存する `.vibe-trash-*` ディレクトリをスキャンして削除します：
+
 - 削除された worktree の親ディレクトリ
 - システムの temp ディレクトリ
 
@@ -105,9 +106,9 @@ Trash Strategy は、対象ディレクトリを一時的な場所に rename し
 }
 ```
 
-| 設定                 | 型      | デフォルト | 説明                        |
-| -------------------- | ------- | ---------- | --------------------------- |
-| `clean.fast_remove`  | boolean | `true`     | Trash Strategy の有効/無効  |
+| 設定                | 型      | デフォルト | 説明                       |
+| ------------------- | ------- | ---------- | -------------------------- |
+| `clean.fast_remove` | boolean | `true`     | Trash Strategy の有効/無効 |
 
 ### Project Config (vibe.toml)
 
@@ -120,11 +121,11 @@ pre_clean = ["npm run clean"]
 post_clean = ["echo 'Cleanup complete'"]
 ```
 
-| 設定                   | 型       | デフォルト | 説明                                    |
-| ---------------------- | -------- | ---------- | --------------------------------------- |
-| `clean.delete_branch`  | boolean  | `false`    | worktree 削除後にブランチも削除する     |
-| `hooks.pre_clean`      | string[] | `[]`       | クリーン前に実行するコマンド            |
-| `hooks.post_clean`     | string[] | `[]`       | クリーン後に実行するコマンド            |
+| 設定                  | 型       | デフォルト | 説明                                |
+| --------------------- | -------- | ---------- | ----------------------------------- |
+| `clean.delete_branch` | boolean  | `false`    | worktree 削除後にブランチも削除する |
+| `hooks.pre_clean`     | string[] | `[]`       | クリーン前に実行するコマンド        |
+| `hooks.post_clean`    | string[] | `[]`       | クリーン後に実行するコマンド        |
 
 ## ファイル構造
 
@@ -154,15 +155,15 @@ packages/
 
 **関数の説明:**
 
-| 関数 | 説明 |
-| ---- | ---- |
-| `isFastRemoveSupported()` | プラットフォームサポートの確認 |
-| `generateTrashName()` | 一意のゴミ箱ディレクトリ名を生成 |
-| `moveToSystemTrash()` | ネイティブゴミ箱 + プラットフォーム固有フォールバック |
-| `moveToMacOSTrashViaAppleScript()` | Deno macOS フォールバック |
-| `spawnBackgroundDelete()` | デタッチされたバックグラウンド削除 |
-| `fastRemoveDirectory()` | メインの高速削除関数 |
-| `cleanupStaleTrash()` | 残存ゴミ箱ディレクトリのクリーンアップ |
+| 関数                               | 説明                                                  |
+| ---------------------------------- | ----------------------------------------------------- |
+| `isFastRemoveSupported()`          | プラットフォームサポートの確認                        |
+| `generateTrashName()`              | 一意のゴミ箱ディレクトリ名を生成                      |
+| `moveToSystemTrash()`              | ネイティブゴミ箱 + プラットフォーム固有フォールバック |
+| `moveToMacOSTrashViaAppleScript()` | Deno macOS フォールバック                             |
+| `spawnBackgroundDelete()`          | デタッチされたバックグラウンド削除                    |
+| `fastRemoveDirectory()`            | メインの高速削除関数                                  |
+| `cleanupStaleTrash()`              | 残存ゴミ箱ディレクトリのクリーンアップ                |
 
 ## Strategy 選択機構
 

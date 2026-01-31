@@ -1,4 +1,4 @@
-import { basename, dirname, isAbsolute, join } from "@std/path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { z } from "zod";
 import { calculateFileHash, calculateHashFromContent } from "./hash.ts";
 import { getRepoInfoFromPath, type RepoInfo } from "./git.ts";
@@ -65,11 +65,13 @@ const SettingsSchemaV2 = z.object({
   version: z.literal(2),
   skipHashCheck: z.boolean().optional(),
   permissions: z.object({
-    allow: z.array(z.object({
-      path: z.string(),
-      hashes: z.array(z.string()),
-      skipHashCheck: z.boolean().optional(),
-    })),
+    allow: z.array(
+      z.object({
+        path: z.string(),
+        hashes: z.array(z.string()),
+        skipHashCheck: z.boolean().optional(),
+      }),
+    ),
     deny: z.array(z.string()),
   }),
 });
@@ -79,22 +81,28 @@ const SettingsSchemaV3 = z.object({
   $schema: z.string().optional(),
   version: z.literal(3),
   skipHashCheck: z.boolean().optional(),
-  worktree: z.object({
-    path_script: z.string().optional(),
-  }).optional(),
-  clean: z.object({
-    fast_remove: z.boolean().optional(),
-  }).optional(),
+  worktree: z
+    .object({
+      path_script: z.string().optional(),
+    })
+    .optional(),
+  clean: z
+    .object({
+      fast_remove: z.boolean().optional(),
+    })
+    .optional(),
   permissions: z.object({
-    allow: z.array(z.object({
-      repoId: z.object({
-        remoteUrl: z.string().optional(),
-        repoRoot: z.string().optional(),
+    allow: z.array(
+      z.object({
+        repoId: z.object({
+          remoteUrl: z.string().optional(),
+          repoRoot: z.string().optional(),
+        }),
+        relativePath: z.string(),
+        hashes: z.array(z.string()),
+        skipHashCheck: z.boolean().optional(),
       }),
-      relativePath: z.string(),
-      hashes: z.array(z.string()),
-      skipHashCheck: z.boolean().optional(),
-    })),
+    ),
     deny: z.array(z.string()),
   }),
 });
@@ -183,8 +191,7 @@ const migrations: Record<number, MigrationFn> = {
           } else {
             // Not in a git repository - use fallback
             migrationWarnings.push(
-              `Cannot determine repository for ${entry.path}. ` +
-                `Using directory as fallback.`,
+              `Cannot determine repository for ${entry.path}. ` + `Using directory as fallback.`,
             );
             return {
               repoId: {
@@ -306,8 +313,7 @@ export async function loadUserSettings(
     const result = CurrentSettingsSchema.safeParse(migratedData);
     if (result.success) {
       // Update file if migration was performed
-      const needsMigration = getSchemaVersion(rawData) !==
-        CURRENT_SCHEMA_VERSION;
+      const needsMigration = getSchemaVersion(rawData) !== CURRENT_SCHEMA_VERSION;
       if (needsMigration) {
         await saveUserSettings(result.data, ctx);
       }
@@ -315,10 +321,7 @@ export async function loadUserSettings(
     }
 
     // Return default settings on validation failure
-    console.error(
-      "Settings validation failed, using defaults:",
-      result.error.message,
-    );
+    console.error("Settings validation failed, using defaults:", result.error.message);
     return createDefaultSettings();
   } catch (error) {
     // Return default settings if file doesn't exist
@@ -338,9 +341,7 @@ export async function saveUserSettings(
   // Validate settings before saving
   const result = CurrentSettingsSchema.safeParse(settings);
   if (!result.success) {
-    throw new Error(
-      `Invalid settings schema: ${result.error.message}`,
-    );
+    throw new Error(`Invalid settings schema: ${result.error.message}`);
   }
 
   await ensureConfigDir(ctx);
@@ -410,8 +411,7 @@ export async function addTrustedPath(
   // Validate path is absolute
   if (!isAbsolute(path)) {
     throw new Error(
-      `Path must be absolute: ${path}\n` +
-        `Relative paths are not supported for security reasons.`,
+      `Path must be absolute: ${path}\n` + `Relative paths are not supported for security reasons.`,
     );
   }
 
@@ -468,21 +468,20 @@ export async function removeTrustedPath(
   if (!repoInfo) {
     // Cannot determine repository, try to remove anyway if path matches
     console.warn(
-      `Warning: Cannot determine repository for ${path}. ` +
-        `Removal may not work correctly.`,
+      `Warning: Cannot determine repository for ${path}. ` + `Removal may not work correctly.`,
     );
     return;
   }
 
   // Find and remove matching entry
   const allowIndex = settings.permissions.allow.findIndex((entry) => {
-    return entry.relativePath === repoInfo.relativePath &&
-      (
-        (entry.repoId.remoteUrl && repoInfo.remoteUrl &&
-          entry.repoId.remoteUrl === repoInfo.remoteUrl) ||
-        (entry.repoId.repoRoot && repoInfo.repoRoot &&
-          entry.repoId.repoRoot === repoInfo.repoRoot)
-      );
+    return (
+      entry.relativePath === repoInfo.relativePath &&
+      ((entry.repoId.remoteUrl &&
+        repoInfo.remoteUrl &&
+        entry.repoId.remoteUrl === repoInfo.remoteUrl) ||
+        (entry.repoId.repoRoot && repoInfo.repoRoot && entry.repoId.repoRoot === repoInfo.repoRoot))
+    );
   });
 
   const isInAllowList = allowIndex !== -1;
@@ -526,12 +525,9 @@ export async function isTrusted(
 
   // Determine whether to skip hash check
   // Priority: per-path setting > global setting > default (false)
-  const shouldSkipHashCheck = entry.skipHashCheck ??
-    settings.skipHashCheck ?? false;
+  const shouldSkipHashCheck = entry.skipHashCheck ?? settings.skipHashCheck ?? false;
   if (shouldSkipHashCheck) {
-    console.warn(
-      `Warning: Hash verification is disabled for ${vibeFilePath}`,
-    );
+    console.warn(`Warning: Hash verification is disabled for ${vibeFilePath}`);
     return true; // Trust unconditionally if skip is enabled
   }
 
@@ -573,12 +569,9 @@ export async function verifyTrustAndRead(
 
   // Determine whether to skip hash check
   // Priority: per-path setting > global setting > default (false)
-  const shouldSkipHashCheck = entry.skipHashCheck ??
-    settings.skipHashCheck ?? false;
+  const shouldSkipHashCheck = entry.skipHashCheck ?? settings.skipHashCheck ?? false;
   if (shouldSkipHashCheck) {
-    console.warn(
-      `Warning: Hash verification is disabled for ${vibeFilePath}`,
-    );
+    console.warn(`Warning: Hash verification is disabled for ${vibeFilePath}`);
     return { trusted: true, content: fileContent };
   }
 

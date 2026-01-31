@@ -3,12 +3,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import {
-  RUNTIME_NAME,
-  IS_BUN,
-  IS_DENO,
-  IS_NODE,
-} from "../../../core/src/runtime/index.ts";
+import { RUNTIME_NAME, IS_BUN, IS_DENO, IS_NODE } from "../../../core/src/runtime/index.ts";
 
 describe("runtime detection in Bun", () => {
   describe("RUNTIME_NAME", () => {

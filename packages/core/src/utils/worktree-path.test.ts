@@ -1,12 +1,16 @@
-import { assertEquals, assertRejects } from "@std/assert";
-import { join } from "@std/path";
+import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { join } from "node:path";
+import { mkdtemp, writeFile, rm, chmod } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { resolveWorktreePath } from "./worktree-path.ts";
 import type { VibeConfig } from "../types/config.ts";
 import type { VibeSettings } from "./settings.ts";
 import { setupRealTestContext } from "../context/testing.ts";
 
-// Initialize test context with real Deno runtime for filesystem tests
-await setupRealTestContext();
+// Initialize test context with real runtime for filesystem tests
+beforeAll(async () => {
+  await setupRealTestContext();
+});
 
 const createContext = (repoRoot: string) => ({
   repoName: "test-repo",
@@ -20,9 +24,17 @@ const createEmptySettings = (): VibeSettings => ({
   permissions: { allow: [], deny: [] },
 });
 
-Deno.test("resolveWorktreePath - returns default path when no path_script is configured", async () => {
-  const tempDir = await Deno.makeTempDir({ prefix: "vibe-test-" });
-  try {
+describe("resolveWorktreePath", () => {
+  let tempDir: string;
+
+  afterEach(async () => {
+    if (tempDir) {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns default path when no path_script is configured", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
     const repoRoot = join(tempDir, "repo");
 
     const config: VibeConfig = {};
@@ -31,22 +43,18 @@ Deno.test("resolveWorktreePath - returns default path when no path_script is con
 
     const result = await resolveWorktreePath(config, settings, context);
 
-    assertEquals(result, join(tempDir, "test-repo-feat-test-branch"));
-  } finally {
-    await Deno.remove(tempDir, { recursive: true });
-  }
-});
+    expect(result).toBe(join(tempDir, "test-repo-feat-test-branch"));
+  });
 
-Deno.test("resolveWorktreePath - uses config path_script when configured", async () => {
-  const tempDir = await Deno.makeTempDir({ prefix: "vibe-test-" });
-  try {
+  it("uses config path_script when configured", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
     const repoRoot = tempDir;
 
     // Create a script that outputs a custom path
     const scriptPath = join(repoRoot, "path-script.sh");
     const customPath = join(tempDir, "custom-worktrees", "my-worktree");
-    await Deno.writeTextFile(scriptPath, `#!/bin/bash\necho "${customPath}"\n`);
-    await Deno.chmod(scriptPath, 0o755);
+    await writeFile(scriptPath, `#!/bin/bash\necho "${customPath}"\n`);
+    await chmod(scriptPath, 0o755);
 
     const config: VibeConfig = {
       worktree: { path_script: "./path-script.sh" },
@@ -56,22 +64,18 @@ Deno.test("resolveWorktreePath - uses config path_script when configured", async
 
     const result = await resolveWorktreePath(config, settings, context);
 
-    assertEquals(result, customPath);
-  } finally {
-    await Deno.remove(tempDir, { recursive: true });
-  }
-});
+    expect(result).toBe(customPath);
+  });
 
-Deno.test("resolveWorktreePath - uses settings path_script as fallback", async () => {
-  const tempDir = await Deno.makeTempDir({ prefix: "vibe-test-" });
-  try {
+  it("uses settings path_script as fallback", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
     const repoRoot = tempDir;
 
     // Create a script that outputs a custom path
     const scriptPath = join(repoRoot, "settings-script.sh");
     const customPath = join(tempDir, "settings-worktrees", "my-worktree");
-    await Deno.writeTextFile(scriptPath, `#!/bin/bash\necho "${customPath}"\n`);
-    await Deno.chmod(scriptPath, 0o755);
+    await writeFile(scriptPath, `#!/bin/bash\necho "${customPath}"\n`);
+    await chmod(scriptPath, 0o755);
 
     const config: VibeConfig = {}; // No worktree config
     const settings: VibeSettings = {
@@ -83,15 +87,11 @@ Deno.test("resolveWorktreePath - uses settings path_script as fallback", async (
 
     const result = await resolveWorktreePath(config, settings, context);
 
-    assertEquals(result, customPath);
-  } finally {
-    await Deno.remove(tempDir, { recursive: true });
-  }
-});
+    expect(result).toBe(customPath);
+  });
 
-Deno.test("resolveWorktreePath - config path_script takes precedence over settings", async () => {
-  const tempDir = await Deno.makeTempDir({ prefix: "vibe-test-" });
-  try {
+  it("config path_script takes precedence over settings", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
     const repoRoot = tempDir;
 
     // Create two scripts
@@ -100,10 +100,10 @@ Deno.test("resolveWorktreePath - config path_script takes precedence over settin
     const configPath = join(tempDir, "config-path");
     const settingsPath = join(tempDir, "settings-path");
 
-    await Deno.writeTextFile(configScriptPath, `#!/bin/bash\necho "${configPath}"\n`);
-    await Deno.chmod(configScriptPath, 0o755);
-    await Deno.writeTextFile(settingsScriptPath, `#!/bin/bash\necho "${settingsPath}"\n`);
-    await Deno.chmod(settingsScriptPath, 0o755);
+    await writeFile(configScriptPath, `#!/bin/bash\necho "${configPath}"\n`);
+    await chmod(configScriptPath, 0o755);
+    await writeFile(settingsScriptPath, `#!/bin/bash\necho "${settingsPath}"\n`);
+    await chmod(settingsScriptPath, 0o755);
 
     const config: VibeConfig = {
       worktree: { path_script: "./config-script.sh" },
@@ -117,15 +117,11 @@ Deno.test("resolveWorktreePath - config path_script takes precedence over settin
 
     const result = await resolveWorktreePath(config, settings, context);
 
-    assertEquals(result, configPath);
-  } finally {
-    await Deno.remove(tempDir, { recursive: true });
-  }
-});
+    expect(result).toBe(configPath);
+  });
 
-Deno.test("resolveWorktreePath - throws error when script does not exist", async () => {
-  const tempDir = await Deno.makeTempDir({ prefix: "vibe-test-" });
-  try {
+  it("throws error when script does not exist", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
     const repoRoot = tempDir;
 
     const config: VibeConfig = {
@@ -134,25 +130,19 @@ Deno.test("resolveWorktreePath - throws error when script does not exist", async
     const settings = createEmptySettings();
     const context = createContext(repoRoot);
 
-    await assertRejects(
-      () => resolveWorktreePath(config, settings, context),
-      Error,
+    await expect(resolveWorktreePath(config, settings, context)).rejects.toThrow(
       "Worktree path script not found",
     );
-  } finally {
-    await Deno.remove(tempDir, { recursive: true });
-  }
-});
+  });
 
-Deno.test("resolveWorktreePath - throws error when script outputs relative path", async () => {
-  const tempDir = await Deno.makeTempDir({ prefix: "vibe-test-" });
-  try {
+  it("throws error when script outputs relative path", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
     const repoRoot = tempDir;
 
     // Create a script that outputs a relative path
     const scriptPath = join(repoRoot, "bad-script.sh");
-    await Deno.writeTextFile(scriptPath, `#!/bin/bash\necho "relative/path"\n`);
-    await Deno.chmod(scriptPath, 0o755);
+    await writeFile(scriptPath, `#!/bin/bash\necho "relative/path"\n`);
+    await chmod(scriptPath, 0o755);
 
     const config: VibeConfig = {
       worktree: { path_script: "./bad-script.sh" },
@@ -160,28 +150,22 @@ Deno.test("resolveWorktreePath - throws error when script outputs relative path"
     const settings = createEmptySettings();
     const context = createContext(repoRoot);
 
-    await assertRejects(
-      () => resolveWorktreePath(config, settings, context),
-      Error,
+    await expect(resolveWorktreePath(config, settings, context)).rejects.toThrow(
       "must output an absolute path",
     );
-  } finally {
-    await Deno.remove(tempDir, { recursive: true });
-  }
-});
+  });
 
-Deno.test("resolveWorktreePath - passes environment variables to script", async () => {
-  const tempDir = await Deno.makeTempDir({ prefix: "vibe-test-" });
-  try {
+  it("passes environment variables to script", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
     const repoRoot = tempDir;
 
     // Create a script that uses environment variables
     const scriptPath = join(repoRoot, "env-script.sh");
-    await Deno.writeTextFile(
+    await writeFile(
       scriptPath,
       `#!/bin/bash\necho "/worktrees/\${VIBE_REPO_NAME}-\${VIBE_SANITIZED_BRANCH}"\n`,
     );
-    await Deno.chmod(scriptPath, 0o755);
+    await chmod(scriptPath, 0o755);
 
     const config: VibeConfig = {
       worktree: { path_script: "./env-script.sh" },
@@ -191,8 +175,6 @@ Deno.test("resolveWorktreePath - passes environment variables to script", async 
 
     const result = await resolveWorktreePath(config, settings, context);
 
-    assertEquals(result, "/worktrees/test-repo-feat-test-branch");
-  } finally {
-    await Deno.remove(tempDir, { recursive: true });
-  }
+    expect(result).toBe("/worktrees/test-repo-feat-test-branch");
+  });
 });

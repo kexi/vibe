@@ -1,4 +1,4 @@
-import { join } from "@std/path";
+import { join } from "node:path";
 import { getRepoInfoFromPath, getRepoRoot } from "../utils/git.ts";
 import { calculateFileHash } from "../utils/hash.ts";
 import { loadUserSettings } from "../utils/trust.ts";
@@ -7,9 +7,7 @@ import { type AppContext, getGlobalContext } from "../context/index.ts";
 const VIBE_TOML = ".vibe.toml";
 const VIBE_LOCAL_TOML = ".vibe.local.toml";
 
-export async function verifyCommand(
-  ctx: AppContext = getGlobalContext(),
-): Promise<void> {
+export async function verifyCommand(ctx: AppContext = getGlobalContext()): Promise<void> {
   const { runtime } = ctx;
 
   try {
@@ -22,9 +20,7 @@ export async function verifyCommand(
 
     const hasAnyFile = vibeTomlExists || vibeLocalTomlExists;
     if (!hasAnyFile) {
-      console.error(
-        `Error: Neither .vibe.toml nor .vibe.local.toml found in ${repoRoot}`,
-      );
+      console.error(`Error: Neither .vibe.toml nor .vibe.local.toml found in ${repoRoot}`);
       runtime.control.exit(1);
     }
 
@@ -68,9 +64,7 @@ async function displayFileStatus(
   const repoInfo = await getRepoInfoFromPath(filePath, ctx);
   if (!repoInfo) {
     console.error("Status: ❌ NOT IN GIT REPOSITORY");
-    console.error(
-      "Action: File must be in a git repository to be trusted",
-    );
+    console.error("Action: File must be in a git repository to be trusted");
     return;
   }
 
@@ -84,20 +78,18 @@ async function displayFileStatus(
 
   // Find entry in allow list using repository-based matching
   const entry = settings.permissions.allow.find((item) => {
-    return item.relativePath === repoInfo.relativePath &&
-      (
-        (item.repoId.remoteUrl && repoInfo.remoteUrl &&
-          item.repoId.remoteUrl === repoInfo.remoteUrl) ||
-        (item.repoId.repoRoot && repoInfo.repoRoot &&
-          item.repoId.repoRoot === repoInfo.repoRoot)
-      );
+    return (
+      item.relativePath === repoInfo.relativePath &&
+      ((item.repoId.remoteUrl &&
+        repoInfo.remoteUrl &&
+        item.repoId.remoteUrl === repoInfo.remoteUrl) ||
+        (item.repoId.repoRoot && repoInfo.repoRoot && item.repoId.repoRoot === repoInfo.repoRoot))
+    );
   });
 
   if (!entry) {
     console.error("Status: ⚠️  NOT TRUSTED");
-    console.error(
-      "Action: Run 'vibe trust' to add this file to trusted list",
-    );
+    console.error("Action: Run 'vibe trust' to add this file to trusted list");
     return;
   }
 
@@ -124,9 +116,7 @@ async function displayFileStatus(
   } else {
     console.error("Status: ❌ HASH MISMATCH");
     console.error("Current Hash: does NOT match any stored hash");
-    console.error(
-      "Action: Run 'vibe trust' to update hash, or verify file integrity",
-    );
+    console.error("Action: Run 'vibe trust' to update hash, or verify file integrity");
   }
 
   // Display hash history

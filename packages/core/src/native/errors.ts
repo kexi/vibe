@@ -26,11 +26,7 @@ export class NativeCloneError extends Error {
 export class UnsupportedFilesystemError extends NativeCloneError {
   constructor(operation: string, filesystem?: string) {
     const fsInfo = filesystem ? ` (filesystem: ${filesystem})` : "";
-    super(
-      `${operation} is not supported on this filesystem${fsInfo}`,
-      "ENOTSUP",
-      45,
-    );
+    super(`${operation} is not supported on this filesystem${fsInfo}`, "ENOTSUP", 45);
     this.name = "UnsupportedFilesystemError";
   }
 }
@@ -41,11 +37,7 @@ export class UnsupportedFilesystemError extends NativeCloneError {
  */
 export class CrossDeviceError extends NativeCloneError {
   constructor(src: string, dest: string) {
-    super(
-      `Cannot clone across different filesystems: ${src} -> ${dest}`,
-      "EXDEV",
-      18,
-    );
+    super(`Cannot clone across different filesystems: ${src} -> ${dest}`, "EXDEV", 18);
     this.name = "CrossDeviceError";
   }
 }
@@ -86,11 +78,7 @@ export class FileExistsError extends NativeCloneError {
 export class NativeModuleNotAvailableError extends NativeCloneError {
   constructor(runtime: string, reason?: string) {
     const reasonInfo = reason ? `: ${reason}` : "";
-    super(
-      `Native clone module not available on ${runtime}${reasonInfo}`,
-      "ENOSYS",
-      78,
-    );
+    super(`Native clone module not available on ${runtime}${reasonInfo}`, "ENOSYS", 78);
     this.name = "NativeModuleNotAvailableError";
   }
 }

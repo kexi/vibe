@@ -10,12 +10,12 @@ A super fast CLI tool for easy Git Worktree management.
 
 ## Usage
 
-| Command                      | Description                                         |
-| ---------------------------- | --------------------------------------------------- |
-| `vibe start <branch> [--base <ref>]` | Create a worktree with a new or existing branch (idempotent) |
-| `vibe clean`                 | Delete current worktree and return to main (prompts if uncommitted changes exist) |
-| `vibe trust`                 | Trust `.vibe.toml` and `.vibe.local.toml` files     |
-| `vibe untrust`               | Untrust `.vibe.toml` and `.vibe.local.toml` files   |
+| Command                              | Description                                                                       |
+| ------------------------------------ | --------------------------------------------------------------------------------- |
+| `vibe start <branch> [--base <ref>]` | Create a worktree with a new or existing branch (idempotent)                      |
+| `vibe clean`                         | Delete current worktree and return to main (prompts if uncommitted changes exist) |
+| `vibe trust`                         | Trust `.vibe.toml` and `.vibe.local.toml` files                                   |
+| `vibe untrust`                       | Untrust `.vibe.toml` and `.vibe.local.toml` files                                 |
 
 ### Examples
 
@@ -71,13 +71,13 @@ This approach allows `vibe clean` to complete instantly regardless of worktree s
 
 ### Global Options
 
-| Option            | Description                                        |
-| ----------------- | -------------------------------------------------- |
-| `-h`, `--help`    | Show help message                                  |
-| `-v`, `--version` | Show version information                           |
-| `-V`, `--verbose` | Show detailed output                               |
-| `-q`, `--quiet`   | Suppress non-essential output                      |
-| `-n`, `--dry-run` | Preview operations without executing (start only)  |
+| Option            | Description                                       |
+| ----------------- | ------------------------------------------------- |
+| `-h`, `--help`    | Show help message                                 |
+| `-v`, `--version` | Show version information                          |
+| `-V`, `--verbose` | Show detailed output                              |
+| `-q`, `--quiet`   | Suppress non-essential output                     |
+| `-n`, `--dry-run` | Preview operations without executing (start only) |
 
 ## Installation
 
@@ -203,6 +203,7 @@ Add the following to your shell configuration:
 ```bash
 vibe() { eval "$(command vibe "$@")" }
 ```
+
 </details>
 
 <details>
@@ -211,6 +212,7 @@ vibe() { eval "$(command vibe "$@")" }
 ```bash
 vibe() { eval "$(command vibe "$@")"; }
 ```
+
 </details>
 
 <details>
@@ -221,6 +223,7 @@ function vibe
     eval (command vibe $argv)
 end
 ```
+
 </details>
 
 <details>
@@ -231,6 +234,7 @@ def --env vibe [...args] {
     ^vibe ...$args | lines | each { |line| nu -c $line }
 }
 ```
+
 </details>
 
 <details>
@@ -239,6 +243,7 @@ def --env vibe [...args] {
 ```powershell
 function vibe { Invoke-Expression (& vibe.exe $args) }
 ```
+
 </details>
 
 ## Configuration
@@ -282,12 +287,14 @@ files = [
 ```
 
 **Supported patterns:**
+
 - `*` - Matches any characters except `/`
 - `**` - Matches any characters including `/` (recursive)
 - `?` - Matches any single character
 - `[abc]` - Matches any character in brackets
 
 **Notes:**
+
 - Directory structure is preserved when copying matched files
 - Recursive patterns (`**/*`) may be slower in large repositories
   - Use specific patterns when possible (e.g., `config/**/*.json` instead of `**/*.json`)
@@ -307,6 +314,7 @@ dirs = [
 ```
 
 **Notes:**
+
 - Directories are fully copied (not incrementally synced)
 - Glob patterns work the same as file patterns
 - Large directories like `node_modules` may take time to copy
@@ -315,14 +323,15 @@ dirs = [
 
 Vibe automatically selects the best copy strategy based on your system:
 
-| Strategy | When Used | Platform |
-|----------|-----------|----------|
-| Clone (CoW) | Directory copy on APFS | macOS |
-| Clone (reflink) | Directory copy on Btrfs/XFS | Linux |
-| rsync | Directory copy when clone unavailable | macOS/Linux |
-| Standard | File copy, or fallback | All |
+| Strategy        | When Used                             | Platform    |
+| --------------- | ------------------------------------- | ----------- |
+| Clone (CoW)     | Directory copy on APFS                | macOS       |
+| Clone (reflink) | Directory copy on Btrfs/XFS           | Linux       |
+| rsync           | Directory copy when clone unavailable | macOS/Linux |
+| Standard        | File copy, or fallback                | All         |
 
 **How it works:**
+
 - **File copy**: Always uses Deno's native `copyFile()` for best single-file performance
 - **Directory copy**: Automatically uses the fastest available method:
   - On macOS with APFS: Uses `cp -cR` for Copy-on-Write cloning (near-instant)
@@ -330,6 +339,7 @@ Vibe automatically selects the best copy strategy based on your system:
   - Falls back to rsync or standard copy if CoW is unavailable
 
 **Benefits:**
+
 - Copy-on-Write is extremely fast as it only copies metadata, not actual data
 - No configuration needed - the best strategy is auto-detected
 - Automatic fallback ensures copying always works
@@ -347,12 +357,12 @@ path_script = "~/.config/vibe/worktree-path.sh"
 
 The script receives these environment variables and should output an absolute path:
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `VIBE_REPO_NAME` | Repository name | `my-project` |
-| `VIBE_BRANCH_NAME` | Branch name | `feat/new-feature` |
+| Variable                | Description                       | Example            |
+| ----------------------- | --------------------------------- | ------------------ |
+| `VIBE_REPO_NAME`        | Repository name                   | `my-project`       |
+| `VIBE_BRANCH_NAME`      | Branch name                       | `feat/new-feature` |
 | `VIBE_SANITIZED_BRANCH` | Sanitized branch name (`/` → `-`) | `feat-new-feature` |
-| `VIBE_REPO_ROOT` | Repository root path | `/path/to/repo` |
+| `VIBE_REPO_ROOT`        | Repository root path              | `/path/to/repo`    |
 
 **Example script:**
 
@@ -372,14 +382,17 @@ For manual VS Code configuration, see the [settings.json documentation](https://
 Vibe automatically verifies the integrity of `.vibe.toml` and `.vibe.local.toml` files using SHA-256 hashes. This prevents unauthorized modifications to configuration files.
 
 #### How it works
+
 - When you run `vibe trust`, Vibe calculates and stores the SHA-256 hash of the configuration files
 - When you run `vibe start`, Vibe verifies the file hasn't been modified by checking the hash
 - If the hash doesn't match, Vibe exits with an error and asks you to run `vibe trust` again
 
 #### Skip hash check (for development)
+
 You can disable hash verification in your settings file (`~/.config/vibe/settings.json`):
 
 **Global setting:**
+
 ```json
 {
   "version": 3,
@@ -389,6 +402,7 @@ You can disable hash verification in your settings file (`~/.config/vibe/setting
 ```
 
 **Per-file setting:**
+
 ```json
 {
   "version": 3,
@@ -412,6 +426,7 @@ You can disable hash verification in your settings file (`~/.config/vibe/setting
 > **Note**: Version 3 uses repository-based trust identification. Settings are automatically migrated from v2 to v3 on first load. Trust is shared across all worktrees of the same repository.
 
 #### Branch switching
+
 Vibe stores multiple hashes per file (up to 100), so you can switch between branches without needing to re-trust files (as long as you've trusted each branch's version at least once).
 
 #### Security Considerations
@@ -465,12 +480,12 @@ post_start_append = ["npm run dev"]
 
 ### Available Hooks
 
-| Hook         | When                                              | Environment Variables Available           |
-| ------------ | ------------------------------------------------- | ----------------------------------------- |
-| `pre_start`  | Before worktree creation                          | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`  |
-| `post_start` | After worktree creation                           | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`  |
-| `pre_clean`  | Before worktree removal (in current worktree)     | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`  |
-| `post_clean` | After worktree removal (in main repository)       | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`  |
+| Hook         | When                                          | Environment Variables Available          |
+| ------------ | --------------------------------------------- | ---------------------------------------- |
+| `pre_start`  | Before worktree creation                      | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH` |
+| `post_start` | After worktree creation                       | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH` |
+| `pre_clean`  | Before worktree removal (in current worktree) | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH` |
+| `post_clean` | After worktree removal (in main repository)   | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH` |
 
 **Note**: `post_clean` hooks are appended to the removal command with `&&`, executing in the main repository directory after the `git worktree remove` command completes.
 
@@ -483,6 +498,7 @@ Vibe displays a real-time progress tree during hook execution to show task statu
 - **Failed hooks**: stderr output is ALWAYS shown regardless of progress display, to help with debugging.
 
 Example progress display:
+
 ```
 ✶ Setting up worktree feature/new-ui…
 ┗ ☒ Pre-start hooks

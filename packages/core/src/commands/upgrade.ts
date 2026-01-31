@@ -29,9 +29,7 @@ async function fetchLatestVersion(): Promise<string> {
 
   const isNotOk = !response.ok;
   if (isNotOk) {
-    throw new Error(
-      `Failed to fetch version information (HTTP ${response.status})`,
-    );
+    throw new Error(`Failed to fetch version information (HTTP ${response.status})`);
   }
 
   // Validate Content-Type
@@ -147,8 +145,8 @@ async function checkHomebrewInstall(ctx: AppContext): Promise<boolean> {
   }
 
   const homebrewPrefixes = ["/opt/homebrew", "/usr/local"];
-  const isInHomebrewPath = homebrewPrefixes.some((prefix) =>
-    execPath.startsWith(prefix) || realPath.startsWith(prefix)
+  const isInHomebrewPath = homebrewPrefixes.some(
+    (prefix) => execPath.startsWith(prefix) || realPath.startsWith(prefix),
   );
 
   return isInHomebrewPath;
@@ -233,9 +231,7 @@ export async function upgradeCommand(
     } catch (error) {
       const isTimeout = error instanceof DOMException && error.name === "TimeoutError";
       if (isTimeout) {
-        console.error(
-          "Error: Request timed out while checking for updates.",
-        );
+        console.error("Error: Request timed out while checking for updates.");
         console.error("Please check your network connection and try again.");
       } else {
         const errorMessage = error instanceof Error ? error.message : String(error);

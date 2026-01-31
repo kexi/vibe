@@ -366,14 +366,6 @@ export interface RuntimeFFI {
    * Whether FFI is available
    */
   readonly available: boolean;
-
-  /**
-   * Open a dynamic library (Deno-only)
-   */
-  dlopen?<T extends Record<string, Deno.ForeignFunction>>(
-    path: string,
-    symbols: T,
-  ): Deno.DynamicLibrary<T>;
 }
 
 // ===== Signal Types =====

@@ -1,4 +1,4 @@
-import { dirname, join } from "@std/path";
+import { dirname, join } from "node:path";
 import {
   detectBrokenWorktreeLink,
   getMainWorktreePath,
@@ -91,7 +91,8 @@ async function removeWorktree(
         } catch (gitError) {
           // Handle cases where worktree was already removed by another process
           const errorMsg = gitError instanceof Error ? gitError.message : String(gitError);
-          const isAlreadyRemoved = errorMsg.includes("not a working tree") ||
+          const isAlreadyRemoved =
+            errorMsg.includes("not a working tree") ||
             errorMsg.includes("does not exist") ||
             errorMsg.includes("is not a valid path");
           if (isAlreadyRemoved) {
@@ -196,9 +197,12 @@ export async function cleanCommand(
     const config = await loadVibeConfig(currentWorktreePath, ctx);
 
     // Create progress tracker
-    const tracker = new ProgressTracker({
-      title: "Cleaning up worktree",
-    }, ctx);
+    const tracker = new ProgressTracker(
+      {
+        title: "Cleaning up worktree",
+      },
+      ctx,
+    );
 
     // Run pre_clean hooks
     const preCleanHooks = config?.hooks?.pre_clean;

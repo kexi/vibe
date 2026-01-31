@@ -19,29 +19,23 @@ describe("build output", () => {
   const distPath = join(__dirname, "../dist/main.js");
   const distExists = existsSync(distPath);
 
-  it.skipIf(!distExists)(
-    "dist/main.js should not contain external @jsr imports",
-    () => {
-      const dist = readFileSync(distPath, "utf-8");
+  it.skipIf(!distExists)("dist/main.js should not contain external @jsr imports", () => {
+    const dist = readFileSync(distPath, "utf-8");
 
-      // Check for import statements from @jsr packages
-      const hasJsrImport = /from ['"]@jsr\//.test(dist);
-      expect(hasJsrImport).toBe(false);
+    // Check for import statements from @jsr packages
+    const hasJsrImport = /from ['"]@jsr\//.test(dist);
+    expect(hasJsrImport).toBe(false);
 
-      // Check for dynamic imports from @jsr packages
-      const hasDynamicJsrImport = /import\(['"]@jsr\//.test(dist);
-      expect(hasDynamicJsrImport).toBe(false);
-    },
-  );
+    // Check for dynamic imports from @jsr packages
+    const hasDynamicJsrImport = /import\(['"]@jsr\//.test(dist);
+    expect(hasDynamicJsrImport).toBe(false);
+  });
 
-  it.skipIf(!distExists)(
-    "dist/main.js should have zod as external dependency",
-    () => {
-      const dist = readFileSync(distPath, "utf-8");
+  it.skipIf(!distExists)("dist/main.js should have zod as external dependency", () => {
+    const dist = readFileSync(distPath, "utf-8");
 
-      // zod should remain as external dependency
-      const hasZodImport = /from ['"]zod['"]/.test(dist);
-      expect(hasZodImport).toBe(true);
-    },
-  );
+    // zod should remain as external dependency
+    const hasZodImport = /from ['"]zod['"]/.test(dist);
+    expect(hasZodImport).toBe(true);
+  });
 });

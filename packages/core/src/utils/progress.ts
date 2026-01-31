@@ -51,7 +51,9 @@ class AnsiRenderer {
     if (lineCount === 0) return "";
 
     const moves = AnsiRenderer.CURSOR_COLUMN_0 + AnsiRenderer.CURSOR_UP(lineCount);
-    const clears = Array(lineCount).fill(AnsiRenderer.CLEAR_LINE + "\n").join("");
+    const clears = Array(lineCount)
+      .fill(AnsiRenderer.CLEAR_LINE + "\n")
+      .join("");
     return moves + clears + AnsiRenderer.CURSOR_UP(lineCount) + AnsiRenderer.CURSOR_COLUMN_0;
   }
 }
@@ -101,11 +103,7 @@ class TreeFormatter {
     }
   }
 
-  static formatNode(
-    node: ProgressNode,
-    prefix: string,
-    spinnerFrame?: string,
-  ): string {
+  static formatNode(node: ProgressNode, prefix: string, spinnerFrame?: string): string {
     const symbol = TreeFormatter.getStateSymbol(node.state, spinnerFrame);
     const style = TreeFormatter.getStateStyle(node.state);
     const labelText = node.error ? `${node.label} (${node.error})` : node.label;
@@ -135,12 +133,7 @@ class TreeFormatter {
 
       // Recursively format children
       if (node.children.length > 0) {
-        const childLines = TreeFormatter.formatTree(
-          node.children,
-          depth + 1,
-          spinnerFrame,
-          true,
-        );
+        const childLines = TreeFormatter.formatTree(node.children, depth + 1, spinnerFrame, true);
         lines.push(...childLines);
       }
     }
@@ -200,9 +193,7 @@ export class ProgressTracker {
     // Validate update interval (min 16ms for 60fps, max 1000ms for 1fps)
     const updateInterval = options.updateInterval ?? 80;
     if (updateInterval < 16 || updateInterval > 1000) {
-      throw new Error(
-        "updateInterval must be between 16ms and 1000ms",
-      );
+      throw new Error("updateInterval must be between 16ms and 1000ms");
     }
     this.updateInterval = updateInterval;
 
@@ -334,9 +325,7 @@ export class ProgressTracker {
 
     // Auto-cascade: check if all siblings are completed
     if (task.parent) {
-      const allCompleted = task.parent.children.every(
-        (child) => child.state === "completed",
-      );
+      const allCompleted = task.parent.children.every((child) => child.state === "completed");
       if (allCompleted) {
         task.parent.state = "completed";
         task.parent.endTime = Date.now();
@@ -434,9 +423,7 @@ export class ProgressTracker {
 
     // Clear previous render
     if (this.lastRenderLineCount > 0) {
-      const clearSequence = AnsiRenderer.clearLastRender(
-        this.lastRenderLineCount,
-      );
+      const clearSequence = AnsiRenderer.clearLastRender(this.lastRenderLineCount);
       this.scheduleWrite(clearSequence);
     }
 
@@ -445,19 +432,12 @@ export class ProgressTracker {
 
     // Main task title
     const mainStyle = AnsiRenderer.BOLD;
-    lines.push(
-      `${mainStyle}${TreeFormatter.MAIN_TASK} ${this.title}…${AnsiRenderer.RESET}`,
-    );
+    lines.push(`${mainStyle}${TreeFormatter.MAIN_TASK} ${this.title}…${AnsiRenderer.RESET}`);
 
     // Render phases and their tasks
     if (this.root.children.length > 0) {
       const spinnerFrame = this.spinnerFrames[this.spinnerFrameIndex];
-      const phaseLines = TreeFormatter.formatTree(
-        this.root.children,
-        0,
-        spinnerFrame,
-        true,
-      );
+      const phaseLines = TreeFormatter.formatTree(this.root.children, 0, spinnerFrame, true);
       lines.push(...phaseLines);
     }
 
@@ -476,11 +456,13 @@ export class ProgressTracker {
     if (writeFn) {
       // Async write with order guarantee via Promise chain
       // Using captured writeFn avoids non-null assertion and ensures type safety
-      this.pendingWrite = this.pendingWrite.then(async () => {
-        await writeFn.call(this.stream, data);
-      }).catch(() => {
-        // Ignore write errors (might happen if stderr is closed)
-      });
+      this.pendingWrite = this.pendingWrite
+        .then(async () => {
+          await writeFn.call(this.stream, data);
+        })
+        .catch(() => {
+          // Ignore write errors (might happen if stderr is closed)
+        });
     } else {
       // Fallback: sync write
       try {

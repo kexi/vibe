@@ -55,14 +55,9 @@ describe("interactive prompts", () => {
       await runner2.spawn(["start", "feat/test"]);
 
       // Wait for the prompt about branch being in use
-      const promptFound = await runner2.waitForPattern(
-        /Navigate to the existing worktree/,
-        15000,
-      );
+      const promptFound = await runner2.waitForPattern(/Navigate to the existing worktree/, 15000);
       if (!promptFound) {
-        throw new Error(
-          "Expected prompt about branch being in use, but pattern not found",
-        );
+        throw new Error("Expected prompt about branch being in use, but pattern not found");
       }
 
       // Respond with Y to navigate to existing worktree
@@ -103,10 +98,7 @@ describe("interactive prompts", () => {
       await runner2.spawn(["start", "feat/test"]);
 
       // Wait for the prompt
-      const promptFound = await runner2.waitForPattern(
-        /Navigate to the existing worktree/,
-        15000,
-      );
+      const promptFound = await runner2.waitForPattern(/Navigate to the existing worktree/, 15000);
       if (!promptFound) {
         throw new Error("Expected prompt about branch being in use");
       }
@@ -158,10 +150,7 @@ describe("interactive prompts", () => {
       await runner2.spawn(["start", "feat/overwrite"]);
 
       // Wait for directory exists prompt
-      const promptFound = await runner2.waitForPattern(
-        /Directory.*already exists/,
-        15000,
-      );
+      const promptFound = await runner2.waitForPattern(/Directory.*already exists/, 15000);
       if (!promptFound) {
         throw new Error("Expected prompt about directory existing");
       }
@@ -215,10 +204,7 @@ describe("interactive prompts", () => {
       await runner2.spawn(["start", "feat/reuse"]);
 
       // Wait for directory exists prompt
-      const promptFound = await runner2.waitForPattern(
-        /Directory.*already exists/,
-        15000,
-      );
+      const promptFound = await runner2.waitForPattern(/Directory.*already exists/, 15000);
       if (!promptFound) {
         throw new Error("Expected prompt about directory existing");
       }
@@ -272,10 +258,7 @@ describe("interactive prompts", () => {
       await runner2.spawn(["start", "feat/cancel"]);
 
       // Wait for directory exists prompt
-      const promptFound = await runner2.waitForPattern(
-        /Directory.*already exists/,
-        15000,
-      );
+      const promptFound = await runner2.waitForPattern(/Directory.*already exists/, 15000);
       if (!promptFound) {
         throw new Error("Expected prompt about directory existing");
       }
@@ -320,10 +303,7 @@ describe("interactive prompts", () => {
       await runner2.spawn(["start", "feat/invalid"]);
 
       // Wait for the prompt
-      const promptFound = await runner2.waitForPattern(
-        /Navigate to the existing worktree/,
-        15000,
-      );
+      const promptFound = await runner2.waitForPattern(/Navigate to the existing worktree/, 15000);
       if (!promptFound) {
         throw new Error("Expected prompt about branch being in use");
       }

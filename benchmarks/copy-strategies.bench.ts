@@ -13,11 +13,7 @@ import { StandardStrategy } from "../src/utils/copy/strategies/standard.ts";
 import { resetCapabilitiesCache } from "../src/utils/copy/detector.ts";
 
 // Helper to create test files
-async function createTestFiles(
-  dir: string,
-  count: number,
-  sizeBytes: number,
-): Promise<void> {
+async function createTestFiles(dir: string, count: number, sizeBytes: number): Promise<void> {
   const content = "x".repeat(sizeBytes);
   for (let i = 0; i < count; i++) {
     await Deno.writeTextFile(join(dir, `file_${i}.txt`), content);
@@ -36,12 +32,7 @@ async function createNestedDir(
 
   if (depth > 0) {
     for (let i = 0; i < 3; i++) {
-      await createNestedDir(
-        join(dir, `subdir_${i}`),
-        depth - 1,
-        filesPerDir,
-        fileSizeBytes,
-      );
+      await createNestedDir(join(dir, `subdir_${i}`), depth - 1, filesPerDir, fileSizeBytes);
     }
   }
 }
@@ -125,10 +116,7 @@ if (cloneAvailable) {
       await createTestFiles(srcDir, 100, 1024);
 
       for (let i = 0; i < 100; i++) {
-        await cloneStrategy.copyFile(
-          join(srcDir, `file_${i}.txt`),
-          join(destDir, `file_${i}.txt`),
-        );
+        await cloneStrategy.copyFile(join(srcDir, `file_${i}.txt`), join(destDir, `file_${i}.txt`));
       }
 
       await Deno.remove(tempDir, { recursive: true });
@@ -251,10 +239,7 @@ if (rsyncAvailable) {
       await createTestFiles(srcDir, 100, 1024);
 
       for (let i = 0; i < 100; i++) {
-        await rsyncStrategy.copyFile(
-          join(srcDir, `file_${i}.txt`),
-          join(destDir, `file_${i}.txt`),
-        );
+        await rsyncStrategy.copyFile(join(srcDir, `file_${i}.txt`), join(destDir, `file_${i}.txt`));
       }
 
       await Deno.remove(tempDir, { recursive: true });
@@ -334,10 +319,7 @@ if (cloneAvailable) {
       await createTestFiles(srcDir, 10, 1024 * 1024);
 
       for (let i = 0; i < 10; i++) {
-        await cloneStrategy.copyFile(
-          join(srcDir, `file_${i}.txt`),
-          join(destDir, `file_${i}.txt`),
-        );
+        await cloneStrategy.copyFile(join(srcDir, `file_${i}.txt`), join(destDir, `file_${i}.txt`));
       }
 
       await Deno.remove(tempDir, { recursive: true });
@@ -384,10 +366,7 @@ if (rsyncAvailable) {
       await createTestFiles(srcDir, 10, 1024 * 1024);
 
       for (let i = 0; i < 10; i++) {
-        await rsyncStrategy.copyFile(
-          join(srcDir, `file_${i}.txt`),
-          join(destDir, `file_${i}.txt`),
-        );
+        await rsyncStrategy.copyFile(join(srcDir, `file_${i}.txt`), join(destDir, `file_${i}.txt`));
       }
 
       await Deno.remove(tempDir, { recursive: true });

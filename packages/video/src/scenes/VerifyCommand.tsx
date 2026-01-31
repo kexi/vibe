@@ -17,7 +17,11 @@ export const VerifyCommand: React.FC = () => {
     { text: "=== Vibe Configuration Verification ===", color: COLORS.accent },
     { text: "", delay: 6 },
     { text: "File: .vibe.toml", color: COLORS.text, delay: 9 },
-    { text: "Path: /Users/kei/ghq/github.com/kexi/vibe/.vibe.toml", color: COLORS.textMuted, delay: 12 },
+    {
+      text: "Path: /Users/kei/ghq/github.com/kexi/vibe/.vibe.toml",
+      color: COLORS.textMuted,
+      delay: 12,
+    },
     { text: "Repository: github.com/kexi/vibe", color: COLORS.textMuted, delay: 15 },
     { text: "Relative Path: .vibe.toml", color: COLORS.textMuted, delay: 18 },
     { text: "Status: ✅ TRUSTED", color: COLORS.success, delay: 21 },
@@ -65,11 +69,7 @@ export const VerifyCommand: React.FC = () => {
 
       {/* Output */}
       {commandTypingComplete && (
-        <CommandOutput
-          lines={outputLines}
-          startFrame={outputStartFrame}
-          lineDelay={3}
-        />
+        <CommandOutput lines={outputLines} startFrame={outputStartFrame} lineDelay={3} />
       )}
     </Terminal>
   );

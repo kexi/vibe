@@ -165,9 +165,8 @@ async function getDenoAdapter(): Promise<NativeCloneAdapter | null> {
     }
 
     const platform = native.getPlatform();
-    const platformType = platform === "darwin" || platform === "linux"
-      ? platform
-      : "unsupported" as const;
+    const platformType =
+      platform === "darwin" || platform === "linux" ? platform : ("unsupported" as const);
 
     return {
       available: true,
@@ -201,7 +200,7 @@ async function getNodeAdapter(): Promise<NativeCloneAdapter | null> {
 
     // Determine platform from Node.js
     const os = runtime.build.os;
-    const platformType = os === "darwin" || os === "linux" ? os : "unsupported" as const;
+    const platformType = os === "darwin" || os === "linux" ? os : ("unsupported" as const);
 
     return wrapNativeClone(clone, "node", platformType);
   } catch (error) {
