@@ -213,6 +213,9 @@ async function main(): Promise<void> {
       console.error(`Unknown command: ${command}`);
       runtime.control.exit(1);
   }
+
+  // Explicitly exit to ensure process terminates even if there are pending event listeners
+  runtime.control.exit(0);
 }
 
 main().catch((error) => {

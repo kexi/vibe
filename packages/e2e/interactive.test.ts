@@ -151,21 +151,13 @@ describe("interactive prompts", () => {
     try {
       await runner2.spawn(["start", "feat/overwrite"]);
 
-      // Wait for directory exists prompt (increase timeout and add debug info)
-      const promptFound = await runner2.waitForPattern(/Directory.*already exists/, 30000);
+      // Wait for the select prompt to be fully displayed
+      const promptFound = await runner2.waitForPattern(/Please select/, 30000);
       if (!promptFound) {
-        // Also check if the command exited early
         const exitCode = runner2.getExitCode();
         const output = runner2.getOutput();
-        throw new Error(
-          `Expected prompt about directory existing (exit code: ${exitCode}). Output:\n${output}`,
-        );
+        throw new Error(`Expected select prompt (exit code: ${exitCode}). Output:\n${output}`);
       }
-
-      // Log output at the point pattern was found
-      console.log("=== Pattern found, output so far ===");
-      console.log(runner2.getOutput());
-      console.log("=== End output ===");
 
       // Select option 1 (overwrite)
       runner2.write("1\n");
@@ -224,20 +216,13 @@ describe("interactive prompts", () => {
     try {
       await runner2.spawn(["start", "feat/reuse"]);
 
-      // Wait for directory exists prompt (increase timeout and add debug info)
-      const promptFound = await runner2.waitForPattern(/Directory.*already exists/, 30000);
+      // Wait for the select prompt to be fully displayed
+      const promptFound = await runner2.waitForPattern(/Please select/, 30000);
       if (!promptFound) {
         const exitCode = runner2.getExitCode();
         const output = runner2.getOutput();
-        throw new Error(
-          `Expected prompt about directory existing (exit code: ${exitCode}). Output:\n${output}`,
-        );
+        throw new Error(`Expected select prompt (exit code: ${exitCode}). Output:\n${output}`);
       }
-
-      // Log output at the point pattern was found
-      console.log("=== Pattern found (reuse), output so far ===");
-      console.log(runner2.getOutput());
-      console.log("=== End output ===");
 
       // Select option 2 (reuse)
       runner2.write("2\n");
@@ -296,14 +281,12 @@ describe("interactive prompts", () => {
     try {
       await runner2.spawn(["start", "feat/cancel"]);
 
-      // Wait for directory exists prompt (increase timeout and add debug info)
-      const promptFound = await runner2.waitForPattern(/Directory.*already exists/, 30000);
+      // Wait for the select prompt to be fully displayed
+      const promptFound = await runner2.waitForPattern(/Please select/, 30000);
       if (!promptFound) {
         const exitCode = runner2.getExitCode();
         const output = runner2.getOutput();
-        throw new Error(
-          `Expected prompt about directory existing (exit code: ${exitCode}). Output:\n${output}`,
-        );
+        throw new Error(`Expected select prompt (exit code: ${exitCode}). Output:\n${output}`);
       }
 
       // Select option 3 (cancel)
