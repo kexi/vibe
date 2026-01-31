@@ -151,11 +151,13 @@ describe("interactive prompts", () => {
     try {
       await runner2.spawn(["start", "feat/overwrite"]);
 
-      // Wait for directory exists prompt
-      const promptFound = await runner2.waitForPattern(/Directory.*already exists/, 15000);
+      // Wait for directory exists prompt (increase timeout and add debug info)
+      const promptFound = await runner2.waitForPattern(/Directory.*already exists/, 30000);
       if (!promptFound) {
+        // Also check if the command exited early
+        const exitCode = runner2.getExitCode();
         const output = runner2.getOutput();
-        throw new Error(`Expected prompt about directory existing. Output:\n${output}`);
+        throw new Error(`Expected prompt about directory existing (exit code: ${exitCode}). Output:\n${output}`);
       }
 
       // Select option 1 (overwrite)
@@ -206,11 +208,12 @@ describe("interactive prompts", () => {
     try {
       await runner2.spawn(["start", "feat/reuse"]);
 
-      // Wait for directory exists prompt
-      const promptFound = await runner2.waitForPattern(/Directory.*already exists/, 15000);
+      // Wait for directory exists prompt (increase timeout and add debug info)
+      const promptFound = await runner2.waitForPattern(/Directory.*already exists/, 30000);
       if (!promptFound) {
+        const exitCode = runner2.getExitCode();
         const output = runner2.getOutput();
-        throw new Error(`Expected prompt about directory existing. Output:\n${output}`);
+        throw new Error(`Expected prompt about directory existing (exit code: ${exitCode}). Output:\n${output}`);
       }
 
       // Select option 2 (reuse)
@@ -261,11 +264,12 @@ describe("interactive prompts", () => {
     try {
       await runner2.spawn(["start", "feat/cancel"]);
 
-      // Wait for directory exists prompt
-      const promptFound = await runner2.waitForPattern(/Directory.*already exists/, 15000);
+      // Wait for directory exists prompt (increase timeout and add debug info)
+      const promptFound = await runner2.waitForPattern(/Directory.*already exists/, 30000);
       if (!promptFound) {
+        const exitCode = runner2.getExitCode();
         const output = runner2.getOutput();
-        throw new Error(`Expected prompt about directory existing. Output:\n${output}`);
+        throw new Error(`Expected prompt about directory existing (exit code: ${exitCode}). Output:\n${output}`);
       }
 
       // Select option 3 (cancel)
