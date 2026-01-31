@@ -10,25 +10,30 @@ const stdinStream: StdinStream = {
     return new Promise((resolve, reject) => {
       const stdin = process.stdin;
 
-      // Set raw mode if it's a TTY to read character by character
-      const wasPaused = stdin.isPaused();
+      // Try to read immediately first (for data already in buffer)
+      const immediateChunk = stdin.read(buffer.length);
+      if (immediateChunk !== null) {
+        const bytes = Buffer.isBuffer(immediateChunk)
+          ? immediateChunk
+          : Buffer.from(immediateChunk);
+        const len = Math.min(bytes.length, buffer.length);
+        bytes.copy(Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength), 0, 0, len);
+        resolve(len);
+        return;
+      }
 
+      // No data available immediately, wait for it
+      const wasPaused = stdin.isPaused();
       if (wasPaused) {
         stdin.resume();
       }
 
-      const onReadable = () => {
-        const chunk = stdin.read(buffer.length);
+      const onData = (chunk: Buffer | string) => {
         cleanup();
-
-        if (chunk === null) {
-          resolve(null);
-        } else {
-          const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-          const len = Math.min(bytes.length, buffer.length);
-          bytes.copy(Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength), 0, 0, len);
-          resolve(len);
-        }
+        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        const len = Math.min(bytes.length, buffer.length);
+        bytes.copy(Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength), 0, 0, len);
+        resolve(len);
       };
 
       const onEnd = () => {
@@ -42,7 +47,7 @@ const stdinStream: StdinStream = {
       };
 
       const cleanup = () => {
-        stdin.removeListener("readable", onReadable);
+        stdin.removeListener("data", onData);
         stdin.removeListener("end", onEnd);
         stdin.removeListener("error", onError);
         if (wasPaused) {
@@ -50,7 +55,7 @@ const stdinStream: StdinStream = {
         }
       };
 
-      stdin.once("readable", onReadable);
+      stdin.once("data", onData);
       stdin.once("end", onEnd);
       stdin.once("error", onError);
     });

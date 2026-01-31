@@ -6,15 +6,17 @@ import { type AppContext, getGlobalContext } from "../context/index.ts";
 
 /**
  * Read a single line of input from the user
+ * @returns The trimmed input line, or null if EOF is reached
  */
-async function readLine(ctx: AppContext): Promise<string> {
+async function readLine(ctx: AppContext): Promise<string | null> {
   const buf = new Uint8Array(1024);
   const n = await ctx.runtime.io.stdin.read(buf);
-  const isInputReceived = n !== null;
+  const isInputReceived = n !== null && n > 0;
   if (isInputReceived) {
     return new TextDecoder().decode(buf.subarray(0, n)).trim();
   }
-  return "";
+  // Return null to indicate EOF or no data
+  return null;
 }
 
 /**
@@ -46,6 +48,12 @@ export async function confirm(
     // Use writeSync to ensure immediate output in PTY environments (bypasses buffering)
     runtime.io.stderr.writeSync(new TextEncoder().encode(`${message}\n`));
     const input = await readLine(ctx);
+
+    // Handle EOF (null) - treat as No/Cancel
+    const isEof = input === null;
+    if (isEof) {
+      return false;
+    }
 
     const isYes = input === "Y" || input === "y" || input === "";
     if (isYes) {
@@ -96,6 +104,13 @@ export async function select(
     runtime.io.stderr.writeSync(new TextEncoder().encode("Please select (enter number):\n"));
 
     const input = await readLine(ctx);
+
+    // Handle EOF (null) - return last choice (usually Cancel)
+    const isEof = input === null;
+    if (isEof) {
+      return choices.length - 1;
+    }
+
     const number = parseInt(input, 10);
 
     const isValidNumber = !isNaN(number) && number >= 1 && number <= choices.length;
