@@ -72,7 +72,11 @@ export function mergeConfigs(
     localConfig.copy?.dirs_append,
   );
 
-  const hasCopyConfig = mergedFiles !== undefined || mergedDirs !== undefined;
+  // Merge copy.concurrency: local > base
+  const concurrency = localConfig.copy?.concurrency ?? baseConfig.copy?.concurrency;
+
+  const hasCopyConfig = mergedFiles !== undefined || mergedDirs !== undefined ||
+    concurrency !== undefined;
   if (hasCopyConfig) {
     mergedConfig.copy = {};
     if (mergedFiles !== undefined) {
@@ -80,6 +84,9 @@ export function mergeConfigs(
     }
     if (mergedDirs !== undefined) {
       mergedConfig.copy.dirs = mergedDirs;
+    }
+    if (concurrency !== undefined) {
+      mergedConfig.copy.concurrency = concurrency;
     }
   }
 
