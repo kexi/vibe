@@ -284,3 +284,66 @@ Deno.test("mergeConfigs: mix of exact paths and glob patterns", () => {
 
   assertEquals(result.copy?.files, ["**/*.local.env", ".env", "*.config.js"]);
 });
+
+Deno.test("mergeConfigs: concurrency from base config", () => {
+  const baseConfig: VibeConfig = {
+    copy: { concurrency: 8 },
+  };
+  const localConfig: VibeConfig = {};
+
+  const result = mergeConfigs(baseConfig, localConfig);
+
+  assertEquals(result.copy?.concurrency, 8);
+});
+
+Deno.test("mergeConfigs: concurrency from local config", () => {
+  const baseConfig: VibeConfig = {};
+  const localConfig: VibeConfig = {
+    copy: { concurrency: 16 },
+  };
+
+  const result = mergeConfigs(baseConfig, localConfig);
+
+  assertEquals(result.copy?.concurrency, 16);
+});
+
+Deno.test("mergeConfigs: local concurrency takes precedence over base", () => {
+  const baseConfig: VibeConfig = {
+    copy: { concurrency: 4 },
+  };
+  const localConfig: VibeConfig = {
+    copy: { concurrency: 8 },
+  };
+
+  const result = mergeConfigs(baseConfig, localConfig);
+
+  assertEquals(result.copy?.concurrency, 8);
+});
+
+Deno.test("mergeConfigs: concurrency with other copy fields", () => {
+  const baseConfig: VibeConfig = {
+    copy: { files: [".env"], concurrency: 4 },
+  };
+  const localConfig: VibeConfig = {
+    copy: { files_append: [".env.local"], concurrency: 16 },
+  };
+
+  const result = mergeConfigs(baseConfig, localConfig);
+
+  assertEquals(result.copy?.files, [".env", ".env.local"]);
+  assertEquals(result.copy?.concurrency, 16);
+});
+
+Deno.test("mergeConfigs: concurrency only in base with other fields in local", () => {
+  const baseConfig: VibeConfig = {
+    copy: { concurrency: 8 },
+  };
+  const localConfig: VibeConfig = {
+    copy: { files: [".env"] },
+  };
+
+  const result = mergeConfigs(baseConfig, localConfig);
+
+  assertEquals(result.copy?.files, [".env"]);
+  assertEquals(result.copy?.concurrency, 8);
+});

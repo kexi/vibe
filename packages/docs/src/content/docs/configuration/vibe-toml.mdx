@@ -67,6 +67,28 @@ dirs = [
 - Directory structure is preserved when copying matched files
   :::
 
+### Concurrency <Badge text="v0.17.0+" />
+
+Control the number of parallel directory copy operations:
+
+```toml
+[copy]
+concurrency = 8
+```
+
+- **Default**: `4`
+- **Range**: `1` to `32`
+- Higher values may speed up copying on systems with fast storage (NVMe, SSDs)
+- Lower values reduce system resource usage
+
+**Environment variable override:**
+
+```bash
+VIBE_COPY_CONCURRENCY=16 vibe start feat/my-feature
+```
+
+The environment variable takes precedence over the config file setting.
+
 ## Copy Performance Optimization <Badge text="v0.4.0+" />
 
 vibe automatically selects the best copy strategy based on your system:
@@ -141,6 +163,7 @@ dirs = [
   ".cache",
   "vendor"
 ]
+concurrency = 8
 
 [hooks]
 pre_start = ["echo 'Preparing worktree...'"]

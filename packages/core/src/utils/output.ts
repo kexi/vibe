@@ -33,3 +33,12 @@ export function verboseLog(message: string, options: OutputOptions): void {
 export function errorLog(message: string, _options: OutputOptions): void {
   console.error(message);
 }
+
+/**
+ * Log a warning message to stderr.
+ * This function is for warnings that should always be displayed,
+ * regardless of output options (e.g., invalid configuration warnings).
+ */
+export function warnLog(message: string): void {
+  console.warn(message);
+}

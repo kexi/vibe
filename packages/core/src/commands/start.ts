@@ -9,7 +9,7 @@ import { ProgressTracker } from "../utils/progress.ts";
 import { getCopyService } from "../utils/copy/index.ts";
 import { loadUserSettings } from "../utils/settings.ts";
 import { resolveWorktreePath } from "../utils/worktree-path.ts";
-import { log, type OutputOptions, verboseLog } from "../utils/output.ts";
+import { log, type OutputOptions, verboseLog, warnLog } from "../utils/output.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
 import {
   checkWorktreeConflict,
@@ -413,8 +413,18 @@ async function runCopyAndPostHooks(
 
   // Copy files
   if (!skipCopy) {
+    const concurrency = resolveCopyConcurrency(config, ctx);
     await copyFiles(config, repoRoot, worktreePath, tracker, copyService, dryRun);
-    await copyDirectories(config, repoRoot, worktreePath, tracker, copyService, dryRun, ctx);
+    await copyDirectories(
+      config,
+      repoRoot,
+      worktreePath,
+      tracker,
+      copyService,
+      dryRun,
+      concurrency,
+      ctx,
+    );
   }
 
   // Run post-start hooks
@@ -467,6 +477,52 @@ async function copyFiles(
 }
 
 const DEFAULT_COPY_CONCURRENCY = 4;
+const MAX_COPY_CONCURRENCY = 32;
+
+/**
+ * Resolve the copy concurrency value from environment variable, config, or default.
+ *
+ * Priority order:
+ * 1. Environment variable `VIBE_COPY_CONCURRENCY` (highest priority)
+ * 2. Config file setting `copy.concurrency`
+ * 3. Default value (4)
+ *
+ * If the environment variable is set but invalid (not an integer between 1-32),
+ * a warning is logged and the default value is used (not the config value).
+ *
+ * @param config - The vibe configuration object (may be undefined)
+ * @param ctx - The application context for accessing environment variables
+ * @returns The resolved concurrency value (1-32)
+ */
+export function resolveCopyConcurrency(
+  config: VibeConfig | undefined,
+  ctx: AppContext,
+): number {
+  // Check environment variable first (highest priority)
+  const envValue = ctx.runtime.env.get("VIBE_COPY_CONCURRENCY");
+  if (envValue !== undefined) {
+    const parsed = parseInt(envValue, 10);
+    const isValidEnvValue = !isNaN(parsed) && parsed >= 1 &&
+      parsed <= MAX_COPY_CONCURRENCY;
+    if (isValidEnvValue) {
+      return parsed;
+    }
+    warnLog(
+      `Warning: Invalid VIBE_COPY_CONCURRENCY value '${envValue}'. ` +
+        `Must be an integer between 1 and ${MAX_COPY_CONCURRENCY}. Using default: ${DEFAULT_COPY_CONCURRENCY}`,
+    );
+    return DEFAULT_COPY_CONCURRENCY;
+  }
+
+  // Fall back to config value
+  const configValue = config?.copy?.concurrency;
+  if (configValue !== undefined) {
+    return configValue;
+  }
+
+  // Use default
+  return DEFAULT_COPY_CONCURRENCY;
+}
 
 /**
  * Execute tasks with concurrency limit.
@@ -499,6 +555,7 @@ async function copyDirectories(
   tracker: ProgressTracker,
   copyService: ReturnType<typeof getCopyService>,
   dryRun: boolean,
+  concurrency: number,
   ctx: AppContext,
 ): Promise<void> {
   const directoriesToCopy = await expandDirectoryPatterns(
@@ -523,7 +580,7 @@ async function copyDirectories(
 
   await withConcurrencyLimit(
     directoriesToCopy,
-    DEFAULT_COPY_CONCURRENCY,
+    concurrency,
     async (dir, i) => {
       const src = join(repoRoot, dir);
       const dest = join(worktreePath, dir);

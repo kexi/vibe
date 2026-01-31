@@ -1,7 +1,8 @@
 import { assertEquals } from "@std/assert";
-import { startCommand } from "./start.ts";
+import { resolveCopyConcurrency, startCommand } from "./start.ts";
 import { createMockContext } from "../context/testing.ts";
 import type { RunResult } from "../runtime/types.ts";
+import type { VibeConfig } from "../types/config.ts";
 
 // Helper to capture console output
 function captureStderr(): { output: string[]; restore: () => void } {
@@ -14,6 +15,21 @@ function captureStderr(): { output: string[]; restore: () => void } {
     output,
     restore: () => {
       console.error = originalError;
+    },
+  };
+}
+
+// Helper to capture console.warn output
+function captureWarn(): { output: string[]; restore: () => void } {
+  const output: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    output.push(args.map(String).join(" "));
+  };
+  return {
+    output,
+    restore: () => {
+      console.warn = originalWarn;
     },
   };
 }
@@ -595,4 +611,201 @@ Deno.test("startCommand shows error on exception", async () => {
   assertEquals(exitCode, 1);
   const hasErrorMessage = stderr.output.some((line) => line.includes("Error:"));
   assertEquals(hasErrorMessage, true);
+});
+
+// resolveCopyConcurrency tests
+Deno.test("resolveCopyConcurrency: returns default when no config or env", () => {
+  const ctx = createMockContext({
+    env: {
+      get: () => undefined,
+      set: () => {},
+      delete: () => {},
+      toObject: () => ({}),
+    },
+  });
+
+  const result = resolveCopyConcurrency(undefined, ctx);
+
+  assertEquals(result, 4);
+});
+
+Deno.test("resolveCopyConcurrency: returns config value when set", () => {
+  const ctx = createMockContext({
+    env: {
+      get: () => undefined,
+      set: () => {},
+      delete: () => {},
+      toObject: () => ({}),
+    },
+  });
+  const config: VibeConfig = {
+    copy: { concurrency: 8 },
+  };
+
+  const result = resolveCopyConcurrency(config, ctx);
+
+  assertEquals(result, 8);
+});
+
+Deno.test("resolveCopyConcurrency: env var takes precedence over config", () => {
+  const ctx = createMockContext({
+    env: {
+      get: (key: string) => key === "VIBE_COPY_CONCURRENCY" ? "16" : undefined,
+      set: () => {},
+      delete: () => {},
+      toObject: () => ({}),
+    },
+  });
+  const config: VibeConfig = {
+    copy: { concurrency: 8 },
+  };
+
+  const result = resolveCopyConcurrency(config, ctx);
+
+  assertEquals(result, 16);
+});
+
+Deno.test("resolveCopyConcurrency: env var with minimum value", () => {
+  const ctx = createMockContext({
+    env: {
+      get: (key: string) => key === "VIBE_COPY_CONCURRENCY" ? "1" : undefined,
+      set: () => {},
+      delete: () => {},
+      toObject: () => ({}),
+    },
+  });
+
+  const result = resolveCopyConcurrency(undefined, ctx);
+
+  assertEquals(result, 1);
+});
+
+Deno.test("resolveCopyConcurrency: env var with maximum value", () => {
+  const ctx = createMockContext({
+    env: {
+      get: (key: string) => key === "VIBE_COPY_CONCURRENCY" ? "32" : undefined,
+      set: () => {},
+      delete: () => {},
+      toObject: () => ({}),
+    },
+  });
+
+  const result = resolveCopyConcurrency(undefined, ctx);
+
+  assertEquals(result, 32);
+});
+
+Deno.test("resolveCopyConcurrency: invalid env var (zero) falls back to default", () => {
+  const warn = captureWarn();
+  const ctx = createMockContext({
+    env: {
+      get: (key: string) => key === "VIBE_COPY_CONCURRENCY" ? "0" : undefined,
+      set: () => {},
+      delete: () => {},
+      toObject: () => ({}),
+    },
+  });
+
+  const result = resolveCopyConcurrency(undefined, ctx);
+
+  warn.restore();
+
+  assertEquals(result, 4);
+  const hasWarning = warn.output.some((line) =>
+    line.includes("Warning: Invalid VIBE_COPY_CONCURRENCY value '0'")
+  );
+  assertEquals(hasWarning, true);
+});
+
+Deno.test("resolveCopyConcurrency: invalid env var (negative) falls back to default", () => {
+  const warn = captureWarn();
+  const ctx = createMockContext({
+    env: {
+      get: (key: string) => key === "VIBE_COPY_CONCURRENCY" ? "-1" : undefined,
+      set: () => {},
+      delete: () => {},
+      toObject: () => ({}),
+    },
+  });
+
+  const result = resolveCopyConcurrency(undefined, ctx);
+
+  warn.restore();
+
+  assertEquals(result, 4);
+  const hasWarning = warn.output.some((line) =>
+    line.includes("Warning: Invalid VIBE_COPY_CONCURRENCY value '-1'")
+  );
+  assertEquals(hasWarning, true);
+});
+
+Deno.test("resolveCopyConcurrency: invalid env var (above max) falls back to default", () => {
+  const warn = captureWarn();
+  const ctx = createMockContext({
+    env: {
+      get: (key: string) => key === "VIBE_COPY_CONCURRENCY" ? "33" : undefined,
+      set: () => {},
+      delete: () => {},
+      toObject: () => ({}),
+    },
+  });
+
+  const result = resolveCopyConcurrency(undefined, ctx);
+
+  warn.restore();
+
+  assertEquals(result, 4);
+  const hasWarning = warn.output.some((line) =>
+    line.includes("Warning: Invalid VIBE_COPY_CONCURRENCY value '33'")
+  );
+  assertEquals(hasWarning, true);
+});
+
+Deno.test("resolveCopyConcurrency: invalid env var (non-numeric) falls back to default", () => {
+  const warn = captureWarn();
+  const ctx = createMockContext({
+    env: {
+      get: (key: string) => key === "VIBE_COPY_CONCURRENCY" ? "abc" : undefined,
+      set: () => {},
+      delete: () => {},
+      toObject: () => ({}),
+    },
+  });
+
+  const result = resolveCopyConcurrency(undefined, ctx);
+
+  warn.restore();
+
+  assertEquals(result, 4);
+  const hasWarning = warn.output.some((line) =>
+    line.includes("Warning: Invalid VIBE_COPY_CONCURRENCY value 'abc'")
+  );
+  assertEquals(hasWarning, true);
+});
+
+Deno.test("resolveCopyConcurrency: invalid env var warns and uses default (not config)", () => {
+  const warn = captureWarn();
+  const ctx = createMockContext({
+    env: {
+      get: (key: string) => key === "VIBE_COPY_CONCURRENCY" ? "invalid" : undefined,
+      set: () => {},
+      delete: () => {},
+      toObject: () => ({}),
+    },
+  });
+  const config: VibeConfig = {
+    copy: { concurrency: 8 },
+  };
+
+  const result = resolveCopyConcurrency(config, ctx);
+
+  warn.restore();
+
+  // Note: Invalid env var warns and falls back to DEFAULT (4), not config value
+  // This is by design - we warn about the invalid env var and use default
+  assertEquals(result, 4);
+  const hasWarning = warn.output.some((line) =>
+    line.includes("Warning: Invalid VIBE_COPY_CONCURRENCY value 'invalid'")
+  );
+  assertEquals(hasWarning, true);
 });
