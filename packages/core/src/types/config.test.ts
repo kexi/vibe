@@ -129,6 +129,99 @@ Deno.test("parseVibeConfig: error message includes file path", () => {
   assertEquals(error.message.includes(customPath), true);
 });
 
+Deno.test("parseVibeConfig: accepts valid copy concurrency", () => {
+  const config = {
+    copy: {
+      concurrency: 8,
+    },
+  };
+
+  const result = parseVibeConfig(config, "/path/to/.vibe.toml");
+  assertEquals(result.copy?.concurrency, 8);
+});
+
+Deno.test("parseVibeConfig: accepts minimum copy concurrency (1)", () => {
+  const config = {
+    copy: {
+      concurrency: 1,
+    },
+  };
+
+  const result = parseVibeConfig(config, "/path/to/.vibe.toml");
+  assertEquals(result.copy?.concurrency, 1);
+});
+
+Deno.test("parseVibeConfig: accepts maximum copy concurrency (32)", () => {
+  const config = {
+    copy: {
+      concurrency: 32,
+    },
+  };
+
+  const result = parseVibeConfig(config, "/path/to/.vibe.toml");
+  assertEquals(result.copy?.concurrency, 32);
+});
+
+Deno.test("parseVibeConfig: rejects copy concurrency below minimum", () => {
+  const config = {
+    copy: {
+      concurrency: 0,
+    },
+  };
+
+  const error = assertThrows(
+    () => parseVibeConfig(config, "/path/to/.vibe.toml"),
+    Error,
+  );
+  assertEquals(error.message.includes("/path/to/.vibe.toml"), true);
+  assertEquals(error.message.includes("copy.concurrency"), true);
+});
+
+Deno.test("parseVibeConfig: rejects copy concurrency above maximum", () => {
+  const config = {
+    copy: {
+      concurrency: 33,
+    },
+  };
+
+  const error = assertThrows(
+    () => parseVibeConfig(config, "/path/to/.vibe.toml"),
+    Error,
+  );
+  assertEquals(error.message.includes("/path/to/.vibe.toml"), true);
+  assertEquals(error.message.includes("copy.concurrency"), true);
+});
+
+Deno.test("parseVibeConfig: rejects non-integer copy concurrency", () => {
+  const config = {
+    copy: {
+      concurrency: 4.5,
+    },
+  };
+
+  const error = assertThrows(
+    () => parseVibeConfig(config, "/path/to/.vibe.toml"),
+    Error,
+  );
+  assertEquals(error.message.includes("/path/to/.vibe.toml"), true);
+  assertEquals(error.message.includes("copy.concurrency"), true);
+});
+
+Deno.test("parseVibeConfig: rejects string copy concurrency", () => {
+  const config = {
+    copy: {
+      concurrency: "4",
+    },
+  };
+
+  const error = assertThrows(
+    () => parseVibeConfig(config, "/path/to/.vibe.toml"),
+    Error,
+  );
+  assertEquals(error.message.includes("/path/to/.vibe.toml"), true);
+  assertEquals(error.message.includes("copy.concurrency"), true);
+});
+
 Deno.test("VibeConfigSchema: validates all hook types", () => {
   const config = {
     hooks: {
