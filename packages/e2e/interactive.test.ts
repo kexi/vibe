@@ -157,7 +157,9 @@ describe("interactive prompts", () => {
         // Also check if the command exited early
         const exitCode = runner2.getExitCode();
         const output = runner2.getOutput();
-        throw new Error(`Expected prompt about directory existing (exit code: ${exitCode}). Output:\n${output}`);
+        throw new Error(
+          `Expected prompt about directory existing (exit code: ${exitCode}). Output:\n${output}`,
+        );
       }
 
       // Select option 1 (overwrite)
@@ -213,7 +215,9 @@ describe("interactive prompts", () => {
       if (!promptFound) {
         const exitCode = runner2.getExitCode();
         const output = runner2.getOutput();
-        throw new Error(`Expected prompt about directory existing (exit code: ${exitCode}). Output:\n${output}`);
+        throw new Error(
+          `Expected prompt about directory existing (exit code: ${exitCode}). Output:\n${output}`,
+        );
       }
 
       // Select option 2 (reuse)
@@ -269,7 +273,9 @@ describe("interactive prompts", () => {
       if (!promptFound) {
         const exitCode = runner2.getExitCode();
         const output = runner2.getOutput();
-        throw new Error(`Expected prompt about directory existing (exit code: ${exitCode}). Output:\n${output}`);
+        throw new Error(
+          `Expected prompt about directory existing (exit code: ${exitCode}). Output:\n${output}`,
+        );
       }
 
       // Select option 3 (cancel)
