@@ -162,10 +162,24 @@ describe("interactive prompts", () => {
         );
       }
 
+      // Log output at the point pattern was found
+      console.log("=== Pattern found, output so far ===");
+      console.log(runner2.getOutput());
+      console.log("=== End output ===");
+
       // Select option 1 (overwrite)
       runner2.write("1\n");
 
-      await runner2.waitForExit();
+      // Wait for exit with timeout check
+      const exitTimeout = 30000;
+      const exitStart = Date.now();
+      while (runner2.getExitCode() === null && Date.now() - exitStart < exitTimeout) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      if (runner2.getExitCode() === null) {
+        const output = runner2.getOutput();
+        throw new Error(`Process did not exit within ${exitTimeout}ms. Output:\n${output}`);
+      }
 
       // Verify worktree was recreated (use basename to avoid /private prefix issues on macOS)
       const output = runner2.getOutput();
@@ -220,10 +234,24 @@ describe("interactive prompts", () => {
         );
       }
 
+      // Log output at the point pattern was found
+      console.log("=== Pattern found (reuse), output so far ===");
+      console.log(runner2.getOutput());
+      console.log("=== End output ===");
+
       // Select option 2 (reuse)
       runner2.write("2\n");
 
-      await runner2.waitForExit();
+      // Wait for exit with timeout check
+      const exitTimeout = 30000;
+      const exitStart = Date.now();
+      while (runner2.getExitCode() === null && Date.now() - exitStart < exitTimeout) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      if (runner2.getExitCode() === null) {
+        const output = runner2.getOutput();
+        throw new Error(`Process did not exit within ${exitTimeout}ms (reuse). Output:\n${output}`);
+      }
 
       // Verify output contains cd command (use basename to avoid /private prefix issues on macOS)
       const output = runner2.getOutput();
