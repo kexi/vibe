@@ -192,6 +192,7 @@ const parseArgsOptions: ParseArgsConfig["options"] = {
   target: { type: "string" },
   distribution: { type: "string" },
   output: { type: "string" },
+  version: { type: "string" },
   "generate-version-only": { type: "boolean" },
 };
 
@@ -206,6 +207,7 @@ async function main(): Promise<void> {
     target?: string;
     distribution?: string;
     output?: string;
+    version?: string;
     "generate-version-only"?: boolean;
   };
 
@@ -243,10 +245,11 @@ async function main(): Promise<void> {
     buildEnv,
   };
 
-  const { version, repository } = await getPackageJsonInfo();
+  const pkgInfo = await getPackageJsonInfo();
+  const version = args.version ?? pkgInfo.version;
   const commitHash = await getGitCommitHash();
 
-  await generateBuildInfoFile(version, commitHash, repository, metadata);
+  await generateBuildInfoFile(version, commitHash, pkgInfo.repository, metadata);
 
   if (args["generate-version-only"]) {
     return;

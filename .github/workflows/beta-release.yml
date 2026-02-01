@@ -82,7 +82,7 @@ jobs:
         run: pnpm install --ignore-scripts
 
       - name: Build release binary
-        run: bun run scripts/build.ts --target ${{ matrix.target }} --output ${{ matrix.artifact }} --distribution binary
+        run: bun run scripts/build.ts --target ${{ matrix.target }} --output ${{ matrix.artifact }} --distribution binary --version ${{ needs.prepare.outputs.version }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
