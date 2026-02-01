@@ -1,5 +1,10 @@
 /**
  * Deno process implementation
+ *
+ * NOTE: Environment variable behavior is harmonized with Node.js:
+ * - When env is provided, it is merged with the current environment (Deno.env.toObject())
+ * - This matches Node.js child_process defaults for consistent cross-runtime behavior
+ * - If complete isolation is needed, the caller should handle env construction
  */
 
 import type {
@@ -16,12 +21,23 @@ function toDenoStdio(stdio: StdioOption | undefined): "inherit" | "null" | "pipe
   return stdio ?? "inherit";
 }
 
+/**
+ * Merge provided env with current environment.
+ * This ensures consistent behavior with Node.js where env is merged, not replaced.
+ */
+function mergeEnv(env: Record<string, string> | undefined): Record<string, string> | undefined {
+  if (!env) {
+    return undefined;
+  }
+  return { ...Deno.env.toObject(), ...env };
+}
+
 export const denoProcess: RuntimeProcess = {
   async run(options: RunOptions): Promise<RunResult> {
     const command = new Deno.Command(options.cmd, {
       args: options.args,
       cwd: options.cwd,
-      env: options.env,
+      env: mergeEnv(options.env),
       stdin: toDenoStdio(options.stdin),
       stdout: toDenoStdio(options.stdout),
       stderr: toDenoStdio(options.stderr),
@@ -41,7 +57,7 @@ export const denoProcess: RuntimeProcess = {
     const command = new Deno.Command(options.cmd, {
       args: options.args,
       cwd: options.cwd,
-      env: options.env,
+      env: mergeEnv(options.env),
       stdin: toDenoStdio(options.stdin),
       stdout: toDenoStdio(options.stdout),
       stderr: toDenoStdio(options.stderr),
