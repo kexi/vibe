@@ -123,6 +123,18 @@ bunx @kexi/vibe start feat/my-feature
 
 > Note: Bun uses the same npm package as Node.js. Native bindings for Copy-on-Write file cloning are automatically used when available.
 
+### Deno (2.0+)
+
+```bash
+# Install via JSR
+deno install -A --global jsr:@kexi/vibe
+
+# Or run directly
+deno run -A jsr:@kexi/vibe start feat/my-feature
+```
+
+> Note: Deno 2.0+ is required for JSR distribution.
+
 ### mise
 
 Add to your `.mise.toml`:
