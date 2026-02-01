@@ -49,9 +49,7 @@ export function setGlobalContext(ctx: AppContext): void {
  */
 export function getGlobalContext(): AppContext {
   if (!globalContext) {
-    throw new Error(
-      "AppContext not initialized. Call setGlobalContext() at application startup.",
-    );
+    throw new Error("AppContext not initialized. Call setGlobalContext() at application startup.");
   }
   return globalContext;
 }

@@ -24,12 +24,12 @@ Full documentation is available at [vibe.kexi.dev](https://vibe.kexi.dev)
 
 ## Usage
 
-| Command                      | Description                                         |
-| ---------------------------- | --------------------------------------------------- |
-| `vibe start <branch>`        | Create a worktree with a new or existing branch (idempotent) |
-| `vibe clean`                 | Delete current worktree and return to main (prompts if uncommitted changes exist) |
-| `vibe trust`                 | Trust `.vibe.toml` and `.vibe.local.toml` files     |
-| `vibe untrust`               | Untrust `.vibe.toml` and `.vibe.local.toml` files   |
+| Command               | Description                                                                       |
+| --------------------- | --------------------------------------------------------------------------------- |
+| `vibe start <branch>` | Create a worktree with a new or existing branch (idempotent)                      |
+| `vibe clean`          | Delete current worktree and return to main (prompts if uncommitted changes exist) |
+| `vibe trust`          | Trust `.vibe.toml` and `.vibe.local.toml` files                                   |
+| `vibe untrust`        | Untrust `.vibe.toml` and `.vibe.local.toml` files                                 |
 
 ### Examples
 
@@ -46,13 +46,13 @@ vibe clean
 
 ### Global Options
 
-| Option            | Description                                        |
-| ----------------- | -------------------------------------------------- |
-| `-h`, `--help`    | Show help message                                  |
-| `-v`, `--version` | Show version information                           |
-| `-V`, `--verbose` | Show detailed output                               |
-| `-q`, `--quiet`   | Suppress non-essential output                      |
-| `-n`, `--dry-run` | Preview operations without executing (start only)  |
+| Option            | Description                                       |
+| ----------------- | ------------------------------------------------- |
+| `-h`, `--help`    | Show help message                                 |
+| `-v`, `--version` | Show version information                          |
+| `-V`, `--verbose` | Show detailed output                              |
+| `-q`, `--quiet`   | Suppress non-essential output                     |
+| `-n`, `--dry-run` | Preview operations without executing (start only) |
 
 ## Setup
 
@@ -64,6 +64,7 @@ Add the following to your shell configuration:
 ```bash
 vibe() { eval "$(command vibe "$@")" }
 ```
+
 </details>
 
 <details>
@@ -72,6 +73,7 @@ vibe() { eval "$(command vibe "$@")" }
 ```bash
 vibe() { eval "$(command vibe "$@")"; }
 ```
+
 </details>
 
 <details>
@@ -82,6 +84,7 @@ function vibe
     eval (command vibe $argv)
 end
 ```
+
 </details>
 
 <details>
@@ -90,6 +93,7 @@ end
 ```powershell
 function vibe { Invoke-Expression (& vibe.exe $args) }
 ```
+
 </details>
 
 ## Configuration
@@ -113,6 +117,7 @@ post_start = [
 Trust registration is required on first use with `vibe trust`.
 
 For detailed configuration options including:
+
 - Glob patterns for file copying
 - Copy performance optimization (Copy-on-Write)
 - Worktree path customization

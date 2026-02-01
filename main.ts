@@ -1,4 +1,4 @@
-import { parseArgs } from "@std/cli/parse-args";
+import { parseArgs, type ParseArgsConfig } from "node:util";
 import { startCommand } from "./packages/core/src/commands/start.ts";
 import { cleanCommand } from "./packages/core/src/commands/clean.ts";
 import { trustCommand } from "./packages/core/src/commands/trust.ts";
@@ -16,27 +16,23 @@ import {
 import { handleError } from "./packages/core/src/errors/index.ts";
 
 /**
- * Boolean options supported by the CLI.
- * Single source of truth for option parsing and validation.
+ * CLI options configuration for node:util parseArgs
  */
-const BOOLEAN_OPTIONS = [
-  "help",
-  "version",
-  "verbose",
-  "quiet",
-  "reuse",
-  "no-hooks",
-  "no-copy",
-  "dry-run",
-  "force",
-  "delete-branch",
-  "keep-branch",
-  "check",
-] as const;
-
-const STRING_OPTIONS = [
-  "base",
-] as const;
+const parseArgsOptions: ParseArgsConfig["options"] = {
+  help: { type: "boolean", short: "h" },
+  version: { type: "boolean", short: "v" },
+  verbose: { type: "boolean", short: "V" },
+  quiet: { type: "boolean", short: "q" },
+  reuse: { type: "boolean" },
+  "no-hooks": { type: "boolean" },
+  "no-copy": { type: "boolean" },
+  "dry-run": { type: "boolean", short: "n" },
+  force: { type: "boolean", short: "f" },
+  "delete-branch": { type: "boolean" },
+  "keep-branch": { type: "boolean" },
+  check: { type: "boolean" },
+  base: { type: "string" },
+};
 
 const HELP_TEXT = `vibe - git worktree helper
 
@@ -47,15 +43,8 @@ Installation:
   # Homebrew (macOS)
   brew install kexi/tap/vibe
 
-  # Deno (Cross-platform)
-  deno install -A --global jsr:@kexi/vibe
-
-  # mise (.mise.toml)
-  [tools]
-  "jsr:@kexi/vibe" = "latest"
-
   # Manual build
-  deno compile --allow-run --allow-read --allow-write --allow-env --allow-ffi --allow-net --output vibe main.ts
+  bun build --compile --minify --outfile vibe main.ts
 
 Usage:
   vibe start <branch-name> [options]  Create a new worktree with the given branch
@@ -108,52 +97,42 @@ async function main(): Promise<void> {
   setGlobalContext(createAppContext(rt));
 
   const rawArgs = [...runtime.control.args];
-  const args = parseArgs(rawArgs, {
-    boolean: [...BOOLEAN_OPTIONS],
-    string: [...STRING_OPTIONS],
-    alias: {
-      h: "help",
-      v: "version",
-      V: "verbose",
-      q: "quiet",
-      n: "dry-run",
-      f: "force",
-    },
-  });
 
-  // Check for unknown options (includes "_" for positional args and alias keys)
-  const ALIAS_KEYS = ["h", "v", "V", "q", "n", "f"] as const;
-  const knownOptions = new Set<string>([
-    ...BOOLEAN_OPTIONS,
-    ...STRING_OPTIONS,
-    "_",
-    ...ALIAS_KEYS,
-  ]);
-
-  for (const key of Object.keys(args)) {
-    const isUnknownOption = !knownOptions.has(key);
-    if (isUnknownOption) {
-      console.error(`Error: Unknown option '--${key}'`);
-      console.error("Run 'vibe --help' for usage.");
-      runtime.control.exit(1);
+  let parsedArgs: ReturnType<typeof parseArgs>;
+  try {
+    parsedArgs = parseArgs({
+      args: rawArgs,
+      options: parseArgsOptions,
+      allowPositionals: true,
+      strict: true,
+    });
+  } catch (error) {
+    if (error instanceof Error) {
+      // Extract option name from error message for better UX
+      const match = error.message.match(/Unknown option '(.+)'/);
+      if (match) {
+        console.error(`Error: Unknown option '${match[1]}'`);
+      } else {
+        console.error(`Error: ${error.message}`);
+      }
     }
+    console.error("Run 'vibe --help' for usage.");
+    runtime.control.exit(1);
   }
+
+  const { values: args, positionals } = parsedArgs;
 
   // Warn when both --verbose and --quiet are specified.
   // Note: Warnings and errors always display regardless of --quiet flag,
   // as they indicate issues the user should be aware of.
   const hasConflictingOutputOptions = args.verbose && args.quiet;
   if (hasConflictingOutputOptions) {
-    console.error(
-      "Warning: Both --verbose and --quiet specified. Using --quiet.",
-    );
+    console.error("Warning: Both --verbose and --quiet specified. Using --quiet.");
   }
 
   if (args.version) {
     console.error(`vibe ${BUILD_INFO.version}`);
-    console.error(
-      `Platform: ${BUILD_INFO.platform}-${BUILD_INFO.arch} (${BUILD_INFO.target})`,
-    );
+    console.error(`Platform: ${BUILD_INFO.platform}-${BUILD_INFO.arch} (${BUILD_INFO.target})`);
     console.error(`Distribution: ${BUILD_INFO.distribution}`);
     console.error(`Built: ${BUILD_INFO.buildTime} (${BUILD_INFO.buildEnv})`);
     console.error();
@@ -161,29 +140,26 @@ async function main(): Promise<void> {
     runtime.control.exit(0);
   }
 
-  const showHelp = args.help || args._.length === 0;
+  const showHelp = args.help || positionals.length === 0;
   if (showHelp) {
     console.error(HELP_TEXT);
     console.error(`${BUILD_INFO.repository}#readme`);
     runtime.control.exit(0);
   }
 
-  const command = String(args._[0]);
+  const command = String(positionals[0]);
 
   switch (command) {
     case "start": {
-      const branchName = String(args._[1] ?? "");
-      const reuse = args.reuse;
-      const noHooks = args["no-hooks"];
-      const noCopy = args["no-copy"];
-      const dryRun = args["dry-run"];
-      const verbose = args.verbose;
-      const quiet = args.quiet;
-      const base = typeof args.base === "string"
-        ? args.base
-        : args.base === undefined
-        ? undefined
-        : "";
+      const branchName = String(positionals[1] ?? "");
+      const reuse = args.reuse === true;
+      const noHooks = args["no-hooks"] === true;
+      const noCopy = args["no-copy"] === true;
+      const dryRun = args["dry-run"] === true;
+      const verbose = args.verbose === true;
+      const quiet = args.quiet === true;
+      const base =
+        typeof args.base === "string" ? args.base : args.base === undefined ? undefined : "";
       const baseFromEquals = rawArgs.some((arg) => arg.startsWith("--base="));
       await startCommand(branchName, {
         reuse,
@@ -198,18 +174,16 @@ async function main(): Promise<void> {
       break;
     }
     case "clean": {
-      const force = args.force;
-      const deleteBranch = args["delete-branch"];
-      const keepBranch = args["keep-branch"];
-      const verbose = args.verbose;
-      const quiet = args.quiet;
+      const force = args.force === true;
+      const deleteBranch = args["delete-branch"] === true;
+      const keepBranch = args["keep-branch"] === true;
+      const verbose = args.verbose === true;
+      const quiet = args.quiet === true;
 
       // Validate mutually exclusive options
       const hasMutuallyExclusiveOptions = deleteBranch && keepBranch;
       if (hasMutuallyExclusiveOptions) {
-        console.error(
-          "Error: --delete-branch and --keep-branch cannot be used together",
-        );
+        console.error("Error: --delete-branch and --keep-branch cannot be used together");
         runtime.control.exit(1);
       }
 
@@ -229,9 +203,9 @@ async function main(): Promise<void> {
       await configCommand();
       break;
     case "upgrade": {
-      const check = args.check;
-      const verbose = args.verbose;
-      const quiet = args.quiet;
+      const check = args.check === true;
+      const verbose = args.verbose === true;
+      const quiet = args.quiet === true;
       await upgradeCommand({ check, verbose, quiet });
       break;
     }
@@ -239,6 +213,9 @@ async function main(): Promise<void> {
       console.error(`Unknown command: ${command}`);
       runtime.control.exit(1);
   }
+
+  // Explicitly exit to ensure process terminates even if there are pending event listeners
+  runtime.control.exit(0);
 }
 
 main().catch((error) => {

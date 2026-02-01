@@ -16,10 +16,10 @@ Trash Strategy moves directories to a temporary location instead of deleting the
 
 ## Strategy Overview
 
-| Strategy     | Implementation             | macOS              | Linux                 | Windows               |
-| ------------ | -------------------------- | ------------------ | --------------------- | --------------------- |
-| **Trash**    | Native trash + fallback    | Finder Trash       | XDG Trash / /tmp      | %TEMP% + background   |
-| **Standard** | git worktree remove        | Supported          | Supported             | Supported             |
+| Strategy     | Implementation          | macOS        | Linux            | Windows             |
+| ------------ | ----------------------- | ------------ | ---------------- | ------------------- |
+| **Trash**    | Native trash + fallback | Finder Trash | XDG Trash / /tmp | %TEMP% + background |
+| **Standard** | git worktree remove     | Supported    | Supported        | Supported           |
 
 ### Native Trash Support
 
@@ -80,6 +80,7 @@ Example: `.vibe-trash-1705123456789-a1b2c3d4`
 **Cleanup mechanism:**
 
 The `cleanupStaleTrash()` function scans for and removes any leftover `.vibe-trash-*` directories from:
+
 - The parent directory of the removed worktree
 - The system temp directory
 
@@ -105,9 +106,9 @@ Uses the standard `git worktree remove` command. This is used as a fallback when
 }
 ```
 
-| Setting              | Type    | Default | Description                        |
-| -------------------- | ------- | ------- | ---------------------------------- |
-| `clean.fast_remove`  | boolean | `true`  | Enable/disable Trash Strategy      |
+| Setting             | Type    | Default | Description                   |
+| ------------------- | ------- | ------- | ----------------------------- |
+| `clean.fast_remove` | boolean | `true`  | Enable/disable Trash Strategy |
 
 ### Project Config (vibe.toml)
 
@@ -120,11 +121,11 @@ pre_clean = ["npm run clean"]
 post_clean = ["echo 'Cleanup complete'"]
 ```
 
-| Setting                | Type     | Default | Description                              |
-| ---------------------- | -------- | ------- | ---------------------------------------- |
-| `clean.delete_branch`  | boolean  | `false` | Delete the branch after removing worktree |
-| `hooks.pre_clean`      | string[] | `[]`    | Commands to run before cleaning          |
-| `hooks.post_clean`     | string[] | `[]`    | Commands to run after cleaning           |
+| Setting               | Type     | Default | Description                               |
+| --------------------- | -------- | ------- | ----------------------------------------- |
+| `clean.delete_branch` | boolean  | `false` | Delete the branch after removing worktree |
+| `hooks.pre_clean`     | string[] | `[]`    | Commands to run before cleaning           |
+| `hooks.post_clean`    | string[] | `[]`    | Commands to run after cleaning            |
 
 ## File Structure
 

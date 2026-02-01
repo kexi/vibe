@@ -1,5 +1,5 @@
-import { copy } from "@std/fs/copy";
-import { dirname } from "@std/path";
+import { cp } from "node:fs/promises";
+import { dirname } from "node:path";
 import type { CopyStrategy } from "../types.ts";
 import { runtime } from "../../../runtime/index.ts";
 
@@ -23,6 +23,6 @@ export class StandardStrategy implements CopyStrategy {
   }
 
   async copyDirectory(src: string, dest: string): Promise<void> {
-    await copy(src, dest, { overwrite: true });
+    await cp(src, dest, { recursive: true, force: true });
   }
 }

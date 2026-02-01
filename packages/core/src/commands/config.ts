@@ -1,9 +1,7 @@
 import { getSettingsPath, loadUserSettings } from "../utils/trust.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
 
-export async function configCommand(
-  ctx: AppContext = getGlobalContext(),
-): Promise<void> {
+export async function configCommand(ctx: AppContext = getGlobalContext()): Promise<void> {
   const { runtime } = ctx;
 
   try {

@@ -6,15 +6,17 @@ import { type AppContext, getGlobalContext } from "../context/index.ts";
 
 /**
  * Read a single line of input from the user
+ * @returns The trimmed input line, or null if EOF is reached
  */
-async function readLine(ctx: AppContext): Promise<string> {
+async function readLine(ctx: AppContext): Promise<string | null> {
   const buf = new Uint8Array(1024);
   const n = await ctx.runtime.io.stdin.read(buf);
-  const isInputReceived = n !== null;
+  const isInputReceived = n !== null && n > 0;
   if (isInputReceived) {
     return new TextDecoder().decode(buf.subarray(0, n)).trim();
   }
-  return "";
+  // Return null to indicate EOF or no data
+  return null;
 }
 
 /**
@@ -31,16 +33,14 @@ export async function confirm(
 
   // VIBE_FORCE_INTERACTIVE: When set to "1", forces the CLI to treat stdin as interactive.
   // This is necessary for E2E testing with node-pty, which creates a pseudo-terminal (PTY)
-  // that Deno.stdin.isTerminal() doesn't recognize as a true TTY. Without this flag,
+  // that stdin.isTerminal() may not recognize as a true TTY. Without this flag,
   // interactive prompts would fail in E2E tests even though they're running in a PTY.
   const forceInteractive = runtime.env.get("VIBE_FORCE_INTERACTIVE") === "1";
-  const isInteractive = forceInteractive || (runtime.io.stdin.isTerminal());
+  const isInteractive = forceInteractive || runtime.io.stdin.isTerminal();
 
   // In non-interactive environments (CI, scripts), automatically return false
   if (!isInteractive) {
-    console.error(
-      "Error: Cannot run in non-interactive mode with uncommitted changes.",
-    );
+    console.error("Error: Cannot run in non-interactive mode with uncommitted changes.");
     return false;
   }
 
@@ -48,6 +48,12 @@ export async function confirm(
     // Use writeSync to ensure immediate output in PTY environments (bypasses buffering)
     runtime.io.stderr.writeSync(new TextEncoder().encode(`${message}\n`));
     const input = await readLine(ctx);
+
+    // Handle EOF (null) - treat as No/Cancel
+    const isEof = input === null;
+    if (isEof) {
+      return false;
+    }
 
     const isYes = input === "Y" || input === "y" || input === "";
     if (isYes) {
@@ -79,10 +85,10 @@ export async function select(
 
   // VIBE_FORCE_INTERACTIVE: When set to "1", forces the CLI to treat stdin as interactive.
   // This is necessary for E2E testing with node-pty, which creates a pseudo-terminal (PTY)
-  // that Deno.stdin.isTerminal() doesn't recognize as a true TTY. Without this flag,
+  // that stdin.isTerminal() may not recognize as a true TTY. Without this flag,
   // interactive prompts would fail in E2E tests even though they're running in a PTY.
   const forceInteractive = runtime.env.get("VIBE_FORCE_INTERACTIVE") === "1";
-  const isInteractive = forceInteractive || (runtime.io.stdin.isTerminal());
+  const isInteractive = forceInteractive || runtime.io.stdin.isTerminal();
 
   // In non-interactive environments, throw an error (select() requires interaction)
   if (!isInteractive) {
@@ -98,6 +104,13 @@ export async function select(
     runtime.io.stderr.writeSync(new TextEncoder().encode("Please select (enter number):\n"));
 
     const input = await readLine(ctx);
+
+    // Handle EOF (null) - return last choice (usually Cancel)
+    const isEof = input === null;
+    if (isEof) {
+      return choices.length - 1;
+    }
+
     const number = parseInt(input, 10);
 
     const isValidNumber = !isNaN(number) && number >= 1 && number <= choices.length;

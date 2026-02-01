@@ -1,4 +1,4 @@
-import { dirname, isAbsolute, join } from "@std/path";
+import { dirname, isAbsolute, join } from "node:path";
 import type { VibeConfig } from "../types/config.ts";
 import type { VibeSettings } from "./settings.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
@@ -21,8 +21,7 @@ export async function resolveWorktreePath(
   ctx: AppContext = getGlobalContext(),
 ): Promise<string> {
   // Check if path_script is configured
-  const pathScript = config?.worktree?.path_script ??
-    settings.worktree?.path_script;
+  const pathScript = config?.worktree?.path_script ?? settings.worktree?.path_script;
 
   const hasPathScript = pathScript !== undefined;
   if (hasPathScript) {
@@ -99,9 +98,7 @@ async function executePathScript(
   const isPathEmpty = !path;
   const isPathRelative = !isAbsolute(path);
   if (isPathEmpty || isPathRelative) {
-    throw new Error(
-      `Worktree path script must output an absolute path, got: ${path}`,
-    );
+    throw new Error(`Worktree path script must output an absolute path, got: ${path}`);
   }
 
   return path;

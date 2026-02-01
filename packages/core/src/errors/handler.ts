@@ -63,10 +63,7 @@ export function handleError(
 /**
  * Handle a VibeError with appropriate output
  */
-function handleVibeError(
-  error: VibeError,
-  options: { verbose: boolean; quiet: boolean },
-): number {
+function handleVibeError(error: VibeError, options: { verbose: boolean; quiet: boolean }): number {
   const { verbose, quiet } = options;
 
   // UserCancelledError - silent exit

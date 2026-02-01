@@ -12,33 +12,22 @@ export type * from "./types.ts";
 
 /**
  * Detect the current runtime environment
+ * @throws Error if running in an unsupported environment (not Node.js or Bun)
  */
-function detectRuntime(): "deno" | "node" | "bun" {
-  // Check for Deno
-  // deno-lint-ignore no-explicit-any
-  if (typeof (globalThis as any).Deno !== "undefined") {
-    return "deno";
-  }
-
+function detectRuntime(): "node" | "bun" {
   // Check for Bun
-  // deno-lint-ignore no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if (typeof (globalThis as any).Bun !== "undefined") {
     return "bun";
   }
 
-  // Check for Node.js
-  // deno-lint-ignore no-explicit-any
-  if (typeof (globalThis as any).process !== "undefined") {
-    // deno-lint-ignore no-explicit-any
-    const proc = (globalThis as any).process;
-    const hasVersions = proc.versions && typeof proc.versions.node === "string";
-    if (hasVersions) {
-      return "node";
-    }
+  // Verify Node.js is available
+  if (typeof process !== "undefined" && process.versions?.node) {
+    return "node";
   }
 
-  // Default to Node.js for unknown environments
-  return "node";
+  // Unsupported runtime
+  throw new Error("Unsupported runtime: vibe requires Node.js 18+ or Bun 1.2+");
 }
 
 /**
@@ -48,8 +37,9 @@ export const RUNTIME_NAME = detectRuntime();
 
 /**
  * Whether running on Deno
+ * @deprecated Deno support was removed in v0.18.0. This constant is kept for backward compatibility.
  */
-export const IS_DENO = RUNTIME_NAME === "deno";
+export const IS_DENO = false;
 
 /**
  * Whether running on Node.js
@@ -65,18 +55,6 @@ export const IS_BUN = RUNTIME_NAME === "bun";
 let runtimeInstance: Runtime | null = null;
 let runtimeInitPromise: Promise<Runtime> | null = null;
 let initializationInProgress = false;
-
-/**
- * Auto-initialize Deno runtime at module load time
- *
- * Deno supports top-level await and can safely load modules synchronously,
- * so we initialize immediately to avoid requiring explicit initRuntime() calls.
- * This makes tests work without manual initRuntime() calls.
- */
-if (IS_DENO) {
-  const { denoRuntime } = await import("./deno/index.ts");
-  runtimeInstance = denoRuntime;
-}
 
 /**
  * Get the runtime implementation for the current environment
@@ -123,14 +101,9 @@ export async function getRuntime(): Promise<Runtime> {
 
   runtimeInitPromise = (async () => {
     try {
-      if (IS_DENO) {
-        const { denoRuntime } = await import("./deno/index.ts");
-        runtimeInstance = denoRuntime;
-      } else {
-        // Node.js and Bun use the same implementation
-        const { nodeRuntime } = await import("./node/index.ts");
-        runtimeInstance = nodeRuntime;
-      }
+      // Node.js and Bun use the same implementation
+      const { nodeRuntime } = await import("./node/index.ts");
+      runtimeInstance = nodeRuntime;
       return runtimeInstance;
     } finally {
       // Always clear initialization state in finally block
@@ -174,12 +147,12 @@ const runtimeProxy = new Proxy({} as Runtime, {
   get(_target, prop) {
     if (!runtimeInstance) {
       throw new Error(
-        `Runtime not initialized. Access to runtime.${
-          String(prop)
-        } requires calling await initRuntime() at application startup.`,
+        `Runtime not initialized. Access to runtime.${String(
+          prop,
+        )} requires calling await initRuntime() at application startup.`,
       );
     }
-    // deno-lint-ignore no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (runtimeInstance as any)[prop];
   },
 });

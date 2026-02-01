@@ -14,11 +14,7 @@ export function assertOutputContains(output: string, expected: string): void {
  * @param expected - The expected exit code
  * @param output - Optional output to include in error message for debugging
  */
-export function assertExitCode(
-  actual: number | null,
-  expected: number,
-  output?: string,
-): void {
+export function assertExitCode(actual: number | null, expected: number, output?: string): void {
   if (actual !== expected && output) {
     console.error(`Exit code mismatch. Command output:\n${output}`);
   }
@@ -75,9 +71,7 @@ export function assertPermissionError(output: string): void {
     /cannot create directory/i,
   ];
 
-  const hasPermissionError = permissionPatterns.some((pattern) =>
-    pattern.test(output)
-  );
+  const hasPermissionError = permissionPatterns.some((pattern) => pattern.test(output));
   expect(hasPermissionError).toBe(true);
 }
 
@@ -120,11 +114,8 @@ export async function waitForPathRemoval(
   const isRemoved = !existsSync(path);
   if (isRemoved) return;
 
-  await waitForCondition(
-    () => !existsSync(path),
-    {
-      ...options,
-      errorMessage: `Timeout waiting for path to be removed: ${path}`,
-    },
-  );
+  await waitForCondition(() => !existsSync(path), {
+    ...options,
+    errorMessage: `Timeout waiting for path to be removed: ${path}`,
+  });
 }

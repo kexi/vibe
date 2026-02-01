@@ -20,10 +20,10 @@ pnpm add @kexi/vibe-native
 
 ## Platform Support
 
-| Platform | Architecture | Filesystem |
-|----------|--------------|------------|
-| macOS | x64, arm64 | APFS |
-| Linux | x64, arm64 | Btrfs, XFS (with reflink) |
+| Platform | Architecture | Filesystem                |
+| -------- | ------------ | ------------------------- |
+| macOS    | x64, arm64   | APFS                      |
+| Linux    | x64, arm64   | Btrfs, XFS (with reflink) |
 
 ## Usage
 
@@ -70,6 +70,7 @@ Check if native clone operations are available on the current platform.
 ### `supportsDirectory(): boolean`
 
 Check if directory cloning is supported:
+
 - macOS (`clonefile`): `true`
 - Linux (`FICLONE`): `false` (files only)
 
@@ -82,6 +83,7 @@ Get the current platform identifier.
 ### File Type Validation
 
 Only regular files and directories are allowed. The following are rejected:
+
 - Symlinks (to prevent path traversal)
 - Device files (block/character devices)
 - Sockets
@@ -90,6 +92,7 @@ Only regular files and directories are allowed. The following are rejected:
 ### Path Handling
 
 This library does not perform path normalization or validation. Callers should:
+
 - Validate paths before calling clone functions
 - Use `path.resolve()` to normalize relative paths
 - Check for symlinks if path traversal is a concern
@@ -131,10 +134,12 @@ try {
 ## Filesystem Requirements
 
 ### macOS
+
 - **APFS** is required for `clonefile()` to work
 - HFS+ and other filesystems will return `ENOTSUP`
 
 ### Linux
+
 - **Btrfs** or **XFS** (with reflink support) is required
 - ext4 and other filesystems will return `EOPNOTSUPP`
 

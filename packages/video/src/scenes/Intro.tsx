@@ -1,10 +1,5 @@
 import React from "react";
-import {
-  useCurrentFrame,
-  interpolate,
-  spring,
-  useVideoConfig,
-} from "remotion";
+import { useCurrentFrame, interpolate, spring, useVideoConfig } from "remotion";
 import { COLORS } from "../styles/colors";
 
 export const Intro: React.FC = () => {

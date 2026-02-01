@@ -11,26 +11,27 @@ When creating or modifying GitHub Actions workflows, **always consider using mis
 ### Decision Process
 
 Before adding a setup action, check:
+
 1. Is the tool supported by mise? (See [mise registry](https://mise.jdx.dev/registry.html))
 2. If yes, add it to `.mise.toml` and use `jdx/mise-action@v2`
 3. If no, use the individual setup action as a fallback
 
 ### Mise-Supported Tools (Use mise instead)
 
-| Individual Action | Use mise instead |
-|-------------------|------------------|
-| `actions/setup-node` | ✅ Yes |
-| `actions/setup-python` | ✅ Yes |
-| `actions/setup-go` | ✅ Yes |
-| `actions/setup-java` | ✅ Yes |
-| `ruby/setup-ruby` | ✅ Yes |
-| `denoland/setup-deno` | ✅ Yes |
-| `oven-sh/setup-bun` | ✅ Yes |
-| `dtolnay/rust-toolchain` | ✅ Yes |
-| `pnpm/action-setup` | ✅ Yes |
-| `hashicorp/setup-terraform` | ✅ Yes |
-| `azure/setup-kubectl` | ✅ Yes |
-| `azure/setup-helm` | ✅ Yes |
+| Individual Action           | Use mise instead |
+| --------------------------- | ---------------- |
+| `actions/setup-node`        | ✅ Yes           |
+| `actions/setup-python`      | ✅ Yes           |
+| `actions/setup-go`          | ✅ Yes           |
+| `actions/setup-java`        | ✅ Yes           |
+| `ruby/setup-ruby`           | ✅ Yes           |
+| `denoland/setup-deno`       | ✅ Yes           |
+| `oven-sh/setup-bun`         | ✅ Yes           |
+| `dtolnay/rust-toolchain`    | ✅ Yes           |
+| `pnpm/action-setup`         | ✅ Yes           |
+| `hashicorp/setup-terraform` | ✅ Yes           |
+| `azure/setup-kubectl`       | ✅ Yes           |
+| `azure/setup-helm`          | ✅ Yes           |
 
 ### Example
 
@@ -58,6 +59,7 @@ steps:
 ### Exceptions (Cannot use mise)
 
 Some actions are not replaceable by mise:
+
 - `actions/checkout` - Git checkout, not a tool
 - `actions/cache` - Caching mechanism
 - `actions/upload-artifact` / `actions/download-artifact` - Artifact handling

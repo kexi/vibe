@@ -55,11 +55,7 @@ export const TrustCommand: React.FC = () => {
 
       {/* Output */}
       {commandTypingComplete && (
-        <CommandOutput
-          lines={outputLines}
-          startFrame={outputStartFrame}
-          lineDelay={3}
-        />
+        <CommandOutput lines={outputLines} startFrame={outputStartFrame} lineDelay={3} />
       )}
     </Terminal>
   );

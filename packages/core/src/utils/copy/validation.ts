@@ -2,7 +2,7 @@
  * Validates a file path for use in copy operations.
  * Throws an error if the path contains dangerous characters.
  *
- * Note: While Deno.Command uses argument arrays (not shell strings),
+ * Note: While Node.js spawn uses argument arrays (not shell strings),
  * which prevents most shell injection attacks, we still validate paths
  * for defense-in-depth against potential future vulnerabilities.
  */

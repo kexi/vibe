@@ -55,14 +55,10 @@ describe("interactive prompts", () => {
       await runner2.spawn(["start", "feat/test"]);
 
       // Wait for the prompt about branch being in use
-      const promptFound = await runner2.waitForPattern(
-        /Navigate to the existing worktree/,
-        15000,
-      );
+      const promptFound = await runner2.waitForPattern(/Navigate to the existing worktree/, 15000);
       if (!promptFound) {
-        throw new Error(
-          "Expected prompt about branch being in use, but pattern not found",
-        );
+        const output = runner2.getOutput();
+        throw new Error(`Expected prompt about branch being in use. Output:\n${output}`);
       }
 
       // Respond with Y to navigate to existing worktree
@@ -75,7 +71,7 @@ describe("interactive prompts", () => {
       const worktreeName = `${repoName}-feat-test`;
       assertOutputContains(output, `cd `);
       assertOutputContains(output, worktreeName);
-      assertExitCode(runner2.getExitCode(), 0);
+      assertExitCode(runner2.getExitCode(), 0, output);
     } finally {
       runner2.dispose();
     }
@@ -103,12 +99,10 @@ describe("interactive prompts", () => {
       await runner2.spawn(["start", "feat/test"]);
 
       // Wait for the prompt
-      const promptFound = await runner2.waitForPattern(
-        /Navigate to the existing worktree/,
-        15000,
-      );
+      const promptFound = await runner2.waitForPattern(/Navigate to the existing worktree/, 15000);
       if (!promptFound) {
-        throw new Error("Expected prompt about branch being in use");
+        const output = runner2.getOutput();
+        throw new Error(`Expected prompt about branch being in use. Output:\n${output}`);
       }
 
       // Respond with n to cancel
@@ -119,7 +113,7 @@ describe("interactive prompts", () => {
       // Verify output contains cancellation message
       const output = runner2.getOutput();
       assertOutputContains(output, "Cancelled");
-      assertExitCode(runner2.getExitCode(), 0);
+      assertExitCode(runner2.getExitCode(), 0, output);
     } finally {
       runner2.dispose();
     }
@@ -157,26 +151,34 @@ describe("interactive prompts", () => {
     try {
       await runner2.spawn(["start", "feat/overwrite"]);
 
-      // Wait for directory exists prompt
-      const promptFound = await runner2.waitForPattern(
-        /Directory.*already exists/,
-        15000,
-      );
+      // Wait for the select prompt to be fully displayed
+      const promptFound = await runner2.waitForPattern(/Please select/, 30000);
       if (!promptFound) {
-        throw new Error("Expected prompt about directory existing");
+        const exitCode = runner2.getExitCode();
+        const output = runner2.getOutput();
+        throw new Error(`Expected select prompt (exit code: ${exitCode}). Output:\n${output}`);
       }
 
       // Select option 1 (overwrite)
       runner2.write("1\n");
 
-      await runner2.waitForExit();
+      // Wait for exit with timeout check
+      const exitTimeout = 30000;
+      const exitStart = Date.now();
+      while (runner2.getExitCode() === null && Date.now() - exitStart < exitTimeout) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      if (runner2.getExitCode() === null) {
+        const output = runner2.getOutput();
+        throw new Error(`Process did not exit within ${exitTimeout}ms. Output:\n${output}`);
+      }
 
       // Verify worktree was recreated (use basename to avoid /private prefix issues on macOS)
       const output = runner2.getOutput();
       const worktreeName = `${repoName}-feat-overwrite`;
       assertOutputContains(output, `cd `);
       assertOutputContains(output, worktreeName);
-      assertExitCode(runner2.getExitCode(), 0);
+      assertExitCode(runner2.getExitCode(), 0, output);
     } finally {
       runner2.dispose();
     }
@@ -214,26 +216,34 @@ describe("interactive prompts", () => {
     try {
       await runner2.spawn(["start", "feat/reuse"]);
 
-      // Wait for directory exists prompt
-      const promptFound = await runner2.waitForPattern(
-        /Directory.*already exists/,
-        15000,
-      );
+      // Wait for the select prompt to be fully displayed
+      const promptFound = await runner2.waitForPattern(/Please select/, 30000);
       if (!promptFound) {
-        throw new Error("Expected prompt about directory existing");
+        const exitCode = runner2.getExitCode();
+        const output = runner2.getOutput();
+        throw new Error(`Expected select prompt (exit code: ${exitCode}). Output:\n${output}`);
       }
 
       // Select option 2 (reuse)
       runner2.write("2\n");
 
-      await runner2.waitForExit();
+      // Wait for exit with timeout check
+      const exitTimeout = 30000;
+      const exitStart = Date.now();
+      while (runner2.getExitCode() === null && Date.now() - exitStart < exitTimeout) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      if (runner2.getExitCode() === null) {
+        const output = runner2.getOutput();
+        throw new Error(`Process did not exit within ${exitTimeout}ms (reuse). Output:\n${output}`);
+      }
 
       // Verify output contains cd command (use basename to avoid /private prefix issues on macOS)
       const output = runner2.getOutput();
       const worktreeName = `${repoName}-feat-reuse`;
       assertOutputContains(output, `cd `);
       assertOutputContains(output, worktreeName);
-      assertExitCode(runner2.getExitCode(), 0);
+      assertExitCode(runner2.getExitCode(), 0, output);
     } finally {
       runner2.dispose();
     }
@@ -271,13 +281,12 @@ describe("interactive prompts", () => {
     try {
       await runner2.spawn(["start", "feat/cancel"]);
 
-      // Wait for directory exists prompt
-      const promptFound = await runner2.waitForPattern(
-        /Directory.*already exists/,
-        15000,
-      );
+      // Wait for the select prompt to be fully displayed
+      const promptFound = await runner2.waitForPattern(/Please select/, 30000);
       if (!promptFound) {
-        throw new Error("Expected prompt about directory existing");
+        const exitCode = runner2.getExitCode();
+        const output = runner2.getOutput();
+        throw new Error(`Expected select prompt (exit code: ${exitCode}). Output:\n${output}`);
       }
 
       // Select option 3 (cancel)
@@ -288,7 +297,7 @@ describe("interactive prompts", () => {
       // Verify cancellation message
       const output = runner2.getOutput();
       assertOutputContains(output, "Cancelled");
-      assertExitCode(runner2.getExitCode(), 0);
+      assertExitCode(runner2.getExitCode(), 0, output);
     } finally {
       runner2.dispose();
     }
@@ -320,12 +329,10 @@ describe("interactive prompts", () => {
       await runner2.spawn(["start", "feat/invalid"]);
 
       // Wait for the prompt
-      const promptFound = await runner2.waitForPattern(
-        /Navigate to the existing worktree/,
-        15000,
-      );
+      const promptFound = await runner2.waitForPattern(/Navigate to the existing worktree/, 15000);
       if (!promptFound) {
-        throw new Error("Expected prompt about branch being in use");
+        const output = runner2.getOutput();
+        throw new Error(`Expected prompt about branch being in use. Output:\n${output}`);
       }
 
       // Send invalid input first
@@ -334,7 +341,8 @@ describe("interactive prompts", () => {
       // Wait for error message about invalid input
       const errorFound = await runner2.waitForPattern(/Invalid input/, 10000);
       if (!errorFound) {
-        throw new Error("Expected invalid input message");
+        const output = runner2.getOutput();
+        throw new Error(`Expected invalid input message. Output:\n${output}`);
       }
 
       // Then send valid input
@@ -347,7 +355,7 @@ describe("interactive prompts", () => {
       const worktreeName = `${repoName}-feat-invalid`;
       assertOutputContains(output, `cd `);
       assertOutputContains(output, worktreeName);
-      assertExitCode(runner2.getExitCode(), 0);
+      assertExitCode(runner2.getExitCode(), 0, output);
     } finally {
       runner2.dispose();
     }

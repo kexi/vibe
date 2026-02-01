@@ -1,4 +1,4 @@
-import { dirname } from "@std/path";
+import { dirname } from "node:path";
 import { detectCapabilities } from "../detector.ts";
 import type { CopyStrategy } from "../types.ts";
 import { validatePath } from "../validation.ts";
@@ -59,9 +59,7 @@ export class RsyncStrategy implements CopyStrategy {
 
     if (!result.success) {
       const stderr = new TextDecoder().decode(result.stderr);
-      throw new Error(
-        `Rsync directory copy failed: ${src} -> ${dest}: ${stderr}`,
-      );
+      throw new Error(`Rsync directory copy failed: ${src} -> ${dest}: ${stderr}`);
     }
   }
 }

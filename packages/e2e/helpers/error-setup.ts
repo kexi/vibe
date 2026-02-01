@@ -51,15 +51,7 @@ export async function setupGitRepoWithoutUserConfig(): Promise<{
   execFileSync("git", ["add", "README.md"], { cwd: tempDir, stdio: "pipe" });
   execFileSync(
     "git",
-    [
-      "-c",
-      "user.name=Test",
-      "-c",
-      "user.email=test@example.com",
-      "commit",
-      "-m",
-      "Initial commit",
-    ],
+    ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "Initial commit"],
     { cwd: tempDir, stdio: "pipe" },
   );
 
@@ -232,9 +224,7 @@ export async function setupDetachedHeadRepo(): Promise<{
  * Make a file or directory read-only
  * Returns a cleanup function to restore original permissions
  */
-export async function makeReadOnly(
-  path: string,
-): Promise<() => Promise<void>> {
+export async function makeReadOnly(path: string): Promise<() => Promise<void>> {
   const stats = statSync(path);
   const originalMode = stats.mode;
 
@@ -247,9 +237,7 @@ export async function makeReadOnly(
     try {
       chmodSync(path, originalMode);
     } catch (error: any) {
-      console.warn(
-        `Warning: Failed to restore permissions on ${path}: ${error.message}`,
-      );
+      console.warn(`Warning: Failed to restore permissions on ${path}: ${error.message}`);
     }
   };
 }
@@ -258,9 +246,7 @@ export async function makeReadOnly(
  * Make parent directory read-only
  * Returns a cleanup function to restore original permissions
  */
-export async function makeParentDirReadOnly(
-  repoPath: string,
-): Promise<() => Promise<void>> {
+export async function makeParentDirReadOnly(repoPath: string): Promise<() => Promise<void>> {
   const parentDir = dirname(repoPath);
   return makeReadOnly(parentDir);
 }
@@ -269,9 +255,7 @@ export async function makeParentDirReadOnly(
  * Make a file completely inaccessible (chmod 000)
  * Returns a cleanup function to restore original permissions
  */
-export async function makeInaccessible(
-  path: string,
-): Promise<() => Promise<void>> {
+export async function makeInaccessible(path: string): Promise<() => Promise<void>> {
   const stats = statSync(path);
   const originalMode = stats.mode;
 
@@ -283,9 +267,7 @@ export async function makeInaccessible(
     try {
       chmodSync(path, originalMode);
     } catch (error: any) {
-      console.warn(
-        `Warning: Failed to restore permissions on ${path}: ${error.message}`,
-      );
+      console.warn(`Warning: Failed to restore permissions on ${path}: ${error.message}`);
     }
   };
 }
@@ -294,9 +276,7 @@ export async function makeInaccessible(
  * Recursively make directory and all contents read-only
  * Returns a cleanup function to restore all original permissions
  */
-export async function makeDirectoryTreeReadOnly(
-  dirPath: string,
-): Promise<() => Promise<void>> {
+export async function makeDirectoryTreeReadOnly(dirPath: string): Promise<() => Promise<void>> {
   const cleanupFunctions: Array<() => Promise<void>> = [];
 
   // Helper function to recursively chmod
@@ -315,9 +295,7 @@ export async function makeDirectoryTreeReadOnly(
       try {
         chmodSync(path, originalMode);
       } catch (error: any) {
-        console.warn(
-          `Warning: Failed to restore permissions on ${path}: ${error.message}`,
-        );
+        console.warn(`Warning: Failed to restore permissions on ${path}: ${error.message}`);
       }
     });
   };

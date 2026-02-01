@@ -49,17 +49,17 @@ flowchart TD
 
 `Runtime` インターフェース（`packages/core/src/runtime/types.ts`）は、すべてのランタイム実装の契約を定義します：
 
-| モジュール   | 説明                                 | メソッド例                             |
-| ------------ | ------------------------------------ | -------------------------------------- |
-| `fs`         | ファイルシステム操作                 | readFile, writeTextFile, mkdir, rename |
-| `process`    | プロセス実行                         | run, spawn                             |
-| `env`        | 環境変数                             | get, set, delete, toObject             |
-| `build`      | プラットフォーム情報                 | os, arch                               |
-| `control`    | プロセス制御                         | exit, chdir, cwd, execPath, args       |
-| `io`         | 標準 I/O ストリーム                  | stdin, stderr                          |
-| `errors`     | ランタイム固有のエラー型             | NotFound, AlreadyExists, isNotFound    |
-| `signals`    | シグナル処理                         | addListener, removeListener            |
-| `ffi`        | FFI 操作（Deno のみ、オプション）    | dlopen                                 |
+| モジュール | 説明                              | メソッド例                             |
+| ---------- | --------------------------------- | -------------------------------------- |
+| `fs`       | ファイルシステム操作              | readFile, writeTextFile, mkdir, rename |
+| `process`  | プロセス実行                      | run, spawn                             |
+| `env`      | 環境変数                          | get, set, delete, toObject             |
+| `build`    | プラットフォーム情報              | os, arch                               |
+| `control`  | プロセス制御                      | exit, chdir, cwd, execPath, args       |
+| `io`       | 標準 I/O ストリーム               | stdin, stderr                          |
+| `errors`   | ランタイム固有のエラー型          | NotFound, AlreadyExists, isNotFound    |
+| `signals`  | シグナル処理                      | addListener, removeListener            |
+| `ffi`      | FFI 操作（Deno のみ、オプション） | dlopen                                 |
 
 ## ランタイム検出
 
@@ -251,30 +251,30 @@ packages/core/src/context/
 
 **ファイルの説明:**
 
-| ファイル | 説明 |
-| -------- | ---- |
-| `runtime/index.ts` | ランタイム検出と初期化 |
+| ファイル           | 説明                         |
+| ------------------ | ---------------------------- |
+| `runtime/index.ts` | ランタイム検出と初期化       |
 | `runtime/types.ts` | Runtime インターフェース定義 |
-| `deno/index.ts` | Deno ランタイム組み立て |
-| `node/index.ts` | Node.js ランタイム組み立て |
-| `*/fs.ts` | ファイルシステム実装 |
-| `*/process.ts` | プロセス実行実装 |
-| `*/env.ts` | 環境変数と制御の実装 |
-| `*/io.ts` | I/O ストリーム実装 |
-| `*/errors.ts` | エラー型実装 |
-| `*/signals.ts` | シグナル処理実装 |
-| `deno/ffi.ts` | FFI 実装（Deno のみ） |
-| `context/index.ts` | AppContext 定義と管理 |
+| `deno/index.ts`    | Deno ランタイム組み立て      |
+| `node/index.ts`    | Node.js ランタイム組み立て   |
+| `*/fs.ts`          | ファイルシステム実装         |
+| `*/process.ts`     | プロセス実行実装             |
+| `*/env.ts`         | 環境変数と制御の実装         |
+| `*/io.ts`          | I/O ストリーム実装           |
+| `*/errors.ts`      | エラー型実装                 |
+| `*/signals.ts`     | シグナル処理実装             |
+| `deno/ffi.ts`      | FFI 実装（Deno のみ）        |
+| `context/index.ts` | AppContext 定義と管理        |
 
 ## プラットフォーム固有の機能
 
-| 機能                   | Deno | Node.js | Bun  |
-| ---------------------- | ---- | ------- | ---- |
-| ファイルシステム       | Yes  | Yes     | Yes* |
-| プロセス実行           | Yes  | Yes     | Yes* |
-| 環境変数               | Yes  | Yes     | Yes* |
-| シグナル処理           | Yes  | Yes     | Yes* |
-| FFI（ネイティブ呼出し）| Yes  | No**    | No   |
+| 機能                    | Deno | Node.js | Bun   |
+| ----------------------- | ---- | ------- | ----- |
+| ファイルシステム        | Yes  | Yes     | Yes\* |
+| プロセス実行            | Yes  | Yes     | Yes\* |
+| 環境変数                | Yes  | Yes     | Yes\* |
+| シグナル処理            | Yes  | Yes     | Yes\* |
+| FFI（ネイティブ呼出し） | Yes  | No\*\*  | No    |
 
 \* Bun は Node.js ランタイム実装を使用
 \*\* Node.js はネイティブ操作に `@kexi/vibe-native` パッケージが必要

@@ -15,6 +15,19 @@
     "pnpm": ">=9.0.0"
   },
   "scripts": {
+    "dev": "bun run main.ts",
+    "build": "bun run scripts/build.ts",
+    "build:compile": "bun build --compile --minify --outfile vibe main.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "fmt": "prettier --write .",
+    "fmt:check": "prettier --check .",
+    "check": "tsc --noEmit",
+    "ci": "pnpm run fmt:check && pnpm run lint && pnpm run check && pnpm run test",
+    "generate-version": "bun run scripts/build.ts --generate-version-only",
+    "get-version": "node -e \"console.log(JSON.parse(require('fs').readFileSync('package.json')).version)\"",
     "install:all": "pnpm install",
     "build:npm": "pnpm -C packages/npm build",
     "build:native": "pnpm -C packages/native build",
@@ -23,6 +36,20 @@
     "clean": "pnpm -r exec rm -rf node_modules dist",
     "check:docs": "pnpm -C packages/docs lint && pnpm -C packages/docs format && pnpm -C packages/docs check",
     "check:video": "pnpm -C packages/video typecheck",
-    "check:all": "deno task ci && pnpm run check:docs && pnpm run check:video"
+    "check:all": "pnpm run ci && pnpm run check:docs && pnpm run check:video"
+  },
+  "dependencies": {
+    "fast-glob": "^3.3.3",
+    "smol-toml": "^1.6.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "bun-types": "1.1.43",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.8.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.54.0",
+    "vitest": "^4.0.18"
   }
 }

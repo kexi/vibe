@@ -7,11 +7,7 @@ import {
   assertNonZeroExitCode,
   assertOutputContains,
 } from "../helpers/assertions.js";
-import {
-  makeInaccessible,
-  makeParentDirReadOnly,
-  makeReadOnly,
-} from "../helpers/error-setup.js";
+import { makeInaccessible, makeParentDirReadOnly, makeReadOnly } from "../helpers/error-setup.js";
 import { setupTestGitRepo } from "../helpers/git-setup.js";
 
 describe("permission errors", () => {

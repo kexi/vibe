@@ -33,14 +33,14 @@ flowchart TD
 
 ### Key Components
 
-| Component | Description |
-|-----------|-------------|
-| CLI Commands | User-facing commands (start, clean, trust, etc.) |
-| AppContext | Dependency injection container for runtime, config, and settings |
+| Component         | Description                                                        |
+| ----------------- | ------------------------------------------------------------------ |
+| CLI Commands      | User-facing commands (start, clean, trust, etc.)                   |
+| AppContext        | Dependency injection container for runtime, config, and settings   |
 | Runtime Interface | Abstract interface for filesystem, process, environment operations |
-| Deno Runtime | Deno APIs implementation with N-API native module support |
-| Node.js Runtime | Node.js APIs implementation with N-API native module support |
-| @kexi/vibe-native | Shared N-API module for Copy-on-Write and trash operations |
+| Deno Runtime      | Deno APIs implementation with N-API native module support          |
+| Node.js Runtime   | Node.js APIs implementation with N-API native module support       |
+| @kexi/vibe-native | Shared N-API module for Copy-on-Write and trash operations         |
 
 ## Copy Strategy
 
@@ -62,11 +62,11 @@ flowchart TD
 
 ### Strategy Selection
 
-| Strategy | Platform | Description |
-|----------|----------|-------------|
+| Strategy            | Platform                         | Description                           |
+| ------------------- | -------------------------------- | ------------------------------------- |
 | NativeCloneStrategy | macOS (APFS), Linux (Btrfs, XFS) | Uses Copy-on-Write for instant copies |
-| RsyncStrategy | Unix-like | Uses rsync for efficient copying |
-| StandardStrategy | All | Recursive file-by-file copy |
+| RsyncStrategy       | Unix-like                        | Uses rsync for efficient copying      |
+| StandardStrategy    | All                              | Recursive file-by-file copy           |
 
 ## Clean Strategy
 
@@ -94,12 +94,12 @@ flowchart TD
 
 ### Trash Handling
 
-| Method | Platform | Description |
-|--------|----------|-------------|
-| Native Trash | Node.js (all platforms) | Uses @kexi/vibe-native with trash crate |
-| AppleScript | Deno on macOS | Fallback using Finder via osascript |
-| /tmp + Background | Linux (no desktop) | Moves to /tmp and deletes in background |
-| Parent Dir + Background | Cross-device | Same filesystem fallback for network mounts |
+| Method                  | Platform                | Description                                 |
+| ----------------------- | ----------------------- | ------------------------------------------- |
+| Native Trash            | Node.js (all platforms) | Uses @kexi/vibe-native with trash crate     |
+| AppleScript             | Deno on macOS           | Fallback using Finder via osascript         |
+| /tmp + Background       | Linux (no desktop)      | Moves to /tmp and deletes in background     |
+| Parent Dir + Background | Cross-device            | Same filesystem fallback for network mounts |
 
 ## Context and Dependency Injection
 
@@ -180,9 +180,9 @@ source .vibedev
 
 Other tools that need to modify the parent shell's environment use similar patterns:
 
-| Tool | Purpose |
-|------|---------|
-| nvm | Node.js version manager - modifies PATH |
-| rbenv | Ruby version manager - modifies PATH |
+| Tool   | Purpose                                  |
+| ------ | ---------------------------------------- |
+| nvm    | Node.js version manager - modifies PATH  |
+| rbenv  | Ruby version manager - modifies PATH     |
 | direnv | Directory-specific environment variables |
-| pyenv | Python version manager - modifies PATH |
+| pyenv  | Python version manager - modifies PATH   |

@@ -6,7 +6,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write  # JSR OIDC認証に必須
+  id-token: write # JSR OIDC認証に必須
 
 jobs:
   publish:

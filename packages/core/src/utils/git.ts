@@ -1,4 +1,12 @@
-import { basename, dirname, isAbsolute, join, normalize, relative, SEPARATOR } from "@std/path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  normalize,
+  relative,
+  sep as SEPARATOR,
+} from "node:path";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
 
 export async function runGitCommand(
@@ -20,22 +28,16 @@ export async function runGitCommand(
   return new TextDecoder().decode(result.stdout).trim();
 }
 
-export async function getRepoRoot(
-  ctx: AppContext = getGlobalContext(),
-): Promise<string> {
+export async function getRepoRoot(ctx: AppContext = getGlobalContext()): Promise<string> {
   return await runGitCommand(["rev-parse", "--show-toplevel"], ctx);
 }
 
-export async function getRepoName(
-  ctx: AppContext = getGlobalContext(),
-): Promise<string> {
+export async function getRepoName(ctx: AppContext = getGlobalContext()): Promise<string> {
   const root = await getRepoRoot(ctx);
   return basename(root);
 }
 
-export async function isInsideWorktree(
-  ctx: AppContext = getGlobalContext(),
-): Promise<boolean> {
+export async function isInsideWorktree(ctx: AppContext = getGlobalContext()): Promise<boolean> {
   try {
     const result = await runGitCommand(["rev-parse", "--is-inside-work-tree"], ctx);
     return result === "true";
@@ -46,9 +48,7 @@ export async function isInsideWorktree(
 
 export async function getWorktreeList(
   ctx: AppContext = getGlobalContext(),
-): Promise<
-  { path: string; branch: string }[]
-> {
+): Promise<{ path: string; branch: string }[]> {
   const output = await runGitCommand(["worktree", "list", "--porcelain"], ctx);
   const lines = output.split("\n");
   const worktrees: { path: string; branch: string }[] = [];
@@ -75,9 +75,7 @@ export async function getWorktreeByPath(
   return worktrees.find((w) => normalize(w.path) === normalizedPath) ?? null;
 }
 
-export async function getMainWorktreePath(
-  ctx: AppContext = getGlobalContext(),
-): Promise<string> {
+export async function getMainWorktreePath(ctx: AppContext = getGlobalContext()): Promise<string> {
   const worktrees = await getWorktreeList(ctx);
   const mainWorktree = worktrees[0];
   if (!mainWorktree) {
@@ -86,13 +84,8 @@ export async function getMainWorktreePath(
   return mainWorktree.path;
 }
 
-export async function isMainWorktree(
-  ctx: AppContext = getGlobalContext(),
-): Promise<boolean> {
-  const [currentRoot, worktrees] = await Promise.all([
-    getRepoRoot(ctx),
-    getWorktreeList(ctx),
-  ]);
+export async function isMainWorktree(ctx: AppContext = getGlobalContext()): Promise<boolean> {
+  const [currentRoot, worktrees] = await Promise.all([getRepoRoot(ctx), getWorktreeList(ctx)]);
   const mainWorktree = worktrees[0];
   if (!mainWorktree) {
     throw new Error("Could not find main worktree");
@@ -166,12 +159,7 @@ export async function branchExists(
   ctx: AppContext = getGlobalContext(),
 ): Promise<boolean> {
   try {
-    await runGitCommand([
-      "show-ref",
-      "--verify",
-      "--quiet",
-      `refs/heads/${branchName}`,
-    ], ctx);
+    await runGitCommand(["show-ref", "--verify", "--quiet", `refs/heads/${branchName}`], ctx);
     return true;
   } catch {
     return false;
@@ -308,7 +296,8 @@ export async function getRepoInfoFromPath(
 
     // Verify realPath is within repoRoot by checking if it starts with repoRoot + separator
     if (
-      !normalizedPath.startsWith(normalizedRoot + SEPARATOR) && normalizedPath !== normalizedRoot
+      !normalizedPath.startsWith(normalizedRoot + SEPARATOR) &&
+      normalizedPath !== normalizedRoot
     ) {
       throw new Error("File is outside repository root");
     }
