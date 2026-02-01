@@ -56,11 +56,6 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     :::
 
   </TabItem>
-  <TabItem label="Deno">
-    ```bash frame="terminal"
-    deno install -A --global jsr:@kexi/vibe
-    ```
-  </TabItem>
   <TabItem label="Linux">
     ```bash frame="terminal"
     # Ubuntu/Debian (x64)
@@ -93,7 +88,7 @@ Add **one** of the following to your shell configuration (choose based on your i
     ```bash frame="terminal"
     # Add to ~/.zshrc (choose one)
 
-    # For global install (Homebrew, npm -g, bun -g, Deno)
+    # For global install (Homebrew, npm -g, bun -g)
     vibe() { eval "$(command vibe "$@")" }
 
     # For npx (without global install)
@@ -107,7 +102,7 @@ Add **one** of the following to your shell configuration (choose based on your i
     ```bash frame="terminal"
     # Add to ~/.bashrc (choose one)
 
-    # For global install (Homebrew, npm -g, bun -g, Deno)
+    # For global install (Homebrew, npm -g, bun -g)
     vibe() { eval "$(command vibe "$@")"; }
 
     # For npx (without global install)
@@ -121,7 +116,7 @@ Add **one** of the following to your shell configuration (choose based on your i
     ```fish frame="terminal"
     # Add to ~/.config/fish/config.fish (choose one)
 
-    # For global install (Homebrew, npm -g, bun -g, Deno)
+    # For global install (Homebrew, npm -g, bun -g)
     function vibe
         eval (command vibe $argv)
     end
@@ -141,7 +136,7 @@ Add **one** of the following to your shell configuration (choose based on your i
     ```nu frame="terminal"
     # Add to ~/.config/nushell/config.nu (choose one)
 
-    # For global install (Homebrew, npm -g, bun -g, Deno)
+    # For global install (Homebrew, npm -g, bun -g)
     def --env vibe [...args] {
         ^vibe ...$args | lines | each { |line| nu -c $line }
     }
@@ -161,7 +156,7 @@ Add **one** of the following to your shell configuration (choose based on your i
     ```powershell frame="terminal"
     # Add to your $PROFILE (choose one)
 
-    # For global install (Homebrew, npm -g, bun -g, Deno)
+    # For global install (Homebrew, npm -g, bun -g)
     function vibe { Invoke-Expression (& vibe.exe $args) }
 
     # For npx (without global install)

@@ -41,22 +41,6 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     :::
 
   </TabItem>
-  <TabItem label="Deno (JSR)">
-    ```bash frame="terminal"
-    deno install -A --global jsr:@kexi/vibe
-    ```
-
-    **権限設定**: より安全にするため、`-A`の代わりに必要な権限のみを指定できます：
-
-    ```bash frame="terminal"
-    deno install --global --allow-run --allow-read --allow-write --allow-env --allow-ffi jsr:@kexi/vibe
-    ```
-
-    :::note
-    `--allow-ffi`はmacOS (APFS)とLinux (Btrfs/XFS)で最適化されたCopy-on-Writeファイルクローニングを有効にします。このフラグがなくても動作しますが、ディレクトリコピーが若干遅くなる可能性があります。
-    :::
-
-  </TabItem>
   <TabItem label="mise">
     `.mise.toml`に追加：
 
@@ -128,12 +112,13 @@ $path = [Environment]::GetEnvironmentVariable("Path", "User")
 
 ## 手動ビルド
 
-Denoがインストールされている場合、ソースからコンパイルできます：
+Bunがインストールされている場合、ソースからビルドできます：
 
 ```bash frame="terminal"
 git clone https://github.com/kexi/vibe.git
 cd vibe
-deno compile --allow-run --allow-read --allow-write --allow-env --allow-ffi --output vibe main.ts
+pnpm install
+pnpm run build:compile
 ```
 
 ## 次のステップ
