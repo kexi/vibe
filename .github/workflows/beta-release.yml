@@ -25,7 +25,11 @@ jobs:
       - name: Determine beta version
         id: version
         run: |
-          BASE_VERSION=$(grep '"version"' deno.json | sed 's/.*"version": "\([^"]*\)".*/\1/')
+          BASE_VERSION=$(grep '"version"' package.json | head -1 | sed 's/.*"version": "\([^"]*\)".*/\1/')
+          if [ -z "$BASE_VERSION" ]; then
+            echo "Error: Failed to extract version from package.json"
+            exit 1
+          fi
           BETA_VERSION="${BASE_VERSION}-beta.${{ github.run_number }}"
           echo "version=${BETA_VERSION}" >> $GITHUB_OUTPUT
           echo "Beta version: ${BETA_VERSION}"
