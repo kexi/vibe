@@ -79,7 +79,7 @@ jobs:
           MISE_HTTP_TIMEOUT: "120"
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --ignore-scripts
 
       - name: Build release binary
         run: bun run scripts/build.ts --target ${{ matrix.target }} --output ${{ matrix.artifact }} --distribution binary
