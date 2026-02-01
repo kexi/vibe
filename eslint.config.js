@@ -11,7 +11,6 @@ export default tseslint.config(
       "**/node_modules/**",
       "**/dist/**",
       "packages/core/src/version.ts",
-      "packages/core/src/runtime/deno/**",
       "packages/docs/**",
       "packages/video/**",
       "packages/npm/**",

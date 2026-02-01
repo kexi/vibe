@@ -52,10 +52,9 @@ WSL2 is supported via Linux binaries.
 
 ## Development Environment
 
-- Runtime: Deno v2.x (setup with `mise install`)
-- Run: `deno run --allow-run --allow-read --allow-write --allow-env main.ts`
-- Compile:
-  `deno compile --allow-run --allow-read --allow-write --allow-env --allow-ffi --output vibe main.ts`
+- Runtime: Bun (setup with `mise install`)
+- Run: `bun run main.ts`
+- Compile: `bun build --compile --minify --outfile vibe main.ts`
 
 ## CLI Guidelines
 
@@ -82,11 +81,11 @@ Code should follow SOLID principles:
 
 ## Testing
 
-- Lint check: `deno task lint` or `deno lint`
-- Format check: `deno task fmt:check` or `deno fmt --check`
-- Type check: `deno task check` or `deno check main.ts`
-- Run tests: `deno task test`
-- Run all checks: `deno task ci` (runs fmt:check, lint, check, and test)
+- Lint check: `pnpm run lint`
+- Format check: `pnpm run format:check`
+- Type check: `pnpm run typecheck`
+- Run tests: `pnpm run test`
+- Run all checks: `pnpm run check:core` (runs format:check, lint, typecheck, and test)
 - All checks must pass before committing
 
 ## Documentation
@@ -99,7 +98,7 @@ Code should follow SOLID principles:
 - Title format: `<type>: <description>`
   - type: feat, fix, docs, refactor, test, chore
 - PR title and description must be written in English
-- Must pass `deno lint` and `deno fmt --check`
+- Must pass `pnpm run lint` and `pnpm run format:check`
 - Add or update tests for changed code
 
 ## Release

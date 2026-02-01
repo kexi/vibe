@@ -64,7 +64,7 @@ The `--base` option specifies the starting point for a new branch:
 `vibe clean` uses a fast removal strategy that moves the worktree directory instead of deleting it synchronously:
 
 - **macOS**: Items are moved to the system Trash via Finder (can be recovered if needed)
-- **Linux**: Items are moved to XDG Trash when using Node.js runtime (recoverable from file manager). Falls back to temporary directory on Deno.
+- **Linux**: Items are moved to XDG Trash (recoverable from file manager)
 - **Windows**: Items are moved to a temporary directory and deleted in the background
 
 This approach allows `vibe clean` to complete instantly regardless of worktree size.
@@ -110,20 +110,6 @@ bunx @kexi/vibe start feat/my-feature
 ```
 
 > Note: Bun uses the same npm package as Node.js. Native bindings for Copy-on-Write file cloning are automatically used when available.
-
-### Deno (JSR)
-
-```bash
-deno install -A --global jsr:@kexi/vibe
-```
-
-**Permissions**: For more security, you can specify exact permissions instead of `-A`:
-
-```bash
-deno install --global --allow-run --allow-read --allow-write --allow-env jsr:@kexi/vibe
-```
-
-> Note: Copy-on-Write file cloning on macOS (APFS) and Linux (Btrfs/XFS) is enabled automatically via the N-API native module when available.
 
 ### mise
 
@@ -190,7 +176,7 @@ $path = [Environment]::GetEnvironmentVariable("Path", "User")
 ### Manual Build
 
 ```bash
-deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts
+bun build --compile --minify --outfile vibe main.ts
 ```
 
 ## Setup
@@ -332,7 +318,7 @@ Vibe automatically selects the best copy strategy based on your system:
 
 **How it works:**
 
-- **File copy**: Always uses Deno's native `copyFile()` for best single-file performance
+- **File copy**: Always uses native `copyFile()` for best single-file performance
 - **Directory copy**: Automatically uses the fastest available method:
   - On macOS with APFS: Uses `cp -cR` for Copy-on-Write cloning (near-instant)
   - On Linux with Btrfs/XFS: Uses `cp --reflink=auto` for CoW cloning

@@ -64,7 +64,7 @@ $ vibe start feat/new-feature
 `vibe clean` は、worktreeディレクトリを同期的に削除する代わりに移動する高速削除戦略を使用します：
 
 - **macOS**: Finderを通じてシステムのゴミ箱に移動（必要に応じて復元可能）
-- **Linux**: Node.jsランタイム使用時はXDGゴミ箱に移動（ファイルマネージャーから復元可能）。Denoでは一時ディレクトリにフォールバック
+- **Linux**: XDGゴミ箱に移動（ファイルマネージャーから復元可能）
 - **Windows**: 一時ディレクトリに移動し、バックグラウンドで削除
 
 これにより、worktreeのサイズに関係なく `vibe clean` が即座に完了します。
@@ -110,20 +110,6 @@ bunx @kexi/vibe start feat/my-feature
 ```
 
 > 注意: BunはNode.jsと同じnpmパッケージを使用します。Copy-on-Writeファイルクローニング用のネイティブバインディングは利用可能な場合に自動的に使用されます。
-
-### Deno (JSR)
-
-```bash
-deno install -A --global jsr:@kexi/vibe
-```
-
-**権限設定**: より安全にするため、`-A`の代わりに必要な権限のみを指定できます:
-
-```bash
-deno install --global --allow-run --allow-read --allow-write --allow-env jsr:@kexi/vibe
-```
-
-> 注意: macOS (APFS)とLinux (Btrfs/XFS)でのCopy-on-Writeファイルクローニングは、N-APIネイティブモジュールが利用可能な場合に自動的に有効になります。
 
 ### mise
 
@@ -190,7 +176,7 @@ $path = [Environment]::GetEnvironmentVariable("Path", "User")
 ### 手動ビルド
 
 ```bash
-deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts
+bun build --compile --minify --outfile vibe main.ts
 ```
 
 ## セットアップ
@@ -332,7 +318,7 @@ Vibeはシステムに応じて最適なコピー戦略を自動選択します:
 
 **仕組み:**
 
-- **ファイルコピー**: 単一ファイルの最高パフォーマンスのため、常にDenoネイティブの`copyFile()`を使用
+- **ファイルコピー**: 単一ファイルの最高パフォーマンスのため、常にネイティブの`copyFile()`を使用
 - **ディレクトリコピー**: 利用可能な最速の方法を自動使用:
   - APFSを使用したmacOS: Copy-on-Writeクローニングに`cp -cR`を使用（ほぼ瞬時）
   - Btrfs/XFSを使用したLinux: CoWクローニングに`cp --reflink=auto`を使用

@@ -18,34 +18,34 @@ vibe start feat/my-feature
 vibe clean
 ```
 
-Or run via deno task:
+Or run via pnpm:
 
 ```bash
-deno task dev start feat/my-feature
+pnpm run dev start feat/my-feature
 ```
 
 Note: The shell function uses `eval` because `vibe start` outputs shell commands for directory navigation.
 
 ## Available Tasks
 
-All tasks are defined in `deno.json` to ensure consistency between local development and CI:
+All tasks are defined in `package.json` to ensure consistency between local development and CI:
 
 ```bash
 # Run all CI checks (same as CI runs)
-deno task ci
+pnpm run check:core
 
 # Individual checks
-deno task fmt:check    # Check code formatting
-deno task lint         # Run linter
-deno task check        # Type check
-deno task test         # Run tests
+pnpm run format:check  # Check code formatting
+pnpm run lint          # Run linter
+pnpm run typecheck     # Type check
+pnpm run test          # Run tests
 
 # Auto-fix formatting
-deno task fmt
+pnpm run format
 
 # Development
-deno task dev          # Run in development mode
-deno task compile      # Build binaries for all platforms
+pnpm run dev           # Run in development mode
+pnpm run compile       # Build binaries for all platforms
 ```
 
 ## Running CI Checks Locally
@@ -53,15 +53,15 @@ deno task compile      # Build binaries for all platforms
 Before pushing, run the same checks that CI will run:
 
 ```bash
-deno task ci
+pnpm run check:core
 ```
 
 This runs:
 
-1. Format check (`deno task fmt:check`)
-2. Linter (`deno task lint`)
-3. Type check (`deno task check`)
-4. Tests (`deno task test`)
+1. Format check (`pnpm run format:check`)
+2. Linter (`pnpm run lint`)
+3. Type check (`pnpm run typecheck`)
+4. Tests (`pnpm run test`)
 
 ## Release Process
 
@@ -188,7 +188,7 @@ When contributing to vibe, please keep these security considerations in mind:
 
 ### External Command Execution
 
-- Use `Deno.Command` with argument arrays, not shell strings, to prevent injection
+- Use Node.js `spawn` with argument arrays, not shell strings, to prevent injection
 - Never pass untrusted input directly to shell commands
 - The `runHooks()` function in `packages/core/src/utils/hooks.ts` executes user-defined commands - this is intentional, but the trust mechanism must be respected
 
