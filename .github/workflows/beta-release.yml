@@ -79,7 +79,7 @@ jobs:
           MISE_HTTP_TIMEOUT: "120"
 
       - name: Build release binary
-        run: deno task compile:ci --target ${{ matrix.target }} --output ${{ matrix.artifact }} --distribution binary
+        run: bun run scripts/build.ts --target ${{ matrix.target }} --output ${{ matrix.artifact }} --distribution binary
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
