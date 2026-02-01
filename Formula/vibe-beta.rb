@@ -4,7 +4,6 @@ class VibeBeta < Formula
   version "VERSION_PLACEHOLDER"
   license "MIT"
 
-  conflicts_with "vibe", because: "both install the same binary"
 
   on_macos do
     on_arm do
@@ -34,7 +33,7 @@ class VibeBeta < Formula
     binary_name = "vibe-linux-arm64" if OS.linux? && Hardware::CPU.arm?
     binary_name = "vibe-linux-x64" if OS.linux? && Hardware::CPU.intel?
 
-    bin.install binary_name => "vibe"
+    bin.install binary_name => "vibe-beta"
   end
 
   def caveats
@@ -44,11 +43,11 @@ class VibeBeta < Formula
         brew install kexi/tap/vibe
 
       Add this to your .zshrc:
-        vibe() { eval "$(command vibe "$@")" }
+        vibe-beta() { eval "$(command vibe-beta "$@")" }
     EOS
   end
 
   test do
-    system "#{bin}/vibe", "--help"
+    system "#{bin}/vibe-beta", "--help"
   end
 end
