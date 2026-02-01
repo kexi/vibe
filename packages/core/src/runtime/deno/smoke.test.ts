@@ -94,11 +94,13 @@ Deno.test("denoProcess - run merges environment variables", async () => {
 });
 
 Deno.test("denoProcess - spawn creates child process", async () => {
+  // Use "null" instead of "piped" to avoid resource leak warnings in Deno tests.
+  // Deno requires piped stdout/stderr to be explicitly closed/consumed.
   const child = denoProcess.spawn({
     cmd: "echo",
     args: ["spawn_test"],
-    stdout: "piped",
-    stderr: "piped",
+    stdout: "null",
+    stderr: "null",
   });
 
   assertExists(child.pid);
