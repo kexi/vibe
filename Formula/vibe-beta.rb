@@ -1,10 +1,10 @@
-class Vibe < Formula
-  desc "Git worktree helper CLI"
+class VibeBeta < Formula
+  desc "Git worktree helper CLI (beta channel)"
   homepage "https://github.com/kexi/vibe"
   version "VERSION_PLACEHOLDER"
   license "MIT"
 
-  conflicts_with "vibe-beta", because: "both install the same binary"
+  conflicts_with "vibe", because: "both install the same binary"
 
   on_macos do
     on_arm do
@@ -39,6 +39,10 @@ class Vibe < Formula
 
   def caveats
     <<~EOS
+      ⚠️  This is a BETA version installed from the develop branch.
+      It may contain unstable features. For the stable release, use:
+        brew install kexi/tap/vibe
+
       Add this to your .zshrc:
         vibe() { eval "$(command vibe "$@")" }
     EOS
