@@ -42,15 +42,20 @@ function mapOS(os: typeof Deno.build.os): OS {
 
 /**
  * Map Deno architecture to Runtime Arch type.
- * Officially supported: x86_64, aarch64
+ * Officially supported: x86_64, aarch64, arm
  * Note: Unknown architectures fall back to x86_64 (matches Node.js behavior).
+ *
+ * The type assertion is needed because @types/deno may not include all
+ * architectures that Deno supports at runtime.
  */
-function mapArch(arch: typeof Deno.build.arch): Arch {
+function mapArch(arch: string): Arch {
   switch (arch) {
     case "x86_64":
       return "x86_64";
     case "aarch64":
       return "aarch64";
+    case "arm":
+      return "arm";
     default:
       return "x86_64";
   }
