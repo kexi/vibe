@@ -123,6 +123,18 @@ bunx @kexi/vibe start feat/my-feature
 
 > 注意: BunはNode.jsと同じnpmパッケージを使用します。Copy-on-Writeファイルクローニング用のネイティブバインディングは利用可能な場合に自動的に使用されます。
 
+### Deno (2.0+)
+
+```bash
+# JSR経由でインストール
+deno install -A --global jsr:@kexi/vibe
+
+# または直接実行
+deno run -A jsr:@kexi/vibe start feat/my-feature
+```
+
+> 注意: JSR配布にはDeno 2.0+が必要です。
+
 ### mise
 
 `.mise.toml`に追加:

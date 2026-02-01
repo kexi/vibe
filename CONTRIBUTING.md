@@ -83,11 +83,11 @@ See [AGENTS.md](./AGENTS.md) for detailed branching workflow.
    git checkout develop
    git pull origin develop
 
-   # Update version in deno.json
+   # Update version in package.json
    # Update CHANGELOG if you maintain one
 
    # Commit version bump
-   git add deno.json
+   git add package.json
    git commit -m "chore: Bump version to vX.X.X"
    git push origin develop
    ```

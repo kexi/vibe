@@ -12,9 +12,15 @@ export type * from "./types.ts";
 
 /**
  * Detect the current runtime environment
- * @throws Error if running in an unsupported environment (not Node.js or Bun)
+ * @throws Error if running in an unsupported environment
  */
-function detectRuntime(): "node" | "bun" {
+function detectRuntime(): "deno" | "node" | "bun" {
+  // Check for Deno
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (typeof (globalThis as any).Deno !== "undefined") {
+    return "deno";
+  }
+
   // Check for Bun
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if (typeof (globalThis as any).Bun !== "undefined") {
@@ -27,7 +33,7 @@ function detectRuntime(): "node" | "bun" {
   }
 
   // Unsupported runtime
-  throw new Error("Unsupported runtime: vibe requires Node.js 18+ or Bun 1.2+");
+  throw new Error("Unsupported runtime: vibe requires Deno 2.0+, Node.js 18+, or Bun 1.2+");
 }
 
 /**
@@ -37,9 +43,8 @@ export const RUNTIME_NAME = detectRuntime();
 
 /**
  * Whether running on Deno
- * @deprecated Deno support was removed in v0.18.0. This constant is kept for backward compatibility.
  */
-export const IS_DENO = false;
+export const IS_DENO = RUNTIME_NAME === "deno";
 
 /**
  * Whether running on Node.js
@@ -101,9 +106,14 @@ export async function getRuntime(): Promise<Runtime> {
 
   runtimeInitPromise = (async () => {
     try {
-      // Node.js and Bun use the same implementation
-      const { nodeRuntime } = await import("./node/index.ts");
-      runtimeInstance = nodeRuntime;
+      if (IS_DENO) {
+        const { denoRuntime } = await import("./deno/index.ts");
+        runtimeInstance = denoRuntime;
+      } else {
+        // Node.js and Bun use the same implementation
+        const { nodeRuntime } = await import("./node/index.ts");
+        runtimeInstance = nodeRuntime;
+      }
       return runtimeInstance;
     } finally {
       // Always clear initialization state in finally block

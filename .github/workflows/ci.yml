@@ -49,6 +49,20 @@ jobs:
       - name: Run tests
         run: bun run test -- packages/core/src
 
+  # Deno runtime smoke test - verifies the Deno runtime implementation works
+  # Exception to mise rule: Deno is intentionally not in .mise.toml because
+  # it's not needed for local development (dev uses Bun). It's only needed
+  # for JSR distribution testing, so we use denoland/setup-deno directly here.
+  deno-smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Run Deno smoke tests
+        run: deno test --allow-env --allow-read --allow-run packages/core/src/runtime/deno/smoke.test.ts
+
   build-binaries:
     strategy:
       matrix:

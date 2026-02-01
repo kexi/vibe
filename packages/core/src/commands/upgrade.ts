@@ -200,7 +200,7 @@ function getUpgradeCommand(method: InstallMethod): string | null {
     case "binary":
       return null; // Will show download link instead
     case "dev":
-      return "deno task compile";
+      return "pnpm run build:compile";
     case "unknown":
       return null;
   }
