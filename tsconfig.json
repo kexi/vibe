@@ -10,7 +10,7 @@
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    "types": ["bun-types"]
+    "types": ["bun-types", "@types/deno"]
   },
   "include": ["main.ts", "packages/core/src/**/*.ts", "scripts/**/*.ts"],
   "exclude": ["node_modules", "dist"]
