@@ -87,6 +87,18 @@ $ vibe start feat/new-feature
 brew install kexi/tap/vibe
 ```
 
+### Homebrew Beta (macOS)
+
+最新の開発版をテストする場合:
+
+```bash
+brew install kexi/tap/vibe-beta
+```
+
+> ⚠️ **警告**: ベータ版は`develop`ブランチからビルドされており、不安定な機能が含まれている可能性があります。テスト目的でのみ使用してください。
+>
+> **注意**: `vibe`と`vibe-beta`を同時にインストールすることはできません。
+
 ### npm (Node.js 18+)
 
 ```bash
