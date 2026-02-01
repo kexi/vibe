@@ -87,6 +87,18 @@ This approach allows `vibe clean` to complete instantly regardless of worktree s
 brew install kexi/tap/vibe
 ```
 
+### Homebrew Beta (macOS)
+
+For testing the latest development version:
+
+```bash
+brew install kexi/tap/vibe-beta
+```
+
+> ⚠️ **Warning**: Beta versions are built from the `develop` branch and may contain unstable features. Use for testing only.
+>
+> **Note**: You cannot install both `vibe` and `vibe-beta` simultaneously.
+
 ### npm (Node.js 18+)
 
 ```bash
