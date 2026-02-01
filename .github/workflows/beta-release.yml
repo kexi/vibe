@@ -78,6 +78,9 @@ jobs:
         env:
           MISE_HTTP_TIMEOUT: "120"
 
+      - name: Install dependencies
+        run: pnpm install
+
       - name: Build release binary
         run: bun run scripts/build.ts --target ${{ matrix.target }} --output ${{ matrix.artifact }} --distribution binary
 
