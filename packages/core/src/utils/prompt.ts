@@ -33,7 +33,7 @@ export async function confirm(
 
   // VIBE_FORCE_INTERACTIVE: When set to "1", forces the CLI to treat stdin as interactive.
   // This is necessary for E2E testing with node-pty, which creates a pseudo-terminal (PTY)
-  // that Deno.stdin.isTerminal() doesn't recognize as a true TTY. Without this flag,
+  // that stdin.isTerminal() may not recognize as a true TTY. Without this flag,
   // interactive prompts would fail in E2E tests even though they're running in a PTY.
   const forceInteractive = runtime.env.get("VIBE_FORCE_INTERACTIVE") === "1";
   const isInteractive = forceInteractive || runtime.io.stdin.isTerminal();
@@ -85,7 +85,7 @@ export async function select(
 
   // VIBE_FORCE_INTERACTIVE: When set to "1", forces the CLI to treat stdin as interactive.
   // This is necessary for E2E testing with node-pty, which creates a pseudo-terminal (PTY)
-  // that Deno.stdin.isTerminal() doesn't recognize as a true TTY. Without this flag,
+  // that stdin.isTerminal() may not recognize as a true TTY. Without this flag,
   // interactive prompts would fail in E2E tests even though they're running in a PTY.
   const forceInteractive = runtime.env.get("VIBE_FORCE_INTERACTIVE") === "1";
   const isInteractive = forceInteractive || runtime.io.stdin.isTerminal();

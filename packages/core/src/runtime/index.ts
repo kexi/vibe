@@ -12,6 +12,7 @@ export type * from "./types.ts";
 
 /**
  * Detect the current runtime environment
+ * @throws Error if running in an unsupported environment (not Node.js or Bun)
  */
 function detectRuntime(): "node" | "bun" {
   // Check for Bun
@@ -20,8 +21,13 @@ function detectRuntime(): "node" | "bun" {
     return "bun";
   }
 
-  // Default to Node.js for Node.js and unknown environments
-  return "node";
+  // Verify Node.js is available
+  if (typeof process !== "undefined" && process.versions?.node) {
+    return "node";
+  }
+
+  // Unsupported runtime
+  throw new Error("Unsupported runtime: vibe requires Node.js 18+ or Bun 1.2+");
 }
 
 /**
@@ -30,7 +36,8 @@ function detectRuntime(): "node" | "bun" {
 export const RUNTIME_NAME = detectRuntime();
 
 /**
- * Whether running on Deno (always false - Deno support removed)
+ * Whether running on Deno
+ * @deprecated Deno support was removed in v0.18.0. This constant is kept for backward compatibility.
  */
 export const IS_DENO = false;
 
