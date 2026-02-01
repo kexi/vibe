@@ -1,0 +1,154 @@
+name: Beta Release
+
+on:
+  push:
+    branches: [develop]
+
+# Prevent duplicate beta releases by limiting concurrent runs
+concurrency:
+  group: beta-release
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      should_release: ${{ steps.check.outputs.should_release }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine beta version
+        id: version
+        run: |
+          BASE_VERSION=$(grep '"version"' deno.json | sed 's/.*"version": "\([^"]*\)".*/\1/')
+          BETA_VERSION="${BASE_VERSION}-beta.${{ github.run_number }}"
+          echo "version=${BETA_VERSION}" >> $GITHUB_OUTPUT
+          echo "Beta version: ${BETA_VERSION}"
+
+      - name: Check if release already exists
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if gh release view "v${VERSION}" > /dev/null 2>&1; then
+            echo "Release v${VERSION} already exists, skipping"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+          else
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          fi
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.should_release == 'true'
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: vibe-linux-x64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            artifact: vibe-linux-arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: vibe-darwin-x64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: vibe-darwin-arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: vibe-windows-x64.exe
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+        env:
+          MISE_HTTP_TIMEOUT: "120"
+
+      - name: Build release binary
+        run: deno task compile:ci --target ${{ matrix.target }} --output ${{ matrix.artifact }} --distribution binary
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  release:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          gh release create "v${VERSION}" \
+            --repo "${{ github.repository }}" \
+            --title "v${VERSION}" \
+            --notes "Beta release from develop branch (run #${{ github.run_number }})" \
+            --prerelease \
+            artifacts/*
+
+  update-homebrew:
+    needs: [prepare, release]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Calculate SHA256
+        id: sha256
+        run: |
+          echo "darwin_arm64=$(sha256sum artifacts/vibe-darwin-arm64 | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
+          echo "darwin_x64=$(sha256sum artifacts/vibe-darwin-x64 | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
+          echo "linux_arm64=$(sha256sum artifacts/vibe-linux-arm64 | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
+          echo "linux_x64=$(sha256sum artifacts/vibe-linux-x64 | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
+
+      - uses: actions/checkout@v4
+        with:
+          path: vibe-source
+
+      - name: Update Homebrew formula
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+
+          gh repo clone kexi/homebrew-tap homebrew-tap
+
+          # Copy template from source repository
+          cp vibe-source/Formula/vibe-beta.rb homebrew-tap/Formula/vibe-beta.rb
+          cd homebrew-tap
+
+          # Replace placeholders with actual values
+          sed -i "s/VERSION_PLACEHOLDER/$VERSION/g" Formula/vibe-beta.rb
+          sed -i "s/SHA256_DARWIN_ARM64/${{ steps.sha256.outputs.darwin_arm64 }}/g" Formula/vibe-beta.rb
+          sed -i "s/SHA256_DARWIN_X64/${{ steps.sha256.outputs.darwin_x64 }}/g" Formula/vibe-beta.rb
+          sed -i "s/SHA256_LINUX_ARM64/${{ steps.sha256.outputs.linux_arm64 }}/g" Formula/vibe-beta.rb
+          sed -i "s/SHA256_LINUX_X64/${{ steps.sha256.outputs.linux_x64 }}/g" Formula/vibe-beta.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/vibe-beta.rb
+          git commit -m "Update vibe-beta to $VERSION"
+          git push https://x-access-token:${GH_TOKEN}@github.com/kexi/homebrew-tap.git HEAD:main
