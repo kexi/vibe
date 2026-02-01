@@ -49,6 +49,14 @@ export const denoProcess: RuntimeProcess = {
 
     const child = command.spawn();
 
+    // Deno.Command doesn't have a direct 'detached' option like Node.js.
+    // However, unref() provides similar behavior by allowing the parent
+    // process to exit without waiting for the child.
+    const isDetached = options.detached === true;
+    if (isDetached) {
+      child.unref();
+    }
+
     return {
       unref(): void {
         child.unref();
