@@ -38,7 +38,7 @@ jobs:
           MISE_HTTP_TIMEOUT: "120"
 
       - name: Build release binary
-        run: deno task compile:ci --target ${{ matrix.target }} --output ${{ matrix.artifact }} --distribution binary
+        run: bun run scripts/build.ts --target ${{ matrix.target }} --output ${{ matrix.artifact }} --distribution binary
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -73,12 +73,12 @@ jobs:
       - name: Rebuild with deb distribution metadata
         run: |
           TARGET="${{ matrix.arch == 'amd64' && 'x86_64-unknown-linux-gnu' || 'aarch64-unknown-linux-gnu' }}"
-          deno task compile:ci --target "$TARGET" --output vibe-deb --distribution deb
+          bun run scripts/build.ts --target "$TARGET" --output vibe-deb --distribution deb
 
       - name: Build .deb package
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          deno task build:deb "$VERSION" ${{ matrix.arch }} vibe-deb
+          bun run scripts/build-deb.ts "$VERSION" ${{ matrix.arch }} vibe-deb
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
