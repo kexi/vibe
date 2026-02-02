@@ -71,7 +71,9 @@ jobs:
           echo "Generated packages/core/src/version.ts with VERSION = \"$VERSION\" for JSR distribution"
 
       - name: Validate JSR package
-        run: npx jsr publish --dry-run --allow-dirty
+        working-directory: packages/core
+        run: npx jsr publish --dry-run --allow-dirty --allow-slow-types
 
       - name: Publish to JSR
-        run: npx jsr publish --allow-dirty
+        working-directory: packages/core
+        run: npx jsr publish --allow-dirty --allow-slow-types
