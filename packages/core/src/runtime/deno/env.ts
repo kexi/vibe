@@ -22,6 +22,11 @@ export const denoEnv: RuntimeEnv = {
   },
 };
 
+/**
+ * Map Deno OS to Runtime OS type.
+ * Officially supported: darwin, linux, windows
+ * Note: Unknown OSes fall back to linux (matches Node.js behavior).
+ */
 function mapOS(os: typeof Deno.build.os): OS {
   switch (os) {
     case "darwin":
@@ -31,19 +36,27 @@ function mapOS(os: typeof Deno.build.os): OS {
     case "windows":
       return "windows";
     default:
-      // Fallback for other OSes - treat as linux
       return "linux";
   }
 }
 
-function mapArch(arch: typeof Deno.build.arch): Arch {
+/**
+ * Map Deno architecture to Runtime Arch type.
+ * Officially supported: x86_64, aarch64, arm
+ * Note: Unknown architectures fall back to x86_64 (matches Node.js behavior).
+ *
+ * The parameter type is `string` instead of `typeof Deno.build.arch` because
+ * @types/deno may not include all architectures that Deno supports at runtime.
+ */
+function mapArch(arch: string): Arch {
   switch (arch) {
     case "x86_64":
       return "x86_64";
     case "aarch64":
       return "aarch64";
+    case "arm":
+      return "arm";
     default:
-      // Fallback for other architectures
       return "x86_64";
   }
 }

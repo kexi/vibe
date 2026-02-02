@@ -17,7 +17,11 @@ export const ConfigCommand: React.FC = () => {
     { text: "Settings file: /Users/kei/.config/vibe/settings.json", color: COLORS.textMuted },
     { text: "", delay: 6 },
     { text: "{", color: COLORS.text, delay: 9 },
-    { text: '  "$schema": "https://...vibe/main/schemas/settings.schema.json",', color: COLORS.textMuted, delay: 12 },
+    {
+      text: '  "$schema": "https://...vibe/main/schemas/settings.schema.json",',
+      color: COLORS.textMuted,
+      delay: 12,
+    },
     { text: '  "version": 3,', color: COLORS.text, delay: 15 },
     { text: '  "skipHashCheck": false,', color: COLORS.text, delay: 18 },
     { text: '  "permissions": {', color: COLORS.text, delay: 21 },
@@ -62,11 +66,7 @@ export const ConfigCommand: React.FC = () => {
 
       {/* Output */}
       {commandTypingComplete && (
-        <CommandOutput
-          lines={outputLines}
-          startFrame={outputStartFrame}
-          lineDelay={3}
-        />
+        <CommandOutput lines={outputLines} startFrame={outputStartFrame} lineDelay={3} />
       )}
     </Terminal>
   );

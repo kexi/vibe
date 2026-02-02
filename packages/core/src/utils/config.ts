@@ -1,5 +1,5 @@
-import { parse } from "@std/toml";
-import { join } from "@std/path";
+import { parse } from "smol-toml";
+import { join } from "node:path";
 import { parseVibeConfig, type VibeConfig } from "../types/config.ts";
 import { verifyTrustAndRead } from "./settings.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
@@ -7,10 +7,7 @@ import { type AppContext, getGlobalContext } from "../context/index.ts";
 const VIBE_TOML = ".vibe.toml";
 const VIBE_LOCAL_TOML = ".vibe.local.toml";
 
-async function fileExists(
-  path: string,
-  ctx: AppContext = getGlobalContext(),
-): Promise<boolean> {
+async function fileExists(path: string, ctx: AppContext = getGlobalContext()): Promise<boolean> {
   try {
     await ctx.runtime.fs.stat(path);
     return true;
@@ -34,26 +31,16 @@ export function mergeArrayField(
   if (base === undefined) {
     // Return prepend/append only if specified
     if (prepend !== undefined || append !== undefined) {
-      return [
-        ...(prepend ?? []),
-        ...(append ?? []),
-      ];
+      return [...(prepend ?? []), ...(append ?? [])];
     }
     return undefined;
   }
 
   // Apply prepend/append to base array
-  return [
-    ...(prepend ?? []),
-    ...base,
-    ...(append ?? []),
-  ];
+  return [...(prepend ?? []), ...base, ...(append ?? [])];
 }
 
-export function mergeConfigs(
-  baseConfig: VibeConfig,
-  localConfig: VibeConfig,
-): VibeConfig {
+export function mergeConfigs(baseConfig: VibeConfig, localConfig: VibeConfig): VibeConfig {
   const mergedConfig: VibeConfig = {};
 
   // Merge copy.files field
@@ -75,8 +62,8 @@ export function mergeConfigs(
   // Merge copy.concurrency: local > base
   const concurrency = localConfig.copy?.concurrency ?? baseConfig.copy?.concurrency;
 
-  const hasCopyConfig = mergedFiles !== undefined || mergedDirs !== undefined ||
-    concurrency !== undefined;
+  const hasCopyConfig =
+    mergedFiles !== undefined || mergedDirs !== undefined || concurrency !== undefined;
   if (hasCopyConfig) {
     mergedConfig.copy = {};
     if (mergedFiles !== undefined) {
@@ -141,8 +128,7 @@ export function mergeConfigs(
   const hasWorktreeConfig = baseConfig.worktree !== undefined || localConfig.worktree !== undefined;
   if (hasWorktreeConfig) {
     mergedConfig.worktree = {
-      path_script: localConfig.worktree?.path_script ??
-        baseConfig.worktree?.path_script,
+      path_script: localConfig.worktree?.path_script ?? baseConfig.worktree?.path_script,
     };
   }
 
@@ -169,8 +155,7 @@ export async function loadVibeConfig(
       config = parseVibeConfig(rawConfig, vibeTomlPath);
     } else {
       console.error(
-        "Error: .vibe.toml file is not trusted or has been modified.\n" +
-          "Please run: vibe trust",
+        "Error: .vibe.toml file is not trusted or has been modified.\n" + "Please run: vibe trust",
       );
       ctx.runtime.control.exit(1);
     }

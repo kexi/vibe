@@ -1,109 +1,107 @@
-import { assertEquals, assertRejects } from "@std/assert";
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { calculateFileHash, verifyFileHash } from "./hash.ts";
 import { setupRealTestContext } from "../context/testing.ts";
 
-// Initialize test context with real Deno runtime for filesystem tests
-await setupRealTestContext();
-
-Deno.test("calculateFileHash returns consistent hash for same content", async () => {
-  // Create temporary file
-  const tempFile = await Deno.makeTempFile();
-  const testContent = "test content";
-  await Deno.writeTextFile(tempFile, testContent);
-
-  const hash1 = await calculateFileHash(tempFile);
-  const hash2 = await calculateFileHash(tempFile);
-
-  assertEquals(hash1, hash2);
-  assertEquals(hash1.length, 64); // SHA-256 = 64 hex chars
-
-  await Deno.remove(tempFile);
+// Initialize test context with real runtime for filesystem tests
+beforeAll(async () => {
+  await setupRealTestContext();
 });
 
-Deno.test("calculateFileHash returns different hash for different content", async () => {
-  const tempFile1 = await Deno.makeTempFile();
-  const tempFile2 = await Deno.makeTempFile();
+describe("hash utilities", () => {
+  let tempDir: string;
 
-  await Deno.writeTextFile(tempFile1, "content1");
-  await Deno.writeTextFile(tempFile2, "content2");
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
+  });
 
-  const hash1 = await calculateFileHash(tempFile1);
-  const hash2 = await calculateFileHash(tempFile2);
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
 
-  assertEquals(hash1 !== hash2, true);
+  describe("calculateFileHash", () => {
+    it("returns consistent hash for same content", async () => {
+      const tempFile = join(tempDir, "test1.txt");
+      const testContent = "test content";
+      await writeFile(tempFile, testContent);
 
-  await Deno.remove(tempFile1);
-  await Deno.remove(tempFile2);
-});
+      const hash1 = await calculateFileHash(tempFile);
+      const hash2 = await calculateFileHash(tempFile);
 
-Deno.test("verifyFileHash returns true for matching hash", async () => {
-  const tempFile = await Deno.makeTempFile();
-  await Deno.writeTextFile(tempFile, "test");
+      expect(hash1).toBe(hash2);
+      expect(hash1.length).toBe(64); // SHA-256 = 64 hex chars
+    });
 
-  const hash = await calculateFileHash(tempFile);
-  const isValid = await verifyFileHash(tempFile, hash);
+    it("returns different hash for different content", async () => {
+      const tempFile1 = join(tempDir, "test1.txt");
+      const tempFile2 = join(tempDir, "test2.txt");
 
-  assertEquals(isValid, true);
+      await writeFile(tempFile1, "content1");
+      await writeFile(tempFile2, "content2");
 
-  await Deno.remove(tempFile);
-});
+      const hash1 = await calculateFileHash(tempFile1);
+      const hash2 = await calculateFileHash(tempFile2);
 
-Deno.test("verifyFileHash returns false for non-matching hash", async () => {
-  const tempFile = await Deno.makeTempFile();
-  await Deno.writeTextFile(tempFile, "test");
+      expect(hash1).not.toBe(hash2);
+    });
 
-  const wrongHash = "0".repeat(64);
-  const isValid = await verifyFileHash(tempFile, wrongHash);
+    it("handles empty files", async () => {
+      const tempFile = join(tempDir, "empty.txt");
+      await writeFile(tempFile, "");
 
-  assertEquals(isValid, false);
+      const hash = await calculateFileHash(tempFile);
 
-  await Deno.remove(tempFile);
-});
+      expect(hash.length).toBe(64); // SHA-256 = 64 hex chars
+      // SHA-256 hash of empty string
+      expect(hash).toBe("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    });
 
-Deno.test("verifyFileHash throws error for non-existent file", async () => {
-  await assertRejects(
-    async () => {
-      await verifyFileHash("/non/existent/file", "hash");
-    },
-    Deno.errors.NotFound,
-  );
-});
+    it("handles large files efficiently", async () => {
+      const tempFile = join(tempDir, "large.txt");
 
-Deno.test("calculateFileHash handles empty files", async () => {
-  const tempFile = await Deno.makeTempFile();
-  await Deno.writeTextFile(tempFile, "");
+      // Create a 1MB file
+      const oneMB = 1024 * 1024;
+      const content = "a".repeat(oneMB);
+      await writeFile(tempFile, content);
 
-  const hash = await calculateFileHash(tempFile);
+      const start = performance.now();
+      const hash = await calculateFileHash(tempFile);
+      const elapsed = performance.now() - start;
 
-  assertEquals(hash.length, 64); // SHA-256 = 64 hex chars
-  // SHA-256 hash of empty string
-  assertEquals(
-    hash,
-    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  );
+      // Verify hash is calculated correctly
+      expect(hash.length).toBe(64);
+      expect(typeof hash).toBe("string");
 
-  await Deno.remove(tempFile);
-});
+      // Performance check: should complete within 1 second on modern hardware
+      expect(elapsed).toBeLessThan(1000);
+    });
+  });
 
-Deno.test("calculateFileHash handles large files efficiently", async () => {
-  const tempFile = await Deno.makeTempFile();
+  describe("verifyFileHash", () => {
+    it("returns true for matching hash", async () => {
+      const tempFile = join(tempDir, "test.txt");
+      await writeFile(tempFile, "test");
 
-  // Create a 1MB file
-  const oneMB = 1024 * 1024;
-  const content = "a".repeat(oneMB);
-  await Deno.writeTextFile(tempFile, content);
+      const hash = await calculateFileHash(tempFile);
+      const isValid = await verifyFileHash(tempFile, hash);
 
-  const start = performance.now();
-  const hash = await calculateFileHash(tempFile);
-  const elapsed = performance.now() - start;
+      expect(isValid).toBe(true);
+    });
 
-  // Verify hash is calculated correctly
-  assertEquals(hash.length, 64);
-  assertEquals(typeof hash, "string");
+    it("returns false for non-matching hash", async () => {
+      const tempFile = join(tempDir, "test.txt");
+      await writeFile(tempFile, "test");
 
-  // Performance check: should complete within 1 second on modern hardware
-  // This is a generous threshold to avoid flaky tests
-  assertEquals(elapsed < 1000, true, `Hash calculation took ${elapsed}ms, expected < 1000ms`);
+      const wrongHash = "0".repeat(64);
+      const isValid = await verifyFileHash(tempFile, wrongHash);
 
-  await Deno.remove(tempFile);
+      expect(isValid).toBe(false);
+    });
+
+    it("throws error for non-existent file", async () => {
+      await expect(verifyFileHash("/non/existent/file", "hash")).rejects.toThrow();
+    });
+  });
 });

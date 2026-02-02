@@ -60,11 +60,7 @@ const config = parseVibeConfig(rawData, "./vibe.toml");
 一貫したエラーハンドリングのための型付きエラークラス：
 
 ```typescript
-import {
-  GitOperationError,
-  ConfigurationError,
-  WorktreeError,
-} from "@kexi/vibe-core";
+import { GitOperationError, ConfigurationError, WorktreeError } from "@kexi/vibe-core";
 
 throw new GitOperationError("clone", "リポジトリが見つかりません");
 throw new ConfigurationError("無効なフックコマンド", "./vibe.toml");
@@ -75,11 +71,7 @@ throw new ConfigurationError("無効なフックコマンド", "./vibe.toml");
 依存性注入によるアプリケーションコンテキストの管理：
 
 ```typescript
-import {
-  createAppContext,
-  setGlobalContext,
-  getGlobalContext,
-} from "@kexi/vibe-core";
+import { createAppContext, setGlobalContext, getGlobalContext } from "@kexi/vibe-core";
 
 // 起動時にコンテキストを初期化
 const ctx = createAppContext(runtime);
@@ -93,14 +85,14 @@ const { runtime } = getGlobalContext();
 
 ### エクスポート
 
-| エクスポート | 説明 |
-|-------------|------|
-| `@kexi/vibe-core` | すべてのエクスポートを含むメインエントリーポイント |
-| `@kexi/vibe-core/runtime` | ランタイム抽象化層 |
-| `@kexi/vibe-core/types` | 設定の型定義とスキーマ |
-| `@kexi/vibe-core/errors` | エラークラス |
-| `@kexi/vibe-core/context` | コンテキスト管理 |
-| `@kexi/vibe-core/context/testing` | テストユーティリティ |
+| エクスポート                      | 説明                                               |
+| --------------------------------- | -------------------------------------------------- |
+| `@kexi/vibe-core`                 | すべてのエクスポートを含むメインエントリーポイント |
+| `@kexi/vibe-core/runtime`         | ランタイム抽象化層                                 |
+| `@kexi/vibe-core/types`           | 設定の型定義とスキーマ                             |
+| `@kexi/vibe-core/errors`          | エラークラス                                       |
+| `@kexi/vibe-core/context`         | コンテキスト管理                                   |
+| `@kexi/vibe-core/context/testing` | テストユーティリティ                               |
 
 ### ランタイム検出
 

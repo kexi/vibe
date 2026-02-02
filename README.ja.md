@@ -10,12 +10,12 @@ Git Worktreeを簡単かつ超高速に管理するCLIツール。
 
 ## 使い方
 
-| コマンド                       | 説明                                                  |
-| ------------------------------ | ----------------------------------------------------- |
-| `vibe start <branch> [--base <ref>]` | 新規または既存ブランチでworktreeを作成（冪等）        |
-| `vibe clean`                   | 現在のworktreeを削除してメインに戻る（未コミットの変更がある場合は確認）                  |
-| `vibe trust`                   | `.vibe.toml`と`.vibe.local.toml`ファイルを信頼登録    |
-| `vibe untrust`                 | `.vibe.toml`と`.vibe.local.toml`ファイルの信頼を解除  |
+| コマンド                             | 説明                                                                     |
+| ------------------------------------ | ------------------------------------------------------------------------ |
+| `vibe start <branch> [--base <ref>]` | 新規または既存ブランチでworktreeを作成（冪等）                           |
+| `vibe clean`                         | 現在のworktreeを削除してメインに戻る（未コミットの変更がある場合は確認） |
+| `vibe trust`                         | `.vibe.toml`と`.vibe.local.toml`ファイルを信頼登録                       |
+| `vibe untrust`                       | `.vibe.toml`と`.vibe.local.toml`ファイルの信頼を解除                     |
 
 ### 例
 
@@ -64,19 +64,19 @@ $ vibe start feat/new-feature
 `vibe clean` は、worktreeディレクトリを同期的に削除する代わりに移動する高速削除戦略を使用します：
 
 - **macOS**: Finderを通じてシステムのゴミ箱に移動（必要に応じて復元可能）
-- **Linux**: Node.jsランタイム使用時はXDGゴミ箱に移動（ファイルマネージャーから復元可能）。Denoでは一時ディレクトリにフォールバック
+- **Linux**: XDGゴミ箱に移動（ファイルマネージャーから復元可能）
 - **Windows**: 一時ディレクトリに移動し、バックグラウンドで削除
 
 これにより、worktreeのサイズに関係なく `vibe clean` が即座に完了します。
 
 ### グローバルオプション
 
-| オプション        | 説明                                     |
-| ----------------- | ---------------------------------------- |
-| `-h`, `--help`    | ヘルプメッセージを表示                   |
-| `-v`, `--version` | バージョン情報を表示                     |
-| `-V`, `--verbose` | 詳細な出力を表示                         |
-| `-q`, `--quiet`   | 不要な出力を抑制                         |
+| オプション        | 説明                                        |
+| ----------------- | ------------------------------------------- |
+| `-h`, `--help`    | ヘルプメッセージを表示                      |
+| `-v`, `--version` | バージョン情報を表示                        |
+| `-V`, `--verbose` | 詳細な出力を表示                            |
+| `-q`, `--quiet`   | 不要な出力を抑制                            |
 | `-n`, `--dry-run` | 実行せずに操作内容をプレビュー（startのみ） |
 
 ## インストール
@@ -86,6 +86,18 @@ $ vibe start feat/new-feature
 ```bash
 brew install kexi/tap/vibe
 ```
+
+### Homebrew Beta (macOS)
+
+最新の開発版をテストする場合:
+
+```bash
+brew install kexi/tap/vibe-beta
+```
+
+> ⚠️ **警告**: ベータ版は`develop`ブランチからビルドされており、不安定な機能が含まれている可能性があります。テスト目的でのみ使用してください。
+>
+> **注意**: `vibe`と`vibe-beta`を同時にインストールすることはできません。
 
 ### npm (Node.js 18+)
 
@@ -111,19 +123,17 @@ bunx @kexi/vibe start feat/my-feature
 
 > 注意: BunはNode.jsと同じnpmパッケージを使用します。Copy-on-Writeファイルクローニング用のネイティブバインディングは利用可能な場合に自動的に使用されます。
 
-### Deno (JSR)
+### Deno (2.0+)
 
 ```bash
+# JSR経由でインストール
 deno install -A --global jsr:@kexi/vibe
+
+# または直接実行
+deno run -A jsr:@kexi/vibe start feat/my-feature
 ```
 
-**権限設定**: より安全にするため、`-A`の代わりに必要な権限のみを指定できます:
-
-```bash
-deno install --global --allow-run --allow-read --allow-write --allow-env jsr:@kexi/vibe
-```
-
-> 注意: macOS (APFS)とLinux (Btrfs/XFS)でのCopy-on-Writeファイルクローニングは、N-APIネイティブモジュールが利用可能な場合に自動的に有効になります。
+> 注意: JSR配布にはDeno 2.0+が必要です。
 
 ### mise
 
@@ -190,7 +200,7 @@ $path = [Environment]::GetEnvironmentVariable("Path", "User")
 ### 手動ビルド
 
 ```bash
-deno compile --allow-run --allow-read --allow-write --allow-env --output vibe main.ts
+bun build --compile --minify --outfile vibe main.ts
 ```
 
 ## セットアップ
@@ -203,6 +213,7 @@ deno compile --allow-run --allow-read --allow-write --allow-env --output vibe ma
 ```bash
 vibe() { eval "$(command vibe "$@")" }
 ```
+
 </details>
 
 <details>
@@ -211,6 +222,7 @@ vibe() { eval "$(command vibe "$@")" }
 ```bash
 vibe() { eval "$(command vibe "$@")"; }
 ```
+
 </details>
 
 <details>
@@ -221,6 +233,7 @@ function vibe
     eval (command vibe $argv)
 end
 ```
+
 </details>
 
 <details>
@@ -231,6 +244,7 @@ def --env vibe [...args] {
     ^vibe ...$args | lines | each { |line| nu -c $line }
 }
 ```
+
 </details>
 
 <details>
@@ -239,6 +253,7 @@ def --env vibe [...args] {
 ```powershell
 function vibe { Invoke-Expression (& vibe.exe $args) }
 ```
+
 </details>
 
 ## 設定
@@ -282,12 +297,14 @@ files = [
 ```
 
 **サポートされるパターン:**
+
 - `*` - `/`以外の任意の文字にマッチ
 - `**` - `/`を含む任意の文字にマッチ（再帰的）
 - `?` - 任意の1文字にマッチ
 - `[abc]` - ブラケット内の任意の文字にマッチ
 
 **注意:**
+
 - マッチしたファイルをコピーする際、ディレクトリ構造は保持されます
 - 再帰的パターン（`**/*`）は、大規模リポジトリでは処理に時間がかかる場合があります
   - 可能な限り具体的なパターンを使用してください（例: `**/*.json`より`config/**/*.json`）
@@ -307,6 +324,7 @@ dirs = [
 ```
 
 **注意:**
+
 - ディレクトリは完全コピーされます（差分同期ではありません）
 - Globパターンはファイルパターンと同様に動作します
 - `node_modules`のような大きなディレクトリはコピーに時間がかかる場合があります
@@ -315,21 +333,23 @@ dirs = [
 
 Vibeはシステムに応じて最適なコピー戦略を自動選択します:
 
-| 戦略 | 使用条件 | プラットフォーム |
-|------|----------|------------------|
-| Clone (CoW) | APFSでのディレクトリコピー | macOS |
-| Clone (reflink) | Btrfs/XFSでのディレクトリコピー | Linux |
-| rsync | cloneが利用できない場合のディレクトリコピー | macOS/Linux |
-| Standard | ファイルコピー、またはフォールバック | 全て |
+| 戦略            | 使用条件                                    | プラットフォーム |
+| --------------- | ------------------------------------------- | ---------------- |
+| Clone (CoW)     | APFSでのディレクトリコピー                  | macOS            |
+| Clone (reflink) | Btrfs/XFSでのディレクトリコピー             | Linux            |
+| rsync           | cloneが利用できない場合のディレクトリコピー | macOS/Linux      |
+| Standard        | ファイルコピー、またはフォールバック        | 全て             |
 
 **仕組み:**
-- **ファイルコピー**: 単一ファイルの最高パフォーマンスのため、常にDenoネイティブの`copyFile()`を使用
+
+- **ファイルコピー**: 単一ファイルの最高パフォーマンスのため、常にネイティブの`copyFile()`を使用
 - **ディレクトリコピー**: 利用可能な最速の方法を自動使用:
   - APFSを使用したmacOS: Copy-on-Writeクローニングに`cp -cR`を使用（ほぼ瞬時）
   - Btrfs/XFSを使用したLinux: CoWクローニングに`cp --reflink=auto`を使用
   - CoWが利用できない場合はrsyncまたは標準コピーにフォールバック
 
 **メリット:**
+
 - Copy-on-Writeは実際のデータではなくメタデータのみをコピーするため非常に高速
 - 設定不要 - 最適な戦略が自動検出されます
 - 自動フォールバックによりコピーは常に動作します
@@ -347,12 +367,12 @@ path_script = "~/.config/vibe/worktree-path.sh"
 
 スクリプトは以下の環境変数を受け取り、絶対パスを出力する必要があります：
 
-| 環境変数 | 説明 | 例 |
-|----------|------|-----|
-| `VIBE_REPO_NAME` | リポジトリ名 | `my-project` |
-| `VIBE_BRANCH_NAME` | ブランチ名 | `feat/new-feature` |
+| 環境変数                | 説明                                | 例                 |
+| ----------------------- | ----------------------------------- | ------------------ |
+| `VIBE_REPO_NAME`        | リポジトリ名                        | `my-project`       |
+| `VIBE_BRANCH_NAME`      | ブランチ名                          | `feat/new-feature` |
 | `VIBE_SANITIZED_BRANCH` | サニタイズ済みブランチ名（`/`→`-`） | `feat-new-feature` |
-| `VIBE_REPO_ROOT` | リポジトリルートパス | `/path/to/repo` |
+| `VIBE_REPO_ROOT`        | リポジトリルートパス                | `/path/to/repo`    |
 
 **スクリプト例:**
 
@@ -372,14 +392,17 @@ VS Codeの手動設定については、[settings.jsonドキュメント](https:
 Vibeは`.vibe.toml`と`.vibe.local.toml`ファイルの整合性をSHA-256ハッシュを使って自動的に検証します。これにより、設定ファイルへの不正な変更を防ぎます。
 
 #### 仕組み
+
 - `vibe trust`を実行すると、Vibeは設定ファイルのSHA-256ハッシュを計算して保存します
 - `vibe start`を実行すると、Vibeはハッシュをチェックしてファイルが変更されていないか検証します
 - ハッシュが一致しない場合、Vibeはエラーで終了し、再度`vibe trust`を実行するよう求めます
 
 #### ハッシュチェックのスキップ（開発用）
+
 設定ファイル（`~/.config/vibe/settings.json`）でハッシュ検証を無効化できます:
 
 **グローバル設定:**
+
 ```json
 {
   "version": 3,
@@ -389,6 +412,7 @@ Vibeは`.vibe.toml`と`.vibe.local.toml`ファイルの整合性をSHA-256ハッ
 ```
 
 **ファイルごとの設定:**
+
 ```json
 {
   "version": 3,
@@ -412,6 +436,7 @@ Vibeは`.vibe.toml`と`.vibe.local.toml`ファイルの整合性をSHA-256ハッ
 > **注意**: バージョン3ではリポジトリベースのトラスト識別を使用します。設定は初回ロード時にv2からv3へ自動移行されます。トラストは同じリポジトリのすべてのワークツリー間で共有されます。
 
 #### ブランチ切り替え
+
 Vibeはファイルごとに複数のハッシュ（最大100個）を保存するため、各ブランチのバージョンを一度信頼すれば、ブランチを切り替えても再度信頼登録する必要はありません。
 
 #### セキュリティ上の考慮事項
@@ -464,12 +489,12 @@ post_start_append = ["npm run dev"]
 
 ### 利用可能なフック
 
-| フック       | 実行タイミング                              | 利用可能な環境変数                           |
-| ------------ | ------------------------------------------- | -------------------------------------------- |
-| `pre_start`  | worktree作成前                              | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`     |
-| `post_start` | worktree作成後                              | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`     |
-| `pre_clean`  | worktree削除前（現在のworktreeで実行）      | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`     |
-| `post_clean` | worktree削除後（メインリポジトリで実行）    | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`     |
+| フック       | 実行タイミング                           | 利用可能な環境変数                       |
+| ------------ | ---------------------------------------- | ---------------------------------------- |
+| `pre_start`  | worktree作成前                           | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH` |
+| `post_start` | worktree作成後                           | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH` |
+| `pre_clean`  | worktree削除前（現在のworktreeで実行）   | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH` |
+| `post_clean` | worktree削除後（メインリポジトリで実行） | `VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH` |
 
 **注意**: `post_clean`フックは削除コマンドに`&&`で連結され、`git worktree remove`コマンド完了後にメインリポジトリディレクトリで実行されます。
 
@@ -482,6 +507,7 @@ Vibeはフック実行中にタスクの状態を表示するリアルタイム�
 - **失敗したフック**: 進捗表示の有無にかかわらず、常に標準エラー出力が表示されます。これはデバッグを支援するためです。
 
 進捗表示の例：
+
 ```
 ✶ Setting up worktree feature/new-ui…
 ┗ ☒ Pre-start hooks

@@ -109,11 +109,7 @@ export const StartCommand: React.FC = () => {
 
       {/* Output */}
       {commandTypingComplete && (
-        <CommandOutput
-          lines={outputLines}
-          startFrame={outputStartFrame}
-          lineDelay={3}
-        />
+        <CommandOutput lines={outputLines} startFrame={outputStartFrame} lineDelay={3} />
       )}
 
       {/* New prompt after moving to worktree */}

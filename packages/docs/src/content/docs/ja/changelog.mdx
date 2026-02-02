@@ -5,6 +5,17 @@ description: vibeのバージョン履歴とリリースノート
 
 vibeの主要な変更はここに記録されています。
 
+## v0.18.0
+
+**リリース日:** 2026年2月2日
+
+### 追加
+
+- **Deno/JSR配布**: `deno run jsr:@kexi/vibe` でvibeを直接実行可能に
+- **ベータチャンネル**: Homebrewで `vibe-beta` として早期機能テストが可能に
+
+---
+
 ## v0.17.0
 
 **リリース日:** 2026年1月31日
@@ -104,7 +115,7 @@ vibeの主要な変更はここに記録されています。
 ### 追加
 
 - **マルチランタイムサポート**: Node.js/npm/npxおよびBun環境でのvibe実行をサポート
-- **RuntimeAbstractionLayer**: DenoとNode.js両対応の統一ランタイム抽象化レイヤー
+- **RuntimeAbstractionLayer**: Node.jsとBun両対応の統一ランタイム抽象化レイヤー
 - **AppContext依存性注入**: DIパターンによるテスタビリティの向上
 
 ### 変更

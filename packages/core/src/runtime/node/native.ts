@@ -47,7 +47,7 @@ function tryLoadNative(): VibeNativeModule | null {
 
   try {
     // Dynamic import to handle optional dependency
-    // @ts-ignore - @kexi/vibe-native is an optional dependency
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     nativeModule = require("@kexi/vibe-native") as VibeNativeModule;
     return nativeModule;
   } catch (error) {

@@ -49,17 +49,17 @@ flowchart TD
 
 The `Runtime` interface (`packages/core/src/runtime/types.ts`) defines the contract for all runtime implementations:
 
-| Module       | Description                          | Example Methods                        |
-| ------------ | ------------------------------------ | -------------------------------------- |
-| `fs`         | File system operations               | readFile, writeTextFile, mkdir, rename |
-| `process`    | Process execution                    | run, spawn                             |
-| `env`        | Environment variables                | get, set, delete, toObject             |
-| `build`      | Platform information                 | os, arch                               |
-| `control`    | Process control                      | exit, chdir, cwd, execPath, args       |
-| `io`         | Standard I/O streams                 | stdin, stderr                          |
-| `errors`     | Runtime-specific error types         | NotFound, AlreadyExists, isNotFound    |
-| `signals`    | Signal handling                      | addListener, removeListener            |
-| `ffi`        | FFI operations (Deno-only, optional) | dlopen                                 |
+| Module    | Description                          | Example Methods                        |
+| --------- | ------------------------------------ | -------------------------------------- |
+| `fs`      | File system operations               | readFile, writeTextFile, mkdir, rename |
+| `process` | Process execution                    | run, spawn                             |
+| `env`     | Environment variables                | get, set, delete, toObject             |
+| `build`   | Platform information                 | os, arch                               |
+| `control` | Process control                      | exit, chdir, cwd, execPath, args       |
+| `io`      | Standard I/O streams                 | stdin, stderr                          |
+| `errors`  | Runtime-specific error types         | NotFound, AlreadyExists, isNotFound    |
+| `signals` | Signal handling                      | addListener, removeListener            |
+| `ffi`     | FFI operations (Deno-only, optional) | dlopen                                 |
 
 ## Runtime Detection
 
@@ -251,13 +251,13 @@ packages/core/src/context/
 
 ## Platform-specific Features
 
-| Feature                | Deno | Node.js | Bun  |
-| ---------------------- | ---- | ------- | ---- |
-| File System            | Yes  | Yes     | Yes* |
-| Process Execution      | Yes  | Yes     | Yes* |
-| Environment Variables  | Yes  | Yes     | Yes* |
-| Signal Handling        | Yes  | Yes     | Yes* |
-| FFI (Native Calls)     | Yes  | No**    | No   |
+| Feature               | Deno | Node.js | Bun   |
+| --------------------- | ---- | ------- | ----- |
+| File System           | Yes  | Yes     | Yes\* |
+| Process Execution     | Yes  | Yes     | Yes\* |
+| Environment Variables | Yes  | Yes     | Yes\* |
+| Signal Handling       | Yes  | Yes     | Yes\* |
+| FFI (Native Calls)    | Yes  | No\*\*  | No    |
 
 \* Bun uses the Node.js runtime implementation
 \*\* Node.js requires the `@kexi/vibe-native` package for native operations

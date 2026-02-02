@@ -75,9 +75,7 @@ function runCommand(args: string[], cwd: string): void {
 /**
  * Get list of worktrees in the repository
  */
-function getWorktreeList(
-  repoPath: string,
-): { path: string; branch: string }[] {
+function getWorktreeList(repoPath: string): { path: string; branch: string }[] {
   try {
     const output = execFileSync("git", ["worktree", "list", "--porcelain"], {
       cwd: repoPath,

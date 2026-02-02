@@ -6,7 +6,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write  # JSR OIDC認証に必須
+  id-token: write # JSR OIDC認証に必須
 
 jobs:
   publish:
@@ -23,12 +23,12 @@ jobs:
         shell: bash
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
-          DENO_VERSION=$(deno task get-version)
+          PKG_VERSION=$(node -p "require('./package.json').version")
 
-          if [ "$TAG_VERSION" != "$DENO_VERSION" ]; then
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
             echo "Error: Version mismatch!"
             echo "  Git tag version: $TAG_VERSION"
-            echo "  deno.json version: $DENO_VERSION"
+            echo "  package.json version: $PKG_VERSION"
             exit 1
           fi
 
@@ -38,7 +38,7 @@ jobs:
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          REPOSITORY=$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('deno.json')).repository)")
+          REPOSITORY=$(node -p "require('./package.json').repository.url")
           BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
           cat > packages/core/src/version.ts << EOF
           // This file is auto-generated during JSR publishing

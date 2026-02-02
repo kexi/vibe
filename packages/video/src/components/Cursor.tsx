@@ -7,10 +7,7 @@ interface CursorProps {
   blinkInterval?: number;
 }
 
-export const Cursor: React.FC<CursorProps> = ({
-  visible = true,
-  blinkInterval = 15,
-}) => {
+export const Cursor: React.FC<CursorProps> = ({ visible = true, blinkInterval = 15 }) => {
   const frame = useCurrentFrame();
   const isVisible = visible && Math.floor(frame / blinkInterval) % 2 === 0;
 

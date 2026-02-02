@@ -8,8 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Run ALL checks for ALL packages (REQUIRED before creating PR)
 pnpm run check:all
 
-# Run checks for core package only (Deno)
-deno task ci
+# Run checks for core package only
+pnpm run check:core
 
 # Run checks for docs package only
 pnpm run check:docs
@@ -18,13 +18,13 @@ pnpm run check:docs
 pnpm run check:video
 
 # Run in development mode
-deno task dev <command>
+pnpm run dev <command>
 
 # Run tests
-deno task test
+pnpm run test
 
 # Run a single test file
-deno test --allow-read --allow-env --allow-write --allow-run --allow-ffi packages/core/src/path/to/test.ts
+pnpm run test packages/core/src/path/to/test.ts
 
 # Enable vibe shell function
 source .vibedev
@@ -32,9 +32,8 @@ source .vibedev
 
 ## Architecture
 
-- **Runtime**: Deno v2.x-based CLI tool
+- **Runtime**: Bun-based CLI tool
 - **Purpose**: Git worktree management (start, clean, trust, untrust, verify, config, upgrade)
-- **Multi-runtime**: Supports both Deno and Node.js
 - **CoW Optimization**: Copy-on-Write support for APFS, Btrfs, XFS filesystems
 
 ### Source Structure
@@ -68,5 +67,5 @@ packages/core/src/
 ## Security
 
 - SHA-256 based configuration trust mechanism
-- Use `Deno.Command` (avoid shell string execution)
+- Use Node.js `spawn` (avoid shell string execution)
 - Path validation with `validatePath()`

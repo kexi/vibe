@@ -26,12 +26,10 @@ export const CommandOutput: React.FC<CommandOutputProps> = ({
     <div style={{ marginTop: 8 }}>
       {lines.map((line, index) => {
         const lineStartFrame = index * lineDelay + (line.delay ?? 0);
-        const opacity = interpolate(
-          relativeFrame,
-          [lineStartFrame, lineStartFrame + 2],
-          [0, 1],
-          { extrapolateRight: "clamp", extrapolateLeft: "clamp" }
-        );
+        const opacity = interpolate(relativeFrame, [lineStartFrame, lineStartFrame + 2], [0, 1], {
+          extrapolateRight: "clamp",
+          extrapolateLeft: "clamp",
+        });
 
         const shouldRender = relativeFrame >= lineStartFrame;
 

@@ -14,10 +14,12 @@ jobs:
       - uses: jdx/mise-action@v2
         env:
           MISE_HTTP_TIMEOUT: "120"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Verify formatting
-        run: deno task fmt:check
+        run: bun run fmt:check
       - name: Run linter
-        run: deno task lint
+        run: bun run lint
 
   typecheck:
     runs-on: ubuntu-latest
@@ -26,10 +28,12 @@ jobs:
       - uses: jdx/mise-action@v2
         env:
           MISE_HTTP_TIMEOUT: "120"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Generate version.ts
-        run: deno task generate-version
+        run: bun run scripts/generate-version.ts
       - name: Type check
-        run: deno task check
+        run: bun run check
 
   test:
     runs-on: ubuntu-latest
@@ -38,53 +42,45 @@ jobs:
       - uses: jdx/mise-action@v2
         env:
           MISE_HTTP_TIMEOUT: "120"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Generate version.ts
-        run: deno task generate-version
+        run: bun run scripts/generate-version.ts
       - name: Run tests
-        run: deno task test
+        run: bun run test -- packages/core/src
 
-  test-node:
+  # Deno runtime smoke test - verifies the Deno runtime implementation works
+  # Exception to mise rule: Deno is intentionally not in .mise.toml because
+  # it's not needed for local development (dev uses Bun). It's only needed
+  # for JSR distribution testing, so we use denoland/setup-deno directly here.
+  deno-smoke-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
-        env:
-          MISE_HTTP_TIMEOUT: "120"
-      - name: Install dependencies
-        run: pnpm install --filter @kexi/vibe --ignore-scripts
-      - name: Run Node.js runtime tests
-        run: pnpm -C packages/npm test
-
-  test-bun:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
-        env:
-          MISE_HTTP_TIMEOUT: "120"
-      - name: Install dependencies
-        run: pnpm install --filter @kexi/vibe --ignore-scripts
-      - name: Run Bun runtime tests
-        run: pnpm -C packages/npm test:bun
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Run Deno smoke tests
+        run: deno test --allow-env --allow-read --allow-run packages/core/src/runtime/deno/smoke.test.ts
 
   build-binaries:
     strategy:
       matrix:
         include:
           - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
+            target: bun-linux-x64
             name: linux-x64
           - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
+            target: bun-linux-arm64
             name: linux-arm64
           - os: macos-latest
-            target: x86_64-apple-darwin
+            target: bun-darwin-x64
             name: darwin-x64
           - os: macos-latest
-            target: aarch64-apple-darwin
+            target: bun-darwin-arm64
             name: darwin-arm64
           - os: windows-latest
-            target: x86_64-pc-windows-msvc
+            target: bun-windows-x64
             name: windows-x64
     runs-on: ${{ matrix.os }}
     steps:
@@ -92,8 +88,12 @@ jobs:
       - uses: jdx/mise-action@v2
         env:
           MISE_HTTP_TIMEOUT: "120"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Generate version.ts
+        run: bun run scripts/generate-version.ts
       - name: Build binary (${{ matrix.name }})
-        run: deno task compile:ci --target ${{ matrix.target }} --output vibe-${{ matrix.name }} --distribution binary
+        run: bun run scripts/build.ts --target ${{ matrix.target }} --output vibe-${{ matrix.name }}
 
   build-deb:
     runs-on: ubuntu-latest
@@ -101,20 +101,24 @@ jobs:
       matrix:
         include:
           - arch: amd64
-            target: x86_64-unknown-linux-gnu
+            target: bun-linux-x64
           - arch: arm64
-            target: aarch64-unknown-linux-gnu
+            target: bun-linux-arm64
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
         env:
           MISE_HTTP_TIMEOUT: "120"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Generate version.ts
+        run: bun run scripts/generate-version.ts
       - name: Build Linux binary
-        run: deno task compile:ci --target ${{ matrix.target }} --output vibe-test --distribution deb
+        run: bun run scripts/build.ts --target ${{ matrix.target }} --output vibe-test
       - name: Build .deb package
         run: |
-          VERSION=$(deno task get-version)
-          deno task build:deb "$VERSION" ${{ matrix.arch }} vibe-test
+          VERSION=$(bun run scripts/get-version.ts)
+          bun run scripts/build-deb.ts "$VERSION" ${{ matrix.arch }} vibe-test
 
   build-native:
     strategy:
@@ -165,17 +169,17 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y build-essential
 
+      # Install all dependencies
+      - name: Install dependencies
+        run: pnpm install --ignore-scripts
+
       # Generate version.ts for vibe
       - name: Generate version.ts
-        run: deno task generate-version
+        run: bun run scripts/generate-version.ts
 
       # Build vibe binary for E2E tests
       - name: Build vibe binary for E2E tests
-        run: deno task compile:e2e
-
-      # Install Node.js dependencies for E2E tests
-      - name: Install E2E test dependencies
-        run: pnpm install --ignore-scripts
+        run: bun run scripts/build.ts --output vibe-e2e
 
       # Build node-pty native addon from source
       - name: Build node-pty

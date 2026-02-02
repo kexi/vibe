@@ -9,29 +9,29 @@
  * - macOS: Uses clonefile() which supports both files and directories
  * - Linux: Uses FICLONE ioctl which only supports files
  */
-export declare function cloneSync(src: string, dest: string): void
+export declare function cloneSync(src: string, dest: string): void;
 /**
  * Clone a file or directory asynchronously using native Copy-on-Write
  *
  * - macOS: Uses clonefile() which supports both files and directories
  * - Linux: Uses FICLONE ioctl which only supports files
  */
-export declare function cloneAsync(src: string, dest: string): Promise<void>
+export declare function cloneAsync(src: string, dest: string): Promise<void>;
 /** Clone a file or directory synchronously (alias for cloneSync for backward compatibility) */
-export declare function clone(src: string, dest: string): void
+export declare function clone(src: string, dest: string): void;
 /** Check if native clone operations are available */
-export declare function isAvailable(): boolean
+export declare function isAvailable(): boolean;
 /**
  * Check if directory cloning is supported
  * - macOS clonefile: true (supports directories)
  * - Linux FICLONE: false (files only)
  */
-export declare function supportsDirectory(): boolean
+export declare function supportsDirectory(): boolean;
 /**
  * Get the current platform
  * Returns "darwin" or "linux"
  */
-export declare function getPlatform(): "darwin" | "linux"
+export declare function getPlatform(): "darwin" | "linux";
 /**
  * Move a file or directory to the system trash
  *
@@ -40,7 +40,7 @@ export declare function getPlatform(): "darwin" | "linux"
  * - Linux: Uses XDG Trash (~/.local/share/Trash)
  * - Windows: Uses Recycle Bin (not currently built on this platform)
  */
-export declare function moveToTrash(path: string): void
+export declare function moveToTrash(path: string): void;
 /**
  * Move a file or directory to the system trash asynchronously
  *
@@ -49,4 +49,4 @@ export declare function moveToTrash(path: string): void
  * - Linux: Uses XDG Trash (~/.local/share/Trash)
  * - Windows: Uses Recycle Bin (not currently built on this platform)
  */
-export declare function moveToTrashAsync(path: string): Promise<void>
+export declare function moveToTrashAsync(path: string): Promise<void>;

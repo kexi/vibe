@@ -1,13 +1,11 @@
 /**
  * Node.js process implementation
  *
- * NOTE: Environment variable behavior differs from Deno:
- * - Deno: When env is provided, it completely replaces the environment
- * - Node.js: When env is provided, it is merged with process.env
+ * NOTE: Environment variable behavior is harmonized across runtimes:
+ * - Both Deno and Node.js merge provided env with the current environment
+ * - This ensures consistent cross-runtime behavior (e.g., PATH is preserved)
  *
- * This is a deliberate design choice to maintain consistent behavior
- * with Node.js child_process defaults. If complete isolation is needed,
- * pass an explicit empty env object.
+ * If complete isolation is needed, the caller should handle env construction.
  */
 
 import { Buffer } from "node:buffer";
@@ -84,11 +82,7 @@ export const nodeProcess: RuntimeProcess = {
     const spawnOptions: NodeSpawnOptions = {
       cwd: options.cwd,
       env: options.env ? { ...process.env, ...options.env } : undefined,
-      stdio: [
-        toNodeStdio(options.stdin),
-        toNodeStdio(options.stdout),
-        toNodeStdio(options.stderr),
-      ],
+      stdio: [toNodeStdio(options.stdin), toNodeStdio(options.stdout), toNodeStdio(options.stderr)],
       detached: options.detached ?? false,
     };
 

@@ -1,5 +1,5 @@
-import { expandGlob } from "@std/fs";
-import { join, relative } from "@std/path";
+import fg from "fast-glob";
+import { join } from "node:path";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
 
 /**
@@ -14,40 +14,39 @@ export function isGlobPattern(pattern: string): boolean {
  * Expands a single glob pattern to matching file paths.
  * Returns array of relative paths from repoRoot.
  */
-export async function expandGlobPattern(
-  pattern: string,
-  repoRoot: string,
-): Promise<string[]> {
+export async function expandGlobPattern(pattern: string, repoRoot: string): Promise<string[]> {
   const files: string[] = [];
 
+  // Security: Reject absolute paths to prevent accessing files outside repository
+  const isAbsolutePath = pattern.startsWith("/");
+  if (isAbsolutePath) {
+    console.warn(`Warning: Skipping absolute path pattern: ${pattern}`);
+    return [];
+  }
+
   try {
-    // expandGlob requires an absolute path or a path relative to cwd
-    const absolutePattern = join(repoRoot, pattern);
+    // fast-glob returns relative paths when using cwd option
+    const entries = await fg(pattern, {
+      cwd: repoRoot,
+      onlyFiles: true,
+      dot: true,
+    });
 
-    for await (const entry of expandGlob(absolutePattern, { root: repoRoot })) {
-      // Only include files, not directories
-      if (entry.isFile) {
-        // Convert to relative path from repoRoot
-        const relativePath = relative(repoRoot, entry.path);
-
-        // Security: Ensure the path does not escape repoRoot
-        if (relativePath.startsWith("..")) {
-          console.warn(
-            `Warning: Skipping file outside repository: ${relativePath}`,
-          );
-          continue;
-        }
-
-        files.push(relativePath);
+    for (const entry of entries) {
+      // Security: Ensure the path does not escape repoRoot
+      const isOutsideRepo = entry.startsWith("..");
+      if (isOutsideRepo) {
+        console.warn(`Warning: Skipping file outside repository: ${entry}`);
+        continue;
       }
+
+      files.push(entry);
     }
   } catch (error) {
     // Warn on actual errors (permission issues, invalid patterns, etc.)
     // but return empty array to allow continuation
     if (error instanceof Error) {
-      console.warn(
-        `Warning: Failed to expand glob pattern "${pattern}": ${error.message}`,
-      );
+      console.warn(`Warning: Failed to expand glob pattern "${pattern}": ${error.message}`);
     }
     return [];
   }
@@ -59,10 +58,7 @@ export async function expandGlobPattern(
  * Expands all patterns (both exact paths and globs) to file paths.
  * Handles deduplication and maintains order.
  */
-export async function expandCopyPatterns(
-  patterns: string[],
-  repoRoot: string,
-): Promise<string[]> {
+export async function expandCopyPatterns(patterns: string[], repoRoot: string): Promise<string[]> {
   const expandedFiles: string[] = [];
   const seen = new Set<string>();
 
@@ -111,32 +107,26 @@ async function expandGlobPatternForDirectories(
   const dirs: string[] = [];
 
   try {
-    const absolutePattern = join(repoRoot, pattern);
+    // fast-glob with onlyDirectories
+    const entries = await fg(pattern, {
+      cwd: repoRoot,
+      onlyDirectories: true,
+      dot: true,
+    });
 
-    for await (const entry of expandGlob(absolutePattern, { root: repoRoot })) {
-      const isDirectory = entry.isDirectory;
-      if (!isDirectory) {
-        continue;
-      }
-
-      const relativePath = relative(repoRoot, entry.path);
-
+    for (const entry of entries) {
       // Security: Ensure the path does not escape repoRoot
-      const isOutsideRepo = relativePath.startsWith("..");
+      const isOutsideRepo = entry.startsWith("..");
       if (isOutsideRepo) {
-        console.warn(
-          `Warning: Skipping directory outside repository: ${relativePath}`,
-        );
+        console.warn(`Warning: Skipping directory outside repository: ${entry}`);
         continue;
       }
 
-      dirs.push(relativePath);
+      dirs.push(entry);
     }
   } catch (error) {
     if (error instanceof Error) {
-      console.warn(
-        `Warning: Failed to expand directory pattern "${pattern}": ${error.message}`,
-      );
+      console.warn(`Warning: Failed to expand directory pattern "${pattern}": ${error.message}`);
     }
     return [];
   }
@@ -173,9 +163,7 @@ export async function expandDirectoryPatterns(
       const isOutsideRepo = pattern.startsWith("..");
 
       if (isAbsolutePath || hasNullByte || isOutsideRepo) {
-        console.warn(
-          `Warning: Skipping invalid directory pattern: ${pattern}`,
-        );
+        console.warn(`Warning: Skipping invalid directory pattern: ${pattern}`);
         continue;
       }
 

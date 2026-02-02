@@ -43,6 +43,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "fast-glob": "^3.3.3",
+    "smol-toml": "^1.6.0",
     "zod": "^3.23.0"
   },
   "optionalDependencies": {
@@ -68,8 +70,8 @@
   "keywords": [
     "vibe",
     "runtime",
-    "deno",
     "node",
+    "bun",
     "cross-platform"
   ],
   "author": "kexi",

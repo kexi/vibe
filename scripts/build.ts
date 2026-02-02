@@ -3,16 +3,18 @@
  * Generates version.ts with semver + commit hash + build metadata, then compiles the binary
  *
  * Usage:
- *   deno run --allow-run --allow-read --allow-write --allow-env scripts/build.ts [options]
+ *   bun run scripts/build.ts [options]
  *
  * Options:
- *   --target <target>        Cross-compile target (e.g., x86_64-apple-darwin). Auto-detected if omitted.
+ *   --target <target>        Cross-compile target (e.g., bun-darwin-arm64). Auto-detected if omitted.
  *   --output <name>          Output binary name (default: "vibe")
  *   --distribution <type>    Distribution type: dev, binary, deb (default: "dev")
  *   --generate-version-only  Only generate version.ts without compiling
  */
 
-import { parseArgs } from "@std/cli/parse-args";
+import { parseArgs, type ParseArgsConfig } from "node:util";
+import { readFile, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
 
 interface BuildMetadata {
   platform: string;
@@ -23,7 +25,27 @@ interface BuildMetadata {
   buildEnv: string;
 }
 
+/**
+ * Bun target mapping
+ * Maps legacy Deno target names to Bun target names
+ */
+const BUN_TARGETS: Record<string, string> = {
+  "x86_64-unknown-linux-gnu": "bun-linux-x64",
+  "aarch64-unknown-linux-gnu": "bun-linux-arm64",
+  "x86_64-apple-darwin": "bun-darwin-x64",
+  "aarch64-apple-darwin": "bun-darwin-arm64",
+  "x86_64-pc-windows-msvc": "bun-windows-x64",
+};
+
 function parseTarget(target: string): { platform: string; arch: string } {
+  // Handle both Deno-style and Bun-style target names
+  if (target.startsWith("bun-")) {
+    // bun-darwin-arm64 -> darwin, arm64
+    const parts = target.split("-");
+    return { platform: parts[1], arch: parts[2] };
+  }
+
+  // Deno-style: x86_64-apple-darwin
   const parts = target.split("-");
   const arch = parts[0]; // x86_64 or aarch64
 
@@ -36,41 +58,73 @@ function parseTarget(target: string): { platform: string; arch: string } {
 }
 
 function detectCurrentTarget(): string {
-  const os = Deno.build.os;
-  const arch = Deno.build.arch;
+  const platform = process.platform;
+  const arch = process.arch;
 
-  if (os === "linux") return `${arch}-unknown-linux-gnu`;
-  if (os === "darwin") return `${arch}-apple-darwin`;
-  if (os === "windows") return `${arch}-pc-windows-msvc`;
+  if (platform === "linux") {
+    return arch === "arm64" ? "bun-linux-arm64" : "bun-linux-x64";
+  }
+  if (platform === "darwin") {
+    return arch === "arm64" ? "bun-darwin-arm64" : "bun-darwin-x64";
+  }
+  if (platform === "win32") {
+    return "bun-windows-x64";
+  }
 
-  throw new Error(`Unsupported platform: ${os}`);
+  throw new Error(`Unsupported platform: ${platform}`);
+}
+
+async function runCommand(
+  cmd: string,
+  args: string[],
+  options?: { cwd?: string; inherit?: boolean },
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(cmd, args, {
+      cwd: options?.cwd,
+      stdio: options?.inherit ? "inherit" : "pipe",
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    if (!options?.inherit) {
+      proc.stdout?.on("data", (data) => {
+        stdout += data.toString();
+      });
+      proc.stderr?.on("data", (data) => {
+        stderr += data.toString();
+      });
+    }
+
+    proc.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(`${cmd} ${args.join(" ")} failed: ${stderr}`));
+      } else {
+        resolve(stdout.trim());
+      }
+    });
+
+    proc.on("error", reject);
+  });
 }
 
 async function getGitCommitHash(): Promise<string> {
-  const command = new Deno.Command("git", {
-    args: ["rev-parse", "--short", "HEAD"],
-    stdout: "piped",
-    stderr: "piped",
-  });
-
-  const { success, stdout } = await command.output();
-  if (!success) {
-    throw new Error("Failed to get git commit hash");
-  }
-
-  return new TextDecoder().decode(stdout).trim();
+  return runCommand("git", ["rev-parse", "--short", "HEAD"]);
 }
 
-interface DenoJsonInfo {
+interface PackageJsonInfo {
   version: string;
   repository: string;
 }
 
-async function getDenoJsonInfo(): Promise<DenoJsonInfo> {
-  const denoJson = JSON.parse(await Deno.readTextFile("deno.json"));
+async function getPackageJsonInfo(): Promise<PackageJsonInfo> {
+  const content = await readFile("package.json", "utf-8");
+  const json = JSON.parse(content);
   return {
-    version: denoJson.version,
-    repository: denoJson.repository,
+    version: json.version,
+    repository:
+      typeof json.repository === "string" ? json.repository : (json.repository?.url ?? ""),
   };
 }
 
@@ -109,11 +163,9 @@ export const VERSION = BUILD_INFO.version;
 export const REPOSITORY_URL = BUILD_INFO.repository;
 `;
 
-  await Deno.writeTextFile("packages/core/src/version.ts", content);
+  await writeFile("packages/core/src/version.ts", content);
   console.log(`Generated packages/core/src/version.ts with VERSION = "${fullVersion}"`);
-  console.log(
-    `  Platform: ${metadata.platform}-${metadata.arch} (${metadata.target})`,
-  );
+  console.log(`  Platform: ${metadata.platform}-${metadata.arch} (${metadata.target})`);
   console.log(`  Distribution: ${metadata.distribution}`);
   console.log(`  Build: ${metadata.buildTime} (${metadata.buildEnv})`);
 }
@@ -124,45 +176,46 @@ interface CompileOptions {
 }
 
 async function compile(options: CompileOptions): Promise<void> {
-  const args = [
-    "compile",
-    "--allow-run",
-    "--allow-read",
-    "--allow-write",
-    "--allow-env",
-    "--allow-ffi",
-    "--allow-net",
-  ];
+  const args = ["build", "--compile", "--minify"];
 
   if (options.target !== undefined) {
     args.push("--target", options.target);
   }
 
-  args.push("--output", options.output);
+  args.push("--outfile", options.output);
   args.push("main.ts");
 
-  const command = new Deno.Command("deno", {
-    args,
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-
-  const { success } = await command.output();
-  if (!success) {
-    throw new Error("Failed to compile");
-  }
+  await runCommand("bun", args, { inherit: true });
 }
 
+const parseArgsOptions: ParseArgsConfig["options"] = {
+  target: { type: "string" },
+  distribution: { type: "string" },
+  output: { type: "string" },
+  version: { type: "string" },
+  "generate-version-only": { type: "boolean" },
+};
+
 async function main(): Promise<void> {
-  const args = parseArgs(Deno.args, {
-    string: ["target", "distribution", "output"],
-    boolean: ["generate-version-only"],
+  const { values } = parseArgs({
+    args: process.argv.slice(2),
+    options: parseArgsOptions,
+    strict: true,
   });
+
+  const args = values as {
+    target?: string;
+    distribution?: string;
+    output?: string;
+    version?: string;
+    "generate-version-only"?: boolean;
+  };
 
   // Determine target
   let target: string;
   if (args.target) {
-    target = args.target;
+    // Convert Deno target to Bun target if needed
+    target = BUN_TARGETS[args.target] ?? args.target;
   } else {
     target = detectCurrentTarget();
     console.log(`No --target specified, auto-detected: ${target}`);
@@ -178,7 +231,7 @@ async function main(): Promise<void> {
   const { platform, arch } = parseTarget(target);
 
   // Determine build environment
-  const buildEnv = Deno.env.get("CI") ? "github-actions" : "local";
+  const buildEnv = process.env.CI ? "github-actions" : "local";
 
   // Generate build time
   const buildTime = new Date().toISOString();
@@ -192,10 +245,11 @@ async function main(): Promise<void> {
     buildEnv,
   };
 
-  const { version, repository } = await getDenoJsonInfo();
+  const pkgInfo = await getPackageJsonInfo();
+  const version = args.version ?? pkgInfo.version;
   const commitHash = await getGitCommitHash();
 
-  await generateBuildInfoFile(version, commitHash, repository, metadata);
+  await generateBuildInfoFile(version, commitHash, pkgInfo.repository, metadata);
 
   if (args["generate-version-only"]) {
     return;

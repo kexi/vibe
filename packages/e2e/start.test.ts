@@ -153,9 +153,7 @@ describe("start command", () => {
       // Verify exit code is non-zero
       const exitCode = runner.getExitCode();
       if (exitCode === 0) {
-        throw new Error(
-          "Expected non-zero exit code when branch name is missing",
-        );
+        throw new Error("Expected non-zero exit code when branch name is missing");
       }
 
       const output = runner.getOutput();
@@ -333,20 +331,15 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.hook-ran"]
 
     // Wait for trust configuration to be synced before proceeding
     // Uses polling instead of fixed delay for reliability across CI environments
-    await waitForCondition(
-      () => existsSync(join(repoPath, ".vibe.toml")),
-      { timeout: 5000, interval: 100 },
-    );
+    await waitForCondition(() => existsSync(join(repoPath, ".vibe.toml")), {
+      timeout: 5000,
+      interval: 100,
+    });
 
     // Run vibe start with both --no-hooks and --no-copy
     const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
     try {
-      await runner.spawn([
-        "start",
-        "feat/test-combined",
-        "--no-hooks",
-        "--no-copy",
-      ]);
+      await runner.spawn(["start", "feat/test-combined", "--no-hooks", "--no-copy"]);
       await runner.waitForExit();
 
       const output = runner.getOutput();
@@ -413,10 +406,10 @@ path_script = "./worktree-path.sh"
     }
 
     // Wait for trust configuration to be synced before proceeding
-    await waitForCondition(
-      () => existsSync(join(repoPath, ".vibe.toml")),
-      { timeout: 5000, interval: 100 },
-    );
+    await waitForCondition(() => existsSync(join(repoPath, ".vibe.toml")), {
+      timeout: 5000,
+      interval: 100,
+    });
 
     // Run vibe start
     const runner = new VibeCommandRunner(vibePath, repoPath, homePath);

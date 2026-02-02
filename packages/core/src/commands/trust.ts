@@ -1,4 +1,4 @@
-import { join } from "@std/path";
+import { join } from "node:path";
 import { getRepoInfoFromPath, getRepoRoot } from "../utils/git.ts";
 import { addTrustedPath, getSettingsPath } from "../utils/trust.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
@@ -6,9 +6,7 @@ import { type AppContext, getGlobalContext } from "../context/index.ts";
 const VIBE_TOML = ".vibe.toml";
 const VIBE_LOCAL_TOML = ".vibe.local.toml";
 
-export async function trustCommand(
-  ctx: AppContext = getGlobalContext(),
-): Promise<void> {
+export async function trustCommand(ctx: AppContext = getGlobalContext()): Promise<void> {
   const { runtime } = ctx;
 
   try {
@@ -21,15 +19,14 @@ export async function trustCommand(
 
     const hasAnyFile = vibeTomlExists || vibeLocalTomlExists;
     if (!hasAnyFile) {
-      console.error(
-        `Error: Neither .vibe.toml nor .vibe.local.toml found in ${repoRoot}`,
-      );
+      console.error(`Error: Neither .vibe.toml nor .vibe.local.toml found in ${repoRoot}`);
       runtime.control.exit(1);
     }
 
-    const trustedFiles: Array<
-      { path: string; repoInfo: Awaited<ReturnType<typeof getRepoInfoFromPath>> }
-    > = [];
+    const trustedFiles: Array<{
+      path: string;
+      repoInfo: Awaited<ReturnType<typeof getRepoInfoFromPath>>;
+    }> = [];
     const errors: Array<{ file: string; error: string }> = [];
 
     // Trust .vibe.toml

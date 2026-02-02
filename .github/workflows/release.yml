@@ -2,7 +2,7 @@ name: Release
 
 on:
   release:
-    types: [released]
+    types: [released, prereleased]
 
 permissions:
   contents: write
@@ -37,8 +37,11 @@ jobs:
         env:
           MISE_HTTP_TIMEOUT: "120"
 
+      - name: Install dependencies
+        run: pnpm install --ignore-scripts
+
       - name: Build release binary
-        run: deno task compile:ci --target ${{ matrix.target }} --output ${{ matrix.artifact }} --distribution binary
+        run: bun run scripts/build.ts --target ${{ matrix.target }} --output ${{ matrix.artifact }} --distribution binary
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -70,15 +73,18 @@ jobs:
           name: ${{ matrix.binary }}
           path: .
 
+      - name: Install dependencies
+        run: pnpm install --ignore-scripts
+
       - name: Rebuild with deb distribution metadata
         run: |
           TARGET="${{ matrix.arch == 'amd64' && 'x86_64-unknown-linux-gnu' || 'aarch64-unknown-linux-gnu' }}"
-          deno task compile:ci --target "$TARGET" --output vibe-deb --distribution deb
+          bun run scripts/build.ts --target "$TARGET" --output vibe-deb --distribution deb
 
       - name: Build .deb package
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          deno task build:deb "$VERSION" ${{ matrix.arch }} vibe-deb
+          bun run scripts/build-deb.ts "$VERSION" ${{ matrix.arch }} vibe-deb
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
@@ -121,6 +127,17 @@ jobs:
           echo "linux_arm64=$(sha256sum artifacts/vibe-linux-arm64 | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
           echo "linux_x64=$(sha256sum artifacts/vibe-linux-x64 | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
 
+      - name: Determine Formula to update
+        id: formula
+        run: |
+          if [ "${{ github.event.release.prerelease }}" = "true" ]; then
+            echo "name=vibe-beta" >> $GITHUB_OUTPUT
+            echo "template=vibe-beta.rb" >> $GITHUB_OUTPUT
+          else
+            echo "name=vibe" >> $GITHUB_OUTPUT
+            echo "template=vibe.rb" >> $GITHUB_OUTPUT
+          fi
+
       - uses: actions/checkout@v4
         with:
           path: vibe-source
@@ -130,22 +147,31 @@ jobs:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
+          FORMULA_NAME="${{ steps.formula.outputs.name }}"
+          FORMULA_TEMPLATE="${{ steps.formula.outputs.template }}"
 
           gh repo clone kexi/homebrew-tap homebrew-tap
 
           # Copy template from source repository
-          cp vibe-source/Formula/vibe.rb homebrew-tap/Formula/vibe.rb
+          cp "vibe-source/Formula/${FORMULA_TEMPLATE}" "homebrew-tap/Formula/${FORMULA_TEMPLATE}"
           cd homebrew-tap
 
           # Replace placeholders with actual values
-          sed -i "s/VERSION_PLACEHOLDER/$VERSION/g" Formula/vibe.rb
-          sed -i "s/SHA256_DARWIN_ARM64/${{ steps.sha256.outputs.darwin_arm64 }}/g" Formula/vibe.rb
-          sed -i "s/SHA256_DARWIN_X64/${{ steps.sha256.outputs.darwin_x64 }}/g" Formula/vibe.rb
-          sed -i "s/SHA256_LINUX_ARM64/${{ steps.sha256.outputs.linux_arm64 }}/g" Formula/vibe.rb
-          sed -i "s/SHA256_LINUX_X64/${{ steps.sha256.outputs.linux_x64 }}/g" Formula/vibe.rb
+          sed -i "s/VERSION_PLACEHOLDER/$VERSION/g" "Formula/${FORMULA_TEMPLATE}"
+          sed -i "s/SHA256_DARWIN_ARM64/${{ steps.sha256.outputs.darwin_arm64 }}/g" "Formula/${FORMULA_TEMPLATE}"
+          sed -i "s/SHA256_DARWIN_X64/${{ steps.sha256.outputs.darwin_x64 }}/g" "Formula/${FORMULA_TEMPLATE}"
+          sed -i "s/SHA256_LINUX_ARM64/${{ steps.sha256.outputs.linux_arm64 }}/g" "Formula/${FORMULA_TEMPLATE}"
+          sed -i "s/SHA256_LINUX_X64/${{ steps.sha256.outputs.linux_x64 }}/g" "Formula/${FORMULA_TEMPLATE}"
+
+          # Verify all placeholders were replaced
+          if grep -q "PLACEHOLDER" "Formula/${FORMULA_TEMPLATE}"; then
+            echo "Error: Placeholders were not replaced correctly"
+            grep "PLACEHOLDER" "Formula/${FORMULA_TEMPLATE}"
+            exit 1
+          fi
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/vibe.rb
-          git commit -m "Update vibe to $VERSION"
+          git add "Formula/${FORMULA_TEMPLATE}"
+          git commit -m "Update ${FORMULA_NAME} to $VERSION"
           git push https://x-access-token:${GH_TOKEN}@github.com/kexi/homebrew-tap.git HEAD:main

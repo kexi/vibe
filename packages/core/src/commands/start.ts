@@ -1,4 +1,4 @@
-import { join } from "@std/path";
+import { join } from "node:path";
 import { getRepoName, getRepoRoot, revisionExists, sanitizeBranchName } from "../utils/git.ts";
 import type { VibeConfig } from "../types/config.ts";
 import { loadVibeConfig } from "../utils/config.ts";
@@ -103,9 +103,7 @@ export async function startCommand(
     }
 
     if (baseRef && validation.branchExists) {
-      console.error(
-        `Warning: Branch '${branchName}' already exists; --base is ignored.`,
-      );
+      console.error(`Warning: Branch '${branchName}' already exists; --base is ignored.`);
     }
 
     if (baseRef && !validation.branchExists) {
@@ -121,17 +119,25 @@ export async function startCommand(
     const config = await loadVibeConfig(repoRoot, ctx);
 
     // Resolve worktree path
-    const worktreePath = await resolveWorktreePath(config, settings, {
-      repoName,
-      branchName,
-      sanitizedBranch,
-      repoRoot,
-    }, ctx);
+    const worktreePath = await resolveWorktreePath(
+      config,
+      settings,
+      {
+        repoName,
+        branchName,
+        sanitizedBranch,
+        repoRoot,
+      },
+      ctx,
+    );
 
     // Create progress tracker
-    const tracker = new ProgressTracker({
-      title: `Setting up worktree ${branchName}`,
-    }, ctx);
+    const tracker = new ProgressTracker(
+      {
+        title: `Setting up worktree ${branchName}`,
+      },
+      ctx,
+    );
 
     // Check for conflicts at target path
     const conflict = await checkWorktreeConflict(worktreePath, branchName, ctx);
@@ -183,11 +189,18 @@ export async function startCommand(
     }
 
     // Run hooks and config
-    await runConfigAndHooks(config, repoRoot, worktreePath, tracker, {
-      skipHooks: noHooks,
-      skipCopy: noCopy,
-      dryRun,
-    }, ctx);
+    await runConfigAndHooks(
+      config,
+      repoRoot,
+      worktreePath,
+      tracker,
+      {
+        skipHooks: noHooks,
+        skipCopy: noCopy,
+        dryRun,
+      },
+      ctx,
+    );
 
     if (dryRun) {
       logDryRun(`Would change directory to: ${worktreePath}`);
@@ -248,20 +261,34 @@ async function handleSameBranchWorktree(
   if (dryRun) {
     logDryRun(`Worktree already exists at '${worktreePath}'`);
     logDryRun("Would run hooks and config, then navigate to worktree");
-    await runConfigAndHooks(config, repoRoot, worktreePath, tracker, {
-      skipHooks: noHooks,
-      skipCopy: noCopy,
-      dryRun,
-    }, ctx);
+    await runConfigAndHooks(
+      config,
+      repoRoot,
+      worktreePath,
+      tracker,
+      {
+        skipHooks: noHooks,
+        skipCopy: noCopy,
+        dryRun,
+      },
+      ctx,
+    );
     logDryRun(`Would change directory to: ${worktreePath}`);
     return;
   }
 
   log(`Note: Worktree already exists at '${worktreePath}'`, outputOpts);
-  await runConfigAndHooks(config, repoRoot, worktreePath, tracker, {
-    skipHooks: noHooks,
-    skipCopy: noCopy,
-  }, ctx);
+  await runConfigAndHooks(
+    config,
+    repoRoot,
+    worktreePath,
+    tracker,
+    {
+      skipHooks: noHooks,
+      skipCopy: noCopy,
+    },
+    ctx,
+  );
   console.log(`cd '${worktreePath}'`);
 }
 
@@ -300,10 +327,17 @@ async function handleDifferentBranchConflict(
 
   if (choice === 1) {
     // Reuse: skip git worktree creation, run hooks/config
-    await runConfigAndHooks(config, repoRoot, worktreePath, tracker, {
-      skipHooks: noHooks,
-      skipCopy: noCopy,
-    }, ctx);
+    await runConfigAndHooks(
+      config,
+      repoRoot,
+      worktreePath,
+      tracker,
+      {
+        skipHooks: noHooks,
+        skipCopy: noCopy,
+      },
+      ctx,
+    );
     console.log(`cd '${worktreePath}'`);
     return false;
   }
@@ -327,8 +361,9 @@ async function runConfigAndHooks(
 ): Promise<void> {
   const { skipHooks = false, skipCopy = false, dryRun = false } = options;
 
-  const hooksCount = skipHooks ? 0 : (config?.hooks?.pre_start?.length ?? 0) +
-    (config?.hooks?.post_start?.length ?? 0);
+  const hooksCount = skipHooks
+    ? 0
+    : (config?.hooks?.pre_start?.length ?? 0) + (config?.hooks?.post_start?.length ?? 0);
   const copyCount = skipCopy
     ? 0
     : (config?.copy?.files?.length ?? 0) + (config?.copy?.dirs?.length ?? 0);
@@ -344,11 +379,18 @@ async function runConfigAndHooks(
   }
 
   if (config !== undefined) {
-    await runCopyAndPostHooks(config, repoRoot, worktreePath, tracker, {
-      skipHooks,
-      skipCopy,
-      dryRun,
-    }, ctx);
+    await runCopyAndPostHooks(
+      config,
+      repoRoot,
+      worktreePath,
+      tracker,
+      {
+        skipHooks,
+        skipCopy,
+        dryRun,
+      },
+      ctx,
+    );
   }
 
   if (shouldStartTracker) {
@@ -494,16 +536,12 @@ const MAX_COPY_CONCURRENCY = 32;
  * @param ctx - The application context for accessing environment variables
  * @returns The resolved concurrency value (1-32)
  */
-export function resolveCopyConcurrency(
-  config: VibeConfig | undefined,
-  ctx: AppContext,
-): number {
+export function resolveCopyConcurrency(config: VibeConfig | undefined, ctx: AppContext): number {
   // Check environment variable first (highest priority)
   const envValue = ctx.runtime.env.get("VIBE_COPY_CONCURRENCY");
   if (envValue !== undefined) {
     const parsed = parseInt(envValue, 10);
-    const isValidEnvValue = !isNaN(parsed) && parsed >= 1 &&
-      parsed <= MAX_COPY_CONCURRENCY;
+    const isValidEnvValue = !isNaN(parsed) && parsed >= 1 && parsed <= MAX_COPY_CONCURRENCY;
     if (isValidEnvValue) {
       return parsed;
     }
@@ -540,9 +578,7 @@ async function withConcurrencyLimit<T>(
     await handler(items[currentIndex], currentIndex);
     await executeNext();
   };
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, executeNext),
-  );
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, executeNext));
 }
 
 /**
@@ -558,11 +594,7 @@ async function copyDirectories(
   concurrency: number,
   ctx: AppContext,
 ): Promise<void> {
-  const directoriesToCopy = await expandDirectoryPatterns(
-    config.copy?.dirs ?? [],
-    repoRoot,
-    ctx,
-  );
+  const directoriesToCopy = await expandDirectoryPatterns(config.copy?.dirs ?? [], repoRoot, ctx);
 
   if (directoriesToCopy.length === 0) return;
 
@@ -578,24 +610,20 @@ async function copyDirectories(
   const phaseId = tracker.addPhase(`Copying directories (${dirStrategy.name})`);
   const taskIds = directoriesToCopy.map((dir) => tracker.addTask(phaseId, dir));
 
-  await withConcurrencyLimit(
-    directoriesToCopy,
-    concurrency,
-    async (dir, i) => {
-      const src = join(repoRoot, dir);
-      const dest = join(worktreePath, dir);
+  await withConcurrencyLimit(directoriesToCopy, concurrency, async (dir, i) => {
+    const src = join(repoRoot, dir);
+    const dest = join(worktreePath, dir);
 
-      tracker.startTask(taskIds[i]);
-      try {
-        await copyService.copyDirectory(src, dest);
-        tracker.completeTask(taskIds[i]);
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        tracker.failTask(taskIds[i], errorMessage);
-        console.warn(`Warning: Failed to copy directory ${dir}: ${errorMessage}`);
-      }
-    },
-  );
+    tracker.startTask(taskIds[i]);
+    try {
+      await copyService.copyDirectory(src, dest);
+      tracker.completeTask(taskIds[i]);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      tracker.failTask(taskIds[i], errorMessage);
+      console.warn(`Warning: Failed to copy directory ${dir}: ${errorMessage}`);
+    }
+  });
 }
 
 /**

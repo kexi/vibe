@@ -1,28 +1,27 @@
-#!/usr/bin/env -S deno run --allow-read --allow-write
+#!/usr/bin/env bun
 
 /**
- * Sync version from deno.json to all package.json files
+ * Sync version from root package.json to all package.json files
  *
- * This script uses deno.json as the single source of truth (SSoT) for
+ * This script uses the root package.json as the single source of truth (SSoT) for
  * versioning and propagates the version to all npm packages.
  *
  * Usage:
- *   deno run --allow-read --allow-write scripts/sync-version.ts
- *   deno task sync-version
+ *   bun run scripts/sync-version.ts
  *
  * Options:
  *   --check    Only check if versions match, don't update (exit 1 if mismatch)
  *   --verbose  Print detailed information
  */
 
-const DENO_JSON = "deno.json";
+import { readFile, writeFile, stat } from "node:fs/promises";
+
+const ROOT_PACKAGE_JSON = "package.json";
 
 // Targets to sync version to
 const TARGETS = [
-  "package.json",
   "packages/npm/package.json",
   "packages/core/package.json",
-  "packages/core/deno.json",
   "packages/native/package.json",
 ];
 
@@ -32,24 +31,19 @@ interface PackageJson {
   [key: string]: unknown;
 }
 
-interface DenoJson {
-  version?: string;
-  [key: string]: unknown;
-}
-
 async function readJsonFile<T>(path: string): Promise<T> {
-  const content = await Deno.readTextFile(path);
+  const content = await readFile(path, "utf-8");
   return JSON.parse(content) as T;
 }
 
 async function writeJsonFile(path: string, data: unknown): Promise<void> {
   const content = JSON.stringify(data, null, 2) + "\n";
-  await Deno.writeTextFile(path, content);
+  await writeFile(path, content, "utf-8");
 }
 
 async function fileExists(path: string): Promise<boolean> {
   try {
-    await Deno.stat(path);
+    await stat(path);
     return true;
   } catch {
     return false;
@@ -105,7 +99,7 @@ async function syncVersion(
 }
 
 function printUsage(): void {
-  console.log(`Usage: deno run --allow-read --allow-write scripts/sync-version.ts [options]
+  console.log(`Usage: bun run scripts/sync-version.ts [options]
 
 Options:
   --check    Only check if versions match, don't update (exit 1 if mismatch)
@@ -115,33 +109,33 @@ Options:
 }
 
 async function main(): Promise<void> {
-  const args = Deno.args;
+  const args = process.argv.slice(2);
   const checkOnly = args.includes("--check");
   const verbose = args.includes("--verbose");
   const help = args.includes("--help") || args.includes("-h");
 
   if (help) {
     printUsage();
-    Deno.exit(0);
+    process.exit(0);
   }
 
-  // Read source version from deno.json
-  const denoJsonExists = await fileExists(DENO_JSON);
-  if (!denoJsonExists) {
-    console.error(`Error: ${DENO_JSON} not found`);
-    Deno.exit(1);
+  // Read source version from root package.json
+  const rootPackageJsonExists = await fileExists(ROOT_PACKAGE_JSON);
+  if (!rootPackageJsonExists) {
+    console.error(`Error: ${ROOT_PACKAGE_JSON} not found`);
+    process.exit(1);
   }
 
-  const denoJson = await readJsonFile<DenoJson>(DENO_JSON);
-  const sourceVersion = denoJson.version;
+  const rootPackageJson = await readJsonFile<PackageJson>(ROOT_PACKAGE_JSON);
+  const sourceVersion = rootPackageJson.version;
 
   if (!sourceVersion) {
-    console.error(`Error: No version field in ${DENO_JSON}`);
-    Deno.exit(1);
+    console.error(`Error: No version field in ${ROOT_PACKAGE_JSON}`);
+    process.exit(1);
   }
 
   if (verbose) {
-    console.log(`Source version: ${sourceVersion} (from ${DENO_JSON})`);
+    console.log(`Source version: ${sourceVersion} (from ${ROOT_PACKAGE_JSON})`);
     console.log("");
   }
 
@@ -158,8 +152,8 @@ async function main(): Promise<void> {
 
   for (const result of results) {
     const statusIcon = {
-      "updated": "✓",
-      "unchanged": "=",
+      updated: "✓",
+      unchanged: "=",
       "not-found": "?",
     }[result.status];
 
@@ -186,7 +180,7 @@ async function main(): Promise<void> {
   if (checkOnly && hasMismatch) {
     console.log("");
     console.log("Version mismatch detected. Run without --check to update.");
-    Deno.exit(1);
+    process.exit(1);
   }
 
   if (!checkOnly && hasUpdated) {

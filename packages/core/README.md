@@ -60,11 +60,7 @@ const config = parseVibeConfig(rawData, "./vibe.toml");
 Use typed error classes for consistent error handling:
 
 ```typescript
-import {
-  GitOperationError,
-  ConfigurationError,
-  WorktreeError,
-} from "@kexi/vibe-core";
+import { GitOperationError, ConfigurationError, WorktreeError } from "@kexi/vibe-core";
 
 throw new GitOperationError("clone", "Repository not found");
 throw new ConfigurationError("Invalid hook command", "./vibe.toml");
@@ -75,11 +71,7 @@ throw new ConfigurationError("Invalid hook command", "./vibe.toml");
 Manage application context with dependency injection:
 
 ```typescript
-import {
-  createAppContext,
-  setGlobalContext,
-  getGlobalContext,
-} from "@kexi/vibe-core";
+import { createAppContext, setGlobalContext, getGlobalContext } from "@kexi/vibe-core";
 
 // Initialize context at startup
 const ctx = createAppContext(runtime);
@@ -93,14 +85,14 @@ const { runtime } = getGlobalContext();
 
 ### Exports
 
-| Export | Description |
-|--------|-------------|
-| `@kexi/vibe-core` | Main entry point with all exports |
-| `@kexi/vibe-core/runtime` | Runtime abstraction layer |
-| `@kexi/vibe-core/types` | Configuration types and schemas |
-| `@kexi/vibe-core/errors` | Error classes |
-| `@kexi/vibe-core/context` | Context management |
-| `@kexi/vibe-core/context/testing` | Testing utilities |
+| Export                            | Description                       |
+| --------------------------------- | --------------------------------- |
+| `@kexi/vibe-core`                 | Main entry point with all exports |
+| `@kexi/vibe-core/runtime`         | Runtime abstraction layer         |
+| `@kexi/vibe-core/types`           | Configuration types and schemas   |
+| `@kexi/vibe-core/errors`          | Error classes                     |
+| `@kexi/vibe-core/context`         | Context management                |
+| `@kexi/vibe-core/context/testing` | Testing utilities                 |
 
 ### Runtime Detection
 
