@@ -187,8 +187,7 @@ jobs:
           echo "Version validation passed: $TAG_VERSION"
 
       - name: Install dependencies
-        working-directory: packages/npm
-        run: pnpm install --ignore-scripts
+        run: pnpm install
 
       - name: Generate version.ts for npm
         run: |
