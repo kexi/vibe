@@ -20,7 +20,7 @@ jobs:
           MISE_HTTP_TIMEOUT: "120"
 
       - name: Install dependencies
-        run: pnpm install --filter @kexi/vibe-core
+        run: pnpm install --filter @kexi/vibe-core --ignore-scripts
 
       - name: Validate version consistency
         shell: bash
