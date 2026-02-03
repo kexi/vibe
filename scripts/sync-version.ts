@@ -23,6 +23,7 @@ const TARGETS = [
   "packages/npm/package.json",
   "packages/core/package.json",
   "packages/native/package.json",
+  "jsr.json",
 ];
 
 interface PackageJson {
