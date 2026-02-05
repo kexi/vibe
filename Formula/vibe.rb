@@ -4,8 +4,6 @@ class Vibe < Formula
   version "VERSION_PLACEHOLDER"
   license "MIT"
 
-  conflicts_with "vibe-beta", because: "both install the same binary"
-
   on_macos do
     on_arm do
       url "https://github.com/kexi/vibe/releases/download/vVERSION_PLACEHOLDER/vibe-darwin-arm64"
