@@ -10,6 +10,7 @@ import {
 } from "./index.ts";
 import { StandardStrategy } from "./strategies/standard.ts";
 import { CloneStrategy } from "./strategies/clone.ts";
+import { RobocopyStrategy } from "./strategies/robocopy.ts";
 import { RsyncStrategy } from "./strategies/rsync.ts";
 import { validatePath } from "./validation.ts";
 import { setupRealTestContext } from "../../context/testing.ts";
@@ -102,6 +103,13 @@ describe("RsyncStrategy", () => {
   });
 });
 
+describe("RobocopyStrategy", () => {
+  it("name is robocopy", () => {
+    const strategy = new RobocopyStrategy();
+    expect(strategy.name).toBe("robocopy");
+  });
+});
+
 describe("detectCapabilities", () => {
   it("caches result", async () => {
     resetState();
@@ -136,6 +144,7 @@ describe("CopyService", () => {
         strategy.name === "clonefile" ||
         strategy.name === "clone" ||
         strategy.name === "rsync" ||
+        strategy.name === "robocopy" ||
         strategy.name === "standard";
       expect(isValidStrategy).toBe(true);
     } finally {
@@ -238,6 +247,7 @@ describe("validatePath", () => {
 
 describe("Platform-specific tests", () => {
   const isMacOS = process.platform === "darwin";
+  const isWindows = process.platform === "win32";
   let tempDir: string;
 
   beforeEach(async () => {
@@ -338,5 +348,85 @@ describe("Platform-specific tests", () => {
 
     const content = await readFile(join(destDir, "file.txt"), "utf-8");
     expect(content).toBe("rsync content");
+  });
+
+  it.skipIf(!isWindows)("RobocopyStrategy: checks robocopy availability on Windows", async () => {
+    const strategy = new RobocopyStrategy();
+    const isAvailable = await strategy.isAvailable();
+    // On Windows, robocopy should be available
+    expect(isAvailable).toBe(true);
+  });
+
+  it.skipIf(!isWindows)("RobocopyStrategy: copies file on Windows", async () => {
+    const strategy = new RobocopyStrategy();
+    const isAvailable = await strategy.isAvailable();
+
+    if (!isAvailable) {
+      return;
+    }
+
+    const srcFile = join(tempDir, "source.txt");
+    const destFile = join(tempDir, "dest", "source.txt");
+
+    await writeFile(srcFile, "test content for robocopy");
+    await strategy.copyFile(srcFile, destFile);
+
+    const content = await readFile(destFile, "utf-8");
+    expect(content).toBe("test content for robocopy");
+  });
+
+  it.skipIf(!isWindows)("RobocopyStrategy: copies directory on Windows", async () => {
+    const strategy = new RobocopyStrategy();
+    const isAvailable = await strategy.isAvailable();
+
+    if (!isAvailable) {
+      return;
+    }
+
+    const srcDir = join(tempDir, "source");
+    const destDir = join(tempDir, "dest");
+
+    await mkdir(srcDir);
+    await writeFile(join(srcDir, "file.txt"), "robocopy content");
+    await mkdir(join(srcDir, "nested"));
+    await writeFile(join(srcDir, "nested", "deep.txt"), "nested content");
+
+    await strategy.copyDirectory(srcDir, destDir);
+
+    const content = await readFile(join(destDir, "file.txt"), "utf-8");
+    expect(content).toBe("robocopy content");
+    const nestedContent = await readFile(join(destDir, "nested", "deep.txt"), "utf-8");
+    expect(nestedContent).toBe("nested content");
+  });
+
+  it.skipIf(!isWindows)("RobocopyStrategy: copies empty directories on Windows", async () => {
+    const strategy = new RobocopyStrategy();
+    const isAvailable = await strategy.isAvailable();
+
+    if (!isAvailable) {
+      return;
+    }
+
+    const srcDir = join(tempDir, "source");
+    const destDir = join(tempDir, "dest");
+
+    await mkdir(srcDir);
+    await mkdir(join(srcDir, "empty-subdir"));
+    await writeFile(join(srcDir, "file.txt"), "content");
+
+    await strategy.copyDirectory(srcDir, destDir);
+
+    const content = await readFile(join(destDir, "file.txt"), "utf-8");
+    expect(content).toBe("content");
+    // Verify empty directory was copied (/E flag)
+    const { stat } = await import("node:fs/promises");
+    const dirStat = await stat(join(destDir, "empty-subdir"));
+    expect(dirStat.isDirectory()).toBe(true);
+  });
+
+  it.skipIf(isWindows)("RobocopyStrategy: is not available on non-Windows", async () => {
+    const strategy = new RobocopyStrategy();
+    const isAvailable = await strategy.isAvailable();
+    expect(isAvailable).toBe(false);
   });
 });

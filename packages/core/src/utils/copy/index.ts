@@ -2,6 +2,7 @@ import type { CopyStrategy, CopyStrategyType } from "./types.ts";
 import {
   CloneStrategy,
   NativeCloneStrategy,
+  RobocopyStrategy,
   RsyncStrategy,
   StandardStrategy,
 } from "./strategies/index.ts";
@@ -9,19 +10,20 @@ import type { AppContext } from "../../context/index.ts";
 
 export type { CopyCapabilities, CopyStrategy, CopyStrategyType } from "./types.ts";
 export { detectCapabilities, resetCapabilitiesCache } from "./detector.ts";
-export { CloneStrategy, NativeCloneStrategy, RsyncStrategy, StandardStrategy };
+export { CloneStrategy, NativeCloneStrategy, RobocopyStrategy, RsyncStrategy, StandardStrategy };
 
 /**
  * CopyService manages copy operations with automatic strategy selection
  * and fallback handling.
  *
  * Strategy selection:
- * - File copy: Always uses Standard (Deno.copyFile) as it's fastest for individual files
+ * - File copy: Always uses Standard (runtime API) as it's fastest for individual files
  * - Directory copy:
  *   - macOS: NativeClone (clonefile FFI) > Clone (cp -c) > Rsync > Standard
  *   - Linux: Clone (cp --reflink=auto) > Rsync > Standard
+ *   - Windows: Robocopy (multi-threaded) > Standard
  *
- * The overhead of spawning external processes (cp, rsync) makes them slower
+ * The overhead of spawning external processes (cp, rsync, robocopy) makes them slower
  * for individual file copies, but they excel at bulk directory operations.
  */
 export class CopyService {
@@ -36,11 +38,13 @@ export class CopyService {
     // Priority order for directory copy:
     // macOS: native clone (clonefile) -> clone (cp -c) -> rsync -> standard
     // Linux: clone (cp --reflink) -> rsync -> standard
+    // Windows: robocopy (multi-threaded) -> standard
     // NativeCloneStrategy is only used when it supports directory cloning (macOS)
     this.directoryStrategies = [
       this.nativeCloneStrategy,
       new CloneStrategy(),
       new RsyncStrategy(),
+      new RobocopyStrategy(),
       this.standardStrategy,
     ];
   }

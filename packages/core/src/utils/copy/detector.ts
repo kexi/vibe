@@ -17,12 +17,13 @@ export async function detectCapabilities(
     return cachedCapabilities;
   }
 
-  const [cloneSupported, rsyncAvailable] = await Promise.all([
+  const [cloneSupported, rsyncAvailable, robocopyAvailable] = await Promise.all([
     detectCloneSupport(ctx),
     detectRsyncAvailable(ctx),
+    detectRobocopyAvailable(ctx),
   ]);
 
-  cachedCapabilities = { cloneSupported, rsyncAvailable };
+  cachedCapabilities = { cloneSupported, rsyncAvailable, robocopyAvailable };
   return cachedCapabilities;
 }
 
@@ -125,6 +126,30 @@ async function detectRsyncAvailable(ctx: AppContext): Promise<boolean> {
     });
 
     return result.success;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Detect if robocopy command is available (Windows only).
+ * robocopy /? returns exit code 16, but the process execution itself succeeds.
+ */
+async function detectRobocopyAvailable(ctx: AppContext): Promise<boolean> {
+  const os = ctx.runtime.build.os;
+  if (os !== "windows") {
+    return false;
+  }
+
+  try {
+    await ctx.runtime.process.run({
+      cmd: "robocopy",
+      args: ["/?"],
+      stderr: "null",
+      stdout: "null",
+    });
+    // robocopy /? returns exit code 16, but if we get here the command exists
+    return true;
   } catch {
     return false;
   }

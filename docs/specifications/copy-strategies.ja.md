@@ -1,6 +1,6 @@
 # コピー戦略
 
-vibeはディレクトリコピーにCopy-on-Write (CoW) を活用し、高速でディスク効率の良い操作を実現しています。
+vibeはディレクトリコピーにCopy-on-Write (CoW) やプラットフォームネイティブツールを活用し、高速でディスク効率の良い操作を実現しています。
 
 ## Copy-on-Write (CoW) とは？
 
@@ -13,12 +13,13 @@ CoWはファイルシステムレベルの最適化技術です。ファイル�
 
 ## 戦略の概要
 
-| 戦略            | 実装方式        | macOS (APFS)          | Linux (Btrfs/XFS)     |
-| --------------- | --------------- | --------------------- | --------------------- |
-| **NativeClone** | 直接FFI呼び出し | ファイル/ディレクトリ | ファイルのみ          |
-| **Clone**       | cpコマンド      | ファイル/ディレクトリ | ファイル/ディレクトリ |
-| **Rsync**       | rsyncコマンド   | フォールバック        | フォールバック        |
-| **Standard**    | Deno API        | 最終フォールバック    | 最終フォールバック    |
+| 戦略            | 実装方式         | macOS (APFS)          | Linux (Btrfs/XFS)     | Windows (NTFS)     |
+| --------------- | ---------------- | --------------------- | --------------------- | ------------------ |
+| **NativeClone** | 直接FFI呼び出し  | ファイル/ディレクトリ | ファイルのみ          | -                  |
+| **Clone**       | cpコマンド       | ファイル/ディレクトリ | ファイル/ディレクトリ | -                  |
+| **Rsync**       | rsyncコマンド    | フォールバック        | フォールバック        | -                  |
+| **Robocopy**    | robocopyコマンド | -                     | -                     | マルチスレッド     |
+| **Standard**    | ランタイムAPI    | 最終フォールバック    | 最終フォールバック    | 最終フォールバック |
 
 ## プラットフォーム別の優先順位
 
@@ -26,17 +27,26 @@ CoWはファイルシステムレベルの最適化技術です。ファイル�
 
 ```
 ディレクトリコピー: NativeClone → Clone → Rsync → Standard
-ファイルコピー: Standard (Deno.copyFile)
+ファイルコピー: Standard（ランタイムAPI）
 ```
 
 ### Linux (Btrfs/XFS)
 
 ```
 ディレクトリコピー: Clone → Rsync → Standard
-ファイルコピー: Standard (Deno.copyFile)
+ファイルコピー: Standard（ランタイムAPI）
 ```
 
 > **注意:** Linuxでは、`NativeClone`はディレクトリクローニングをサポートしていないためスキップされます。
+
+### Windows (NTFS)
+
+```
+ディレクトリコピー: Robocopy → Standard
+ファイルコピー: Standard（ランタイムAPI）
+```
+
+> **注意:** Windowsでは、CoW戦略（NativeClone、Clone）およびRsyncは利用できません。Robocopyが`/MT`フラグによるマルチスレッドコピーを提供します。
 
 ## 戦略の詳細
 
@@ -72,9 +82,26 @@ FFI経由でシステムコールを直接呼び出します。プロセス生�
 
 **実装ファイル:** `packages/core/src/utils/copy/strategies/rsync.ts`
 
+### Robocopy
+
+Windows組み込みの`robocopy`コマンドをマルチスレッドコピーで使用。Windowsのみで利用可能です。
+
+| フラグ       | 目的                                        |
+| ------------ | ------------------------------------------- |
+| `/E`         | 空のサブディレクトリを含めて再帰コピー      |
+| `/MT`        | マルチスレッドコピー（デフォルト8スレッド） |
+| `/COPY:DAT`  | データ、属性、タイムスタンプをコピー        |
+| `/DCOPY:DAT` | ディレクトリのタイムスタンプと属性をコピー  |
+
+> **注意:** データ損失を防ぐため、`/PURGE`と`/MIR`は意図的に使用していません。
+
+**終了コード:** robocopyは非標準の終了コードを使用します。0-7が成功、8以上がエラーを示します。
+
+**実装ファイル:** `packages/core/src/utils/copy/strategies/robocopy.ts`
+
 ### Standard
 
-Denoの標準API（`Deno.copyFile`）を使用。すべてのプラットフォームで動作する最終フォールバックです。
+ランタイムの組み込みコピーAPI（`node:fs/promises` の `cp()`）を使用。すべてのプラットフォームで動作する最終フォールバックです。
 
 **実装ファイル:** `packages/core/src/utils/copy/strategies/standard.ts`
 
@@ -82,18 +109,19 @@ Denoの標準API（`Deno.copyFile`）を使用。すべてのプラットフォ�
 
 CoWには互換性のあるファイルシステムが必要です。
 
-| プラットフォーム | サポート   | 非サポート |
-| ---------------- | ---------- | ---------- |
-| macOS            | APFS       | HFS+       |
-| Linux            | Btrfs, XFS | ext4       |
+| プラットフォーム | サポート   | 非サポート        |
+| ---------------- | ---------- | ----------------- |
+| macOS            | APFS       | HFS+              |
+| Linux            | Btrfs, XFS | ext4              |
+| Windows          | -          | NTFS（CoW非対応） |
 
-サポートされていないファイルシステムでは、Standard戦略が自動的にフォールバックとして使用されます。
+サポートされていないファイルシステムでは、Standard戦略が自動的にフォールバックとして使用されます。Windowsでは、CoWの代わりにRobocopyが主要戦略として使用されます。
 
 ## 権限要件
 
 ```bash
 --allow-ffi   # NativeClone戦略に必要
---allow-run   # Clone/Rsync戦略に必要（cp, rsyncコマンド）
+--allow-run   # Clone/Rsync/Robocopy戦略に必要（cp, rsync, robocopyコマンド）
 ```
 
 ## ファイル構成
@@ -113,6 +141,7 @@ packages/core/src/utils/copy/
     ├── native-clone.ts  # NativeClone戦略
     ├── clone.ts         # Clone戦略
     ├── rsync.ts         # Rsync戦略
+    ├── robocopy.ts      # Robocopy戦略（Windows）
     ├── standard.ts      # Standard戦略
     └── index.ts         # エクスポート
 ```
@@ -127,7 +156,8 @@ async getDirectoryStrategy(): Promise<CopyStrategy> {
   // 1. NativeCloneが利用可能でディレクトリクローニングをサポートしている場合は使用
   // 2. Cloneが利用可能な場合は使用
   // 3. Rsyncが利用可能な場合は使用
-  // 4. Standardにフォールバック
+  // 4. Robocopyが利用可能な場合は使用（Windows）
+  // 5. Standardにフォールバック
 }
 ```
 

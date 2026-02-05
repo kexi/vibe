@@ -1,7 +1,7 @@
 /**
  * Copy strategy type identifier
  */
-export type CopyStrategyType = "clonefile" | "clone" | "rsync" | "standard";
+export type CopyStrategyType = "clonefile" | "clone" | "rsync" | "robocopy" | "standard";
 
 /**
  * Interface for copy strategies
@@ -34,4 +34,6 @@ export interface CopyCapabilities {
   cloneSupported: boolean;
   /** Whether rsync command is available */
   rsyncAvailable: boolean;
+  /** Whether robocopy command is available (Windows) */
+  robocopyAvailable: boolean;
 }

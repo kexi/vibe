@@ -53,20 +53,24 @@ flowchart TD
     C -->|Yes| D[NativeCloneStrategy]
     C -->|No| E{rsync available?}
     E -->|Yes| F[RsyncStrategy]
-    E -->|No| G[StandardStrategy]
+    E -->|No| K{Windows?}
+    K -->|Yes| L[RobocopyStrategy]
+    K -->|No| G[StandardStrategy]
 
     D --> H[clonefile / FICLONE]
     F --> I[rsync -a]
+    L --> M[robocopy /E /MT]
     G --> J[recursive copy]
 ```
 
 ### 戦略選択
 
-| 戦略                | プラットフォーム                 | 説明                           |
-| ------------------- | -------------------------------- | ------------------------------ |
-| NativeCloneStrategy | macOS (APFS)、Linux (Btrfs, XFS) | Copy-on-Write による即時コピー |
-| RsyncStrategy       | Unix 系                          | rsync による効率的なコピー     |
-| StandardStrategy    | すべて                           | 再帰的なファイル単位コピー     |
+| 戦略                | プラットフォーム                 | 説明                                |
+| ------------------- | -------------------------------- | ----------------------------------- |
+| NativeCloneStrategy | macOS (APFS)、Linux (Btrfs, XFS) | Copy-on-Write による即時コピー      |
+| RsyncStrategy       | Unix 系                          | rsync による効率的なコピー          |
+| RobocopyStrategy    | Windows                          | robocopy によるマルチスレッドコピー |
+| StandardStrategy    | すべて                           | 再帰的なファイル単位コピー          |
 
 ## クリーン戦略
 

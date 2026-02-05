@@ -53,20 +53,24 @@ flowchart TD
     C -->|Yes| D[NativeCloneStrategy]
     C -->|No| E{rsync available?}
     E -->|Yes| F[RsyncStrategy]
-    E -->|No| G[StandardStrategy]
+    E -->|No| K{Windows?}
+    K -->|Yes| L[RobocopyStrategy]
+    K -->|No| G[StandardStrategy]
 
     D --> H[clonefile / FICLONE]
     F --> I[rsync -a]
+    L --> M[robocopy /E /MT]
     G --> J[recursive copy]
 ```
 
 ### Strategy Selection
 
-| Strategy            | Platform                         | Description                           |
-| ------------------- | -------------------------------- | ------------------------------------- |
-| NativeCloneStrategy | macOS (APFS), Linux (Btrfs, XFS) | Uses Copy-on-Write for instant copies |
-| RsyncStrategy       | Unix-like                        | Uses rsync for efficient copying      |
-| StandardStrategy    | All                              | Recursive file-by-file copy           |
+| Strategy            | Platform                         | Description                               |
+| ------------------- | -------------------------------- | ----------------------------------------- |
+| NativeCloneStrategy | macOS (APFS), Linux (Btrfs, XFS) | Uses Copy-on-Write for instant copies     |
+| RsyncStrategy       | Unix-like                        | Uses rsync for efficient copying          |
+| RobocopyStrategy    | Windows                          | Uses robocopy with multi-threaded copying |
+| StandardStrategy    | All                              | Recursive file-by-file copy               |
 
 ## Clean Strategy
 
