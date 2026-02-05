@@ -10,8 +10,6 @@
     "fast-glob": "npm:fast-glob@^3.3.3"
   },
   "publish": {
-    "exclude": [
-      "!packages/core/src/version.ts"
-    ]
+    "exclude": ["!packages/core/src/version.ts"]
   }
 }
