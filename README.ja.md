@@ -59,6 +59,16 @@ $ vibe start feat/new-feature
 - **既存ブランチ**: `--base`オプションは警告と共に無視される
 - **無効なベース**: 指定された参照が存在しない場合はエラーで終了
 
+デフォルトでは、`--base`はupstreamトラッキングを**設定しません**。明示的にupstreamを設定するには`--track`を使用します：
+
+```bash
+# upstreamトラッキングなし（デフォルト）
+vibe start feat/new-feature --base origin/develop
+
+# upstreamトラッキングあり
+vibe start feat/new-feature --base origin/develop --track
+```
+
 ### クリーンアップ動作
 
 `vibe clean` は、worktreeディレクトリを同期的に削除する代わりに移動する高速削除戦略を使用します：

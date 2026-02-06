@@ -26,6 +26,7 @@ interface StartOptions extends OutputOptions {
   dryRun?: boolean;
   base?: string;
   baseFromEquals?: boolean;
+  track?: boolean;
 }
 
 interface ConfigAndHooksOptions {
@@ -55,6 +56,7 @@ export async function startCommand(
     quiet = false,
     base,
     baseFromEquals = false,
+    track = false,
   } = options;
   const outputOpts: OutputOptions = { verbose, quiet };
 
@@ -176,6 +178,7 @@ export async function startCommand(
       worktreePath,
       branchExists: validation.branchExists,
       baseRef: baseRef && !validation.branchExists ? baseRef : undefined,
+      track,
     };
 
     if (dryRun) {

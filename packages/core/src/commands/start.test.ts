@@ -307,9 +307,114 @@ describe("startCommand", () => {
     consoleErrorSpy.mockRestore();
 
     const hasBaseCommand = stderrOutput.some(
-      (line) => line.includes("git worktree add -b feat/base-branch") && line.includes(" main"),
+      (line) =>
+        line.includes("git worktree add -b feat/base-branch") &&
+        line.includes("--no-track") &&
+        line.includes(" main"),
     );
     expect(hasBaseCommand).toBe(true);
+    expect(exitCode).toBeNull();
+  });
+
+  it("dry-run uses --track flag when track option is true", async () => {
+    let exitCode: number | null = null;
+    const stderrOutput: string[] = [];
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      stderrOutput.push(args.map(String).join(" "));
+    });
+
+    const ctx = createMockContext({
+      process: {
+        run: (opts) => {
+          const args = opts.args as string[];
+          const isRevParseShowToplevel =
+            args.includes("rev-parse") && args.includes("--show-toplevel");
+          if (isRevParseShowToplevel) {
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new TextEncoder().encode("/tmp/mock-repo\n"),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+          const isRevParseVerify = args.includes("rev-parse") && args.includes("--verify");
+          if (isRevParseVerify) {
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new TextEncoder().encode("abc123\n"),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+          const isWorktreeList = args.includes("worktree") && args.includes("list");
+          if (isWorktreeList) {
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new TextEncoder().encode(
+                "worktree /tmp/mock-repo\nHEAD abc123\nbranch refs/heads/main\n\n",
+              ),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+          const isShowRefVerify = args.includes("show-ref") && args.includes("--verify");
+          if (isShowRefVerify) {
+            return Promise.resolve({
+              code: 1,
+              success: false,
+              stdout: new Uint8Array(),
+              stderr: new TextEncoder().encode("fatal: bad ref\n"),
+            } as RunResult);
+          }
+          return Promise.resolve({
+            code: 0,
+            success: true,
+            stdout: new Uint8Array(),
+            stderr: new Uint8Array(),
+          } as RunResult);
+        },
+      },
+      fs: {
+        readTextFile: () => Promise.reject(new Error("File not found")),
+        stat: () => Promise.reject(new Error("Not found")),
+      },
+      control: {
+        exit: ((code: number) => {
+          exitCode = code;
+        }) as never,
+        cwd: () => "/tmp/mock-repo",
+        chdir: () => {},
+        execPath: () => "/mock/exec",
+        args: [],
+      },
+      env: {
+        get: (key: string) => {
+          if (key === "HOME") return "/tmp/home";
+          return undefined;
+        },
+        set: () => {},
+        delete: () => {},
+        toObject: () => ({}),
+      },
+      errors: {
+        isNotFound: (error: unknown) =>
+          error instanceof Error &&
+          (error.message === "File not found" || error.message === "Not found"),
+      },
+    });
+
+    await startCommand("feat/tracked-branch", { dryRun: true, base: "main", track: true }, ctx);
+
+    consoleErrorSpy.mockRestore();
+
+    const hasTrackCommand = stderrOutput.some(
+      (line) =>
+        line.includes("git worktree add -b feat/tracked-branch") &&
+        line.includes("--track") &&
+        !line.includes("--no-track") &&
+        line.includes(" main"),
+    );
+    expect(hasTrackCommand).toBe(true);
     expect(exitCode).toBeNull();
   });
 

@@ -92,6 +92,69 @@ describe("start command", () => {
       // Verify worktree includes the base branch commit
       const markerPath = join(worktreePath, "BASE_MARKER.txt");
       expect(existsSync(markerPath)).toBe(true);
+
+      // Verify upstream is NOT set (default --no-track behavior)
+      const branchOutput = execFileSync("git", ["branch", "-vv"], {
+        cwd: worktreePath,
+        encoding: "utf-8",
+      });
+      const currentBranchLine = branchOutput.split("\n").find((line) => line.startsWith("*"));
+      expect(currentBranchLine).toBeDefined();
+      expect(currentBranchLine).not.toContain("[base-branch]");
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test("Create worktree with base branch and --track", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+
+    // Create a base branch with a unique commit
+    execFileSync("git", ["checkout", "-b", "base-branch-track"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+    writeFileSync(join(repoPath, "TRACK_MARKER.txt"), "track\n");
+    execFileSync("git", ["add", "TRACK_MARKER.txt"], { cwd: repoPath, stdio: "pipe" });
+    execFileSync("git", ["commit", "-m", "Add track marker"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+    execFileSync("git", ["checkout", "main"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
+    try {
+      // Run vibe start with --base and --track
+      await runner.spawn(["start", "feat/tracked", "--base", "base-branch-track", "--track"]);
+      await runner.waitForExit();
+
+      const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
+
+      const parentDir = dirname(repoPath);
+      const repoName = basename(repoPath);
+      const worktreePath = `${parentDir}/${repoName}-feat-tracked`;
+
+      await assertDirectoryExists(worktreePath);
+
+      // Verify worktree includes the base branch commit
+      const markerPath = join(worktreePath, "TRACK_MARKER.txt");
+      expect(existsSync(markerPath)).toBe(true);
+
+      // Verify upstream IS set (--track behavior)
+      const branchOutput = execFileSync("git", ["branch", "-vv"], {
+        cwd: worktreePath,
+        encoding: "utf-8",
+      });
+      const currentBranchLine = branchOutput.split("\n").find((line) => line.startsWith("*"));
+      expect(currentBranchLine).toBeDefined();
+      expect(currentBranchLine).toContain("[base-branch-track]");
     } finally {
       runner.dispose();
     }
