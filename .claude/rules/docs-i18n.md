@@ -37,11 +37,12 @@ When modifying any `.mdx` file under `packages/docs/src/content/docs/`, **always
 
 ## Path Mapping
 
-| English | Japanese |
-|---------|----------|
+| English                                     | Japanese                                       |
+| ------------------------------------------- | ---------------------------------------------- |
 | `packages/docs/src/content/docs/<path>.mdx` | `packages/docs/src/content/docs/ja/<path>.mdx` |
 
 Examples:
+
 - `changelog.mdx` ↔ `ja/changelog.mdx`
 - `commands/start.mdx` ↔ `ja/commands/start.mdx`
 - `configuration/hooks.mdx` ↔ `ja/configuration/hooks.mdx`
