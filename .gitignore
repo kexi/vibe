@@ -1,6 +1,6 @@
 # Compiled binary
-vibe
-vibe-e2e
+/vibe
+/vibe-e2e
 
 # Auto-generated files
 packages/core/src/version.ts
