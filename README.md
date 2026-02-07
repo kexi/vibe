@@ -10,12 +10,15 @@ A super fast CLI tool for easy Git Worktree management.
 
 ## Usage
 
-| Command                              | Description                                                                       |
-| ------------------------------------ | --------------------------------------------------------------------------------- |
-| `vibe start <branch> [--base <ref>]` | Create a worktree with a new or existing branch (idempotent)                      |
-| `vibe clean`                         | Delete current worktree and return to main (prompts if uncommitted changes exist) |
-| `vibe trust`                         | Trust `.vibe.toml` and `.vibe.local.toml` files                                   |
-| `vibe untrust`                       | Untrust `.vibe.toml` and `.vibe.local.toml` files                                 |
+| Command                         | Description                                                                       |
+| ------------------------------- | --------------------------------------------------------------------------------- |
+| `vibe start <branch> [options]` | Create a worktree with a new or existing branch (idempotent)                      |
+| `vibe clean [options]`          | Delete current worktree and return to main (prompts if uncommitted changes exist) |
+| `vibe trust`                    | Trust `.vibe.toml` and `.vibe.local.toml` files                                   |
+| `vibe untrust`                  | Untrust `.vibe.toml` and `.vibe.local.toml` files                                 |
+| `vibe verify`                   | Verify trust status and hash history                                              |
+| `vibe config`                   | Show current settings                                                             |
+| `vibe upgrade [options]`        | Check for updates and show upgrade instructions                                   |
 
 ### Examples
 
@@ -59,6 +62,16 @@ The `--base` option specifies the starting point for a new branch:
 - **Existing branch**: The `--base` option is ignored with a warning
 - **Invalid base**: Exits with an error if the specified ref doesn't exist
 
+By default, `--base` does **not** set up upstream tracking. Use `--track` to explicitly set the upstream:
+
+```bash
+# No upstream tracking (default)
+vibe start feat/new-feature --base origin/develop
+
+# With upstream tracking
+vibe start feat/new-feature --base origin/develop --track
+```
+
 ### Cleanup Behavior
 
 `vibe clean` uses a fast removal strategy that moves the worktree directory instead of deleting it synchronously:
@@ -71,13 +84,38 @@ This approach allows `vibe clean` to complete instantly regardless of worktree s
 
 ### Global Options
 
-| Option            | Description                                       |
-| ----------------- | ------------------------------------------------- |
-| `-h`, `--help`    | Show help message                                 |
-| `-v`, `--version` | Show version information                          |
-| `-V`, `--verbose` | Show detailed output                              |
-| `-q`, `--quiet`   | Suppress non-essential output                     |
-| `-n`, `--dry-run` | Preview operations without executing (start only) |
+| Option            | Description                   |
+| ----------------- | ----------------------------- |
+| `-h`, `--help`    | Show help message             |
+| `-v`, `--version` | Show version information      |
+| `-V`, `--verbose` | Show detailed output          |
+| `-q`, `--quiet`   | Suppress non-essential output |
+
+### Command Options
+
+#### Start Options
+
+| Option            | Description                                        |
+| ----------------- | -------------------------------------------------- |
+| `--base <ref>`    | Base branch/commit for new branch                  |
+| `--track`         | Set upstream tracking when using `--base`          |
+| `--no-hooks`      | Skip pre-start and post-start hooks                |
+| `--no-copy`       | Skip copying files and directories                 |
+| `-n`, `--dry-run` | Show what would be executed without making changes |
+
+#### Clean Options
+
+| Option            | Description                                   |
+| ----------------- | --------------------------------------------- |
+| `-f`, `--force`   | Skip confirmation prompts                     |
+| `--delete-branch` | Delete the branch after removing the worktree |
+| `--keep-branch`   | Keep the branch after removing the worktree   |
+
+#### Upgrade Options
+
+| Option    | Description                                            |
+| --------- | ------------------------------------------------------ |
+| `--check` | Check for updates without showing upgrade instructions |
 
 ## Installation
 
@@ -96,8 +134,6 @@ brew install kexi/tap/vibe-beta
 ```
 
 > ⚠️ **Warning**: Beta versions are built from the `develop` branch and may contain unstable features. Use for testing only.
->
-> **Note**: You cannot install both `vibe` and `vibe-beta` simultaneously.
 
 ### npm (Node.js 18+)
 
