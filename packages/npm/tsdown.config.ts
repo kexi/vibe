@@ -13,7 +13,7 @@ export default defineConfig({
   outDir: "dist",
   external: [/^node:.*/, "zod", "@kexi/vibe-native"],
   noExternal: [/^@jsr\/.*/],
-  inlineOnly: [/^@jsr\/.*/],
+  inlineOnly: [/./],
   outExtensions: () => ({
     js: ".js",
   }),
