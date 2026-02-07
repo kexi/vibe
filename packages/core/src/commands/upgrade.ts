@@ -192,7 +192,7 @@ async function detectInstallMethod(ctx: AppContext): Promise<InstallMethod> {
 function getUpgradeCommand(method: InstallMethod): string | null {
   switch (method) {
     case "homebrew":
-      return "brew upgrade vibe";
+      return "brew upgrade kexi/tap/vibe";
     case "jsr":
       return "deno install -A --global jsr:@kexi/vibe";
     case "deb":

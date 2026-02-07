@@ -19,7 +19,7 @@ export const UpgradeCommand: React.FC = () => {
     { text: "A new version is available: 0.13.0", color: COLORS.success, delay: 12 },
     { text: "", delay: 18 },
     { text: "To upgrade:", color: COLORS.text, delay: 24 },
-    { text: "  brew upgrade vibe", color: COLORS.info, delay: 30 },
+    { text: "  brew upgrade kexi/tap/vibe", color: COLORS.info, delay: 30 },
     { text: "", delay: 36 },
     { text: "Release notes:", color: COLORS.text, delay: 42 },
     { text: "  https://github.com/kexi/vibe/releases/tag/v0.13.0", color: COLORS.info, delay: 48 },
