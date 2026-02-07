@@ -68,12 +68,12 @@ pnpm run get-version
 
 Calculate the new version based on the argument:
 
-| Argument | Current → New    | Description              |
-| -------- | ---------------- | ------------------------ |
+| Argument | Current → New   | Description              |
+| -------- | --------------- | ------------------------ |
 | `patch`  | 0.12.7 → 0.12.8 | Bug fix                  |
 | `minor`  | 0.12.7 → 0.13.0 | New feature (compatible) |
 | `major`  | 0.12.7 → 1.0.0  | Breaking change          |
-| `X.Y.Z`  | → X.Y.Z          | Explicit version         |
+| `X.Y.Z`  | → X.Y.Z         | Explicit version         |
 
 #### When argument is omitted (auto-suggest)
 
@@ -91,7 +91,7 @@ Analyze commit messages and determine version type using these rules:
 
 | Pattern                                                         | Version Type | Priority |
 | --------------------------------------------------------------- | ------------ | -------- |
-| `BREAKING CHANGE:` or `!:` (e.g., `feat!:`)                    | **major**    | Highest  |
+| `BREAKING CHANGE:` or `!:` (e.g., `feat!:`)                     | **major**    | Highest  |
 | `feat:` or `feat(...):`                                         | **minor**    | Medium   |
 | `fix:`, `perf:`, `refactor:`, `docs:`, `chore:`, `test:`, `ci:` | **patch**    | Low      |
 
@@ -466,22 +466,22 @@ Example: `GitHub: 7tsuno → Twitter: @7_tsuno` → Use `@7_tsuno` for GitHub us
 
 **Error handling:**
 
-| Scenario                                       | Action                                                                              |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------ |
-| No previous tag exists                         | Skip mention feature                                                                |
-| GitHub API call fails                          | Try CLAUDE.md fallback; if that also fails, warn and continue without mentions       |
-| 0 contributors                                 | Continue without mentions                                                            |
-| No Twitter username from either API or CLAUDE.md | Use template without mentions                                                       |
+| Scenario                                         | Action                                                                         |
+| ------------------------------------------------ | ------------------------------------------------------------------------------ |
+| No previous tag exists                           | Skip mention feature                                                           |
+| GitHub API call fails                            | Try CLAUDE.md fallback; if that also fails, warn and continue without mentions |
+| 0 contributors                                   | Continue without mentions                                                      |
+| No Twitter username from either API or CLAUDE.md | Use template without mentions                                                  |
 
 #### 7.4.3 Generate Twitter Post Template
 
 **Mention handling rules:**
 
-| Number of mentions    | Action                                |
-| --------------------- | ------------------------------------- |
-| 0                     | Use template without mentions         |
-| 1-2 (~50 chars or less) | Include in main tweet               |
-| 3 or more             | Separate as a reply tweet             |
+| Number of mentions      | Action                        |
+| ----------------------- | ----------------------------- |
+| 0                       | Use template without mentions |
+| 1-2 (~50 chars or less) | Include in main tweet         |
+| 3 or more               | Separate as a reply tweet     |
 
 **Required elements:**
 
@@ -556,13 +556,13 @@ git push origin --delete release/vX.Y.Z
 
 ## Safety Checks
 
-| Check               | Condition                        | On Failure       |
-| -------------------- | -------------------------------- | ---------------- |
-| Clean working tree   | No uncommitted changes           | **Abort**        |
-| Correct branch       | On develop branch                | Warn & confirm   |
-| Remote sync          | In sync with origin/develop      | Warn & confirm   |
-| Version format       | Semantic versioning compliant    | **Abort**        |
-| Tag duplicate        | Tag does not already exist       | **Abort**        |
+| Check              | Condition                     | On Failure     |
+| ------------------ | ----------------------------- | -------------- |
+| Clean working tree | No uncommitted changes        | **Abort**      |
+| Correct branch     | On develop branch             | Warn & confirm |
+| Remote sync        | In sync with origin/develop   | Warn & confirm |
+| Version format     | Semantic versioning compliant | **Abort**      |
+| Tag duplicate      | Tag does not already exist    | **Abort**      |
 
 ---
 
