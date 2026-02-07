@@ -15,6 +15,10 @@
  */
 
 import { readFile, writeFile, stat } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 const ROOT_PACKAGE_JSON = "package.json";
 
@@ -40,6 +44,7 @@ async function readJsonFile<T>(path: string): Promise<T> {
 async function writeJsonFile(path: string, data: unknown): Promise<void> {
   const content = JSON.stringify(data, null, 2) + "\n";
   await writeFile(path, content, "utf-8");
+  await execFileAsync("npx", ["prettier", "--write", path]);
 }
 
 async function fileExists(path: string): Promise<boolean> {
