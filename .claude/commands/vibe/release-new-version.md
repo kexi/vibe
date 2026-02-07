@@ -82,7 +82,7 @@ Analyze commit history since the last release and suggest an appropriate version
 **1. Get commit history**
 
 ```bash
-git log $(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)..HEAD --oneline
+git log $(gh release list --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || git rev-list --max-parents=0 HEAD)..HEAD --oneline
 ```
 
 **2. Analysis based on Conventional Commits**
@@ -345,7 +345,7 @@ git pull origin main
 Get changes since the last release:
 
 ```bash
-git log $(git describe --tags --abbrev=0)..HEAD --pretty=format:"- %s"
+git log $(gh release list --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName')..HEAD --pretty=format:"- %s"
 ```
 
 **Important: Only include end-user-facing changes**
@@ -435,7 +435,7 @@ Get contributors since the last release:
 
 ```bash
 # Get previous tag
-PREV_TAG=$(git describe --tags --abbrev=0)
+PREV_TAG=$(gh release list --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName')
 
 # Get repository owner
 REPO_OWNER=$(gh repo view --json owner --jq '.owner.login')
