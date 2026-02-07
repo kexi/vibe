@@ -32,6 +32,7 @@ const parseArgsOptions: ParseArgsConfig["options"] = {
   "keep-branch": { type: "boolean" },
   check: { type: "boolean" },
   base: { type: "string" },
+  track: { type: "boolean" },
 };
 
 const HELP_TEXT = `vibe - git worktree helper
@@ -64,6 +65,7 @@ Global Options:
 Command Options:
   --reuse           Use existing branch instead of creating a new one (start)
   --base <ref>      Base branch/commit for new branch (start)
+  --track           Set upstream tracking when using --base (start)
   --no-hooks        Skip pre-start and post-start hooks (start)
   --no-copy         Skip copying files and directories (start)
   -n, --dry-run     Show what would be executed without making changes (start)
@@ -161,6 +163,7 @@ async function main(): Promise<void> {
       const base =
         typeof args.base === "string" ? args.base : args.base === undefined ? undefined : "";
       const baseFromEquals = rawArgs.some((arg) => arg.startsWith("--base="));
+      const track = args.track === true;
       await startCommand(branchName, {
         reuse,
         noHooks,
@@ -170,6 +173,7 @@ async function main(): Promise<void> {
         quiet,
         base,
         baseFromEquals,
+        track,
       });
       break;
     }

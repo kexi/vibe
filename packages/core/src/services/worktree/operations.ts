@@ -19,6 +19,8 @@ export interface CreateWorktreeOptions {
   branchExists: boolean;
   /** Optional base reference for creating a new branch */
   baseRef?: string;
+  /** Whether to set upstream tracking when using baseRef (default: false) */
+  track?: boolean;
 }
 
 /**
@@ -40,12 +42,16 @@ export async function createWorktree(
   options: CreateWorktreeOptions,
   ctx: AppContext = getGlobalContext(),
 ): Promise<void> {
-  const { branchName, worktreePath, branchExists, baseRef } = options;
+  const { branchName, worktreePath, branchExists, baseRef, track } = options;
 
   if (branchExists) {
     await runGitCommand(["worktree", "add", worktreePath, branchName], ctx);
   } else if (baseRef) {
-    await runGitCommand(["worktree", "add", "-b", branchName, worktreePath, baseRef], ctx);
+    const trackFlag = track ? "--track" : "--no-track";
+    await runGitCommand(
+      ["worktree", "add", "-b", branchName, trackFlag, worktreePath, baseRef],
+      ctx,
+    );
   } else {
     await runGitCommand(["worktree", "add", "-b", branchName, worktreePath], ctx);
   }
@@ -73,13 +79,14 @@ export async function removeWorktree(
  * (for dry-run logging)
  */
 export function getCreateWorktreeCommand(options: CreateWorktreeOptions): string {
-  const { branchName, worktreePath, branchExists, baseRef } = options;
+  const { branchName, worktreePath, branchExists, baseRef, track } = options;
 
   if (branchExists) {
     return `git worktree add '${worktreePath}' ${branchName}`;
   }
   if (baseRef) {
-    return `git worktree add -b ${branchName} '${worktreePath}' ${baseRef}`;
+    const trackFlag = track ? "--track" : "--no-track";
+    return `git worktree add -b ${branchName} ${trackFlag} '${worktreePath}' ${baseRef}`;
   }
   return `git worktree add -b ${branchName} '${worktreePath}'`;
 }

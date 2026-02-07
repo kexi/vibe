@@ -59,6 +59,16 @@ The `--base` option specifies the starting point for a new branch:
 - **Existing branch**: The `--base` option is ignored with a warning
 - **Invalid base**: Exits with an error if the specified ref doesn't exist
 
+By default, `--base` does **not** set up upstream tracking. Use `--track` to explicitly set the upstream:
+
+```bash
+# No upstream tracking (default)
+vibe start feat/new-feature --base origin/develop
+
+# With upstream tracking
+vibe start feat/new-feature --base origin/develop --track
+```
+
 ### Cleanup Behavior
 
 `vibe clean` uses a fast removal strategy that moves the worktree directory instead of deleting it synchronously:
