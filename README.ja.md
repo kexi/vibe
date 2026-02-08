@@ -14,6 +14,7 @@ Git Worktreeを簡単かつ超高速に管理するCLIツール。
 | ------------------------------- | ------------------------------------------------------------------------ |
 | `vibe start <branch> [options]` | 新規または既存ブランチでworktreeを作成（冪等）                           |
 | `vibe clean [options]`          | 現在のworktreeを削除してメインに戻る（未コミットの変更がある場合は確認） |
+| `vibe home`                     | Worktreeを削除せずにメインに戻る                                         |
 | `vibe trust`                    | `.vibe.toml`と`.vibe.local.toml`ファイルを信頼登録                       |
 | `vibe untrust`                  | `.vibe.toml`と`.vibe.local.toml`ファイルの信頼を解除                     |
 | `vibe verify`                   | 信頼ステータスとハッシュ履歴を検証                                       |
@@ -34,6 +35,9 @@ vibe start feat/new-feature --base main
 
 # 作業完了後、worktreeを削除
 vibe clean
+
+# Worktreeを削除せずにメインに戻る
+vibe home
 ```
 
 ### インタラクティブプロンプト
