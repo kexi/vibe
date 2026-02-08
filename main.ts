@@ -6,6 +6,7 @@ import { trustCommand } from "./packages/core/src/commands/trust.ts";
 import { untrustCommand } from "./packages/core/src/commands/untrust.ts";
 import { verifyCommand } from "./packages/core/src/commands/verify.ts";
 import { configCommand } from "./packages/core/src/commands/config.ts";
+import { jumpCommand } from "./packages/core/src/commands/jump.ts";
 import { upgradeCommand } from "./packages/core/src/commands/upgrade.ts";
 import { BUILD_INFO } from "./packages/core/src/version.ts";
 import { initRuntime, runtime } from "./packages/core/src/runtime/index.ts";
@@ -50,6 +51,7 @@ Installation:
 
 Usage:
   vibe start <branch-name> [options]  Create a new worktree with the given branch
+  vibe jump <branch-name> [options]   Jump to an existing worktree by branch name
   vibe clean [options]                Remove current worktree and return to main
   vibe home                           Return to main worktree without removing current
   vibe trust                          Trust .vibe.toml in current repository
@@ -90,6 +92,7 @@ Examples:
   vibe start feat/new-feature
   vibe start feat/existing --reuse
   vibe start feat/new-feature --base main
+  vibe jump feat/new-feature
   vibe clean
   vibe home
 `;
@@ -178,6 +181,13 @@ async function main(): Promise<void> {
         baseFromEquals,
         track,
       });
+      break;
+    }
+    case "jump": {
+      const branchName = String(positionals[1] ?? "");
+      const verbose = args.verbose === true;
+      const quiet = args.quiet === true;
+      await jumpCommand(branchName, { verbose, quiet });
       break;
     }
     case "clean": {

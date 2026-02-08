@@ -1,20 +1,20 @@
 /**
- * Escape a string for safe use inside single quotes in shell commands.
+ * Escape a value for use inside single-quoted shell strings.
  *
- * The technique closes the current single-quoted string, appends an escaped
- * single quote (\'), then reopens the single-quoted string:
- *   it's  ->  it'\''s
+ * Replaces single quotes with the POSIX-compliant sequence '\''
+ * which ends the current single-quoted string, adds an escaped
+ * literal quote, and reopens a new single-quoted string.
  */
-export function escapeForShellSingleQuote(value: string): string {
+export function shellEscape(value: string): string {
   return value.replace(/'/g, "'\\''");
 }
 
 /**
- * Build a shell `cd` command with the path safely single-quoted.
+ * Format a shell cd command with proper escaping.
  *
- * This is used to emit commands that will be eval'd by the `.vibedev`
- * shell wrapper, so the path MUST be escaped to prevent injection.
+ * The output is intended to be eval'd by the shell wrapper function,
+ * so paths must be properly escaped to prevent shell injection.
  */
-export function cdCommand(path: string): string {
-  return `cd '${escapeForShellSingleQuote(path)}'`;
+export function formatCdCommand(path: string): string {
+  return `cd '${shellEscape(path)}'`;
 }

