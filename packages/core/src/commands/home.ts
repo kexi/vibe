@@ -1,5 +1,5 @@
 import { getMainWorktreePath, isInsideWorktree, isMainWorktree } from "../utils/git.ts";
-import { log, type OutputOptions, verboseLog } from "../utils/output.ts";
+import { errorLog, log, type OutputOptions, verboseLog } from "../utils/output.ts";
 import { escapeShellPath } from "../utils/shell.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
 
@@ -16,7 +16,7 @@ export async function homeCommand(
   try {
     const insideWorktree = await isInsideWorktree(ctx);
     if (!insideWorktree) {
-      console.error("Error: Not inside a git repository.");
+      errorLog("Error: Not inside a git repository.", outputOpts);
       runtime.control.exit(1);
       return;
     }
@@ -34,7 +34,7 @@ export async function homeCommand(
     console.log(`cd '${escapeShellPath(mainPath)}'`);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`Error: ${errorMessage}`);
+    errorLog(`Error: ${errorMessage}`, outputOpts);
     runtime.control.exit(1);
   }
 }

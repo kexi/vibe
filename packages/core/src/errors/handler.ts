@@ -5,6 +5,7 @@
  */
 
 import { type AppContext, getGlobalContext } from "../context/index.ts";
+import { DIM, RED, YELLOW, colorize } from "../utils/ansi.ts";
 import { ErrorSeverity, HookExecutionError, UserCancelledError, VibeError } from "./index.ts";
 
 /**
@@ -40,7 +41,7 @@ export function handleError(
   // Handle DOMException timeout errors
   if (error instanceof DOMException && error.name === "TimeoutError") {
     if (!quiet) {
-      console.error("Error: Request timed out.");
+      console.error(colorize(RED, "Error: Request timed out."));
       console.error("Please check your network connection and try again.");
     }
     return 1;
@@ -49,12 +50,11 @@ export function handleError(
   // Handle generic errors
   const errorMessage = error instanceof Error ? error.message : String(error);
   if (!quiet) {
-    console.error(`Error: ${errorMessage}`);
+    console.error(colorize(RED, `Error: ${errorMessage}`));
   }
 
   if (verbose && error instanceof Error && error.stack) {
-    console.error("\nStack trace:");
-    console.error(error.stack);
+    console.error(colorize(DIM, `\nStack trace:\n${error.stack}`));
   }
 
   return 1;
@@ -77,20 +77,21 @@ function handleVibeError(error: VibeError, options: { verbose: boolean; quiet: b
   // HookExecutionError - warning, continue
   if (error instanceof HookExecutionError) {
     if (!quiet) {
-      console.error(`Warning: ${error.message}`);
+      console.error(colorize(YELLOW, `Warning: ${error.message}`));
     }
     return error.exitCode;
   }
 
   // All other VibeErrors
   if (!quiet) {
-    const prefix = error.severity === ErrorSeverity.Warning ? "Warning" : "Error";
-    console.error(`${prefix}: ${error.message}`);
+    const isWarning = error.severity === ErrorSeverity.Warning;
+    const prefix = isWarning ? "Warning" : "Error";
+    const color = isWarning ? YELLOW : RED;
+    console.error(colorize(color, `${prefix}: ${error.message}`));
   }
 
   if (verbose && error.stack) {
-    console.error("\nStack trace:");
-    console.error(error.stack);
+    console.error(colorize(DIM, `\nStack trace:\n${error.stack}`));
   }
 
   return error.exitCode;

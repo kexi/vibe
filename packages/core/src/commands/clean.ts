@@ -13,7 +13,14 @@ import { loadVibeConfig } from "../utils/config.ts";
 import { type HookTrackerInfo, runHooks } from "../utils/hooks.ts";
 import { confirm } from "../utils/prompt.ts";
 import { ProgressTracker } from "../utils/progress.ts";
-import { type OutputOptions, successLog, verboseLog } from "../utils/output.ts";
+import {
+  errorLog,
+  log,
+  type OutputOptions,
+  successLog,
+  verboseLog,
+  warnLog,
+} from "../utils/output.ts";
 import { loadUserSettings } from "../utils/settings.ts";
 import {
   cleanupStaleTrash,
@@ -155,8 +162,9 @@ export async function cleanCommand(
 
     const isMain = await isMainWorktree(ctx);
     if (isMain) {
-      console.error(
+      errorLog(
         "Error: Cannot clean main worktree. Use this command from a secondary worktree.",
+        outputOpts,
       );
       runtime.control.exit(1);
     }
@@ -172,7 +180,7 @@ export async function cleanCommand(
           ctx,
         );
         if (!shouldContinue) {
-          console.error("Clean operation cancelled.");
+          log("Clean operation cancelled.", outputOpts);
           runtime.control.exit(0);
         }
         forceRemove = true;
@@ -237,7 +245,7 @@ export async function cleanCommand(
       runtime.control.chdir(mainPath);
     } catch {
       // mainPath doesn't exist - this is a fatal error
-      console.error(`Error: Cannot change to main worktree: ${mainPath}`);
+      errorLog(`Error: Cannot change to main worktree: ${mainPath}`, outputOpts);
       runtime.control.exit(1);
     }
 
@@ -290,8 +298,8 @@ export async function cleanCommand(
         successLog(`Branch ${currentBranch} has been deleted.`, outputOpts);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        console.error(`Warning: Could not delete branch ${currentBranch}: ${errorMessage}`);
-        console.error("You may need to delete it manually with: git branch -D " + currentBranch);
+        warnLog(`Warning: Could not delete branch ${currentBranch}: ${errorMessage}`);
+        warnLog("You may need to delete it manually with: git branch -D " + currentBranch);
       }
     }
 
@@ -299,7 +307,7 @@ export async function cleanCommand(
     console.log(`cd '${escapeShellPath(mainPath)}'`);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`Error: ${errorMessage}`);
+    errorLog(`Error: ${errorMessage}`, outputOpts);
     runtime.control.exit(1);
   }
 }

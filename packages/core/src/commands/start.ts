@@ -9,7 +9,14 @@ import { ProgressTracker } from "../utils/progress.ts";
 import { getCopyService } from "../utils/copy/index.ts";
 import { loadUserSettings } from "../utils/settings.ts";
 import { resolveWorktreePath } from "../utils/worktree-path.ts";
-import { log, type OutputOptions, verboseLog, warnLog } from "../utils/output.ts";
+import {
+  errorLog,
+  log,
+  logDryRun,
+  type OutputOptions,
+  verboseLog,
+  warnLog,
+} from "../utils/output.ts";
 import { escapeShellPath } from "../utils/shell.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
 import {
@@ -36,10 +43,6 @@ interface ConfigAndHooksOptions {
   dryRun?: boolean;
 }
 
-function logDryRun(message: string): void {
-  console.error(`[dry-run] ${message}`);
-}
-
 /**
  * Main start command - creates or navigates to a worktree
  */
@@ -63,22 +66,22 @@ export async function startCommand(
 
   const isBranchNameEmpty = !branchName;
   if (isBranchNameEmpty) {
-    console.error("Error: Branch name is required");
+    errorLog("Error: Branch name is required", outputOpts);
     runtime.control.exit(1);
   }
 
   const isBaseProvided = base !== undefined;
   if (isBaseProvided && typeof base !== "string") {
-    console.error("Error: --base requires a value");
+    errorLog("Error: --base requires a value", outputOpts);
     runtime.control.exit(1);
   }
   const baseRef = typeof base === "string" ? base.trim() : undefined;
   if (isBaseProvided && baseRef === "") {
-    console.error("Error: --base requires a value");
+    errorLog("Error: --base requires a value", outputOpts);
     runtime.control.exit(1);
   }
   if (isBaseProvided && baseRef && baseRef.startsWith("-") && !baseFromEquals) {
-    console.error("Error: --base requires a value");
+    errorLog("Error: --base requires a value", outputOpts);
     runtime.control.exit(1);
   }
 
@@ -106,13 +109,13 @@ export async function startCommand(
     }
 
     if (baseRef && validation.branchExists) {
-      console.error(`Warning: Branch '${branchName}' already exists; --base is ignored.`);
+      warnLog(`Warning: Branch '${branchName}' already exists; --base is ignored.`);
     }
 
     if (baseRef && !validation.branchExists) {
       const baseExists = await revisionExists(baseRef, ctx);
       if (!baseExists) {
-        console.error(`Error: Base '${baseRef}' not found`);
+        errorLog(`Error: Base '${baseRef}' not found`, outputOpts);
         runtime.control.exit(1);
       }
     }
@@ -213,7 +216,7 @@ export async function startCommand(
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`Error: ${errorMessage}`);
+    errorLog(`Error: ${errorMessage}`, outputOpts);
     runtime.control.exit(1);
   }
 }
@@ -242,7 +245,7 @@ async function handleExistingBranchWorktree(
   if (shouldNavigate) {
     console.log(`cd '${escapeShellPath(existingWorktreePath)}'`);
   } else {
-    console.error("Cancelled");
+    log("Cancelled", { quiet: false });
   }
   ctx.runtime.control.exit(0);
   return true;
@@ -347,7 +350,7 @@ async function handleDifferentBranchConflict(
   }
 
   // Cancel
-  console.error("Cancelled");
+  log("Cancelled", { quiet: false });
   ctx.runtime.control.exit(0);
   return false;
 }
