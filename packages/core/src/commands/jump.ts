@@ -4,6 +4,7 @@ import { log, type OutputOptions, verboseLog } from "../utils/output.ts";
 import { formatCdCommand } from "../utils/shell.ts";
 import { startCommand } from "./start.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
+import { fuzzyMatch, FUZZY_MATCH_MIN_LENGTH } from "../utils/fuzzy.ts";
 
 /** Word boundary delimiters in branch names */
 const WORD_BOUNDARY_CHARS = new Set(["/", "-", "_"]);
@@ -168,6 +169,27 @@ export async function jumpCommand(
     );
     if (handledSubCI) {
       return;
+    }
+
+    // Fuzzy match (subsequence matching)
+    const hasEnoughCharsForFuzzy = trimmedBranchName.length >= FUZZY_MATCH_MIN_LENGTH;
+    if (hasEnoughCharsForFuzzy) {
+      const fuzzyResults = worktrees
+        .map((w) => {
+          const result = fuzzyMatch(w.branch, trimmedBranchName);
+          if (!result) return null;
+          return { path: w.path, branch: w.branch, score: result.score };
+        })
+        .filter((r): r is NonNullable<typeof r> => r !== null)
+        .sort((a, b) => b.score - a.score);
+
+      const handledFuzzy = await handlePartialMatches(
+        fuzzyResults,
+        trimmedBranchName,
+        outputOpts,
+        ctx,
+      );
+      if (handledFuzzy) return;
     }
 
     // No match found
