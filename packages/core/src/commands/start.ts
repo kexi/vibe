@@ -212,7 +212,7 @@ export async function startCommand(
     if (dryRun) {
       logDryRun(`Would change directory to: ${worktreePath}`);
     } else {
-console.log(formatCdCommand(worktreePath));
+      console.log(formatCdCommand(worktreePath));
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -243,7 +243,7 @@ async function handleExistingBranchWorktree(
   );
 
   if (shouldNavigate) {
-console.log(formatCdCommand(existingWorktreePath));
+    console.log(formatCdCommand(existingWorktreePath));
   } else {
     log("Cancelled", { quiet: false });
   }
@@ -296,7 +296,7 @@ async function handleSameBranchWorktree(
     },
     ctx,
   );
-console.log(formatCdCommand(worktreePath));
+  console.log(formatCdCommand(worktreePath));
 }
 
 /**
@@ -345,7 +345,7 @@ async function handleDifferentBranchConflict(
       },
       ctx,
     );
-console.log(formatCdCommand(worktreePath));
+    console.log(formatCdCommand(worktreePath));
     return false;
   }
 
