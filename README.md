@@ -570,6 +570,17 @@ The following environment variables are available in all hook commands:
 | `VIBE_WORKTREE_PATH` | Absolute path to the created worktree    |
 | `VIBE_ORIGIN_PATH`   | Absolute path to the original repository |
 
+## Security
+
+Vibe follows security best practices for CLI tools:
+
+- **Shell injection prevention**: All shell output is escaped via `escapeShellPath()` to prevent command injection through crafted directory names
+- **No shell string execution**: Uses Node.js `spawn` instead of `exec`/`execSync` to avoid shell interpretation
+- **Configuration trust mechanism**: SHA-256 hash verification for `.vibe.toml` and `.vibe.local.toml` files
+- **Path validation**: All user-supplied paths are validated before use
+
+For the full security checklist, see [docs/SECURITY_CHECKLIST.md](docs/SECURITY_CHECKLIST.md).
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
