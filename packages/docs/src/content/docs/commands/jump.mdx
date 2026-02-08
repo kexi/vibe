@@ -39,10 +39,11 @@ vibe jump feat/debug -V
 
 `vibe jump` searches for worktrees in the following order:
 
-1. **Exact match**: If a worktree with the exact branch name exists, navigate to it immediately
-2. **Partial match (single)**: If exactly one worktree contains the input as a substring, navigate to it
-3. **Partial match (multiple)**: If multiple worktrees match, display an interactive selection prompt
-4. **No match**: Offer to create a new worktree using `vibe start`
+1. **Exact match** (case-sensitive): If a worktree with the exact branch name exists, navigate to it immediately
+2. **Exact match** (case-insensitive): If a worktree matches the branch name ignoring case, navigate to it
+3. **Partial match (single)**: If exactly one worktree contains the input as a substring, navigate to it
+4. **Partial match (multiple)**: If multiple worktrees match, display an interactive selection prompt. If no case-sensitive partial matches are found, a case-insensitive search is performed as a fallback
+5. **No match**: Offer to create a new worktree using `vibe start`
 
 ### Exact Match
 
@@ -78,6 +79,10 @@ No worktree found for 'feat/nonexistent'. Create one with 'vibe start'? (Y/n)
 ```
 
 If confirmed, `vibe start` is called to create the worktree.
+
+## Limitations
+
+- **Detached HEAD worktrees**: Worktrees in a detached HEAD state (not associated with a branch) are not included in the search. Only worktrees with a branch reference are searchable.
 
 ## Related
 

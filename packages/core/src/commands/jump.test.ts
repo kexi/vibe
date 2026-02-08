@@ -287,6 +287,115 @@ describe("jumpCommand", () => {
     expect(hasCancelled).toBe(true);
   });
 
+  it("trims whitespace from branch name", async () => {
+    const stdoutOutput: string[] = [];
+    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      stdoutOutput.push(args.map(String).join(" "));
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const exitCode = { value: null as number | null };
+    const ctx = createWorktreeContext(
+      [
+        { path: "/tmp/mock-repo", branch: "main" },
+        { path: "/tmp/mock-repo-feat-login", branch: "feat/login" },
+      ],
+      { exitCode },
+    );
+
+    await jumpCommand("  feat/login  ", {}, ctx);
+
+    consoleLogSpy.mockRestore();
+
+    expect(exitCode.value).toBeNull();
+    const hasCdOutput = stdoutOutput.some((line) =>
+      line.includes("cd '/tmp/mock-repo-feat-login'"),
+    );
+    expect(hasCdOutput).toBe(true);
+  });
+
+  it("treats whitespace-only branch name as empty", async () => {
+    const exitCode = { value: null as number | null };
+    const stderrOutput: string[] = [];
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      stderrOutput.push(args.map(String).join(" "));
+    });
+
+    const ctx = createMockContext({
+      control: {
+        exit: ((code: number) => {
+          exitCode.value = code;
+        }) as never,
+        cwd: () => "/tmp/mock-repo",
+        chdir: () => {},
+        execPath: () => "/mock/exec",
+        args: [],
+      },
+    });
+
+    await jumpCommand("   ", {}, ctx);
+
+    consoleErrorSpy.mockRestore();
+
+    expect(exitCode.value).toBe(1);
+    const hasErrorMessage = stderrOutput.some((line) => line.includes("Branch name is required"));
+    expect(hasErrorMessage).toBe(true);
+  });
+
+  it("matches case-insensitively for exact match", async () => {
+    const stdoutOutput: string[] = [];
+    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      stdoutOutput.push(args.map(String).join(" "));
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const exitCode = { value: null as number | null };
+    const ctx = createWorktreeContext(
+      [
+        { path: "/tmp/mock-repo", branch: "main" },
+        { path: "/tmp/mock-repo-feat-login", branch: "feat/login" },
+      ],
+      { exitCode },
+    );
+
+    await jumpCommand("FEAT/LOGIN", {}, ctx);
+
+    consoleLogSpy.mockRestore();
+
+    expect(exitCode.value).toBeNull();
+    const hasCdOutput = stdoutOutput.some((line) =>
+      line.includes("cd '/tmp/mock-repo-feat-login'"),
+    );
+    expect(hasCdOutput).toBe(true);
+  });
+
+  it("matches case-insensitively for partial match", async () => {
+    const stdoutOutput: string[] = [];
+    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      stdoutOutput.push(args.map(String).join(" "));
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const exitCode = { value: null as number | null };
+    const ctx = createWorktreeContext(
+      [
+        { path: "/tmp/mock-repo", branch: "main" },
+        { path: "/tmp/mock-repo-feat-login", branch: "feat/login-page" },
+      ],
+      { exitCode },
+    );
+
+    await jumpCommand("LOGIN", {}, ctx);
+
+    consoleLogSpy.mockRestore();
+
+    expect(exitCode.value).toBeNull();
+    const hasCdOutput = stdoutOutput.some((line) =>
+      line.includes("cd '/tmp/mock-repo-feat-login'"),
+    );
+    expect(hasCdOutput).toBe(true);
+  });
+
   it("shows error on exception", async () => {
     const exitCode = { value: null as number | null };
     const stderrOutput: string[] = [];

@@ -6,6 +6,48 @@ import { startCommand } from "./start.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
 
 /**
+ * Handle partial matches - select or navigate to matching worktrees
+ * @returns true if a match was handled, false if no matches
+ */
+async function handlePartialMatches(
+  matches: { path: string; branch: string }[],
+  branchName: string,
+  outputOpts: OutputOptions,
+  ctx: AppContext,
+): Promise<boolean> {
+  const hasSingleMatch = matches.length === 1;
+  if (hasSingleMatch) {
+    const match = matches[0];
+    verboseLog(`Partial match found: ${match.branch} -> ${match.path}`, outputOpts);
+    log(`Matched: ${match.branch}`, outputOpts);
+    console.log(formatCdCommand(match.path));
+    return true;
+  }
+
+  const hasMultipleMatches = matches.length > 1;
+  if (hasMultipleMatches) {
+    verboseLog(`Multiple partial matches found: ${matches.length}`, outputOpts);
+
+    const choices = matches.map((w) => `${w.branch} (${w.path})`);
+    choices.push("Cancel");
+
+    const selected = await select(`Multiple worktrees match '${branchName}':`, choices, ctx);
+
+    const isCancelled = selected === choices.length - 1;
+    if (isCancelled) {
+      console.error("Cancelled");
+      return true;
+    }
+
+    const selectedWorktree = matches[selected];
+    console.log(formatCdCommand(selectedWorktree.path));
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Jump command - navigate to an existing worktree by branch name
  */
 export async function jumpCommand(
@@ -17,7 +59,8 @@ export async function jumpCommand(
   const { verbose = false, quiet = false } = options;
   const outputOpts: OutputOptions = { verbose, quiet };
 
-  const isBranchNameEmpty = !branchName;
+  const trimmedBranchName = branchName.trim();
+  const isBranchNameEmpty = !trimmedBranchName;
   if (isBranchNameEmpty) {
     console.error("Error: Branch name is required");
     runtime.control.exit(1);
@@ -29,56 +72,60 @@ export async function jumpCommand(
 
     verboseLog(`Found ${worktrees.length} worktree(s)`, outputOpts);
 
-    // Exact match
-    const exactMatch = worktrees.find((w) => w.branch === branchName);
+    // Exact match (case-sensitive)
+    const exactMatch = worktrees.find((w) => w.branch === trimmedBranchName);
     if (exactMatch) {
       verboseLog(`Exact match found: ${exactMatch.branch} -> ${exactMatch.path}`, outputOpts);
       console.log(formatCdCommand(exactMatch.path));
       return;
     }
 
-    // Partial match
-    const partialMatches = worktrees.filter((w) => w.branch.includes(branchName));
-
-    const hasSingleMatch = partialMatches.length === 1;
-    if (hasSingleMatch) {
-      const match = partialMatches[0];
-      verboseLog(`Partial match found: ${match.branch} -> ${match.path}`, outputOpts);
-      log(`Matched: ${match.branch}`, outputOpts);
-      console.log(formatCdCommand(match.path));
+    // Exact match (case-insensitive)
+    const lowerBranchName = trimmedBranchName.toLowerCase();
+    const exactMatchCI = worktrees.find((w) => w.branch.toLowerCase() === lowerBranchName);
+    if (exactMatchCI) {
+      verboseLog(
+        `Exact match found (case-insensitive): ${exactMatchCI.branch} -> ${exactMatchCI.path}`,
+        outputOpts,
+      );
+      log(`Matched: ${exactMatchCI.branch}`, outputOpts);
+      console.log(formatCdCommand(exactMatchCI.path));
       return;
     }
 
-    const hasMultipleMatches = partialMatches.length > 1;
-    if (hasMultipleMatches) {
-      verboseLog(`Multiple partial matches found: ${partialMatches.length}`, outputOpts);
+    // Partial match (case-sensitive)
+    const partialMatches = worktrees.filter((w) => w.branch.includes(trimmedBranchName));
 
-      const choices = partialMatches.map((w) => `${w.branch} (${w.path})`);
-      choices.push("Cancel");
+    const handled = await handlePartialMatches(partialMatches, trimmedBranchName, outputOpts, ctx);
+    if (handled) {
+      return;
+    }
 
-      const selected = await select(`Multiple worktrees match '${branchName}':`, choices, ctx);
+    // Partial match (case-insensitive fallback)
+    const partialMatchesCI = worktrees.filter((w) =>
+      w.branch.toLowerCase().includes(lowerBranchName),
+    );
 
-      const isCancelled = selected === choices.length - 1;
-      if (isCancelled) {
-        console.error("Cancelled");
-        return;
-      }
-
-      const selectedWorktree = partialMatches[selected];
-      console.log(formatCdCommand(selectedWorktree.path));
+    const handledCI = await handlePartialMatches(
+      partialMatchesCI,
+      trimmedBranchName,
+      outputOpts,
+      ctx,
+    );
+    if (handledCI) {
       return;
     }
 
     // No match found
-    log(`No worktree found for '${branchName}'`, outputOpts);
+    log(`No worktree found for '${trimmedBranchName}'`, outputOpts);
 
     const shouldCreate = await confirm(
-      `No worktree found for '${branchName}'. Create one with 'vibe start'? (Y/n)`,
+      `No worktree found for '${trimmedBranchName}'. Create one with 'vibe start'? (Y/n)`,
       ctx,
     );
 
     if (shouldCreate) {
-      await startCommand(branchName, {}, ctx);
+      await startCommand(trimmedBranchName, {}, ctx);
     } else {
       console.error("Cancelled");
     }
