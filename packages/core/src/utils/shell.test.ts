@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { shellEscape, formatCdCommand } from "./shell.ts";
+import { describe, expect, it } from "vitest";
+import { escapeShellPath, formatCdCommand, shellEscape } from "./shell.ts";
 
 describe("shellEscape", () => {
   it("returns unchanged string without single quotes", () => {
@@ -40,6 +40,12 @@ describe("shellEscape", () => {
 
   it("does not escape backticks", () => {
     expect(shellEscape("path`cmd`")).toBe("path`cmd`");
+  });
+});
+
+describe("escapeShellPath", () => {
+  it("is an alias for shellEscape", () => {
+    expect(escapeShellPath).toBe(shellEscape);
   });
 });
 

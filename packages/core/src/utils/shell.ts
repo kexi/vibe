@@ -10,6 +10,13 @@ export function shellEscape(value: string): string {
 }
 
 /**
+ * Escape a path for safe use inside single-quoted shell strings.
+ *
+ * @see {@link shellEscape}
+ */
+export const escapeShellPath = shellEscape;
+
+/**
  * Format a shell cd command with proper escaping.
  *
  * The output is intended to be eval'd by the shell wrapper function,

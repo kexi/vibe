@@ -1,3 +1,5 @@
+import { DIM, GREEN, RED, YELLOW, colorize } from "./ansi.ts";
+
 /**
  * Output options for controlling verbosity level.
  */
@@ -27,18 +29,36 @@ export function verboseLog(message: string, options: OutputOptions): void {
 }
 
 /**
- * Log an error or warning message to stderr.
- * Always outputs regardless of quiet mode, as errors should never be suppressed.
+ * Log a success message to stderr with green color.
+ * Uses stderr because stdout is reserved for shell commands (eval pattern).
  */
-export function errorLog(message: string, _options: OutputOptions): void {
-  console.error(message);
+export function successLog(message: string, options: OutputOptions): void {
+  const shouldLog = !options.quiet;
+  if (shouldLog) {
+    console.error(colorize(GREEN, message));
+  }
 }
 
 /**
- * Log a warning message to stderr.
- * This function is for warnings that should always be displayed,
- * regardless of output options (e.g., invalid configuration warnings).
+ * Log an error message to stderr with red color.
+ * Always outputs regardless of quiet mode, as errors should never be suppressed.
  */
-export function warnLog(message: string): void {
-  console.warn(message);
+export function errorLog(message: string, _options: OutputOptions): void {
+  console.error(colorize(RED, message));
+}
+
+/**
+ * Log a warning message to stderr with yellow color.
+ * Always outputs regardless of quiet mode, as warnings should not be suppressed.
+ */
+export function warnLog(message: string, _options?: OutputOptions): void {
+  console.warn(colorize(YELLOW, message));
+}
+
+/**
+ * Log a dry-run message to stderr with dim color.
+ * Always outputs regardless of quiet mode.
+ */
+export function logDryRun(message: string): void {
+  console.error(colorize(DIM, `[dry-run] ${message}`));
 }

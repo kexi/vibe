@@ -574,6 +574,17 @@ Vibeはフック実行中にタスクの状態を表示するリアルタイム�
 | `VIBE_WORKTREE_PATH` | 作成されたworktreeの絶対パス |
 | `VIBE_ORIGIN_PATH`   | 元リポジトリの絶対パス       |
 
+## セキュリティ
+
+Vibe は CLI ツールのセキュリティベストプラクティスに従っています：
+
+- **シェルインジェクション防止**: すべてのシェル出力は `escapeShellPath()` でエスケープされ、細工されたディレクトリ名によるコマンドインジェクションを防止
+- **シェル文字列実行の排除**: `exec`/`execSync` の代わりに Node.js の `spawn` を使用し、シェル解釈を回避
+- **設定ファイルの信頼メカニズム**: `.vibe.toml` と `.vibe.local.toml` の SHA-256 ハッシュ検証
+- **パスバリデーション**: ユーザー入力のパスはすべて使用前に検証
+
+詳細なセキュリティチェックリストは [docs/SECURITY_CHECKLIST.ja.md](docs/SECURITY_CHECKLIST.ja.md) を参照してください。
+
 ## 開発への参加
 
 開発環境のセットアップとガイドラインについては [CONTRIBUTING.md](CONTRIBUTING.md) を参照してください。

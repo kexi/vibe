@@ -1,6 +1,6 @@
 {
   "name": "vibe-monorepo",
-  "version": "0.19.2",
+  "version": "0.20.0",
   "private": true,
   "type": "module",
   "description": "Monorepo for vibe CLI - Git worktree management tool",
@@ -48,6 +48,7 @@
     "bun-types": "1.1.43",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-security": "^3.0.1",
     "prettier": "^3.8.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.54.0",
