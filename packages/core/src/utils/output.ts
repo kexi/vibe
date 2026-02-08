@@ -1,3 +1,5 @@
+import { DIM, GREEN, RED, YELLOW, colorize } from "./ansi.ts";
+
 /**
  * Output options for controlling verbosity level.
  */
@@ -26,12 +28,6 @@ export function verboseLog(message: string, options: OutputOptions): void {
   }
 }
 
-const GREEN = "\x1b[32m";
-const RED = "\x1b[31m";
-const YELLOW = "\x1b[33m";
-const DIM = "\x1b[2m";
-const RESET = "\x1b[0m";
-
 /**
  * Log a success message to stderr with green color.
  * Uses stderr because stdout is reserved for shell commands (eval pattern).
@@ -39,7 +35,7 @@ const RESET = "\x1b[0m";
 export function successLog(message: string, options: OutputOptions): void {
   const shouldLog = !options.quiet;
   if (shouldLog) {
-    console.error(`${GREEN}${message}${RESET}`);
+    console.error(colorize(GREEN, message));
   }
 }
 
@@ -48,15 +44,15 @@ export function successLog(message: string, options: OutputOptions): void {
  * Always outputs regardless of quiet mode, as errors should never be suppressed.
  */
 export function errorLog(message: string, _options: OutputOptions): void {
-  console.error(`${RED}${message}${RESET}`);
+  console.error(colorize(RED, message));
 }
 
 /**
  * Log a warning message to stderr with yellow color.
  * Always outputs regardless of quiet mode, as warnings should not be suppressed.
  */
-export function warnLog(message: string): void {
-  console.warn(`${YELLOW}${message}${RESET}`);
+export function warnLog(message: string, _options?: OutputOptions): void {
+  console.warn(colorize(YELLOW, message));
 }
 
 /**
@@ -64,5 +60,5 @@ export function warnLog(message: string): void {
  * Always outputs regardless of quiet mode.
  */
 export function logDryRun(message: string): void {
-  console.error(`${DIM}[dry-run] ${message}${RESET}`);
+  console.error(colorize(DIM, `[dry-run] ${message}`));
 }

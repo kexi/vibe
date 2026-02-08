@@ -5,12 +5,8 @@
  */
 
 import { type AppContext, getGlobalContext } from "../context/index.ts";
+import { DIM, RED, YELLOW, colorize } from "../utils/ansi.ts";
 import { ErrorSeverity, HookExecutionError, UserCancelledError, VibeError } from "./index.ts";
-
-const RED = "\x1b[31m";
-const YELLOW = "\x1b[33m";
-const DIM = "\x1b[2m";
-const RESET = "\x1b[0m";
 
 /**
  * Options for error handling
@@ -45,7 +41,7 @@ export function handleError(
   // Handle DOMException timeout errors
   if (error instanceof DOMException && error.name === "TimeoutError") {
     if (!quiet) {
-      console.error(`${RED}Error: Request timed out.${RESET}`);
+      console.error(colorize(RED, "Error: Request timed out."));
       console.error("Please check your network connection and try again.");
     }
     return 1;
@@ -54,12 +50,11 @@ export function handleError(
   // Handle generic errors
   const errorMessage = error instanceof Error ? error.message : String(error);
   if (!quiet) {
-    console.error(`${RED}Error: ${errorMessage}${RESET}`);
+    console.error(colorize(RED, `Error: ${errorMessage}`));
   }
 
   if (verbose && error instanceof Error && error.stack) {
-    console.error(`${DIM}\nStack trace:`);
-    console.error(`${error.stack}${RESET}`);
+    console.error(colorize(DIM, `\nStack trace:\n${error.stack}`));
   }
 
   return 1;
@@ -82,7 +77,7 @@ function handleVibeError(error: VibeError, options: { verbose: boolean; quiet: b
   // HookExecutionError - warning, continue
   if (error instanceof HookExecutionError) {
     if (!quiet) {
-      console.error(`${YELLOW}Warning: ${error.message}${RESET}`);
+      console.error(colorize(YELLOW, `Warning: ${error.message}`));
     }
     return error.exitCode;
   }
@@ -92,12 +87,11 @@ function handleVibeError(error: VibeError, options: { verbose: boolean; quiet: b
     const isWarning = error.severity === ErrorSeverity.Warning;
     const prefix = isWarning ? "Warning" : "Error";
     const color = isWarning ? YELLOW : RED;
-    console.error(`${color}${prefix}: ${error.message}${RESET}`);
+    console.error(colorize(color, `${prefix}: ${error.message}`));
   }
 
   if (verbose && error.stack) {
-    console.error(`${DIM}\nStack trace:`);
-    console.error(`${error.stack}${RESET}`);
+    console.error(colorize(DIM, `\nStack trace:\n${error.stack}`));
   }
 
   return error.exitCode;

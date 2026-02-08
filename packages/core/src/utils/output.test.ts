@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { resetColorDetection } from "./ansi.ts";
 import {
   errorLog,
   log,
@@ -17,10 +18,14 @@ describe("output utilities", () => {
     messages = [];
     originalError = console.error;
     console.error = vi.fn((msg: string) => messages.push(msg));
+    process.env.FORCE_COLOR = "1";
+    resetColorDetection();
   });
 
   afterEach(() => {
     console.error = originalError;
+    delete process.env.FORCE_COLOR;
+    resetColorDetection();
   });
 
   describe("log", () => {
@@ -125,6 +130,12 @@ describe("output utilities", () => {
 
     it("outputs message with yellow color", () => {
       warnLog("warning message");
+      expect(warnMessages).toEqual(["\x1b[33mwarning message\x1b[0m"]);
+    });
+
+    it("accepts optional OutputOptions parameter", () => {
+      const options: OutputOptions = { quiet: false };
+      warnLog("warning message", options);
       expect(warnMessages).toEqual(["\x1b[33mwarning message\x1b[0m"]);
     });
   });
