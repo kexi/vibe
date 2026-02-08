@@ -1,0 +1,99 @@
+---
+title: vibe jump
+description: ブランチ名で既存のWorktreeにジャンプ
+sidebar:
+  order: 3
+---
+
+`jump`コマンドはブランチ名をマッチングして既存のGit Worktreeに移動します。完全一致、部分一致、インタラクティブな選択をサポートしています。
+
+## 使い方
+
+```bash
+vibe jump <branch-name> [options]
+```
+
+## オプション
+
+| オプション        | 説明             |
+| ----------------- | ---------------- |
+| `-V`, `--verbose` | 詳細な出力を表示 |
+| `-q`, `--quiet`   | 不要な出力を抑制 |
+
+## 例
+
+```bash
+# 完全なブランチ名でWorktreeにジャンプ
+vibe jump feat/new-feature
+
+# 部分一致でジャンプ
+vibe jump login
+
+# 詳細な出力を表示
+vibe jump feat/debug -V
+```
+
+## 動作
+
+### 検索順序
+
+`vibe jump`は以下の順序でWorktreeを検索します：
+
+1. **完全一致**（大文字小文字区別あり）: 完全に一致するブランチ名のWorktreeが存在する場合、即座に移動
+2. **完全一致**（大文字小文字区別なし）: 大文字小文字を無視して一致するWorktreeが存在する場合、そこに移動
+3. **単語境界一致**（大文字小文字区別あり→なし）: 入力が単語境界（`/`、`-`、`_` の直後）に出現する場合、通常の部分文字列一致より優先される
+4. **部分文字列一致**（大文字小文字区別あり→なし）: 単語境界一致がない場合、部分文字列一致にフォールバック。複数のWorktreeが一致する場合、インタラクティブな選択プロンプトを表示
+5. **一致なし**: `vibe start`で新しいWorktreeを作成するか確認
+
+### 完全一致
+
+```
+$ vibe jump feat/new-feature
+# → cd '/path/to/repo-feat-new-feature'
+```
+
+### 部分一致
+
+```
+$ vibe jump login
+Matched: feat/login-page
+# → cd '/path/to/repo-feat-login-page'
+```
+
+### 複数一致
+
+```
+$ vibe jump auth
+Multiple worktrees match 'auth':
+  1. feat/auth-login (/path/to/repo-feat-auth-login)
+  2. feat/auth-logout (/path/to/repo-feat-auth-logout)
+  3. Cancel
+Please select (enter number):
+```
+
+### 一致なし（フォールバック）
+
+```
+$ vibe jump feat/nonexistent
+No worktree found for 'feat/nonexistent'. Create one with 'vibe start'? (Y/n)
+```
+
+確認すると、`vibe start`が呼び出されてWorktreeが作成されます。
+
+## 終了コード
+
+| コード | 条件                                            |
+| ------ | ----------------------------------------------- |
+| `0`    | 正常な移動、またはユーザーによるキャンセル      |
+| `1`    | エラー（空のブランチ名、gitコマンドの失敗など） |
+
+ユーザーが自発的にキャンセルした場合（選択プロンプトで「Cancel」を選択、または新しいWorktreeの作成を拒否）は、エラーではなく正常終了として扱われます。
+
+## 制限事項
+
+- **detached HEAD のWorktree**: detached HEAD状態（ブランチに紐づいていない）のWorktreeは検索対象に含まれません。ブランチ参照を持つWorktreeのみが検索可能です。
+
+## 関連
+
+- [start](/ja/commands/start/) - 新しいWorktreeを作成
+- [clean](/ja/commands/clean/) - 作業完了後のWorktree削除
