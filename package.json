@@ -36,7 +36,8 @@
     "clean": "pnpm -r exec rm -rf node_modules dist",
     "check:docs": "pnpm -C packages/docs lint && pnpm -C packages/docs format && pnpm -C packages/docs check",
     "check:video": "pnpm -C packages/video typecheck",
-    "check:all": "pnpm run ci && pnpm run check:docs && pnpm run check:video"
+    "security:check": "bun run scripts/security-check.ts",
+    "check:all": "pnpm run ci && pnpm run security:check && pnpm run check:docs && pnpm run check:video"
   },
   "dependencies": {
     "fast-glob": "^3.3.3",
@@ -48,6 +49,7 @@
     "bun-types": "1.1.43",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-security": "^3.0.1",
     "prettier": "^3.8.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.54.0",
