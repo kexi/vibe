@@ -483,6 +483,119 @@ describe("jumpCommand", () => {
     expect(hasCdOutput).toBe(true);
   });
 
+  it("fuzzy matches when no substring match exists (feli → feat/login)", async () => {
+    const stdoutOutput: string[] = [];
+    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      stdoutOutput.push(args.map(String).join(" "));
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const exitCode = { value: null as number | null };
+    const ctx = createWorktreeContext(
+      [
+        { path: "/tmp/mock-repo", branch: "main" },
+        { path: "/tmp/mock-repo-feat-login", branch: "feat/login" },
+      ],
+      { exitCode },
+    );
+
+    await jumpCommand("feli", {}, ctx);
+
+    consoleLogSpy.mockRestore();
+
+    expect(exitCode.value).toBeNull();
+    const hasCdOutput = stdoutOutput.some((line) =>
+      line.includes("cd '/tmp/mock-repo-feat-login'"),
+    );
+    expect(hasCdOutput).toBe(true);
+  });
+
+  it("shows select prompt for multiple fuzzy matches sorted by score", async () => {
+    const stdoutOutput: string[] = [];
+    const stderrOutput: string[] = [];
+    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      stdoutOutput.push(args.map(String).join(" "));
+    });
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      stderrOutput.push(args.map(String).join(" "));
+    });
+
+    const exitCode = { value: null as number | null };
+    const ctx = createWorktreeContext(
+      [
+        { path: "/tmp/mock-repo", branch: "main" },
+        { path: "/tmp/mock-repo-feat-login", branch: "feat/login" },
+        { path: "/tmp/mock-repo-fix-loading", branch: "fix/loading" },
+      ],
+      { exitCode, stdinResponses: ["1"] },
+    );
+
+    // "flog" should fuzzy match both "feat/login" and "fix/loading"
+    await jumpCommand("flog", {}, ctx);
+
+    consoleLogSpy.mockRestore();
+
+    expect(exitCode.value).toBeNull();
+    // Should have selected the first option
+    const hasCdOutput = stdoutOutput.some((line) => line.includes("cd "));
+    expect(hasCdOutput).toBe(true);
+  });
+
+  it("skips fuzzy match when search is shorter than minimum length", async () => {
+    const stderrOutput: string[] = [];
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      stderrOutput.push(args.map(String).join(" "));
+    });
+
+    const exitCode = { value: null as number | null };
+    const ctx = createWorktreeContext(
+      [
+        { path: "/tmp/mock-repo", branch: "main" },
+        { path: "/tmp/mock-repo-feat-login", branch: "feat/login" },
+      ],
+      { exitCode, stdinResponses: ["n"] },
+    );
+
+    // "fl" is only 2 characters, below FUZZY_MATCH_MIN_LENGTH (3)
+    // No substring match for "fl" either, so it should go to "No match found"
+    await jumpCommand("fl", {}, ctx);
+
+    consoleErrorSpy.mockRestore();
+
+    // Should have asked about creating a worktree (no match found path)
+    const hasNoMatchMessage = stderrOutput.some((line) => line.includes("No worktree found"));
+    expect(hasNoMatchMessage).toBe(true);
+  });
+
+  it("prefers substring match over fuzzy match", async () => {
+    const stdoutOutput: string[] = [];
+    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      stdoutOutput.push(args.map(String).join(" "));
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const exitCode = { value: null as number | null };
+    const ctx = createWorktreeContext(
+      [
+        { path: "/tmp/mock-repo", branch: "main" },
+        { path: "/tmp/mock-repo-feat-login", branch: "feat/login" },
+      ],
+      { exitCode },
+    );
+
+    // "login" is a substring of "feat/login", so substring match should fire first
+    await jumpCommand("login", {}, ctx);
+
+    consoleLogSpy.mockRestore();
+
+    expect(exitCode.value).toBeNull();
+    const hasCdOutput = stdoutOutput.some((line) =>
+      line.includes("cd '/tmp/mock-repo-feat-login'"),
+    );
+    expect(hasCdOutput).toBe(true);
+  });
+
   it("shows error on exception", async () => {
     const exitCode = { value: null as number | null };
     const stderrOutput: string[] = [];
