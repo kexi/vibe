@@ -1,0 +1,80 @@
+---
+title: vibe home
+description: Return to main worktree without removing current worktree
+sidebar:
+  order: 4
+---
+
+The `home` command navigates back to the main worktree without removing the current secondary worktree. This is useful when you need to temporarily check something in the main repository or switch to another worktree.
+
+## Usage
+
+```bash
+vibe home
+```
+
+## Options
+
+### `-V`, `--verbose`
+
+Show detailed output including the main worktree path.
+
+```bash
+vibe home --verbose
+```
+
+### `-q`, `--quiet`
+
+Suppress non-essential output.
+
+```bash
+vibe home --quiet
+```
+
+## Behavior
+
+When run from a secondary worktree, `vibe home`:
+
+1. Verifies you are inside a git repository
+2. Checks if you are already in the main worktree
+3. Navigates to the main worktree directory
+
+When already in the main worktree, it shows an informational message and does nothing.
+
+## Examples
+
+```bash
+# Navigate to main worktree from a secondary worktree
+vibe home
+
+# Already in main worktree
+$ vibe home
+Already in the main worktree.
+```
+
+## Comparison with `vibe clean`
+
+| Feature            | `vibe home`          | `vibe clean`       |
+| ------------------ | -------------------- | ------------------ |
+| Removes worktree   | No                   | Yes                |
+| Returns to main    | Yes                  | Yes                |
+| Worktree preserved | Yes                  | No                 |
+| Use case           | Temporary navigation | Done with worktree |
+
+## Workflow
+
+```
+worktree (current)
+     │
+     └── cd to main repository
+            │
+            ▼
+main repository (new current)
+     │
+     └── worktree still exists (can cd back)
+```
+
+## Related
+
+- [start](/commands/start/) - Create worktrees
+- [clean](/commands/clean/) - Remove worktrees
