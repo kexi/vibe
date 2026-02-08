@@ -3,12 +3,14 @@ import { getRepoInfoFromPath, getRepoRoot } from "../utils/git.ts";
 import { calculateFileHash } from "../utils/hash.ts";
 import { loadUserSettings } from "../utils/trust.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
+import { errorLog, log, type OutputOptions, successLog, warnLog } from "../utils/output.ts";
 
 const VIBE_TOML = ".vibe.toml";
 const VIBE_LOCAL_TOML = ".vibe.local.toml";
 
 export async function verifyCommand(ctx: AppContext = getGlobalContext()): Promise<void> {
   const { runtime } = ctx;
+  const outputOpts: OutputOptions = {};
 
   try {
     const repoRoot = await getRepoRoot(ctx);
@@ -20,33 +22,33 @@ export async function verifyCommand(ctx: AppContext = getGlobalContext()): Promi
 
     const hasAnyFile = vibeTomlExists || vibeLocalTomlExists;
     if (!hasAnyFile) {
-      console.error(`Error: Neither .vibe.toml nor .vibe.local.toml found in ${repoRoot}`);
+      errorLog(`Error: Neither .vibe.toml nor .vibe.local.toml found in ${repoRoot}`, outputOpts);
       runtime.control.exit(1);
     }
 
     const settings = await loadUserSettings(ctx);
 
-    console.error("=== Vibe Configuration Verification ===\n");
+    log("=== Vibe Configuration Verification ===\n", outputOpts);
 
     // Verify .vibe.toml
     if (vibeTomlExists) {
-      await displayFileStatus(vibeTomlPath, VIBE_TOML, settings, ctx);
+      await displayFileStatus(vibeTomlPath, VIBE_TOML, settings, outputOpts, ctx);
     }
 
     // Verify .vibe.local.toml
     if (vibeLocalTomlExists) {
       if (vibeTomlExists) {
-        console.error(); // Add blank line between files
+        log("", outputOpts); // Add blank line between files
       }
-      await displayFileStatus(vibeLocalTomlPath, VIBE_LOCAL_TOML, settings, ctx);
+      await displayFileStatus(vibeLocalTomlPath, VIBE_LOCAL_TOML, settings, outputOpts, ctx);
     }
 
     // Display global settings
-    console.error("\n=== Global Settings ===");
-    console.error(`Skip Hash Check: ${settings.skipHashCheck ?? false}`);
+    log("\n=== Global Settings ===", outputOpts);
+    log(`Skip Hash Check: ${settings.skipHashCheck ?? false}`, outputOpts);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`Error: ${errorMessage}`);
+    errorLog(`Error: ${errorMessage}`, outputOpts);
     runtime.control.exit(1);
   }
 }
@@ -55,26 +57,27 @@ async function displayFileStatus(
   filePath: string,
   fileName: string,
   settings: Awaited<ReturnType<typeof loadUserSettings>>,
+  outputOpts: OutputOptions,
   ctx: AppContext,
 ): Promise<void> {
-  console.error(`File: ${fileName}`);
-  console.error(`Path: ${filePath}`);
+  log(`File: ${fileName}`, outputOpts);
+  log(`Path: ${filePath}`, outputOpts);
 
   // Get repository information
   const repoInfo = await getRepoInfoFromPath(filePath, ctx);
   if (!repoInfo) {
-    console.error("Status: ❌ NOT IN GIT REPOSITORY");
-    console.error("Action: File must be in a git repository to be trusted");
+    errorLog("Status: ❌ NOT IN GIT REPOSITORY", outputOpts);
+    log("Action: File must be in a git repository to be trusted", outputOpts);
     return;
   }
 
   // Display repository info
   if (repoInfo.remoteUrl) {
-    console.error(`Repository: ${repoInfo.remoteUrl}`);
+    log(`Repository: ${repoInfo.remoteUrl}`, outputOpts);
   } else {
-    console.error(`Repository: (local) ${repoInfo.repoRoot}`);
+    log(`Repository: (local) ${repoInfo.repoRoot}`, outputOpts);
   }
-  console.error(`Relative Path: ${repoInfo.relativePath}`);
+  log(`Relative Path: ${repoInfo.relativePath}`, outputOpts);
 
   // Find entry in allow list using repository-based matching
   const entry = settings.permissions.allow.find((item) => {
@@ -88,8 +91,8 @@ async function displayFileStatus(
   });
 
   if (!entry) {
-    console.error("Status: ⚠️  NOT TRUSTED");
-    console.error("Action: Run 'vibe trust' to add this file to trusted list");
+    warnLog("Status: ⚠️  NOT TRUSTED");
+    log("Action: Run 'vibe trust' to add this file to trusted list", outputOpts);
     return;
   }
 
@@ -99,7 +102,7 @@ async function displayFileStatus(
     currentHash = await calculateFileHash(filePath, ctx);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`Status: ❌ ERROR - Cannot read file: ${errorMessage}`);
+    errorLog(`Status: ❌ ERROR - Cannot read file: ${errorMessage}`, outputOpts);
     return;
   }
 
@@ -108,28 +111,28 @@ async function displayFileStatus(
   const skipHashCheck = entry.skipHashCheck ?? settings.skipHashCheck ?? false;
 
   if (skipHashCheck) {
-    console.error("Status: ⚠️  TRUSTED (hash check disabled)");
-    console.error("Skip Hash Check: true (path-level or global)");
+    warnLog("Status: ⚠️  TRUSTED (hash check disabled)");
+    log("Skip Hash Check: true (path-level or global)", outputOpts);
   } else if (hashMatches) {
-    console.error("Status: ✅ TRUSTED");
-    console.error("Current Hash: matches stored hash");
+    successLog("Status: ✅ TRUSTED", outputOpts);
+    log("Current Hash: matches stored hash", outputOpts);
   } else {
-    console.error("Status: ❌ HASH MISMATCH");
-    console.error("Current Hash: does NOT match any stored hash");
-    console.error("Action: Run 'vibe trust' to update hash, or verify file integrity");
+    errorLog("Status: ❌ HASH MISMATCH", outputOpts);
+    log("Current Hash: does NOT match any stored hash", outputOpts);
+    log("Action: Run 'vibe trust' to update hash, or verify file integrity", outputOpts);
   }
 
   // Display hash history
-  console.error(`\nHash History (${entry.hashes.length} stored):`);
+  log(`\nHash History (${entry.hashes.length} stored):`, outputOpts);
   entry.hashes.forEach((hash, index) => {
     const isCurrent = hash === currentHash;
     const marker = isCurrent ? "→" : " ";
     const status = isCurrent ? " (current)" : "";
-    console.error(`${marker} ${index + 1}. ${hash.substring(0, 16)}...${status}`);
+    log(`${marker} ${index + 1}. ${hash.substring(0, 16)}...${status}`, outputOpts);
   });
 
   if (entry.skipHashCheck !== undefined) {
-    console.error(`\nPath-level Skip Hash Check: ${entry.skipHashCheck}`);
+    log(`\nPath-level Skip Hash Check: ${entry.skipHashCheck}`, outputOpts);
   }
 }
 

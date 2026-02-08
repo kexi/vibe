@@ -424,6 +424,9 @@ describe("startCommand", () => {
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
       stderrOutput.push(args.map(String).join(" "));
     });
+    const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation((...args: unknown[]) => {
+      stderrOutput.push(args.map(String).join(" "));
+    });
 
     const ctx = createMockContext({
       process: {
@@ -499,6 +502,7 @@ describe("startCommand", () => {
     await startCommand("feat/existing", { dryRun: true, base: "main" }, ctx);
 
     consoleErrorSpy.mockRestore();
+    consoleWarnSpy.mockRestore();
 
     const hasWarning = stderrOutput.some((line) =>
       line.includes("Warning: Branch 'feat/existing' already exists; --base is ignored."),
