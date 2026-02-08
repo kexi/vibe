@@ -1,0 +1,85 @@
+---
+title: vibe jump
+description: ブランチ名で既存のWorktreeにジャンプ
+sidebar:
+  order: 3
+---
+
+`jump`コマンドはブランチ名をマッチングして既存のGit Worktreeに移動します。完全一致、部分一致、インタラクティブな選択をサポートしています。
+
+## 使い方
+
+```bash
+vibe jump <branch-name> [options]
+```
+
+## オプション
+
+| オプション        | 説明             |
+| ----------------- | ---------------- |
+| `-V`, `--verbose` | 詳細な出力を表示 |
+| `-q`, `--quiet`   | 不要な出力を抑制 |
+
+## 例
+
+```bash
+# 完全なブランチ名でWorktreeにジャンプ
+vibe jump feat/new-feature
+
+# 部分一致でジャンプ
+vibe jump login
+
+# 詳細な出力を表示
+vibe jump feat/debug -V
+```
+
+## 動作
+
+### 検索順序
+
+`vibe jump`は以下の順序でWorktreeを検索します：
+
+1. **完全一致**: 完全に一致するブランチ名のWorktreeが存在する場合、即座に移動
+2. **部分一致（単一）**: 入力を部分文字列として含むWorktreeが1つだけの場合、そこに移動
+3. **部分一致（複数）**: 複数のWorktreeが一致する場合、インタラクティブな選択プロンプトを表示
+4. **一致なし**: `vibe start`で新しいWorktreeを作成するか確認
+
+### 完全一致
+
+```
+$ vibe jump feat/new-feature
+# → cd '/path/to/repo-feat-new-feature'
+```
+
+### 部分一致
+
+```
+$ vibe jump login
+Matched: feat/login-page
+# → cd '/path/to/repo-feat-login-page'
+```
+
+### 複数一致
+
+```
+$ vibe jump auth
+Multiple worktrees match 'auth':
+  1. feat/auth-login (/path/to/repo-feat-auth-login)
+  2. feat/auth-logout (/path/to/repo-feat-auth-logout)
+  3. Cancel
+Please select (enter number):
+```
+
+### 一致なし（フォールバック）
+
+```
+$ vibe jump feat/nonexistent
+No worktree found for 'feat/nonexistent'. Create one with 'vibe start'? (Y/n)
+```
+
+確認すると、`vibe start`が呼び出されてWorktreeが作成されます。
+
+## 関連
+
+- [start](/ja/commands/start/) - 新しいWorktreeを作成
+- [clean](/ja/commands/clean/) - 作業完了後のWorktree削除

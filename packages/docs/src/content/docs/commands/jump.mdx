@@ -1,0 +1,85 @@
+---
+title: vibe jump
+description: Jump to an existing worktree by branch name
+sidebar:
+  order: 3
+---
+
+The `jump` command navigates to an existing Git Worktree by matching the branch name. It supports exact match, partial match, and interactive selection.
+
+## Usage
+
+```bash
+vibe jump <branch-name> [options]
+```
+
+## Options
+
+| Option            | Description                   |
+| ----------------- | ----------------------------- |
+| `-V`, `--verbose` | Show detailed output          |
+| `-q`, `--quiet`   | Suppress non-essential output |
+
+## Examples
+
+```bash
+# Jump to a worktree by exact branch name
+vibe jump feat/new-feature
+
+# Jump using partial match
+vibe jump login
+
+# Show detailed output
+vibe jump feat/debug -V
+```
+
+## Behavior
+
+### Search Order
+
+`vibe jump` searches for worktrees in the following order:
+
+1. **Exact match**: If a worktree with the exact branch name exists, navigate to it immediately
+2. **Partial match (single)**: If exactly one worktree contains the input as a substring, navigate to it
+3. **Partial match (multiple)**: If multiple worktrees match, display an interactive selection prompt
+4. **No match**: Offer to create a new worktree using `vibe start`
+
+### Exact Match
+
+```
+$ vibe jump feat/new-feature
+# → cd '/path/to/repo-feat-new-feature'
+```
+
+### Partial Match
+
+```
+$ vibe jump login
+Matched: feat/login-page
+# → cd '/path/to/repo-feat-login-page'
+```
+
+### Multiple Matches
+
+```
+$ vibe jump auth
+Multiple worktrees match 'auth':
+  1. feat/auth-login (/path/to/repo-feat-auth-login)
+  2. feat/auth-logout (/path/to/repo-feat-auth-logout)
+  3. Cancel
+Please select (enter number):
+```
+
+### No Match (Fallback)
+
+```
+$ vibe jump feat/nonexistent
+No worktree found for 'feat/nonexistent'. Create one with 'vibe start'? (Y/n)
+```
+
+If confirmed, `vibe start` is called to create the worktree.
+
+## Related
+
+- [start](/commands/start/) - Create a new worktree
+- [clean](/commands/clean/) - Remove the worktree when done
