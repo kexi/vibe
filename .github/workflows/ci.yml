@@ -63,6 +63,18 @@ jobs:
       - name: Run Deno smoke tests
         run: deno test --allow-env --allow-read --allow-run packages/core/src/runtime/deno/smoke.test.ts
 
+  security-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        env:
+          MISE_HTTP_TIMEOUT: "120"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Run security check
+        run: bun run security:check
+
   build-binaries:
     strategy:
       matrix:
@@ -222,7 +234,7 @@ jobs:
         run: pnpm -C packages/docs build
 
   build:
-    needs: [build-binaries, build-deb, build-native]
+    needs: [build-binaries, build-deb, build-native, security-check]
     runs-on: ubuntu-latest
     steps:
       - run: echo "All builds completed successfully"
