@@ -1,6 +1,7 @@
 import { getWorktreeList } from "../utils/git.ts";
 import { confirm, select } from "../utils/prompt.ts";
 import { log, type OutputOptions, verboseLog } from "../utils/output.ts";
+import { formatCdCommand } from "../utils/shell.ts";
 import { startCommand } from "./start.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
 
@@ -32,7 +33,7 @@ export async function jumpCommand(
     const exactMatch = worktrees.find((w) => w.branch === branchName);
     if (exactMatch) {
       verboseLog(`Exact match found: ${exactMatch.branch} -> ${exactMatch.path}`, outputOpts);
-      console.log(`cd '${exactMatch.path}'`);
+      console.log(formatCdCommand(exactMatch.path));
       return;
     }
 
@@ -44,7 +45,7 @@ export async function jumpCommand(
       const match = partialMatches[0];
       verboseLog(`Partial match found: ${match.branch} -> ${match.path}`, outputOpts);
       log(`Matched: ${match.branch}`, outputOpts);
-      console.log(`cd '${match.path}'`);
+      console.log(formatCdCommand(match.path));
       return;
     }
 
@@ -64,7 +65,7 @@ export async function jumpCommand(
       }
 
       const selectedWorktree = partialMatches[selected];
-      console.log(`cd '${selectedWorktree.path}'`);
+      console.log(formatCdCommand(selectedWorktree.path));
       return;
     }
 

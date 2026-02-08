@@ -10,6 +10,7 @@ import { getCopyService } from "../utils/copy/index.ts";
 import { loadUserSettings } from "../utils/settings.ts";
 import { resolveWorktreePath } from "../utils/worktree-path.ts";
 import { log, type OutputOptions, verboseLog, warnLog } from "../utils/output.ts";
+import { formatCdCommand } from "../utils/shell.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
 import {
   checkWorktreeConflict,
@@ -208,7 +209,7 @@ export async function startCommand(
     if (dryRun) {
       logDryRun(`Would change directory to: ${worktreePath}`);
     } else {
-      console.log(`cd '${worktreePath}'`);
+      console.log(formatCdCommand(worktreePath));
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -239,7 +240,7 @@ async function handleExistingBranchWorktree(
   );
 
   if (shouldNavigate) {
-    console.log(`cd '${existingWorktreePath}'`);
+    console.log(formatCdCommand(existingWorktreePath));
   } else {
     console.error("Cancelled");
   }
@@ -292,7 +293,7 @@ async function handleSameBranchWorktree(
     },
     ctx,
   );
-  console.log(`cd '${worktreePath}'`);
+  console.log(formatCdCommand(worktreePath));
 }
 
 /**
@@ -341,7 +342,7 @@ async function handleDifferentBranchConflict(
       },
       ctx,
     );
-    console.log(`cd '${worktreePath}'`);
+    console.log(formatCdCommand(worktreePath));
     return false;
   }
 
