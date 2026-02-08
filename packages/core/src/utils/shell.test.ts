@@ -40,6 +40,13 @@ describe("formatCdCommand", () => {
     expect(formatCdCommand("/tmp/repo's")).toBe("cd '/tmp/repo'\\''s'");
   });
 
+  it("keeps backticks and dollar signs safe inside single quotes", () => {
+    const path = "/tmp/`whoami`/$USER/repo";
+    const result = formatCdCommand(path);
+    // Backticks and $ are inert inside single quotes in POSIX shells
+    expect(result).toBe("cd '/tmp/`whoami`/$USER/repo'");
+  });
+
   it("prevents shell injection", () => {
     const malicious = "/tmp/repo'; rm -rf ~; echo '";
     const result = formatCdCommand(malicious);

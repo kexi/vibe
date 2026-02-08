@@ -5,6 +5,25 @@ import { formatCdCommand } from "../utils/shell.ts";
 import { startCommand } from "./start.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
 
+/** Word boundary delimiters in branch names */
+const WORD_BOUNDARY_CHARS = new Set(["/", "-", "_"]);
+
+/**
+ * Check if search term appears at a word boundary in the branch name.
+ * A word boundary is the start of the string, or immediately after /, -, or _.
+ */
+function isWordBoundaryMatch(branch: string, search: string): boolean {
+  const index = branch.indexOf(search);
+  const isNotFound = index === -1;
+  if (isNotFound) return false;
+
+  const isAtStart = index === 0;
+  if (isAtStart) return true;
+
+  const charBefore = branch[index - 1];
+  return WORD_BOUNDARY_CHARS.has(charBefore);
+}
+
 /**
  * Handle partial matches - select or navigate to matching worktrees
  * @returns true if a match was handled, false if no matches
@@ -93,26 +112,61 @@ export async function jumpCommand(
       return;
     }
 
-    // Partial match (case-sensitive)
-    const partialMatches = worktrees.filter((w) => w.branch.includes(trimmedBranchName));
-
-    const handled = await handlePartialMatches(partialMatches, trimmedBranchName, outputOpts, ctx);
-    if (handled) {
-      return;
-    }
-
-    // Partial match (case-insensitive fallback)
-    const partialMatchesCI = worktrees.filter((w) =>
-      w.branch.toLowerCase().includes(lowerBranchName),
+    // Word boundary match (case-sensitive)
+    const wordBoundaryMatches = worktrees.filter((w) =>
+      isWordBoundaryMatch(w.branch, trimmedBranchName),
     );
 
-    const handledCI = await handlePartialMatches(
-      partialMatchesCI,
+    const handledWB = await handlePartialMatches(
+      wordBoundaryMatches,
       trimmedBranchName,
       outputOpts,
       ctx,
     );
-    if (handledCI) {
+    if (handledWB) {
+      return;
+    }
+
+    // Word boundary match (case-insensitive)
+    const wordBoundaryMatchesCI = worktrees.filter((w) =>
+      isWordBoundaryMatch(w.branch.toLowerCase(), lowerBranchName),
+    );
+
+    const handledWBCI = await handlePartialMatches(
+      wordBoundaryMatchesCI,
+      trimmedBranchName,
+      outputOpts,
+      ctx,
+    );
+    if (handledWBCI) {
+      return;
+    }
+
+    // Substring match (case-sensitive)
+    const substringMatches = worktrees.filter((w) => w.branch.includes(trimmedBranchName));
+
+    const handledSub = await handlePartialMatches(
+      substringMatches,
+      trimmedBranchName,
+      outputOpts,
+      ctx,
+    );
+    if (handledSub) {
+      return;
+    }
+
+    // Substring match (case-insensitive fallback)
+    const substringMatchesCI = worktrees.filter((w) =>
+      w.branch.toLowerCase().includes(lowerBranchName),
+    );
+
+    const handledSubCI = await handlePartialMatches(
+      substringMatchesCI,
+      trimmedBranchName,
+      outputOpts,
+      ctx,
+    );
+    if (handledSubCI) {
       return;
     }
 

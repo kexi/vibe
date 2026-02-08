@@ -41,8 +41,8 @@ vibe jump feat/debug -V
 
 1. **Exact match** (case-sensitive): If a worktree with the exact branch name exists, navigate to it immediately
 2. **Exact match** (case-insensitive): If a worktree matches the branch name ignoring case, navigate to it
-3. **Partial match (single)**: If exactly one worktree contains the input as a substring, navigate to it
-4. **Partial match (multiple)**: If multiple worktrees match, display an interactive selection prompt. If no case-sensitive partial matches are found, a case-insensitive search is performed as a fallback
+3. **Word boundary match** (case-sensitive, then case-insensitive): If the input appears at a word boundary (after `/`, `-`, or `_`), these matches are preferred over plain substring matches
+4. **Substring match** (case-sensitive, then case-insensitive): If no word boundary match is found, fall back to substring matching. If multiple worktrees match, display an interactive selection prompt
 5. **No match**: Offer to create a new worktree using `vibe start`
 
 ### Exact Match
@@ -79,6 +79,15 @@ No worktree found for 'feat/nonexistent'. Create one with 'vibe start'? (Y/n)
 ```
 
 If confirmed, `vibe start` is called to create the worktree.
+
+## Exit Codes
+
+| Code | Condition                                             |
+| ---- | ----------------------------------------------------- |
+| `0`  | Successful navigation, or user-initiated cancellation |
+| `1`  | Error (empty branch name, git command failure)        |
+
+User-initiated cancellation (selecting "Cancel" from the selection prompt or declining to create a new worktree) is treated as a successful exit, not an error.
 
 ## Limitations
 

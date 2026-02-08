@@ -396,6 +396,93 @@ describe("jumpCommand", () => {
     expect(hasCdOutput).toBe(true);
   });
 
+  it("prefers word boundary match over substring match", async () => {
+    const stdoutOutput: string[] = [];
+    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      stdoutOutput.push(args.map(String).join(" "));
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const exitCode = { value: null as number | null };
+    const ctx = createWorktreeContext(
+      [
+        { path: "/tmp/mock-repo", branch: "main" },
+        { path: "/tmp/mock-repo-feat-login", branch: "feat/login" },
+        { path: "/tmp/mock-repo-feat-blogin", branch: "feat/blogin" },
+      ],
+      { exitCode },
+    );
+
+    // "login" should match only "feat/login" (word boundary after /)
+    // and NOT "feat/blogin" (substring but not at word boundary)
+    await jumpCommand("login", {}, ctx);
+
+    consoleLogSpy.mockRestore();
+
+    expect(exitCode.value).toBeNull();
+    const hasCdOutput = stdoutOutput.some((line) =>
+      line.includes("cd '/tmp/mock-repo-feat-login'"),
+    );
+    expect(hasCdOutput).toBe(true);
+  });
+
+  it("matches at hyphen word boundary", async () => {
+    const stdoutOutput: string[] = [];
+    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      stdoutOutput.push(args.map(String).join(" "));
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const exitCode = { value: null as number | null };
+    const ctx = createWorktreeContext(
+      [
+        { path: "/tmp/mock-repo", branch: "main" },
+        { path: "/tmp/mock-repo-feat-auth-login", branch: "feat/auth-login" },
+      ],
+      { exitCode },
+    );
+
+    // "login" appears after "-" in "feat/auth-login"
+    await jumpCommand("login", {}, ctx);
+
+    consoleLogSpy.mockRestore();
+
+    expect(exitCode.value).toBeNull();
+    const hasCdOutput = stdoutOutput.some((line) =>
+      line.includes("cd '/tmp/mock-repo-feat-auth-login'"),
+    );
+    expect(hasCdOutput).toBe(true);
+  });
+
+  it("falls back to substring match when no word boundary match", async () => {
+    const stdoutOutput: string[] = [];
+    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      stdoutOutput.push(args.map(String).join(" "));
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const exitCode = { value: null as number | null };
+    const ctx = createWorktreeContext(
+      [
+        { path: "/tmp/mock-repo", branch: "main" },
+        { path: "/tmp/mock-repo-feat-blogin", branch: "feat/blogin" },
+      ],
+      { exitCode },
+    );
+
+    // "login" is a substring of "blogin" but not at a word boundary
+    // Should still match via substring fallback
+    await jumpCommand("login", {}, ctx);
+
+    consoleLogSpy.mockRestore();
+
+    expect(exitCode.value).toBeNull();
+    const hasCdOutput = stdoutOutput.some((line) =>
+      line.includes("cd '/tmp/mock-repo-feat-blogin'"),
+    );
+    expect(hasCdOutput).toBe(true);
+  });
+
   it("shows error on exception", async () => {
     const exitCode = { value: null as number | null };
     const stderrOutput: string[] = [];
