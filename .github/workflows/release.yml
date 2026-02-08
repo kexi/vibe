@@ -8,7 +8,21 @@ permissions:
   contents: write
 
 jobs:
+  verify-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify release targets main branch
+        if: github.event.action == 'released'
+        run: |
+          if [ "${{ github.event.release.target_commitish }}" != "main" ]; then
+            echo "::error::Stable releases must target the main branch."
+            echo "  Target branch: ${{ github.event.release.target_commitish }}"
+            exit 1
+          fi
+          echo "Release targets main branch"
+
   build:
+    needs: verify-branch
     strategy:
       matrix:
         include:

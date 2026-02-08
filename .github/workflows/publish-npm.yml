@@ -13,6 +13,15 @@ jobs:
   verify-versions:
     runs-on: ubuntu-latest
     steps:
+      - name: Verify release targets main branch
+        run: |
+          if [ "${{ github.event.release.target_commitish }}" != "main" ]; then
+            echo "::error::Releases must target the main branch."
+            echo "  Target branch: ${{ github.event.release.target_commitish }}"
+            exit 1
+          fi
+          echo "Release targets main branch"
+
       - uses: actions/checkout@v4
 
       - uses: jdx/mise-action@v2
