@@ -1,5 +1,6 @@
 import { getMainWorktreePath, isInsideWorktree, isMainWorktree } from "../utils/git.ts";
 import { errorLog, log, type OutputOptions, verboseLog } from "../utils/output.ts";
+import { escapeShellPath } from "../utils/shell.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
 
 type HomeOptions = OutputOptions;
@@ -30,8 +31,7 @@ export async function homeCommand(
     verboseLog(`Main worktree path: ${mainPath}`, outputOpts);
 
     log(`Returning to main worktree: ${mainPath}`, outputOpts);
-    const escapedPath = mainPath.replace(/'/g, "'\\''");
-    console.log(`cd '${escapedPath}'`);
+    console.log(`cd '${escapeShellPath(mainPath)}'`);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     errorLog(`Error: ${errorMessage}`, outputOpts);

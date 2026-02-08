@@ -17,6 +17,7 @@ import {
   verboseLog,
   warnLog,
 } from "../utils/output.ts";
+import { escapeShellPath } from "../utils/shell.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
 import {
   checkWorktreeConflict,
@@ -211,7 +212,7 @@ export async function startCommand(
     if (dryRun) {
       logDryRun(`Would change directory to: ${worktreePath}`);
     } else {
-      console.log(`cd '${worktreePath}'`);
+      console.log(`cd '${escapeShellPath(worktreePath)}'`);
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -242,7 +243,7 @@ async function handleExistingBranchWorktree(
   );
 
   if (shouldNavigate) {
-    console.log(`cd '${existingWorktreePath}'`);
+    console.log(`cd '${escapeShellPath(existingWorktreePath)}'`);
   } else {
     log("Cancelled", { quiet: false });
   }
@@ -295,7 +296,7 @@ async function handleSameBranchWorktree(
     },
     ctx,
   );
-  console.log(`cd '${worktreePath}'`);
+  console.log(`cd '${escapeShellPath(worktreePath)}'`);
 }
 
 /**
@@ -344,7 +345,7 @@ async function handleDifferentBranchConflict(
       },
       ctx,
     );
-    console.log(`cd '${worktreePath}'`);
+    console.log(`cd '${escapeShellPath(worktreePath)}'`);
     return false;
   }
 
