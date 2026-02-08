@@ -1,7 +1,7 @@
 /**
  * Escape a value for use inside single-quoted shell strings.
  *
- * Replaces single quotes with the POSIX-compliant sequence '\\''
+ * Replaces single quotes with the POSIX-compliant sequence '\''
  * which ends the current single-quoted string, adds an escaped
  * literal quote, and reopens a new single-quoted string.
  */

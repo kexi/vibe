@@ -1,6 +1,7 @@
 import { parseArgs, type ParseArgsConfig } from "node:util";
 import { startCommand } from "./packages/core/src/commands/start.ts";
 import { cleanCommand } from "./packages/core/src/commands/clean.ts";
+import { homeCommand } from "./packages/core/src/commands/home.ts";
 import { trustCommand } from "./packages/core/src/commands/trust.ts";
 import { untrustCommand } from "./packages/core/src/commands/untrust.ts";
 import { verifyCommand } from "./packages/core/src/commands/verify.ts";
@@ -52,6 +53,7 @@ Usage:
   vibe start <branch-name> [options]  Create a new worktree with the given branch
   vibe jump <branch-name> [options]   Jump to an existing worktree by branch name
   vibe clean [options]                Remove current worktree and return to main
+  vibe home                           Return to main worktree without removing current
   vibe trust                          Trust .vibe.toml in current repository
   vibe untrust                        Remove trust for .vibe.toml in current repository
   vibe verify                         Verify trust status and hash history
@@ -92,6 +94,7 @@ Examples:
   vibe start feat/new-feature --base main
   vibe jump feat/new-feature
   vibe clean
+  vibe home
 `;
 
 async function main(): Promise<void> {
@@ -202,6 +205,12 @@ async function main(): Promise<void> {
       }
 
       await cleanCommand({ force, deleteBranch, keepBranch, verbose, quiet });
+      break;
+    }
+    case "home": {
+      const verbose = args.verbose === true;
+      const quiet = args.quiet === true;
+      await homeCommand({ verbose, quiet });
       break;
     }
     case "trust":

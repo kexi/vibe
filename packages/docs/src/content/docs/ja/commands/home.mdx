@@ -1,0 +1,80 @@
+---
+title: vibe home
+description: 現在のWorktreeを削除せずにメインWorktreeに戻る
+sidebar:
+  order: 4
+---
+
+`home`コマンドは現在のセカンダリWorktreeを削除せずに、メインWorktreeに戻ります。メインリポジトリで一時的に確認作業を行いたい場合や、別のWorktreeに移動する前に便利です。
+
+## 使い方
+
+```bash
+vibe home
+```
+
+## オプション
+
+### `-V`, `--verbose`
+
+メインWorktreeのパスなど、詳細な出力を表示します。
+
+```bash
+vibe home --verbose
+```
+
+### `-q`, `--quiet`
+
+不要な出力を抑制します。
+
+```bash
+vibe home --quiet
+```
+
+## 動作
+
+セカンダリWorktreeから実行すると、`vibe home`は：
+
+1. gitリポジトリ内にいることを確認
+2. 既にメインWorktreeにいるかチェック
+3. メインWorktreeディレクトリに移動
+
+既にメインWorktreeにいる場合は、情報メッセージを表示するだけで何もしません。
+
+## 使用例
+
+```bash
+# セカンダリWorktreeからメインWorktreeに移動
+vibe home
+
+# 既にメインWorktreeにいる場合
+$ vibe home
+Already in the main worktree.
+```
+
+## `vibe clean`との比較
+
+| 機能           | `vibe home`            | `vibe clean`         |
+| -------------- | ---------------------- | -------------------- |
+| Worktreeを削除 | しない                 | する                 |
+| メインに戻る   | する                   | する                 |
+| Worktreeが残る | はい                   | いいえ               |
+| ユースケース   | 一時的なナビゲーション | Worktreeでの作業完了 |
+
+## ワークフロー
+
+```
+Worktree (現在)
+     │
+     └── メインリポジトリにcd
+            │
+            ▼
+メインリポジトリ (新しい現在地)
+     │
+     └── Worktreeはまだ存在（cdで戻れる）
+```
+
+## 関連
+
+- [start](/ja/commands/start/) - Worktreeの作成
+- [clean](/ja/commands/clean/) - Worktreeの削除

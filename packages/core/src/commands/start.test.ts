@@ -727,6 +727,129 @@ describe("startCommand", () => {
     const hasErrorMessage = stderrOutput.some((line) => line.includes("Error:"));
     expect(hasErrorMessage).toBe(true);
   });
+
+  it("escapes single quotes in cd output to prevent shell injection", async () => {
+    const stdoutOutput: string[] = [];
+    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      stdoutOutput.push(args.map(String).join(" "));
+    });
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const ctx = createMockContext({
+      process: {
+        run: (opts) => {
+          const args = opts.args as string[];
+          const isRevParseShowToplevel =
+            args.includes("rev-parse") && args.includes("--show-toplevel");
+          if (isRevParseShowToplevel) {
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new TextEncoder().encode("/tmp/mock-repo\n"),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+          const isRevParseSuperproject =
+            args.includes("rev-parse") && args.includes("--show-superproject-working-tree");
+          if (isRevParseSuperproject) {
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new Uint8Array(),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+          const isRemoteGetUrl = args.includes("remote") && args.includes("get-url");
+          if (isRemoteGetUrl) {
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new TextEncoder().encode("git@github.com:kexi/vibe.git\n"),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+          // Branch already used in existing worktree with single quote in path
+          const isWorktreeList = args.includes("worktree") && args.includes("list");
+          if (isWorktreeList) {
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new TextEncoder().encode(
+                "worktree /tmp/mock-repo\nHEAD abc123\nbranch refs/heads/main\n\n" +
+                  "worktree /tmp/it's-a-worktree\nHEAD def456\nbranch refs/heads/feat/test\n\n",
+              ),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+          const isShowRefVerify = args.includes("show-ref") && args.includes("--verify");
+          if (isShowRefVerify) {
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new Uint8Array(),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+          return Promise.resolve({
+            code: 0,
+            success: true,
+            stdout: new Uint8Array(),
+            stderr: new Uint8Array(),
+          } as RunResult);
+        },
+      },
+      fs: {
+        readTextFile: () => Promise.reject(new Error("File not found")),
+        stat: () => Promise.reject(new Error("Not found")),
+      },
+      control: {
+        exit: (() => {}) as never,
+        cwd: () => "/tmp/mock-repo",
+        chdir: () => {},
+        execPath: () => "/mock/exec",
+        args: [],
+      },
+      env: {
+        get: (key: string) => {
+          if (key === "HOME") return "/tmp/home";
+          return undefined;
+        },
+        set: () => {},
+        delete: () => {},
+        toObject: () => ({}),
+      },
+      errors: {
+        isNotFound: (error: unknown) =>
+          error instanceof Error &&
+          (error.message === "File not found" || error.message === "Not found"),
+      },
+      io: {
+        stdin: {
+          // Return "Y" to confirm navigating to existing worktree
+          read: (buf: Uint8Array) => {
+            const data = new TextEncoder().encode("Y\n");
+            buf.set(data);
+            return Promise.resolve(data.length);
+          },
+          isTerminal: () => true,
+        },
+        stderr: {
+          writeSync: () => 0,
+          write: () => Promise.resolve(0),
+          isTerminal: () => false,
+        },
+      },
+    });
+
+    await startCommand("feat/test", {}, ctx);
+
+    consoleLogSpy.mockRestore();
+    consoleErrorSpy.mockRestore();
+
+    // The cd command should have escaped single quotes
+    const hasSafeOutput = stdoutOutput.some((line) => line === "cd '/tmp/it'\\''s-a-worktree'");
+    expect(hasSafeOutput).toBe(true);
+  });
 });
 
 describe("resolveCopyConcurrency", () => {

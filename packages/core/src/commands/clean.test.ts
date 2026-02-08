@@ -166,6 +166,64 @@ describe("cleanCommand", () => {
     expect(hasCdCommand).toBe(true);
   });
 
+  it("escapes single quotes in cd output to prevent shell injection", async () => {
+    const ctx = createMockContext({
+      process: {
+        run: (opts) => {
+          const args = opts.args as string[];
+          // Mock git rev-parse --show-toplevel (repo root)
+          if (args.includes("rev-parse") && args.includes("--show-toplevel")) {
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new TextEncoder().encode("/tmp/worktree\n"),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+          // Mock git worktree list - main worktree has single quote in path
+          if (args.includes("worktree") && args.includes("list")) {
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new TextEncoder().encode(
+                "worktree /tmp/it's-a-repo\nHEAD abc123\nbranch refs/heads/main\n\n",
+              ),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+          // Mock git rev-parse --git-common-dir for main worktree path
+          if (args.includes("rev-parse") && args.includes("--git-common-dir")) {
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new TextEncoder().encode("/tmp/it's-a-repo/.git\n"),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+          return Promise.resolve({
+            code: 0,
+            success: true,
+            stdout: new Uint8Array(),
+            stderr: new Uint8Array(),
+          } as RunResult);
+        },
+      },
+      control: {
+        exit: (() => {}) as never,
+        cwd: () => "/tmp/worktree",
+        chdir: () => {},
+        execPath: () => "/mock/exec",
+        args: [],
+      },
+    });
+
+    await cleanCommand({}, ctx);
+
+    // The cd command should have escaped single quotes
+    const hasSafeOutput = stdoutOutput.some((line) => line === "cd '/tmp/it'\\''s-a-repo'");
+    expect(hasSafeOutput).toBe(true);
+  });
+
   it("shows actionable error when main worktree is deleted", async () => {
     let exitCode: number | null = null;
 
