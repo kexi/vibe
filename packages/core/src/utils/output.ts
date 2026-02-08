@@ -26,20 +26,6 @@ export function verboseLog(message: string, options: OutputOptions): void {
   }
 }
 
-const GREEN = "\x1b[32m";
-const RESET = "\x1b[0m";
-
-/**
- * Log a success message to stderr with green color.
- * Uses stderr because stdout is reserved for shell commands (eval pattern).
- */
-export function successLog(message: string, options: OutputOptions): void {
-  const shouldLog = !options.quiet;
-  if (shouldLog) {
-    console.error(`${GREEN}${message}${RESET}`);
-  }
-}
-
 /**
  * Log an error or warning message to stderr.
  * Always outputs regardless of quiet mode, as errors should never be suppressed.

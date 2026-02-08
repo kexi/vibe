@@ -13,7 +13,7 @@ import { loadVibeConfig } from "../utils/config.ts";
 import { type HookTrackerInfo, runHooks } from "../utils/hooks.ts";
 import { confirm } from "../utils/prompt.ts";
 import { ProgressTracker } from "../utils/progress.ts";
-import { type OutputOptions, successLog, verboseLog } from "../utils/output.ts";
+import { log, type OutputOptions, verboseLog } from "../utils/output.ts";
 import { loadUserSettings } from "../utils/settings.ts";
 import {
   cleanupStaleTrash,
@@ -186,7 +186,7 @@ export async function cleanCommand(
 
     // Early check: if worktree is already removed (another process finished), exit gracefully
     if (worktreeInfo === null) {
-      successLog("Worktree already removed.", outputOpts);
+      log("Worktree already removed.", outputOpts);
       console.log(`cd '${mainPath}'`);
       return;
     }
@@ -268,7 +268,7 @@ export async function cleanCommand(
       );
     }
 
-    successLog(`Worktree ${currentWorktreePath} has been removed.`, outputOpts);
+    log(`Worktree ${currentWorktreePath} has been removed.`, outputOpts);
 
     // Determine whether to delete branch
     // Priority: CLI option > config > default (false)
@@ -285,7 +285,7 @@ export async function cleanCommand(
     if (shouldDeleteBranch && currentBranch) {
       try {
         await runGitCommand(["-C", mainPath, "branch", "-d", currentBranch], ctx);
-        successLog(`Branch ${currentBranch} has been deleted.`, outputOpts);
+        log(`Branch ${currentBranch} has been deleted.`, outputOpts);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         console.error(`Warning: Could not delete branch ${currentBranch}: ${errorMessage}`);
