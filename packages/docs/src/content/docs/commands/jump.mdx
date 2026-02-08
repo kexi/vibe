@@ -5,7 +5,7 @@ sidebar:
   order: 3
 ---
 
-The `jump` command navigates to an existing Git Worktree by matching the branch name. It supports exact match, partial match, and interactive selection.
+The `jump` command navigates to an existing Git Worktree by matching the branch name. It supports exact match, partial match, fuzzy match, and interactive selection.
 
 ## Usage
 
@@ -29,6 +29,9 @@ vibe jump feat/new-feature
 # Jump using partial match
 vibe jump login
 
+# Jump using fuzzy match (subsequence matching)
+vibe jump feli   # matches "feat/login"
+
 # Show detailed output
 vibe jump feat/debug -V
 ```
@@ -43,7 +46,8 @@ vibe jump feat/debug -V
 2. **Exact match** (case-insensitive): If a worktree matches the branch name ignoring case, navigate to it
 3. **Word boundary match** (case-sensitive, then case-insensitive): If the input appears at a word boundary (after `/`, `-`, or `_`), these matches are preferred over plain substring matches
 4. **Substring match** (case-sensitive, then case-insensitive): If no word boundary match is found, fall back to substring matching. If multiple worktrees match, display an interactive selection prompt
-5. **No match**: Offer to create a new worktree using `vibe start`
+5. **Fuzzy match** (subsequence matching): If no substring match is found and the search term is at least 3 characters, perform subsequence matching where each character of the search term appears in order within the branch name (e.g., `feli` matches `feat/login`). Results are ranked by a scoring algorithm that considers consecutive matches, word boundaries, and match position
+6. **No match**: Offer to create a new worktree using `vibe start`
 
 ### Exact Match
 
@@ -58,6 +62,14 @@ $ vibe jump feat/new-feature
 $ vibe jump login
 Matched: feat/login-page
 # → cd '/path/to/repo-feat-login-page'
+```
+
+### Fuzzy Match
+
+```
+$ vibe jump feli
+Matched: feat/login
+# → cd '/path/to/repo-feat-login'
 ```
 
 ### Multiple Matches
