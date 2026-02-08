@@ -56,6 +56,22 @@ vibeはWorktreeの作成やクリーンアップ後にディレクトリを変�
   </TabItem>
 </Tabs>
 
+## miseを使った自動セットアップ
+
+[mise](/ja/installation/)でvibeをインストールした場合、miseの[hooks](https://mise.jdx.dev/hooks.html)機能を使ってシェル設定を自動化できます。
+
+プロジェクトの`.mise.toml`に以下を追加してください：
+
+```toml
+[hooks]
+enter = 'eval "$(vibe shell-setup)"'
+```
+
+:::note
+これにはシェルで[`mise activate`](https://mise.jdx.dev/getting-started.html#activate-mise)が有効になっている必要があります。
+`enter`フックはプロジェクトディレクトリに入ると自動的に実行され、シェルを検出して適切なラッパー関数を定義します。
+:::
+
 ## なぜこれが必要なのか？
 
 vibeがWorktreeを作成すると、現在の作業ディレクトリを新しいWorktreeに変更する必要があります。しかし、サブプロセスは親プロセスのディレクトリを直接変更することができません。

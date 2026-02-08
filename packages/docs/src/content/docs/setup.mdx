@@ -56,6 +56,24 @@ vibe needs a shell wrapper function to change directories after creating or clea
   </TabItem>
 </Tabs>
 
+## Using mise (automatic setup)
+
+If you installed vibe with [mise](/installation/), you can automate shell setup
+using mise's [hooks](https://mise.jdx.dev/hooks.html) feature.
+
+Add the following to your project's `.mise.toml`:
+
+```toml
+[hooks]
+enter = 'eval "$(vibe shell-setup)"'
+```
+
+:::note
+This requires [`mise activate`](https://mise.jdx.dev/getting-started.html#activate-mise) in your shell.
+The `enter` hook runs automatically when you enter the project directory, detecting your shell
+and defining the appropriate wrapper function.
+:::
+
 ## Why is this needed?
 
 When vibe creates a worktree, it needs to change your current working directory to the new worktree. However, a subprocess cannot change the parent process's directory directly.
