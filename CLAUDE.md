@@ -55,6 +55,8 @@ packages/core/src/
 - `main`: Release versions only
 - `develop`: Main development branch
 - Topic branches should be created from `develop`
+- **IMPORTANT**: Never push directly to `main` or `develop` branches
+- PRs must always target the `develop` branch
 
 ## PR/Commit Guidelines
 

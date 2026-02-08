@@ -198,6 +198,16 @@ Then run:
 mise install
 ```
 
+#### Shell setup with mise hooks
+
+If you use [`mise activate`](https://mise.jdx.dev/getting-started.html#activate-mise),
+add `[hooks]` to skip [manual shell setup](#setup):
+
+```toml
+[hooks]
+enter = 'eval "$(vibe shell-setup)"'
+```
+
 ### Linux
 
 > **Note**: WSL2 users can use the Linux installation methods below based on their distribution.

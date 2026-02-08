@@ -198,6 +198,16 @@ vibe = "latest"
 mise install
 ```
 
+#### mise hooksでのシェル設定
+
+[`mise activate`](https://mise.jdx.dev/getting-started.html#activate-mise)を使用している場合、
+`[hooks]`を追加して[手動シェル設定](#セットアップ)をスキップできます:
+
+```toml
+[hooks]
+enter = 'eval "$(vibe shell-setup)"'
+```
+
 ### Linux
 
 > **注意**: WSL2ユーザーは、使用しているディストリビューションに応じて以下のLinuxインストール方法を使用できます。
