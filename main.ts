@@ -8,6 +8,7 @@ import { verifyCommand } from "./packages/core/src/commands/verify.ts";
 import { configCommand } from "./packages/core/src/commands/config.ts";
 import { jumpCommand } from "./packages/core/src/commands/jump.ts";
 import { upgradeCommand } from "./packages/core/src/commands/upgrade.ts";
+import { shellSetupCommand } from "./packages/core/src/commands/shell-setup.ts";
 import { BUILD_INFO } from "./packages/core/src/version.ts";
 import { initRuntime, runtime } from "./packages/core/src/runtime/index.ts";
 import {
@@ -35,6 +36,7 @@ const parseArgsOptions: ParseArgsConfig["options"] = {
   check: { type: "boolean" },
   base: { type: "string" },
   track: { type: "boolean" },
+  shell: { type: "string" },
 };
 
 const HELP_TEXT = `vibe - git worktree helper
@@ -59,6 +61,7 @@ Usage:
   vibe verify                         Verify trust status and hash history
   vibe config                         Show current settings
   vibe upgrade [options]              Check for updates and show upgrade instructions
+  vibe shell-setup [options]          Print shell wrapper function for eval
 
 Global Options:
   -h, --help        Show this help message
@@ -77,6 +80,7 @@ Command Options:
   --delete-branch   Delete the branch after removing the worktree (clean)
   --keep-branch     Keep the branch after removing the worktree (clean)
   --check           Check for updates without showing upgrade instructions (upgrade)
+  --shell <name>    Specify shell type: bash, zsh, fish, nushell, powershell (shell-setup)
 
 Setup:
   Add this to your .zshrc:
@@ -230,6 +234,13 @@ async function main(): Promise<void> {
       const verbose = args.verbose === true;
       const quiet = args.quiet === true;
       await upgradeCommand({ check, verbose, quiet });
+      break;
+    }
+    case "shell-setup": {
+      const verbose = args.verbose === true;
+      const quiet = args.quiet === true;
+      const shell = typeof args.shell === "string" ? args.shell : undefined;
+      await shellSetupCommand({ verbose, quiet, shell });
       break;
     }
     default:
