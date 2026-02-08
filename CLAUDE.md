@@ -69,3 +69,7 @@ packages/core/src/
 - SHA-256 based configuration trust mechanism
 - Use Node.js `spawn` (avoid shell string execution)
 - Path validation with `validatePath()`
+- Shell output escaping with `escapeShellPath()` for all `cd` output
+- ESLint security plugin (`eslint-plugin-security`) for static analysis
+- Custom security check script: `pnpm run security:check`
+- See [docs/SECURITY_CHECKLIST.md](docs/SECURITY_CHECKLIST.md) for the full 13-category CLI security checklist

@@ -1,2 +1,4 @@
 # Development helper - source this file: source .vibedev
+# WARNING: This uses eval for development convenience.
+# Only source this file in trusted repositories.
 vibe() { eval "$(pnpm run dev "$@")"; }
