@@ -1,5 +1,6 @@
-import { isAbsolute, join } from "node:path";
+import { join } from "node:path";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
+import { getConfigDir, ensureConfigDir } from "./config-path.ts";
 
 /** MRU entry representing a recently used worktree */
 export interface MruEntry {
@@ -10,20 +11,6 @@ export interface MruEntry {
 
 /** Maximum number of MRU entries to keep */
 const MAX_MRU_ENTRIES = 50;
-
-function getConfigDir(ctx: AppContext): string {
-  const home = ctx.runtime.env.get("HOME") ?? "";
-
-  const isValidHome = home.length > 0 && isAbsolute(home) && !home.includes("..");
-  if (!isValidHome) {
-    throw new Error(
-      "Invalid HOME environment variable. " +
-        "HOME must be an absolute path without '..' components.",
-    );
-  }
-
-  return join(home, ".config", "vibe");
-}
 
 function getMruFilePath(ctx: AppContext): string {
   return join(getConfigDir(ctx), "mru.json");
@@ -59,16 +46,8 @@ export async function loadMruData(ctx: AppContext = getGlobalContext()): Promise
  */
 async function saveMruData(entries: MruEntry[], ctx: AppContext): Promise<void> {
   const mruFile = getMruFilePath(ctx);
-  const configDir = getConfigDir(ctx);
 
-  try {
-    await ctx.runtime.fs.mkdir(configDir, { recursive: true });
-  } catch (error) {
-    const isAlreadyExists = ctx.runtime.errors.isAlreadyExists(error);
-    if (!isAlreadyExists) {
-      throw error;
-    }
-  }
+  await ensureConfigDir(ctx);
 
   const content = JSON.stringify(entries, null, 2) + "\n";
   const tempFile = `${mruFile}.tmp.${Date.now()}.${crypto.randomUUID()}`;
