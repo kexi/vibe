@@ -20,6 +20,7 @@ import {
   fastRemoveDirectory,
   isFastRemoveSupported,
 } from "../utils/fast-remove.ts";
+import { escapeShellPath } from "../utils/shell.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
 
 interface CleanOptions extends OutputOptions {
@@ -187,7 +188,8 @@ export async function cleanCommand(
     // Early check: if worktree is already removed (another process finished), exit gracefully
     if (worktreeInfo === null) {
       successLog("Worktree already removed.", outputOpts);
-      console.log(`cd '${mainPath}'`);
+      console.log(`cd '${escapeShellPath(mainPath)}'`);
+
       return;
     }
 
@@ -294,7 +296,7 @@ export async function cleanCommand(
     }
 
     // Output cd command for shell wrapper to eval
-    console.log(`cd '${mainPath}'`);
+    console.log(`cd '${escapeShellPath(mainPath)}'`);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${errorMessage}`);
