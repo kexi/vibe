@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { errorLog, log, type OutputOptions, verboseLog } from "./output.ts";
+import { errorLog, log, type OutputOptions, successLog, verboseLog } from "./output.ts";
 
 describe("output utilities", () => {
   let messages: string[];
@@ -57,6 +57,26 @@ describe("output utilities", () => {
     it("suppresses message when quiet is true even if verbose is true", () => {
       const options: OutputOptions = { verbose: true, quiet: true };
       verboseLog("test message", options);
+      expect(messages).toEqual([]);
+    });
+  });
+
+  describe("successLog", () => {
+    it("outputs message with green color when quiet is false", () => {
+      const options: OutputOptions = { quiet: false };
+      successLog("success message", options);
+      expect(messages).toEqual(["\x1b[32msuccess message\x1b[0m"]);
+    });
+
+    it("outputs message with green color when quiet is undefined", () => {
+      const options: OutputOptions = {};
+      successLog("success message", options);
+      expect(messages).toEqual(["\x1b[32msuccess message\x1b[0m"]);
+    });
+
+    it("suppresses message when quiet is true", () => {
+      const options: OutputOptions = { quiet: true };
+      successLog("success message", options);
       expect(messages).toEqual([]);
     });
   });
