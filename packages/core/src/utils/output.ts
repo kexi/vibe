@@ -27,6 +27,9 @@ export function verboseLog(message: string, options: OutputOptions): void {
 }
 
 const GREEN = "\x1b[32m";
+const RED = "\x1b[31m";
+const YELLOW = "\x1b[33m";
+const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
 
 /**
@@ -41,18 +44,25 @@ export function successLog(message: string, options: OutputOptions): void {
 }
 
 /**
- * Log an error or warning message to stderr.
+ * Log an error message to stderr with red color.
  * Always outputs regardless of quiet mode, as errors should never be suppressed.
  */
 export function errorLog(message: string, _options: OutputOptions): void {
-  console.error(message);
+  console.error(`${RED}${message}${RESET}`);
 }
 
 /**
- * Log a warning message to stderr.
- * This function is for warnings that should always be displayed,
- * regardless of output options (e.g., invalid configuration warnings).
+ * Log a warning message to stderr with yellow color.
+ * Always outputs regardless of quiet mode, as warnings should not be suppressed.
  */
 export function warnLog(message: string): void {
-  console.warn(message);
+  console.warn(`${YELLOW}${message}${RESET}`);
+}
+
+/**
+ * Log a dry-run message to stderr with dim color.
+ * Always outputs regardless of quiet mode.
+ */
+export function logDryRun(message: string): void {
+  console.error(`${DIM}[dry-run] ${message}${RESET}`);
 }
