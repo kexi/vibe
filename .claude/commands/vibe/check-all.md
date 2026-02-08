@@ -1,11 +1,13 @@
 ---
-description: Run all checks (lint, typecheck, security check)
+description: Run all checks (lint, typecheck, tests)
 allowed-tools: Bash(pnpm *), Bash(bun *)
 ---
 
 # vibe Check All
 
 Run all quality and security checks for the project. Fix any issues found automatically when possible.
+
+Security checks are integrated into the Lint step via ESLint rules.
 
 ---
 
@@ -21,7 +23,7 @@ pnpm run fmt:check
 
 If formatting issues are found, run `pnpm run fmt` to fix them, then re-check.
 
-### 2. Lint
+### 2. Lint (includes security rules)
 
 ```bash
 pnpm run lint
@@ -45,21 +47,13 @@ pnpm run test
 
 If tests fail, analyze the failures and suggest fixes.
 
-### 5. Security Check
-
-```bash
-pnpm run security:check
-```
-
-If security issues are found, explain each issue and suggest fixes.
-
-### 6. Docs Check
+### 5. Docs Check
 
 ```bash
 pnpm run check:docs
 ```
 
-### 7. Video Check
+### 6. Video Check
 
 ```bash
 pnpm run check:video
@@ -80,7 +74,6 @@ After all checks complete, provide a summary:
 | Lint            | ...    |
 | Type Check      | ...    |
 | Tests           | ...    |
-| Security        | ...    |
 | Docs            | ...    |
 | Video           | ...    |
 ```

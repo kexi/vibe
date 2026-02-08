@@ -36,8 +36,7 @@
     "clean": "pnpm -r exec rm -rf node_modules dist",
     "check:docs": "pnpm -C packages/docs lint && pnpm -C packages/docs format && pnpm -C packages/docs check",
     "check:video": "pnpm -C packages/video typecheck",
-    "security:check": "bun run scripts/security-check.ts",
-    "check:all": "pnpm run ci && pnpm run security:check && pnpm run check:docs && pnpm run check:video"
+    "check:all": "pnpm run ci && pnpm run check:docs && pnpm run check:video"
   },
   "dependencies": {
     "fast-glob": "^3.3.3",
