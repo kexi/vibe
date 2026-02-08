@@ -222,6 +222,61 @@ describe("homeCommand", () => {
     expect(hasErrorMessage).toBe(true);
   });
 
+  it("escapes single quotes in path to prevent shell injection", async () => {
+    const ctx = createMockContext({
+      process: {
+        run: (opts) => {
+          const args = opts.args as string[];
+          if (args.includes("rev-parse") && args.includes("--is-inside-work-tree")) {
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new TextEncoder().encode("true\n"),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+          if (args.includes("rev-parse") && args.includes("--show-toplevel")) {
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new TextEncoder().encode("/tmp/worktree\n"),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+          if (args.includes("worktree") && args.includes("list")) {
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new TextEncoder().encode(
+                "worktree /tmp/it's-a-repo\nHEAD abc123\nbranch refs/heads/main\n\n" +
+                  "worktree /tmp/worktree\nHEAD def456\nbranch refs/heads/feat/test\n\n",
+              ),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+          return Promise.resolve({
+            code: 0,
+            success: true,
+            stdout: new Uint8Array(),
+            stderr: new Uint8Array(),
+          } as RunResult);
+        },
+      },
+      control: {
+        exit: (() => {}) as never,
+        cwd: () => "/tmp/worktree",
+        chdir: () => {},
+        execPath: () => "/mock/exec",
+        args: [],
+      },
+    });
+
+    await homeCommand({}, ctx);
+
+    const hasCdCommand = stdoutOutput.some((line) => line === "cd '/tmp/it'\\''s-a-repo'");
+    expect(hasCdCommand).toBe(true);
+  });
+
   it("suppresses info message with quiet option", async () => {
     const ctx = createMockContext({
       process: {

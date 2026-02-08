@@ -30,7 +30,8 @@ export async function homeCommand(
     verboseLog(`Main worktree path: ${mainPath}`, outputOpts);
 
     log(`Returning to main worktree: ${mainPath}`, outputOpts);
-    console.log(`cd '${mainPath}'`);
+    const escapedPath = mainPath.replace(/'/g, "'\\''");
+    console.log(`cd '${escapedPath}'`);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${errorMessage}`);
