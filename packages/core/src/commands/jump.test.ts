@@ -483,6 +483,244 @@ describe("jumpCommand", () => {
     expect(hasCdOutput).toBe(true);
   });
 
+  it("fuzzy matches when no substring match exists (feli → feat/login)", async () => {
+    const stdoutOutput: string[] = [];
+    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      stdoutOutput.push(args.map(String).join(" "));
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const exitCode = { value: null as number | null };
+    const ctx = createWorktreeContext(
+      [
+        { path: "/tmp/mock-repo", branch: "main" },
+        { path: "/tmp/mock-repo-feat-login", branch: "feat/login" },
+      ],
+      { exitCode },
+    );
+
+    await jumpCommand("feli", {}, ctx);
+
+    consoleLogSpy.mockRestore();
+
+    expect(exitCode.value).toBeNull();
+    const hasCdOutput = stdoutOutput.some((line) =>
+      line.includes("cd '/tmp/mock-repo-feat-login'"),
+    );
+    expect(hasCdOutput).toBe(true);
+  });
+
+  it("shows select prompt for multiple fuzzy matches sorted by score", async () => {
+    const stdoutOutput: string[] = [];
+    const stderrOutput: string[] = [];
+    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      stdoutOutput.push(args.map(String).join(" "));
+    });
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      stderrOutput.push(args.map(String).join(" "));
+    });
+
+    const exitCode = { value: null as number | null };
+    const ctx = createWorktreeContext(
+      [
+        { path: "/tmp/mock-repo", branch: "main" },
+        { path: "/tmp/mock-repo-feat-login", branch: "feat/login" },
+        { path: "/tmp/mock-repo-fix-loading", branch: "fix/loading" },
+      ],
+      { exitCode, stdinResponses: ["1"] },
+    );
+
+    // "flog" should fuzzy match both "feat/login" and "fix/loading"
+    await jumpCommand("flog", {}, ctx);
+
+    consoleLogSpy.mockRestore();
+
+    expect(exitCode.value).toBeNull();
+    // Should have selected the first option
+    const hasCdOutput = stdoutOutput.some((line) => line.includes("cd "));
+    expect(hasCdOutput).toBe(true);
+  });
+
+  it("skips fuzzy match when search is shorter than minimum length", async () => {
+    const stderrOutput: string[] = [];
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      stderrOutput.push(args.map(String).join(" "));
+    });
+
+    const exitCode = { value: null as number | null };
+    const ctx = createWorktreeContext(
+      [
+        { path: "/tmp/mock-repo", branch: "main" },
+        { path: "/tmp/mock-repo-feat-login", branch: "feat/login" },
+      ],
+      { exitCode, stdinResponses: ["n"] },
+    );
+
+    // "fl" is only 2 characters, below FUZZY_MATCH_MIN_LENGTH (3)
+    // No substring match for "fl" either, so it should go to "No match found"
+    await jumpCommand("fl", {}, ctx);
+
+    consoleErrorSpy.mockRestore();
+
+    // Should have asked about creating a worktree (no match found path)
+    const hasNoMatchMessage = stderrOutput.some((line) => line.includes("No worktree found"));
+    expect(hasNoMatchMessage).toBe(true);
+  });
+
+  it("prefers substring match over fuzzy match", async () => {
+    const stdoutOutput: string[] = [];
+    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      stdoutOutput.push(args.map(String).join(" "));
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const exitCode = { value: null as number | null };
+    const ctx = createWorktreeContext(
+      [
+        { path: "/tmp/mock-repo", branch: "main" },
+        { path: "/tmp/mock-repo-feat-login", branch: "feat/login" },
+      ],
+      { exitCode },
+    );
+
+    // "login" is a substring of "feat/login", so substring match should fire first
+    await jumpCommand("login", {}, ctx);
+
+    consoleLogSpy.mockRestore();
+
+    expect(exitCode.value).toBeNull();
+    const hasCdOutput = stdoutOutput.some((line) =>
+      line.includes("cd '/tmp/mock-repo-feat-login'"),
+    );
+    expect(hasCdOutput).toBe(true);
+  });
+
+  it("records MRU entry on exact match", async () => {
+    const stdoutOutput: string[] = [];
+    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      stdoutOutput.push(args.map(String).join(" "));
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    let mruWritten = "";
+    const exitCode = { value: null as number | null };
+    const ctx = createWorktreeContext(
+      [
+        { path: "/tmp/mock-repo", branch: "main" },
+        { path: "/tmp/mock-repo-feat-login", branch: "feat/login" },
+      ],
+      { exitCode },
+    );
+
+    // Override env to provide HOME for MRU file path
+    ctx.runtime.env.get = (key: string) => {
+      if (key === "HOME") return "/tmp";
+      if (key === "VIBE_FORCE_INTERACTIVE") return "1";
+      return undefined;
+    };
+
+    // Override fs to capture MRU writes
+    const originalReadTextFile = ctx.runtime.fs.readTextFile;
+    ctx.runtime.fs.readTextFile = (path: string) => {
+      if (path.includes("mru.json")) {
+        return Promise.resolve("[]");
+      }
+      return originalReadTextFile(path);
+    };
+    ctx.runtime.fs.writeTextFile = (_path: string, content: string) => {
+      if (_path.includes("mru.json")) {
+        mruWritten = content;
+      }
+      return Promise.resolve();
+    };
+    ctx.runtime.fs.mkdir = () => Promise.resolve();
+    ctx.runtime.fs.rename = () => Promise.resolve();
+
+    await jumpCommand("feat/login", {}, ctx);
+
+    consoleLogSpy.mockRestore();
+
+    expect(exitCode.value).toBeNull();
+    const hasCdOutput = stdoutOutput.some((line) =>
+      line.includes("cd '/tmp/mock-repo-feat-login'"),
+    );
+    expect(hasCdOutput).toBe(true);
+
+    // Verify MRU was recorded
+    const hasMruWrite = mruWritten.length > 0;
+    expect(hasMruWrite).toBe(true);
+    if (hasMruWrite) {
+      const mruData = JSON.parse(mruWritten);
+      expect(mruData[0].branch).toBe("feat/login");
+      expect(mruData[0].path).toBe("/tmp/mock-repo-feat-login");
+    }
+  });
+
+  it("sorts multiple matches by MRU order", async () => {
+    const stdoutOutput: string[] = [];
+    const stderrOutput: string[] = [];
+    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      stdoutOutput.push(args.map(String).join(" "));
+    });
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      stderrOutput.push(args.map(String).join(" "));
+    });
+
+    // MRU data: auth-logout was used more recently than auth-login
+    const mruData = [
+      {
+        branch: "feat/auth-logout",
+        path: "/tmp/mock-repo-feat-auth-logout",
+        timestamp: 2000,
+      },
+      {
+        branch: "feat/auth-login",
+        path: "/tmp/mock-repo-feat-auth-login",
+        timestamp: 1000,
+      },
+    ];
+
+    const exitCode = { value: null as number | null };
+    const ctx = createWorktreeContext(
+      [
+        { path: "/tmp/mock-repo", branch: "main" },
+        { path: "/tmp/mock-repo-feat-auth-login", branch: "feat/auth-login" },
+        { path: "/tmp/mock-repo-feat-auth-logout", branch: "feat/auth-logout" },
+      ],
+      { exitCode, stdinResponses: ["1"] }, // Select first option (should be auth-logout due to MRU)
+    );
+
+    // Override env to provide HOME for MRU file path
+    ctx.runtime.env.get = (key: string) => {
+      if (key === "HOME") return "/tmp";
+      if (key === "VIBE_FORCE_INTERACTIVE") return "1";
+      return undefined;
+    };
+
+    // Override readTextFile to return MRU data for mru.json
+    const originalReadTextFile = ctx.runtime.fs.readTextFile;
+    ctx.runtime.fs.readTextFile = (path: string) => {
+      if (path.includes("mru.json")) {
+        return Promise.resolve(JSON.stringify(mruData));
+      }
+      return originalReadTextFile(path);
+    };
+    ctx.runtime.fs.mkdir = () => Promise.resolve();
+    ctx.runtime.fs.rename = () => Promise.resolve();
+
+    await jumpCommand("auth", {}, ctx);
+
+    consoleLogSpy.mockRestore();
+
+    expect(exitCode.value).toBeNull();
+    // First option should be auth-logout (MRU timestamp 2000 > 1000)
+    const hasCdOutput = stdoutOutput.some((line) =>
+      line.includes("cd '/tmp/mock-repo-feat-auth-logout'"),
+    );
+    expect(hasCdOutput).toBe(true);
+  });
+
   it("shows error on exception", async () => {
     const exitCode = { value: null as number | null };
     const stderrOutput: string[] = [];

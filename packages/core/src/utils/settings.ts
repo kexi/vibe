@@ -4,22 +4,7 @@ import { calculateFileHash, calculateHashFromContent } from "./hash.ts";
 import { getRepoInfoFromPath, type RepoInfo } from "./git.ts";
 import { VERSION } from "../version.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
-
-// Settings file path (lazy-evaluated for cross-runtime support)
-function getConfigDir(ctx: AppContext = getGlobalContext()): string {
-  const home = ctx.runtime.env.get("HOME") ?? "";
-
-  // Validate HOME to prevent path traversal attacks
-  const isValidHome = home.length > 0 && isAbsolute(home) && !home.includes("..");
-  if (!isValidHome) {
-    throw new Error(
-      "Invalid HOME environment variable. " +
-        "HOME must be an absolute path without '..' components.",
-    );
-  }
-
-  return join(home, ".config", "vibe");
-}
+import { getConfigDir, ensureConfigDir } from "./config-path.ts";
 
 function getUserSettingsFile(ctx: AppContext = getGlobalContext()): string {
   return join(getConfigDir(ctx), "settings.json");
@@ -287,17 +272,6 @@ function createDefaultSettings(): VibeSettings {
 }
 
 // ===== File Operations =====
-
-async function ensureConfigDir(ctx: AppContext = getGlobalContext()): Promise<void> {
-  try {
-    await ctx.runtime.fs.mkdir(getConfigDir(ctx), { recursive: true });
-  } catch (error) {
-    const isAlreadyExists = ctx.runtime.errors.isAlreadyExists(error);
-    if (!isAlreadyExists) {
-      throw error;
-    }
-  }
-}
 
 export async function loadUserSettings(
   ctx: AppContext = getGlobalContext(),

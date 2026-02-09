@@ -4,6 +4,8 @@ import { log, type OutputOptions, verboseLog } from "../utils/output.ts";
 import { formatCdCommand } from "../utils/shell.ts";
 import { startCommand } from "./start.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
+import { fuzzyMatch, FUZZY_MATCH_MIN_LENGTH } from "../utils/fuzzy.ts";
+import { type MruEntry, loadMruData, recordMruEntry, sortByMru } from "../utils/mru.ts";
 
 /** Word boundary delimiters in branch names */
 const WORD_BOUNDARY_CHARS = new Set(["/", "-", "_"]);
@@ -33,6 +35,7 @@ async function handlePartialMatches(
   branchName: string,
   outputOpts: OutputOptions,
   ctx: AppContext,
+  mruEntries: MruEntry[],
 ): Promise<boolean> {
   const hasSingleMatch = matches.length === 1;
   if (hasSingleMatch) {
@@ -40,6 +43,11 @@ async function handlePartialMatches(
     verboseLog(`Partial match found: ${match.branch} -> ${match.path}`, outputOpts);
     log(`Matched: ${match.branch}`, outputOpts);
     console.log(formatCdCommand(match.path));
+    try {
+      await recordMruEntry(match.branch, match.path, ctx);
+    } catch {
+      // MRU recording failure should not affect jump
+    }
     return true;
   }
 
@@ -47,7 +55,9 @@ async function handlePartialMatches(
   if (hasMultipleMatches) {
     verboseLog(`Multiple partial matches found: ${matches.length}`, outputOpts);
 
-    const choices = matches.map((w) => `${w.branch} (${w.path})`);
+    const sorted = sortByMru(matches, mruEntries);
+
+    const choices = sorted.map((w) => `${w.branch} (${w.path})`);
     choices.push("Cancel");
 
     const selected = await select(`Multiple worktrees match '${branchName}':`, choices, ctx);
@@ -58,8 +68,13 @@ async function handlePartialMatches(
       return true;
     }
 
-    const selectedWorktree = matches[selected];
+    const selectedWorktree = sorted[selected];
     console.log(formatCdCommand(selectedWorktree.path));
+    try {
+      await recordMruEntry(selectedWorktree.branch, selectedWorktree.path, ctx);
+    } catch {
+      // MRU recording failure should not affect jump
+    }
     return true;
   }
 
@@ -91,11 +106,24 @@ export async function jumpCommand(
 
     verboseLog(`Found ${worktrees.length} worktree(s)`, outputOpts);
 
+    // Load MRU data once at the beginning
+    let mruEntries: MruEntry[] = [];
+    try {
+      mruEntries = await loadMruData(ctx);
+    } catch {
+      // MRU loading failure should not affect jump
+    }
+
     // Exact match (case-sensitive)
     const exactMatch = worktrees.find((w) => w.branch === trimmedBranchName);
     if (exactMatch) {
       verboseLog(`Exact match found: ${exactMatch.branch} -> ${exactMatch.path}`, outputOpts);
       console.log(formatCdCommand(exactMatch.path));
+      try {
+        await recordMruEntry(exactMatch.branch, exactMatch.path, ctx);
+      } catch {
+        // MRU recording failure should not affect jump
+      }
       return;
     }
 
@@ -109,6 +137,11 @@ export async function jumpCommand(
       );
       log(`Matched: ${exactMatchCI.branch}`, outputOpts);
       console.log(formatCdCommand(exactMatchCI.path));
+      try {
+        await recordMruEntry(exactMatchCI.branch, exactMatchCI.path, ctx);
+      } catch {
+        // MRU recording failure should not affect jump
+      }
       return;
     }
 
@@ -122,6 +155,7 @@ export async function jumpCommand(
       trimmedBranchName,
       outputOpts,
       ctx,
+      mruEntries,
     );
     if (handledWB) {
       return;
@@ -137,6 +171,7 @@ export async function jumpCommand(
       trimmedBranchName,
       outputOpts,
       ctx,
+      mruEntries,
     );
     if (handledWBCI) {
       return;
@@ -150,6 +185,7 @@ export async function jumpCommand(
       trimmedBranchName,
       outputOpts,
       ctx,
+      mruEntries,
     );
     if (handledSub) {
       return;
@@ -165,9 +201,32 @@ export async function jumpCommand(
       trimmedBranchName,
       outputOpts,
       ctx,
+      mruEntries,
     );
     if (handledSubCI) {
       return;
+    }
+
+    // Fuzzy match (subsequence matching)
+    const hasEnoughCharsForFuzzy = trimmedBranchName.length >= FUZZY_MATCH_MIN_LENGTH;
+    if (hasEnoughCharsForFuzzy) {
+      const fuzzyResults = worktrees
+        .map((w) => {
+          const result = fuzzyMatch(w.branch, trimmedBranchName);
+          if (!result) return null;
+          return { path: w.path, branch: w.branch, score: result.score };
+        })
+        .filter((r): r is NonNullable<typeof r> => r !== null)
+        .sort((a, b) => b.score - a.score);
+
+      const handledFuzzy = await handlePartialMatches(
+        fuzzyResults,
+        trimmedBranchName,
+        outputOpts,
+        ctx,
+        mruEntries,
+      );
+      if (handledFuzzy) return;
     }
 
     // No match found

@@ -5,7 +5,7 @@ sidebar:
   order: 3
 ---
 
-`jump`コマンドはブランチ名をマッチングして既存のGit Worktreeに移動します。完全一致、部分一致、インタラクティブな選択をサポートしています。
+`jump`コマンドはブランチ名をマッチングして既存のGit Worktreeに移動します。完全一致、部分一致、ファジーマッチ、インタラクティブな選択をサポートしています。
 
 ## 使い方
 
@@ -29,6 +29,9 @@ vibe jump feat/new-feature
 # 部分一致でジャンプ
 vibe jump login
 
+# ファジーマッチでジャンプ（部分列マッチング）
+vibe jump feli   # "feat/login" にマッチ
+
 # 詳細な出力を表示
 vibe jump feat/debug -V
 ```
@@ -43,7 +46,8 @@ vibe jump feat/debug -V
 2. **完全一致**（大文字小文字区別なし）: 大文字小文字を無視して一致するWorktreeが存在する場合、そこに移動
 3. **単語境界一致**（大文字小文字区別あり→なし）: 入力が単語境界（`/`、`-`、`_` の直後）に出現する場合、通常の部分文字列一致より優先される
 4. **部分文字列一致**（大文字小文字区別あり→なし）: 単語境界一致がない場合、部分文字列一致にフォールバック。複数のWorktreeが一致する場合、インタラクティブな選択プロンプトを表示
-5. **一致なし**: `vibe start`で新しいWorktreeを作成するか確認
+5. **ファジーマッチ**（部分列マッチング）: 部分文字列一致がなく、検索語が3文字以上の場合、検索語の各文字がブランチ名内に順序通りに出現するかを判定（例: `feli` → `feat/login`）。連続一致、単語境界、マッチ位置を考慮したスコアリングアルゴリズムで結果をランク付け
+6. **一致なし**: `vibe start`で新しいWorktreeを作成するか確認
 
 ### 完全一致
 
@@ -58,6 +62,14 @@ $ vibe jump feat/new-feature
 $ vibe jump login
 Matched: feat/login-page
 # → cd '/path/to/repo-feat-login-page'
+```
+
+### ファジーマッチ
+
+```
+$ vibe jump feli
+Matched: feat/login
+# → cd '/path/to/repo-feat-login'
 ```
 
 ### 複数一致

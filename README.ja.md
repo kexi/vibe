@@ -13,7 +13,7 @@ Git Worktreeを簡単かつ超高速に管理するCLIツール。
 | コマンド                        | 説明                                                                     |
 | ------------------------------- | ------------------------------------------------------------------------ |
 | `vibe start <branch> [options]` | 新規または既存ブランチでworktreeを作成（冪等）                           |
-| `vibe jump <branch> [options]`  | ブランチ名で既存のworktreeにジャンプ（部分一致対応）                     |
+| `vibe jump <branch> [options]`  | ブランチ名で既存のworktreeにジャンプ（部分一致・ファジーマッチ対応）     |
 | `vibe clean [options]`          | 現在のworktreeを削除してメインに戻る（未コミットの変更がある場合は確認） |
 | `vibe home`                     | Worktreeを削除せずにメインに戻る                                         |
 | `vibe trust`                    | `.vibe.toml`と`.vibe.local.toml`ファイルを信頼登録                       |
@@ -34,9 +34,10 @@ vibe start feat/existing-branch
 # 特定のブランチをベースにworktreeを作成
 vibe start feat/new-feature --base main
 
-# 既存のworktreeにジャンプ（完全一致または部分一致）
+# 既存のworktreeにジャンプ（完全一致、部分一致、ファジーマッチ）
 vibe jump feat/new-feature
 vibe jump login
+vibe jump feli  # "feat/login" にファジーマッチ
 
 # 作業完了後、worktreeを削除
 vibe clean
