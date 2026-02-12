@@ -18,7 +18,7 @@ export interface NativeTrashAdapter {
   /** Whether the native trash module is available */
   readonly available: boolean;
 
-  /** The runtime type (deno or node) */
+  /** The runtime type (deno or node). Bun reports as "node" since it shares the same N-API implementation. */
   readonly runtimeType: "deno" | "node";
 
   /**
@@ -38,7 +38,7 @@ export interface NativeCloneAdapter {
   /** Whether the native module is available and initialized */
   readonly available: boolean;
 
-  /** The runtime type (deno or node) */
+  /** The runtime type (deno or node). Bun reports as "node" since it shares the same N-API implementation. */
   readonly runtimeType: "deno" | "node";
 
   /** The platform type */
