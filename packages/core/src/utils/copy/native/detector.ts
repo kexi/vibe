@@ -1,5 +1,5 @@
 import type { NativeClone } from "./types.ts";
-import { IS_DENO, IS_NODE, runtime } from "../../../runtime/index.ts";
+import { IS_BUN, IS_DENO, IS_NODE, runtime } from "../../../runtime/index.ts";
 
 /**
  * Check if native clone module is potentially available
@@ -8,20 +8,21 @@ import { IS_DENO, IS_NODE, runtime } from "../../../runtime/index.ts";
  * Actual availability is checked when getNativeClone() is called.
  */
 export function isNativeCloneAvailable(): boolean {
-  // Both Deno and Node.js use N-API (@kexi/vibe-native)
+  // Deno, Node.js, and Bun use N-API (@kexi/vibe-native)
   // Actual availability is checked when getNativeClone() is called
-  return IS_DENO || IS_NODE;
+  return IS_DENO || IS_NODE || IS_BUN;
 }
 
 /**
  * Get the appropriate NativeClone implementation for the current OS
  * Returns null if native clone is not available or the OS is not supported
  *
- * Both Deno and Node.js now use @kexi/vibe-native (N-API module).
+ * Deno, Node.js, and Bun use @kexi/vibe-native (N-API module).
+ * Bun is fully compatible with Node.js N-API, so it uses the same path.
  */
 export async function getNativeClone(): Promise<NativeClone | null> {
-  // Node.js: Use @kexi/vibe-native module via require
-  if (IS_NODE) {
+  // Node.js/Bun: Use @kexi/vibe-native module via require
+  if (IS_NODE || IS_BUN) {
     try {
       const { createNodeNativeClone } = await import("../../../runtime/node/native.ts");
       const clone = createNodeNativeClone();
@@ -33,7 +34,7 @@ export async function getNativeClone(): Promise<NativeClone | null> {
     } catch (error) {
       const isDebug = runtime.env.get("VIBE_DEBUG") === "1";
       if (isDebug) {
-        console.warn("[vibe] Failed to load native clone module (Node.js):", error);
+        console.warn("[vibe] Failed to load native clone module (Node.js/Bun):", error);
       }
       return null;
     }
