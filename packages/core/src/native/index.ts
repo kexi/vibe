@@ -2,13 +2,14 @@
  * Unified native clone adapter
  *
  * Provides a consistent interface for native Copy-on-Write cloning
- * across different runtimes (Deno, Node.js) and platforms (macOS, Linux).
+ * across different runtimes (Deno, Node.js, Bun) and platforms (macOS, Linux).
  *
- * Both Deno and Node.js use @kexi/vibe-native N-API module.
+ * Deno, Node.js, and Bun use @kexi/vibe-native N-API module.
  * Deno 2.x supports N-API modules via npm: specifier.
+ * Bun is fully compatible with Node.js N-API, so it uses the same path.
  */
 
-import { IS_DENO, IS_NODE, runtime } from "../runtime/index.ts";
+import { IS_BUN, IS_DENO, IS_NODE, runtime } from "../runtime/index.ts";
 
 /**
  * Native trash operation interface
@@ -79,7 +80,8 @@ export interface NativeCloneAdapter {
  * - Native module (@kexi/vibe-native) is not installed or unavailable
  */
 export function getNativeCloneAdapter(): Promise<NativeCloneAdapter | null> {
-  if (IS_NODE) {
+  // Node.js and Bun use the same N-API path
+  if (IS_NODE || IS_BUN) {
     return getNodeAdapter();
   }
 
@@ -101,7 +103,8 @@ export function getNativeCloneAdapter(): Promise<NativeCloneAdapter | null> {
  * It falls back to platform-specific methods (osascript on macOS, /tmp on Linux).
  */
 export function getNativeTrashAdapter(): Promise<NativeTrashAdapter | null> {
-  if (IS_NODE) {
+  // Node.js and Bun use the same N-API path
+  if (IS_NODE || IS_BUN) {
     return getNodeTrashAdapter();
   }
 
@@ -140,8 +143,8 @@ async function getNodeTrashAdapter(): Promise<NativeTrashAdapter | null> {
  * Check if native cloning is available for the current runtime/platform
  */
 export function isNativeCloneAvailable(): boolean {
-  // For both Deno and Node.js, actual availability is checked when adapter is created
-  if (IS_DENO || IS_NODE) {
+  // For Deno, Node.js, and Bun, actual availability is checked when adapter is created
+  if (IS_DENO || IS_NODE || IS_BUN) {
     return true;
   }
 
