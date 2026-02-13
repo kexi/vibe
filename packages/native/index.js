@@ -284,7 +284,16 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`);
 }
 
-const { cloneSync, cloneAsync, clone, isAvailable, supportsDirectory, getPlatform } = nativeBinding;
+const {
+  cloneSync,
+  cloneAsync,
+  clone,
+  isAvailable,
+  supportsDirectory,
+  getPlatform,
+  moveToTrash,
+  moveToTrashAsync,
+} = nativeBinding;
 
 module.exports.cloneSync = cloneSync;
 module.exports.cloneAsync = cloneAsync;
@@ -292,3 +301,5 @@ module.exports.clone = clone;
 module.exports.isAvailable = isAvailable;
 module.exports.supportsDirectory = supportsDirectory;
 module.exports.getPlatform = getPlatform;
+module.exports.moveToTrash = moveToTrash;
+module.exports.moveToTrashAsync = moveToTrashAsync;
