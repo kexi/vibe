@@ -27,6 +27,47 @@ let loadAttempted = false;
 let lastLoadError: string | null = null;
 
 /**
+ * Load the .node file directly for the current platform/architecture.
+ *
+ * This bypasses the NAPI-RS generated index.js which uses existsSync()
+ * to check for .node files — a check that fails inside Bun's compiled
+ * binary virtual filesystem ($bunfs).
+ *
+ * IMPORTANT: Each require() call MUST use a string literal so that
+ * Bun's bundler can statically discover and embed the .node files
+ * during `bun build --compile`.
+ */
+function loadNativeForPlatform(): VibeNativeModule | null {
+  const { platform, arch } = process;
+
+  try {
+    if (platform === "darwin" && arch === "arm64") {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      return require("../../../../native/vibe-native.darwin-arm64.node") as VibeNativeModule;
+    }
+    if (platform === "darwin" && arch === "x64") {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      return require("../../../../native/vibe-native.darwin-x64.node") as VibeNativeModule;
+    }
+    if (platform === "linux" && arch === "x64") {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      return require("../../../../native/vibe-native.linux-x64-gnu.node") as VibeNativeModule;
+    }
+    if (platform === "linux" && arch === "arm64") {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      return require("../../../../native/vibe-native.linux-arm64-gnu.node") as VibeNativeModule;
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (process.env.VIBE_DEBUG) {
+      console.warn(`[vibe-native] Direct .node load failed: ${errorMessage}`);
+    }
+  }
+
+  return null;
+}
+
+/**
  * Try to load the @kexi/vibe-native module
  */
 function tryLoadNative(): VibeNativeModule | null {
@@ -45,20 +86,29 @@ function tryLoadNative(): VibeNativeModule | null {
     return null;
   }
 
+  // Try 1: NAPI-RS index.js (development mode, npm distribution)
   try {
-    // Dynamic import to handle optional dependency
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     nativeModule = require("@kexi/vibe-native") as VibeNativeModule;
     return nativeModule;
-  } catch (error) {
-    // Log the error for debugging purposes
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    lastLoadError = `Failed to load @kexi/vibe-native: ${errorMessage}`;
-    if (process.env.VIBE_DEBUG) {
-      console.warn(`[vibe-native] ${lastLoadError}`);
-    }
-    return null;
+  } catch {
+    // index.js existsSync fails inside Bun's $bunfs — fall through to direct load
   }
+
+  // Try 2: Direct .node file require (for Bun compiled binaries)
+  nativeModule = loadNativeForPlatform();
+  if (nativeModule !== null) {
+    if (process.env.VIBE_DEBUG) {
+      console.warn("[vibe-native] Loaded via direct .node require");
+    }
+    return nativeModule;
+  }
+
+  lastLoadError = "Failed to load @kexi/vibe-native via both package and direct .node paths";
+  if (process.env.VIBE_DEBUG) {
+    console.warn(`[vibe-native] ${lastLoadError}`);
+  }
+  return null;
 }
 
 /**
