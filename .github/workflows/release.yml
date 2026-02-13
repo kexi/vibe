@@ -59,7 +59,9 @@ jobs:
         run: |
           cd packages/native
           if [ "${{ runner.os }}" = "macOS" ]; then
-            # macOS: build for both architectures (bundler embeds both, runtime selects correct one)
+            # macOS: Both x64 and arm64 matrix entries run on macos-latest (arm64).
+            # Cross-compile both architectures so Bun embeds both .node files;
+            # at runtime, N-API selects the one matching process.arch.
             rustup target add x86_64-apple-darwin aarch64-apple-darwin
             pnpm exec napi build --platform --release --target x86_64-apple-darwin --js false
             pnpm exec napi build --platform --release --target aarch64-apple-darwin --js false
@@ -70,6 +72,15 @@ jobs:
 
       - name: Build release binary
         run: bun run scripts/build.ts --target ${{ matrix.target }} --output ${{ matrix.artifact }} --distribution binary
+
+      - name: Verify native module embedding
+        if: runner.os != 'Windows'
+        run: |
+          if ! strings ${{ matrix.artifact }} | grep -q 'vibe-native'; then
+            echo "::error::Native module not found in compiled binary"
+            exit 1
+          fi
+          echo "Native module embedding verified"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

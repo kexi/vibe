@@ -143,6 +143,12 @@ try {
 - **Btrfs** or **XFS** (with reflink support) is required
 - ext4 and other filesystems will return `EOPNOTSUPP`
 
+## Release Binary Embedding
+
+When building release binaries with `bun build --compile`, the `.node` files are automatically embedded into Bun's `$bunfs` virtual filesystem. This ensures that Homebrew and other compiled distributions include native CoW cloning support without requiring separate native module installation.
+
+The CI release workflows build native modules for all supported platforms before compiling the binary.
+
 ## Building from Source
 
 ```bash
