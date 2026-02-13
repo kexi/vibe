@@ -614,6 +614,9 @@ async function copyDirectories(
   }
 
   const dirStrategy = await copyService.getDirectoryStrategy();
+  if (process.env.VIBE_DEBUG) {
+    console.error(`[vibe] Copy strategy: ${dirStrategy.name}`);
+  }
   const phaseId = tracker.addPhase(`Copying directories (${dirStrategy.name})`);
   const taskIds = directoriesToCopy.map((dir) => tracker.addTask(phaseId, dir));
 
