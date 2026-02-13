@@ -31,7 +31,7 @@ export declare function supportsDirectory(): boolean;
  * Get the current platform
  * Returns "darwin" or "linux"
  */
-export declare function getPlatform(): string;
+export declare function getPlatform(): "darwin" | "linux";
 /**
  * Move a file or directory to the system trash
  *
