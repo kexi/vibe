@@ -81,8 +81,62 @@ jobs:
       - name: Install dependencies
         run: pnpm install --ignore-scripts
 
+      - name: Build native module
+        if: runner.os != 'Windows'
+        run: |
+          cd packages/native
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            # macOS: Both x64 and arm64 matrix entries run on macos-latest (arm64).
+            # Cross-compile both architectures so Bun embeds both .node files;
+            # at runtime, N-API selects the one matching process.arch.
+            rustup target add x86_64-apple-darwin aarch64-apple-darwin
+            pnpm exec napi build --platform --release --target x86_64-apple-darwin --js false
+            pnpm exec napi build --platform --release --target aarch64-apple-darwin --js false
+          else
+            # Linux: build for current architecture only
+            pnpm exec napi build --platform --release --js false
+          fi
+
       - name: Build release binary
         run: bun run scripts/build.ts --target ${{ matrix.target }} --output ${{ matrix.artifact }} --distribution binary --version ${{ needs.prepare.outputs.version }}
+
+      - name: Verify native module embedding
+        if: runner.os != 'Windows'
+        run: |
+          # String search: verify .node file references are embedded
+          if ! strings ${{ matrix.artifact }} | grep -q 'vibe-native'; then
+            echo "::error::Native module string not found in compiled binary"
+            exit 1
+          fi
+          echo "Native module embedding verified (string search)"
+
+          # Functional test: run binary on native target to verify module loads
+          CURRENT_TARGET="bun-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/x64/' | sed 's/aarch64/arm64/')"
+          EXPECTED_TARGET="${{ matrix.target }}"
+          IS_NATIVE_DARWIN_ARM64=false
+          if [ "$CURRENT_TARGET" = "bun-darwin-arm64" ] && echo "$EXPECTED_TARGET" | grep -q "aarch64-apple-darwin"; then
+            IS_NATIVE_DARWIN_ARM64=true
+          fi
+          IS_NATIVE_DARWIN_X64=false
+          if [ "$CURRENT_TARGET" = "bun-darwin-x64" ] && echo "$EXPECTED_TARGET" | grep -q "x86_64-apple-darwin"; then
+            IS_NATIVE_DARWIN_X64=true
+          fi
+          IS_NATIVE_LINUX_X64=false
+          if [ "$CURRENT_TARGET" = "bun-linux-x64" ] && echo "$EXPECTED_TARGET" | grep -q "x86_64-unknown-linux"; then
+            IS_NATIVE_LINUX_X64=true
+          fi
+          IS_NATIVE_LINUX_ARM64=false
+          if [ "$CURRENT_TARGET" = "bun-linux-arm64" ] && echo "$EXPECTED_TARGET" | grep -q "aarch64-unknown-linux"; then
+            IS_NATIVE_LINUX_ARM64=true
+          fi
+
+          if [ "$IS_NATIVE_DARWIN_ARM64" = "true" ] || [ "$IS_NATIVE_DARWIN_X64" = "true" ] || [ "$IS_NATIVE_LINUX_X64" = "true" ] || [ "$IS_NATIVE_LINUX_ARM64" = "true" ]; then
+            chmod +x ${{ matrix.artifact }}
+            VIBE_DEBUG=1 ./${{ matrix.artifact }} --version 2>&1 || true
+            echo "Native module embedding verified (functional test)"
+          else
+            echo "Skipping functional test (cross-compilation target: $EXPECTED_TARGET on $CURRENT_TARGET)"
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

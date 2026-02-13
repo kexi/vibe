@@ -391,7 +391,7 @@ Vibe automatically selects the best copy strategy based on your system:
 
 | Strategy        | When Used                             | Platform    |
 | --------------- | ------------------------------------- | ----------- |
-| Clone (CoW)     | Directory copy on APFS                | macOS       |
+| Clone (CoW)     | Native clonefile() on APFS            | macOS       |
 | Clone (reflink) | Directory copy on Btrfs/XFS           | Linux       |
 | rsync           | Directory copy when clone unavailable | macOS/Linux |
 | Standard        | File copy, or fallback                | All         |
@@ -400,7 +400,7 @@ Vibe automatically selects the best copy strategy based on your system:
 
 - **File copy**: Always uses native `copyFile()` for best single-file performance
 - **Directory copy**: Automatically uses the fastest available method:
-  - On macOS with APFS: Uses `cp -cR` for Copy-on-Write cloning (near-instant)
+  - On macOS with APFS: Uses native `clonefile()` syscall via `@kexi/vibe-native` for instant CoW cloning. Falls back to `cp -cR` if native module is unavailable
   - On Linux with Btrfs/XFS: Uses `cp --reflink=auto` for CoW cloning
   - Falls back to rsync or standard copy if CoW is unavailable
 
