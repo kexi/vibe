@@ -107,7 +107,7 @@ export async function copyFiles(
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       tracker.failTask(taskIds[i], errorMessage);
-      console.warn(`Warning: Failed to copy ${file}: ${errorMessage}`);
+      warnLog(`Warning: Failed to copy ${file}: ${errorMessage}`);
     }
   }
 }
@@ -138,7 +138,8 @@ export async function copyDirectories(
   }
 
   const dirStrategy = await copyService.getDirectoryStrategy();
-  if (process.env.VIBE_DEBUG) {
+  const isDebugMode = ctx.runtime.env.get("VIBE_DEBUG") !== undefined;
+  if (isDebugMode) {
     console.error(`[vibe] Copy strategy: ${dirStrategy.name}`);
   }
   const phaseId = tracker.addPhase(`Copying directories (${dirStrategy.name})`);
@@ -155,7 +156,7 @@ export async function copyDirectories(
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       tracker.failTask(taskIds[i], errorMessage);
-      console.warn(`Warning: Failed to copy directory ${dir}: ${errorMessage}`);
+      warnLog(`Warning: Failed to copy directory ${dir}: ${errorMessage}`);
     }
   });
 }

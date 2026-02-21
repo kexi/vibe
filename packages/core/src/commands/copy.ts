@@ -1,4 +1,4 @@
-import { isAbsolute } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { getMainWorktreePath, getRepoRoot } from "../utils/git.ts";
 import { loadVibeConfig } from "../utils/config.ts";
 import { ProgressTracker } from "../utils/progress.ts";
@@ -97,7 +97,7 @@ export async function copyCommand(
     const originPath = await getMainWorktreePath(ctx);
 
     // Prevent running on the main worktree itself
-    const isMain = originPath === targetPath;
+    const isMain = resolve(originPath) === resolve(targetPath);
     if (isMain) {
       errorLog("Error: Not in a worktree. 'vibe copy' must be run from a worktree.", outputOpts);
       ctx.runtime.control.exit(1);
