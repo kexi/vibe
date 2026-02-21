@@ -468,5 +468,68 @@ describe("copyCommand", () => {
       // isTerminal() returns true, so stdin is skipped, falls back to getRepoRoot()
       expect(getExitCode()).toBeNull();
     });
+
+    it("falls back to repo root when stdin exceeds 1 MB size limit", async () => {
+      // Create a payload slightly over 1 MB (1,048,577 bytes)
+      const oversizedPayload = "x".repeat(1024 * 1024 + 1);
+      const { ctx, getExitCode } = createCopyTestContext({
+        cwd: "/tmp/worktree",
+        mainWorktreePath: "/tmp/main-repo",
+        vibeTomlExists: false,
+        io: {
+          stdin: createMockStdin(oversizedPayload),
+        },
+      });
+
+      await copyCommand({}, ctx);
+
+      // Oversized stdin should be rejected, falls back to getRepoRoot()
+      expect(getExitCode()).toBeNull();
+    });
+  });
+
+  describe("--target validation", () => {
+    it("exits with error when --target is a relative path", async () => {
+      const { ctx, getExitCode, stderrOutput } = createCopyTestContext({
+        cwd: "/tmp/worktree",
+        mainWorktreePath: "/tmp/main-repo",
+      });
+
+      await copyCommand({ target: "./relative/path" }, ctx);
+
+      expect(getExitCode()).toBe(1);
+      const hasErrorMessage = stderrOutput.some((line) =>
+        line.includes("--target must be an absolute path"),
+      );
+      expect(hasErrorMessage).toBe(true);
+    });
+
+    it("exits with error when --target contains null byte", async () => {
+      const { ctx, getExitCode, stderrOutput } = createCopyTestContext({
+        cwd: "/tmp/worktree",
+        mainWorktreePath: "/tmp/main-repo",
+      });
+
+      await copyCommand({ target: "/tmp/worktree\0malicious" }, ctx);
+
+      expect(getExitCode()).toBe(1);
+      const hasErrorMessage = stderrOutput.some((line) => line.includes("null byte"));
+      expect(hasErrorMessage).toBe(true);
+    });
+  });
+
+  it("copies files with correct source and destination paths", async () => {
+    const copyFileSpy = vi.spyOn(CopyService.prototype, "copyFile").mockResolvedValue(undefined);
+    const { ctx, getExitCode } = createCopyTestContext({
+      cwd: "/tmp/worktree",
+      mainWorktreePath: "/tmp/main-repo",
+      vibeTomlContent: '[copy]\nfiles = ["README.md"]\n',
+      vibeTomlExists: true,
+    });
+
+    await copyCommand({}, ctx);
+
+    expect(getExitCode()).toBeNull();
+    expect(copyFileSpy).toHaveBeenCalledWith("/tmp/main-repo/README.md", "/tmp/worktree/README.md");
   });
 });

@@ -89,6 +89,17 @@ export async function copyCommand(
   const outputOpts: OutputOptions = { verbose, quiet };
 
   try {
+    // Security: validate --target option for defense-in-depth consistency with stdin handling
+    if (target !== undefined) {
+      const isAbsoluteTarget = isAbsolute(target);
+      if (!isAbsoluteTarget) {
+        errorLog("Error: --target must be an absolute path.", outputOpts);
+        ctx.runtime.control.exit(1);
+        return;
+      }
+      validatePath(target);
+    }
+
     // Determine target path: --target > stdin .cwd > getRepoRoot()
     const stdinTarget = target === undefined ? await readTargetFromStdin(ctx) : undefined;
     const targetPath = target ?? stdinTarget ?? (await getRepoRoot(ctx));

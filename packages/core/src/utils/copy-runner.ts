@@ -140,7 +140,7 @@ export async function copyDirectories(
   const dirStrategy = await copyService.getDirectoryStrategy();
   const isDebugMode = ctx.runtime.env.get("VIBE_DEBUG") !== undefined;
   if (isDebugMode) {
-    console.warn(`[vibe] Copy strategy: ${dirStrategy.name}`);
+    warnLog(`[vibe] Copy strategy: ${dirStrategy.name}`);
   }
   const phaseId = tracker.addPhase(`Copying directories (${dirStrategy.name})`);
   const taskIds = directoriesToCopy.map((dir) => tracker.addTask(phaseId, dir));
