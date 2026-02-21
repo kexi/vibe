@@ -134,7 +134,6 @@ export async function copyCommand(
     }
 
     const copyService = getCopyService(ctx);
-    const concurrency = resolveCopyConcurrency(config, ctx);
 
     const tracker = new ProgressTracker(
       {
@@ -150,16 +149,20 @@ export async function copyCommand(
 
     await copyFiles(config.copy?.files ?? [], originPath, targetPath, tracker, copyService, dryRun);
 
-    await copyDirectories(
-      config.copy?.dirs ?? [],
-      originPath,
-      targetPath,
-      tracker,
-      copyService,
-      dryRun,
-      concurrency,
-      ctx,
-    );
+    const hasDirs = (config.copy?.dirs?.length ?? 0) > 0;
+    if (hasDirs) {
+      const concurrency = resolveCopyConcurrency(config, ctx);
+      await copyDirectories(
+        config.copy?.dirs ?? [],
+        originPath,
+        targetPath,
+        tracker,
+        copyService,
+        dryRun,
+        concurrency,
+        ctx,
+      );
+    }
 
     if (shouldStartTracker) {
       await tracker.finish();

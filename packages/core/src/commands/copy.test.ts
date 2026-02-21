@@ -535,7 +535,7 @@ describe("copyCommand", () => {
     it("falls back to repo root when stdin exceeds 1 MB size limit", async () => {
       // Create a payload slightly over 1 MB (1,048,577 bytes)
       const oversizedPayload = "x".repeat(1024 * 1024 + 1);
-      const { ctx, getExitCode } = createCopyTestContext({
+      const { ctx, getExitCode, consoleWarnSpy } = createCopyTestContext({
         cwd: "/tmp/worktree",
         mainWorktreePath: "/tmp/main-repo",
         vibeTomlExists: false,
@@ -548,6 +548,11 @@ describe("copyCommand", () => {
 
       // Oversized stdin should be rejected, falls back to getRepoRoot()
       expect(getExitCode()).toBeNull();
+      // Should log a warning about exceeding the size limit
+      const hasWarning = consoleWarnSpy.mock.calls.some((args) =>
+        args.some((arg) => String(arg).includes("stdin payload exceeds")),
+      );
+      expect(hasWarning).toBe(true);
     });
   });
 
@@ -579,6 +584,28 @@ describe("copyCommand", () => {
       const hasErrorMessage = stderrOutput.some((line) => line.includes("null byte"));
       expect(hasErrorMessage).toBe(true);
     });
+  });
+
+  it("exits with error when git commands fail (not in a git repo)", async () => {
+    const { ctx, getExitCode, stderrOutput } = createCopyTestContext({
+      cwd: "/tmp/worktree",
+      mainWorktreePath: "/tmp/main-repo",
+    });
+
+    // Override process.run to simulate git failure (not in a git repo)
+    ctx.runtime.process.run = () =>
+      Promise.resolve({
+        code: 128,
+        success: false,
+        stdout: new Uint8Array(),
+        stderr: new TextEncoder().encode("fatal: not a git repository\n"),
+      });
+
+    await copyCommand({}, ctx);
+
+    expect(getExitCode()).toBe(1);
+    const hasErrorMessage = stderrOutput.some((line) => line.includes("Error:"));
+    expect(hasErrorMessage).toBe(true);
   });
 
   it("copies files with correct source and destination paths", async () => {
