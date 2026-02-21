@@ -12,6 +12,7 @@ vibe provides a simple set of commands for managing Git Worktrees.
 | Command                              | Description                                      |
 | ------------------------------------ | ------------------------------------------------ |
 | `vibe start <branch> [--base <ref>]` | Create a worktree with a new or existing branch  |
+| `vibe copy`                          | Copy files/dirs from main worktree using CoW     |
 | `vibe clean`                         | Delete current worktree and return to main       |
 | `vibe home`                          | Return to main worktree without removing current |
 | `vibe trust`                         | Trust configuration files                        |
@@ -30,6 +31,9 @@ vibe start feat/existing-branch
 
 # Create from a specific base branch
 vibe start feat/new-feature --base main
+
+# Copy files/dirs from main worktree (in a secondary worktree)
+vibe copy
 
 # Clean up when done
 vibe clean
@@ -61,6 +65,7 @@ These options are available for most commands:
 ## Detailed Documentation
 
 - [start](/commands/start/) - Create worktrees
+- [copy](/commands/copy/) - Copy files from main worktree
 - [clean](/commands/clean/) - Remove worktrees
 - [home](/commands/home/) - Navigate to main worktree
 - [trust](/commands/trust/) - Manage configuration trust
