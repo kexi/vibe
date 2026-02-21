@@ -1,11 +1,15 @@
+import { isAbsolute } from "node:path";
 import { getMainWorktreePath, getRepoRoot } from "../utils/git.ts";
 import { loadVibeConfig } from "../utils/config.ts";
 import { ProgressTracker } from "../utils/progress.ts";
 import { getCopyService } from "../utils/copy/index.ts";
-import { copyFiles, copyDirectories } from "../utils/copy-runner.ts";
-import { resolveCopyConcurrency } from "./start.ts";
+import { copyFiles, copyDirectories, resolveCopyConcurrency } from "../utils/copy-runner.ts";
+import { validatePath } from "../utils/copy/validation.ts";
 import { errorLog, log, type OutputOptions, verboseLog } from "../utils/output.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
+
+/** Maximum stdin payload size in bytes (1 MB) to prevent resource exhaustion */
+const MAX_STDIN_SIZE = 1024 * 1024;
 
 interface CopyOptions extends OutputOptions {
   target?: string;
@@ -24,13 +28,18 @@ async function readTargetFromStdin(ctx: AppContext): Promise<string | undefined>
   try {
     const chunks: Uint8Array[] = [];
     const buf = new Uint8Array(4096);
+    let totalLength = 0;
     let bytesRead = await ctx.runtime.io.stdin.read(buf);
     while (bytesRead !== null && bytesRead > 0) {
+      totalLength += bytesRead;
+      // Guard against excessively large stdin payloads (max 1 MB)
+      const exceedsMaxSize = totalLength > MAX_STDIN_SIZE;
+      if (exceedsMaxSize) return undefined;
+
       chunks.push(buf.slice(0, bytesRead));
       bytesRead = await ctx.runtime.io.stdin.read(buf);
     }
 
-    const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
     const hasNoInput = totalLength === 0;
     if (hasNoInput) return undefined;
 
@@ -48,7 +57,15 @@ async function readTargetFromStdin(ctx: AppContext): Promise<string | undefined>
     const json = JSON.parse(text);
     const cwd = json?.cwd;
     const isValidCwd = typeof cwd === "string" && cwd.length > 0;
-    return isValidCwd ? cwd : undefined;
+    if (!isValidCwd) return undefined;
+
+    // Security: validate the path from untrusted stdin input
+    const isAbsolutePath = isAbsolute(cwd);
+    if (!isAbsolutePath) return undefined;
+
+    validatePath(cwd);
+
+    return cwd;
   } catch {
     return undefined;
   }
@@ -93,10 +110,8 @@ export async function copyCommand(
     // Load config from the origin (main worktree)
     const config = await loadVibeConfig(originPath, ctx);
 
-    const hasCopyConfig =
-      config !== undefined &&
-      ((config.copy?.files?.length ?? 0) > 0 || (config.copy?.dirs?.length ?? 0) > 0);
-    if (!hasCopyConfig) {
+    const hasNoCopyConfig = !config?.copy?.files?.length && !config?.copy?.dirs?.length;
+    if (hasNoCopyConfig) {
       verboseLog("No copy configuration found. Skipping.", outputOpts);
       return;
     }
@@ -116,17 +131,10 @@ export async function copyCommand(
       tracker.start();
     }
 
-    await copyFiles(
-      config!.copy?.files ?? [],
-      originPath,
-      targetPath,
-      tracker,
-      copyService,
-      dryRun,
-    );
+    await copyFiles(config.copy?.files ?? [], originPath, targetPath, tracker, copyService, dryRun);
 
     await copyDirectories(
-      config!.copy?.dirs ?? [],
+      config.copy?.dirs ?? [],
       originPath,
       targetPath,
       tracker,

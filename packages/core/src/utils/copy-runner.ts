@@ -2,8 +2,53 @@ import { join } from "node:path";
 import { expandCopyPatterns, expandDirectoryPatterns } from "./glob.ts";
 import { ProgressTracker } from "./progress.ts";
 import type { CopyService } from "./copy/index.ts";
-import { logDryRun } from "./output.ts";
+import { logDryRun, warnLog } from "./output.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
+import type { VibeConfig } from "../types/config.ts";
+
+const DEFAULT_COPY_CONCURRENCY = 4;
+const MAX_COPY_CONCURRENCY = 32;
+
+/**
+ * Resolve the copy concurrency value from environment variable, config, or default.
+ *
+ * Priority order:
+ * 1. Environment variable `VIBE_COPY_CONCURRENCY` (highest priority)
+ * 2. Config file setting `copy.concurrency`
+ * 3. Default value (4)
+ *
+ * If the environment variable is set but invalid (not an integer between 1-32),
+ * a warning is logged and the default value is used (not the config value).
+ *
+ * @param config - The vibe configuration object (may be undefined)
+ * @param ctx - The application context for accessing environment variables
+ * @returns The resolved concurrency value (1-32)
+ */
+export function resolveCopyConcurrency(config: VibeConfig | undefined, ctx: AppContext): number {
+  // Check environment variable first (highest priority)
+  const envValue = ctx.runtime.env.get("VIBE_COPY_CONCURRENCY");
+  if (envValue !== undefined) {
+    const parsed = parseInt(envValue, 10);
+    const isValidEnvValue = !isNaN(parsed) && parsed >= 1 && parsed <= MAX_COPY_CONCURRENCY;
+    if (isValidEnvValue) {
+      return parsed;
+    }
+    warnLog(
+      `Warning: Invalid VIBE_COPY_CONCURRENCY value '${envValue}'. ` +
+        `Must be an integer between 1 and ${MAX_COPY_CONCURRENCY}. Using default: ${DEFAULT_COPY_CONCURRENCY}`,
+    );
+    return DEFAULT_COPY_CONCURRENCY;
+  }
+
+  // Fall back to config value
+  const configValue = config?.copy?.concurrency;
+  if (configValue !== undefined) {
+    return configValue;
+  }
+
+  // Use default
+  return DEFAULT_COPY_CONCURRENCY;
+}
 
 /**
  * Execute tasks with concurrency limit.

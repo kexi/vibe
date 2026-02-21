@@ -90,13 +90,13 @@ Claude Codeが`--worktree`フラグでWorktreeを作成する際に、`vibe copy
 
 ### 動作の仕組み
 
-```
-claude --worktree feature-x
-  └─ PostToolUse(EnterWorktree) hook
-       └─ vibe copy --quiet
-            └─ stdinのJSONから.cwdを読み取り
-            └─ メインWorktreeの.vibe.tomlを読み込み
-            └─ CoWでファイル/ディレクトリをコピー
+```mermaid
+flowchart TD
+    A["claude --worktree feature-x"] --> B["PostToolUse(EnterWorktree) フック"]
+    B --> C["vibe copy --quiet"]
+    C --> D["stdinのJSONから.cwdを読み取り"]
+    C --> E["メインWorktreeの.vibe.tomlを読み込み"]
+    C --> F["CoWでファイル/ディレクトリをコピー"]
 ```
 
 Claude Codeの`EnterWorktree`ツールが実行されると：

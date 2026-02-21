@@ -15,6 +15,7 @@ A super fast CLI tool for easy Git Worktree management.
 | `vibe start <branch> [options]` | Create a worktree with a new or existing branch (idempotent)                      |
 | `vibe jump <branch> [options]`  | Jump to an existing worktree by branch name (supports partial and fuzzy matching) |
 | `vibe clean [options]`          | Delete current worktree and return to main (prompts if uncommitted changes exist) |
+| `vibe copy [options]`           | Copy files and directories from main worktree using Copy-on-Write                 |
 | `vibe home`                     | Return to main worktree without removing current                                  |
 | `vibe trust`                    | Trust `.vibe.toml` and `.vibe.local.toml` files                                   |
 | `vibe untrust`                  | Untrust `.vibe.toml` and `.vibe.local.toml` files                                 |

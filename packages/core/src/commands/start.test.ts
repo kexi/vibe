@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { resolveCopyConcurrency, startCommand } from "./start.ts";
+import { startCommand } from "./start.ts";
+import { resolveCopyConcurrency } from "../utils/copy-runner.ts";
 import { createMockContext } from "../context/testing.ts";
 import type { RunResult } from "../runtime/types.ts";
 import type { VibeConfig } from "../types/config.ts";
