@@ -3,7 +3,7 @@ import { expandCopyPatterns, expandDirectoryPatterns } from "./glob.ts";
 import { ProgressTracker } from "./progress.ts";
 import type { CopyService } from "./copy/index.ts";
 import { logDryRun, warnLog } from "./output.ts";
-import { type AppContext, getGlobalContext } from "../context/index.ts";
+import type { AppContext } from "../context/index.ts";
 import type { VibeConfig } from "../types/config.ts";
 
 const DEFAULT_COPY_CONCURRENCY = 4;
@@ -123,7 +123,7 @@ export async function copyDirectories(
   copyService: CopyService,
   dryRun: boolean,
   concurrency: number,
-  ctx: AppContext = getGlobalContext(),
+  ctx: AppContext,
 ): Promise<void> {
   const directoriesToCopy = await expandDirectoryPatterns(dirPatterns, originPath, ctx);
 
@@ -140,7 +140,7 @@ export async function copyDirectories(
   const dirStrategy = await copyService.getDirectoryStrategy();
   const isDebugMode = ctx.runtime.env.get("VIBE_DEBUG") !== undefined;
   if (isDebugMode) {
-    console.error(`[vibe] Copy strategy: ${dirStrategy.name}`);
+    console.warn(`[vibe] Copy strategy: ${dirStrategy.name}`);
   }
   const phaseId = tracker.addPhase(`Copying directories (${dirStrategy.name})`);
   const taskIds = directoriesToCopy.map((dir) => tracker.addTask(phaseId, dir));

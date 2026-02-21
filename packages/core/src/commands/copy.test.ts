@@ -35,7 +35,6 @@ function createCopyTestContext(options: {
   isMainWorktree?: boolean;
   vibeTomlContent?: string;
   vibeTomlExists?: boolean;
-  exitCodes?: number[];
   io?: Partial<RuntimeIO>;
 }) {
   const {
