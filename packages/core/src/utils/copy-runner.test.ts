@@ -7,7 +7,7 @@ describe("withConcurrencyLimit", () => {
     await withConcurrencyLimit([1, 2, 3, 4, 5], 3, async (item) => {
       results.push(item);
     });
-    expect(results).toEqual([1, 2, 3, 4, 5]);
+    expect(results.sort()).toEqual([1, 2, 3, 4, 5]);
   });
 
   it("respects concurrency limit", async () => {
@@ -38,7 +38,7 @@ describe("withConcurrencyLimit", () => {
     await withConcurrencyLimit([1, 2], 10, async (item) => {
       results.push(item);
     });
-    expect(results).toEqual([1, 2]);
+    expect(results.sort()).toEqual([1, 2]);
   });
 
   it("passes correct index to handler", async () => {

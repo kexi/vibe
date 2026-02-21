@@ -2,11 +2,8 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { copyCommand } from "./copy.ts";
 import { createMockContext } from "../context/testing.ts";
 import type { RuntimeIO, RunResult } from "../runtime/types.ts";
+import { CopyService } from "../utils/copy/index.ts";
 
-/**
- * Helper to create a mock context for copy command tests.
- * Simulates git worktree list with a main worktree and an optional secondary worktree.
- */
 /**
  * Build a settings.json content that trusts .vibe.toml with skipHashCheck enabled.
  * This allows tests to bypass SHA-256 trust verification.
@@ -29,6 +26,10 @@ function buildTrustedSettingsJson(mainWorktreePath: string): string {
   });
 }
 
+/**
+ * Helper to create a mock context for copy command tests.
+ * Simulates git worktree list with a main worktree and an optional secondary worktree.
+ */
 function createCopyTestContext(options: {
   cwd?: string;
   mainWorktreePath?: string;
@@ -250,14 +251,13 @@ describe("copyCommand", () => {
   });
 
   it("exits with error when run on main worktree", async () => {
-    const { ctx, getExitCode, stderrOutput, consoleErrorSpy } = createCopyTestContext({
+    const { ctx, getExitCode, stderrOutput } = createCopyTestContext({
       cwd: "/tmp/main-repo",
       mainWorktreePath: "/tmp/main-repo",
       isMainWorktree: true,
     });
 
     await copyCommand({}, ctx);
-    consoleErrorSpy.mockRestore();
 
     expect(getExitCode()).toBe(1);
     const hasErrorMessage = stderrOutput.some((line) => line.includes("Not in a worktree"));
@@ -265,14 +265,13 @@ describe("copyCommand", () => {
   });
 
   it("exits with error when --target points to main worktree path", async () => {
-    const { ctx, getExitCode, stderrOutput, consoleErrorSpy } = createCopyTestContext({
+    const { ctx, getExitCode, stderrOutput } = createCopyTestContext({
       cwd: "/tmp/main-repo",
       mainWorktreePath: "/tmp/main-repo",
       isMainWorktree: true,
     });
 
     await copyCommand({ target: "/tmp/main-repo" }, ctx);
-    consoleErrorSpy.mockRestore();
 
     expect(getExitCode()).toBe(1);
     const hasErrorMessage = stderrOutput.some((line) => line.includes("Not in a worktree"));
@@ -280,14 +279,13 @@ describe("copyCommand", () => {
   });
 
   it("exits with error when in secondary worktree but --target points to main worktree", async () => {
-    const { ctx, getExitCode, stderrOutput, consoleErrorSpy } = createCopyTestContext({
+    const { ctx, getExitCode, stderrOutput } = createCopyTestContext({
       cwd: "/tmp/worktree",
       mainWorktreePath: "/tmp/main-repo",
       isMainWorktree: false,
     });
 
     await copyCommand({ target: "/tmp/main-repo" }, ctx);
-    consoleErrorSpy.mockRestore();
 
     expect(getExitCode()).toBe(1);
     const hasErrorMessage = stderrOutput.some((line) => line.includes("Not in a worktree"));
@@ -295,28 +293,26 @@ describe("copyCommand", () => {
   });
 
   it("skips when no copy configuration exists", async () => {
-    const { ctx, getExitCode, consoleErrorSpy } = createCopyTestContext({
+    const { ctx, getExitCode } = createCopyTestContext({
       cwd: "/tmp/worktree",
       mainWorktreePath: "/tmp/main-repo",
       vibeTomlExists: false,
     });
 
     await copyCommand({ verbose: true }, ctx);
-    consoleErrorSpy.mockRestore();
 
     // Should not exit with error (exitCode should be null - no exit called)
     expect(getExitCode()).toBeNull();
   });
 
   it("uses --target option when provided", async () => {
-    const { ctx, getExitCode, consoleErrorSpy } = createCopyTestContext({
+    const { ctx, getExitCode } = createCopyTestContext({
       cwd: "/tmp/somewhere",
       mainWorktreePath: "/tmp/main-repo",
       vibeTomlExists: false,
     });
 
     await copyCommand({ target: "/tmp/another-worktree" }, ctx);
-    consoleErrorSpy.mockRestore();
 
     // Should not exit with error
     expect(getExitCode()).toBeNull();
@@ -324,21 +320,20 @@ describe("copyCommand", () => {
 
   describe("--dry-run", () => {
     it("does not exit with error in dry-run mode without config", async () => {
-      const { ctx, getExitCode, consoleErrorSpy } = createCopyTestContext({
+      const { ctx, getExitCode } = createCopyTestContext({
         cwd: "/tmp/worktree",
         mainWorktreePath: "/tmp/main-repo",
         vibeTomlExists: false,
       });
 
       await copyCommand({ dryRun: true }, ctx);
-      consoleErrorSpy.mockRestore();
 
       expect(getExitCode()).toBeNull();
     });
 
     it("does not copy files in dry-run mode and outputs dry-run messages", async () => {
       const copyFileSpy = vi.fn(() => Promise.resolve());
-      const { ctx, getExitCode, stderrOutput, consoleErrorSpy } = createCopyTestContext({
+      const { ctx, getExitCode, stderrOutput } = createCopyTestContext({
         cwd: "/tmp/worktree",
         mainWorktreePath: "/tmp/main-repo",
         vibeTomlContent: '[copy]\nfiles = ["README.md"]\n',
@@ -349,7 +344,6 @@ describe("copyCommand", () => {
       ctx.runtime.fs.copyFile = copyFileSpy;
 
       await copyCommand({ dryRun: true }, ctx);
-      consoleErrorSpy.mockRestore();
 
       expect(getExitCode()).toBeNull();
       expect(copyFileSpy).not.toHaveBeenCalled();
@@ -360,10 +354,25 @@ describe("copyCommand", () => {
     });
   });
 
+  it("copies files when config exists and dryRun is false", async () => {
+    const copyFileSpy = vi.spyOn(CopyService.prototype, "copyFile").mockResolvedValue(undefined);
+    const { ctx, getExitCode } = createCopyTestContext({
+      cwd: "/tmp/worktree",
+      mainWorktreePath: "/tmp/main-repo",
+      vibeTomlContent: '[copy]\nfiles = ["README.md"]\n',
+      vibeTomlExists: true,
+    });
+
+    await copyCommand({}, ctx);
+
+    expect(getExitCode()).toBeNull();
+    expect(copyFileSpy).toHaveBeenCalled();
+  });
+
   describe("stdin target resolution", () => {
     it("uses cwd from valid stdin JSON as target", async () => {
       const stdinTarget = "/tmp/stdin-worktree";
-      const { ctx, getExitCode, consoleErrorSpy } = createCopyTestContext({
+      const { ctx, getExitCode } = createCopyTestContext({
         cwd: "/tmp/worktree",
         mainWorktreePath: "/tmp/main-repo",
         vibeTomlExists: false,
@@ -374,14 +383,13 @@ describe("copyCommand", () => {
 
       // No --target option, so stdin should be used as target
       await copyCommand({}, ctx);
-      consoleErrorSpy.mockRestore();
 
       // stdinTarget differs from mainWorktreePath, so no error
       expect(getExitCode()).toBeNull();
     });
 
     it("falls back to repo root when stdin contains invalid JSON", async () => {
-      const { ctx, getExitCode, consoleErrorSpy } = createCopyTestContext({
+      const { ctx, getExitCode } = createCopyTestContext({
         cwd: "/tmp/worktree",
         mainWorktreePath: "/tmp/main-repo",
         vibeTomlExists: false,
@@ -391,7 +399,6 @@ describe("copyCommand", () => {
       });
 
       await copyCommand({}, ctx);
-      consoleErrorSpy.mockRestore();
 
       // Falls back to getRepoRoot() which returns cwd (/tmp/worktree)
       // cwd differs from mainWorktreePath, so no error
@@ -399,7 +406,7 @@ describe("copyCommand", () => {
     });
 
     it("falls back to repo root when stdin is empty", async () => {
-      const { ctx, getExitCode, consoleErrorSpy } = createCopyTestContext({
+      const { ctx, getExitCode } = createCopyTestContext({
         cwd: "/tmp/worktree",
         mainWorktreePath: "/tmp/main-repo",
         vibeTomlExists: false,
@@ -409,14 +416,13 @@ describe("copyCommand", () => {
       });
 
       await copyCommand({}, ctx);
-      consoleErrorSpy.mockRestore();
 
       // Falls back to getRepoRoot() which returns cwd (/tmp/worktree)
       expect(getExitCode()).toBeNull();
     });
 
     it("falls back to repo root when stdin JSON has no cwd field", async () => {
-      const { ctx, getExitCode, consoleErrorSpy } = createCopyTestContext({
+      const { ctx, getExitCode } = createCopyTestContext({
         cwd: "/tmp/worktree",
         mainWorktreePath: "/tmp/main-repo",
         vibeTomlExists: false,
@@ -426,14 +432,13 @@ describe("copyCommand", () => {
       });
 
       await copyCommand({}, ctx);
-      consoleErrorSpy.mockRestore();
 
       // Falls back to getRepoRoot() which returns cwd (/tmp/worktree)
       expect(getExitCode()).toBeNull();
     });
 
     it("ignores stdin when --target option is provided", async () => {
-      const { ctx, getExitCode, consoleErrorSpy } = createCopyTestContext({
+      const { ctx, getExitCode } = createCopyTestContext({
         cwd: "/tmp/worktree",
         mainWorktreePath: "/tmp/main-repo",
         vibeTomlExists: false,
@@ -444,13 +449,12 @@ describe("copyCommand", () => {
 
       // --target is explicitly provided, so stdin should be ignored
       await copyCommand({ target: "/tmp/another-worktree" }, ctx);
-      consoleErrorSpy.mockRestore();
 
       expect(getExitCode()).toBeNull();
     });
 
     it("falls back to repo root when stdin is a terminal", async () => {
-      const { ctx, getExitCode, consoleErrorSpy } = createCopyTestContext({
+      const { ctx, getExitCode } = createCopyTestContext({
         cwd: "/tmp/worktree",
         mainWorktreePath: "/tmp/main-repo",
         vibeTomlExists: false,
@@ -460,7 +464,6 @@ describe("copyCommand", () => {
       });
 
       await copyCommand({}, ctx);
-      consoleErrorSpy.mockRestore();
 
       // isTerminal() returns true, so stdin is skipped, falls back to getRepoRoot()
       expect(getExitCode()).toBeNull();
