@@ -369,6 +369,52 @@ describe("copyCommand", () => {
     expect(copyFileSpy).toHaveBeenCalled();
   });
 
+  it("copies directories when dirs config exists", async () => {
+    const copyDirSpy = vi
+      .spyOn(CopyService.prototype, "copyDirectory")
+      .mockResolvedValue(undefined);
+    const getStrategySpy = vi
+      .spyOn(CopyService.prototype, "getDirectoryStrategy")
+      .mockResolvedValue({
+        name: "standard",
+        isAvailable: () => Promise.resolve(true),
+        copyFile: vi.fn(),
+        copyDirectory: vi.fn(),
+      });
+    const { ctx, getExitCode } = createCopyTestContext({
+      cwd: "/tmp/worktree",
+      mainWorktreePath: "/tmp/main-repo",
+      vibeTomlContent: '[copy]\ndirs = ["node_modules"]\n',
+      vibeTomlExists: true,
+    });
+
+    // Mock stat so the directory appears to exist at the origin path
+    const originalStat = ctx.runtime.fs.stat;
+    ctx.runtime.fs.stat = (path) => {
+      const pathStr = String(path);
+      const isNodeModulesDir = pathStr === "/tmp/main-repo/node_modules";
+      if (isNodeModulesDir) {
+        return Promise.resolve({
+          isFile: false,
+          isDirectory: true,
+          isSymlink: false,
+          size: 0,
+          mtime: null,
+          atime: null,
+          birthtime: null,
+          mode: null,
+        });
+      }
+      return originalStat(path);
+    };
+
+    await copyCommand({}, ctx);
+
+    expect(getExitCode()).toBeNull();
+    expect(copyDirSpy).toHaveBeenCalled();
+    getStrategySpy.mockRestore();
+  });
+
   describe("stdin target resolution", () => {
     it("uses cwd from valid stdin JSON as target", async () => {
       const stdinTarget = "/tmp/stdin-worktree";

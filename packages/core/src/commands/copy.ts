@@ -1,11 +1,11 @@
-import { isAbsolute, resolve } from "node:path";
+import { isAbsolute } from "node:path";
 import { getMainWorktreePath, getRepoRoot } from "../utils/git.ts";
 import { loadVibeConfig } from "../utils/config.ts";
 import { ProgressTracker } from "../utils/progress.ts";
 import { getCopyService } from "../utils/copy/index.ts";
 import { copyFiles, copyDirectories, resolveCopyConcurrency } from "../utils/copy-runner.ts";
 import { validatePath } from "../utils/copy/validation.ts";
-import { errorLog, log, type OutputOptions, verboseLog } from "../utils/output.ts";
+import { errorLog, log, type OutputOptions, verboseLog, warnLog } from "../utils/output.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
 
 /** Maximum stdin payload size in bytes (1 MB) to prevent resource exhaustion */
@@ -34,7 +34,10 @@ async function readTargetFromStdin(ctx: AppContext): Promise<string | undefined>
       totalLength += bytesRead;
       // Guard against excessively large stdin payloads (max 1 MB)
       const exceedsMaxSize = totalLength > MAX_STDIN_SIZE;
-      if (exceedsMaxSize) return undefined;
+      if (exceedsMaxSize) {
+        warnLog(`Warning: stdin payload exceeds ${MAX_STDIN_SIZE} bytes, ignoring.`);
+        return undefined;
+      }
 
       chunks.push(buf.slice(0, bytesRead));
       bytesRead = await ctx.runtime.io.stdin.read(buf);
@@ -108,7 +111,10 @@ export async function copyCommand(
     const originPath = await getMainWorktreePath(ctx);
 
     // Prevent running on the main worktree itself
-    const isMain = resolve(originPath) === resolve(targetPath);
+    // Use realPath to resolve symlinks (e.g., /tmp -> /private/tmp on macOS)
+    const resolvedOrigin = await ctx.runtime.fs.realPath(originPath);
+    const resolvedTarget = await ctx.runtime.fs.realPath(targetPath);
+    const isMain = resolvedOrigin === resolvedTarget;
     if (isMain) {
       errorLog("Error: Not in a worktree. 'vibe copy' must be run from a worktree.", outputOpts);
       ctx.runtime.control.exit(1);
