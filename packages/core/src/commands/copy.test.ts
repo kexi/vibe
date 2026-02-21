@@ -388,6 +388,23 @@ describe("copyCommand", () => {
       expect(getExitCode()).toBeNull();
     });
 
+    it("exits with error when stdin provides main worktree path as cwd", async () => {
+      const { ctx, getExitCode, stderrOutput } = createCopyTestContext({
+        cwd: "/tmp/worktree",
+        mainWorktreePath: "/tmp/main-repo",
+        isMainWorktree: false,
+        io: {
+          stdin: createMockStdin(JSON.stringify({ cwd: "/tmp/main-repo" })),
+        },
+      });
+
+      await copyCommand({}, ctx);
+
+      expect(getExitCode()).toBe(1);
+      const hasErrorMessage = stderrOutput.some((line) => line.includes("Not in a worktree"));
+      expect(hasErrorMessage).toBe(true);
+    });
+
     it("falls back to repo root when stdin contains invalid JSON", async () => {
       const { ctx, getExitCode } = createCopyTestContext({
         cwd: "/tmp/worktree",
