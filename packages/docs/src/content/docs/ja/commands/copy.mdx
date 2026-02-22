@@ -1,0 +1,148 @@
+---
+title: vibe copy
+description: メインWorktreeからCopy-on-Writeを使用してファイルとディレクトリをコピー
+sidebar:
+  order: 5
+---
+
+import { Badge } from "@astrojs/starlight/components";
+
+`copy`コマンドは、メインWorktreeから現在（または指定した）Worktreeに、Copy-on-Write（CoW）を利用してファイルやディレクトリをコピーします。
+
+## 使い方
+
+```bash
+vibe copy [options]
+```
+
+## オプション
+
+| オプション        | 説明                                 |                           |
+| ----------------- | ------------------------------------ | ------------------------- |
+| `--target <path>` | コピー先Worktreeパス（明示的に指定） | <Badge text="v0.23.0+" /> |
+| `-n`, `--dry-run` | コピー対象のプレビュー               | <Badge text="v0.23.0+" /> |
+| `-V`, `--verbose` | 詳細な出力を表示                     | <Badge text="v0.23.0+" /> |
+| `-q`, `--quiet`   | 不要な出力を抑制                     | <Badge text="v0.23.0+" /> |
+
+## 使用例
+
+```bash
+# .vibe.tomlで定義されたファイル/ディレクトリを現在のWorktreeにコピー
+vibe copy
+
+# コピー対象をプレビュー
+vibe copy --dry-run
+
+# 特定のパスにコピー
+vibe copy --target /path/to/worktree
+
+# 静かモード（フック向け）
+vibe copy --quiet
+```
+
+## ターゲット解決順序
+
+`vibe copy`は以下の優先順位でコピー先Worktreeパスを決定します：
+
+1. **`--target`オプション** - 明示的なパス（最優先）
+2. **stdin JSON** - stdinから`{"cwd": "/path/to/worktree"}`を読み取り（フックモード）
+3. **現在のディレクトリ** - `git rev-parse --show-toplevel`を使用（スタンドアロンモード）
+
+## 設定
+
+`vibe copy`は**メインWorktree**の`.vibe.toml`の`[copy]`セクションを読み取ります：
+
+```toml
+[copy]
+files = [".env.local", "config/*.json"]
+dirs = ["node_modules", ".cache"]
+concurrency = 4
+```
+
+設定の詳細は[.vibe.toml](/ja/configuration/vibe-toml/)を参照してください。
+
+## Claude Code連携
+
+Claude Codeが`--worktree`フラグでWorktreeを作成する際に、`vibe copy`を自動的に実行できます。
+
+### セットアップ
+
+プロジェクトの`.claude/settings.json`に以下を追加します：
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "EnterWorktree",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "vibe copy --quiet 2>/dev/null || true",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### 動作の仕組み
+
+```mermaid
+flowchart TD
+    A["claude --worktree feature-x"] --> B["PostToolUse(EnterWorktree) フック"]
+    B --> C["vibe copy --quiet"]
+    C --> D["stdinのJSONから.cwdを読み取り"]
+    D --> E["メインWorktreeの.vibe.tomlを読み込み"]
+    E --> F["CoWでファイル/ディレクトリをコピー"]
+```
+
+Claude Codeの`EnterWorktree`ツールが実行されると：
+
+1. フックがstdinでWorktree情報をJSON（`.cwd`を含む）として受信
+2. `vibe copy`がstdinを読み取ってコピー先パスを決定
+3. メインWorktreeの`.vibe.toml`から設定を読み込み
+4. CoW（Copy-on-Write）を利用してファイルとディレクトリをコピー
+
+`|| true`により、vibeがインストールされていない環境でもフックがエラーになりません。
+
+## 動作
+
+### メインWorktreeの検出
+
+メインWorktreeで`vibe copy`を実行するとエラーで終了します：
+
+```
+$ vibe copy
+Error: Not in a worktree. 'vibe copy' must be run from a worktree.
+```
+
+### 設定がない場合
+
+`.vibe.toml`に`[copy]`セクションがない場合、コマンドは静かにスキップします（終了コード0）。
+
+### コピー失敗
+
+個別のファイルやディレクトリのコピー失敗は警告として報告されますが、全体の処理は停止しません：
+
+```
+Warning: Failed to copy .env.local: ENOENT
+```
+
+## `vibe start`との違い
+
+| 機能             | `vibe start`                      | `vibe copy`            |
+| ---------------- | --------------------------------- | ---------------------- |
+| Worktreeを作成   | する                              | しない                 |
+| ファイルをコピー | する（セットアップの一環）        | する（単独実行）       |
+| フックを実行     | する（`pre_start`、`post_start`） | しない                 |
+| ユースケース     | Worktreeの完全なセットアップ      | コピーのみ（フック等） |
+| stdinを読み取り  | しない                            | する（フックモード）   |
+
+## 関連
+
+- [start](/ja/commands/start/) - 完全なセットアップでWorktreeを作成
+- [.vibe.toml](/ja/configuration/vibe-toml/) - 設定リファレンス
+- [フック](/ja/configuration/hooks/) - 自動ワークフローの設定

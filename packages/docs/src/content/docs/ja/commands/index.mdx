@@ -12,6 +12,7 @@ vibeはGit Worktreeを管理するためのシンプルなコマンドセット�
 | コマンド                             | 説明                                       |
 | ------------------------------------ | ------------------------------------------ |
 | `vibe start <branch> [--base <ref>]` | 新規または既存ブランチでWorktreeを作成     |
+| `vibe copy`                          | メインWorktreeからCoWでファイルをコピー    |
 | `vibe clean`                         | 現在のWorktreeを削除してメインに戻る       |
 | `vibe home`                          | Worktreeを削除せずにメインに戻る           |
 | `vibe trust`                         | 設定ファイルを信頼登録                     |
@@ -30,6 +31,9 @@ vibe start feat/existing-branch
 
 # 特定のブランチをベースに作成
 vibe start feat/new-feature --base main
+
+# メインWorktreeからファイル/ディレクトリをコピー（セカンダリWorktreeで）
+vibe copy
 
 # 作業完了後にクリーンアップ
 vibe clean
@@ -61,6 +65,7 @@ vibe upgrade
 ## 詳細ドキュメント
 
 - [start](/ja/commands/start/) - Worktreeの作成
+- [copy](/ja/commands/copy/) - メインWorktreeからファイルをコピー
 - [clean](/ja/commands/clean/) - Worktreeの削除
 - [home](/ja/commands/home/) - メインWorktreeへの移動
 - [trust](/ja/commands/trust/) - 設定の信頼管理
