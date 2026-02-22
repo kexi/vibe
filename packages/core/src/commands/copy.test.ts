@@ -484,6 +484,22 @@ describe("copyCommand", () => {
       expect(getExitCode()).toBeNull();
     });
 
+    it("falls back to repo root when stdin cwd is a relative path", async () => {
+      const { ctx, getExitCode } = createCopyTestContext({
+        cwd: "/tmp/worktree",
+        mainWorktreePath: "/tmp/main-repo",
+        vibeTomlExists: false,
+        io: {
+          stdin: createMockStdin(JSON.stringify({ cwd: "./relative/path" })),
+        },
+      });
+
+      await copyCommand({}, ctx);
+
+      // Relative path in stdin cwd should be rejected, falls back to getRepoRoot()
+      expect(getExitCode()).toBeNull();
+    });
+
     it("falls back to repo root when stdin JSON has no cwd field", async () => {
       const { ctx, getExitCode } = createCopyTestContext({
         cwd: "/tmp/worktree",

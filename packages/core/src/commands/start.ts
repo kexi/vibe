@@ -461,18 +461,22 @@ async function runCopyAndPostHooks(
 
   // Copy files
   if (!skipCopy) {
-    const concurrency = resolveCopyConcurrency(config, ctx);
     await copyFiles(config.copy?.files ?? [], repoRoot, worktreePath, tracker, copyService, dryRun);
-    await copyDirectories(
-      config.copy?.dirs ?? [],
-      repoRoot,
-      worktreePath,
-      tracker,
-      copyService,
-      dryRun,
-      concurrency,
-      ctx,
-    );
+
+    const hasDirs = (config.copy?.dirs?.length ?? 0) > 0;
+    if (hasDirs) {
+      const concurrency = resolveCopyConcurrency(config, ctx);
+      await copyDirectories(
+        config.copy?.dirs ?? [],
+        repoRoot,
+        worktreePath,
+        tracker,
+        copyService,
+        dryRun,
+        concurrency,
+        ctx,
+      );
+    }
   }
 
   // Run post-start hooks
