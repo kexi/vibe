@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { readStdinJson, readWorktreeHookName, readTargetFromStdin } from "./stdin.ts";
+import {
+  readStdinJson,
+  readWorktreeHookName,
+  readWorktreeHookPath,
+  readTargetFromStdin,
+} from "./stdin.ts";
 import { createMockContext } from "../context/testing.ts";
 import type { RuntimeIO } from "../runtime/types.ts";
 
@@ -241,6 +246,70 @@ describe("readWorktreeHookName", () => {
     const result = await readWorktreeHookName(ctx);
 
     expect(result).toBe("my-branch");
+  });
+});
+
+describe("readWorktreeHookPath", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns worktree_path from valid stdin JSON", async () => {
+    const ctx = createMockContext({
+      io: { stdin: createMockStdin(JSON.stringify({ worktree_path: "/tmp/worktree" })) },
+    });
+
+    const result = await readWorktreeHookPath(ctx);
+
+    expect(result).toBe("/tmp/worktree");
+  });
+
+  it("returns undefined when stdin is empty", async () => {
+    const ctx = createMockContext({
+      io: { stdin: createEmptyStdin() },
+    });
+
+    const result = await readWorktreeHookPath(ctx);
+
+    expect(result).toBeUndefined();
+  });
+
+  it("returns undefined when worktree_path field is missing", async () => {
+    const ctx = createMockContext({
+      io: { stdin: createMockStdin(JSON.stringify({ name: "test" })) },
+    });
+
+    const result = await readWorktreeHookPath(ctx);
+
+    expect(result).toBeUndefined();
+  });
+
+  it("returns undefined when worktree_path is a relative path", async () => {
+    const ctx = createMockContext({
+      io: { stdin: createMockStdin(JSON.stringify({ worktree_path: "./relative/path" })) },
+    });
+
+    const result = await readWorktreeHookPath(ctx);
+
+    expect(result).toBeUndefined();
+  });
+
+  it("returns undefined when worktree_path is empty", async () => {
+    const ctx = createMockContext({
+      io: { stdin: createMockStdin(JSON.stringify({ worktree_path: "" })) },
+    });
+
+    const result = await readWorktreeHookPath(ctx);
+
+    expect(result).toBeUndefined();
+  });
+
+  it("throws when worktree_path contains null byte", async () => {
+    const ctx = createMockContext({
+      io: { stdin: createMockStdin(JSON.stringify({ worktree_path: "/tmp/test\0malicious" })) },
+    });
+
+    await expect(readWorktreeHookPath(ctx)).rejects.toThrow("null byte");
   });
 });
 

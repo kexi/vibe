@@ -75,6 +75,30 @@ export async function readWorktreeHookName(ctx: AppContext): Promise<string | un
 }
 
 /**
+ * Read worktree path from stdin JSON (Claude Code WorktreeRemove hook format).
+ * Expects `{"worktree_path": "/path/to/worktree", ...}` on stdin.
+ * Returns the worktree_path value, or undefined if stdin is empty or not valid.
+ *
+ * Security: validates the path is absolute and passes validatePath().
+ */
+export async function readWorktreeHookPath(ctx: AppContext): Promise<string | undefined> {
+  const json = await readStdinJson(ctx);
+  if (json === undefined) return undefined;
+
+  const worktreePath = json.worktree_path;
+  const isValidPath = typeof worktreePath === "string" && worktreePath.length > 0;
+  if (!isValidPath) return undefined;
+
+  // Security: validate the path from untrusted stdin input
+  const isAbsolutePath = isAbsolute(worktreePath);
+  if (!isAbsolutePath) return undefined;
+
+  validatePath(worktreePath);
+
+  return worktreePath;
+}
+
+/**
  * Read target path from stdin JSON (Claude Code PostToolUse hook format).
  * Expects `{"cwd": "/path/to/worktree", ...}` on stdin.
  * Returns the cwd value, or undefined if stdin is empty or not valid JSON.
