@@ -1269,6 +1269,39 @@ describe("startCommand --claude-code-worktree-hook mode", () => {
     expect(hasExistingPath).toBe(true);
   });
 
+  it("reuses existing worktree when same-branch conflict at target path", async () => {
+    const repoRoot = "/tmp/mock-repo";
+    const worktreePath = `${repoRoot}/../mock-repo-same-branch`;
+    const { ctx, getExitCode, stdoutOutput } = createWorktreeHookContext({
+      stdinData: JSON.stringify({ name: "same-branch" }),
+      worktreeListOutput:
+        `worktree ${repoRoot}\nHEAD abc123\nbranch refs/heads/main\n\n` +
+        `worktree ${worktreePath}\nHEAD def456\nbranch refs/heads/same-branch\n\n`,
+      branchExists: true,
+    });
+
+    // Override process.run to track worktree commands
+    const originalRun = ctx.runtime.process.run;
+    let worktreeAddCalled = false;
+    ctx.runtime.process.run = (opts) => {
+      const args = opts.args as string[];
+      const isWorktreeAdd = args.includes("worktree") && args.includes("add");
+      if (isWorktreeAdd) {
+        worktreeAddCalled = true;
+      }
+      return originalRun(opts);
+    };
+
+    await startCommand("", { worktreeHook: true, quiet: true }, ctx);
+
+    expect(getExitCode()).toBeNull();
+    // Should output the worktree path (reuse, not recreate)
+    const hasPath = stdoutOutput.some((line) => line.includes("same-branch"));
+    expect(hasPath).toBe(true);
+    // Should NOT have called worktree add (reuse existing)
+    expect(worktreeAddCalled).toBe(false);
+  });
+
   it("handles git errors with exit code 1", async () => {
     const { ctx, getExitCode, stderrOutput } = createWorktreeHookContext({
       stdinData: JSON.stringify({ name: "error-test" }),

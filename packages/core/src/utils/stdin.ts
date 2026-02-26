@@ -71,6 +71,10 @@ export async function readWorktreeHookName(ctx: AppContext): Promise<string | un
   const isValidName = typeof name === "string" && name.length > 0;
   if (!isValidName) return undefined;
 
+  // Defense-in-depth: reject null bytes in name (git also rejects these)
+  const hasNullByte = name.includes("\0");
+  if (hasNullByte) return undefined;
+
   return name;
 }
 

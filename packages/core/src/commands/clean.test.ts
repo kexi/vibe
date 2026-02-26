@@ -468,6 +468,110 @@ describe("cleanCommand --claude-code-worktree-hook mode", () => {
     expect(hasCdCommand).toBe(false);
   });
 
+  it("deletes branch when deleteBranch option is true", async () => {
+    let exitCode: number | null = null;
+    let branchDeleted = false;
+
+    const ctx = createMockContext({
+      io: {
+        stdin: createMockStdin(JSON.stringify({ worktree_path: "/tmp/worktree-to-remove" })),
+        stderr: {
+          writeSync: () => 0,
+          write: () => Promise.resolve(0),
+          isTerminal: () => false,
+        },
+      },
+      process: {
+        run: (opts) => {
+          const args = opts.args as string[];
+          // Mock git worktree list
+          const isWorktreeList = args.includes("worktree") && args.includes("list");
+          if (isWorktreeList) {
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new TextEncoder().encode(
+                "worktree /tmp/main-repo\nHEAD abc123\nbranch refs/heads/main\n\n" +
+                  "worktree /tmp/worktree-to-remove\nHEAD def456\nbranch refs/heads/feat/to-delete\n\n",
+              ),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+          // Mock git rev-parse --git-common-dir
+          const isGitCommonDir = args.includes("rev-parse") && args.includes("--git-common-dir");
+          if (isGitCommonDir) {
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new TextEncoder().encode("/tmp/main-repo/.git\n"),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+          // Mock git worktree remove
+          const isWorktreeRemove = args.includes("worktree") && args.includes("remove");
+          if (isWorktreeRemove) {
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new Uint8Array(),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+          // Mock git branch -d
+          const isBranchDelete = args.includes("branch") && args.includes("-d");
+          if (isBranchDelete) {
+            branchDeleted = true;
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new Uint8Array(),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+          return Promise.resolve({
+            code: 0,
+            success: true,
+            stdout: new Uint8Array(),
+            stderr: new Uint8Array(),
+          } as RunResult);
+        },
+      },
+      fs: {
+        readTextFile: () => Promise.reject(new Error("File not found")),
+        stat: () => Promise.reject(new Error("Not found")),
+      },
+      control: {
+        exit: ((code: number) => {
+          exitCode = code;
+        }) as never,
+        cwd: () => "/tmp/main-repo",
+        chdir: () => {},
+        execPath: () => "/mock/exec",
+        args: [],
+      },
+      env: {
+        get: (key: string) => {
+          const isHome = key === "HOME";
+          if (isHome) return "/tmp/home";
+          return undefined;
+        },
+        set: () => {},
+        delete: () => {},
+        toObject: () => ({}),
+      },
+      errors: {
+        isNotFound: (error: unknown) =>
+          error instanceof Error &&
+          (error.message === "File not found" || error.message === "Not found"),
+      },
+    });
+
+    await cleanCommand({ worktreeHook: true, deleteBranch: true }, ctx);
+
+    expect(exitCode).toBeNull();
+    expect(branchDeleted).toBe(true);
+  });
+
   it("exits gracefully when worktree already removed", async () => {
     let exitCode: number | null = null;
 

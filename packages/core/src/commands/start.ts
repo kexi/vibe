@@ -113,12 +113,11 @@ export async function startCommand(
     const isBranchUsedInWorktree = !validation.isValid;
 
     if (isBranchUsedInWorktree) {
-      const handled = await handleExistingBranchWorktree(
-        branchName,
-        validation.existingWorktreePath!,
-        dryRun,
-        ctx,
-      );
+      const existingPath = validation.existingWorktreePath;
+      if (existingPath === null) {
+        throw new Error("Branch is in use but worktree path is unknown");
+      }
+      const handled = await handleExistingBranchWorktree(branchName, existingPath, dryRun, ctx);
       if (handled) return;
     }
 
@@ -594,7 +593,10 @@ async function startWorktreeHookMode(
     // In worktree-hook mode, if branch is already used in a worktree, output existing path
     const isBranchUsedInWorktree = !validation.isValid;
     if (isBranchUsedInWorktree) {
-      const existingPath = validation.existingWorktreePath!;
+      const existingPath = validation.existingWorktreePath;
+      if (existingPath === null) {
+        throw new Error("Branch is in use but worktree path is unknown");
+      }
       verboseLog(`[cc-worktree-hook] Branch already in worktree: ${existingPath}`, outputOpts);
       if (!dryRun) {
         console.log(existingPath);

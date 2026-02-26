@@ -234,6 +234,16 @@ describe("readWorktreeHookName", () => {
     expect(result).toBeUndefined();
   });
 
+  it("returns undefined when name contains null byte", async () => {
+    const ctx = createMockContext({
+      io: { stdin: createMockStdin(JSON.stringify({ name: "test\0malicious" })) },
+    });
+
+    const result = await readWorktreeHookName(ctx);
+
+    expect(result).toBeUndefined();
+  });
+
   it("reads name with extra fields present", async () => {
     const ctx = createMockContext({
       io: {
