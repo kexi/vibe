@@ -8,6 +8,7 @@ import { getCopyService } from "../utils/copy/index.ts";
 import { copyFiles, copyDirectories, resolveCopyConcurrency } from "../utils/copy-runner.ts";
 import { loadUserSettings } from "../utils/settings.ts";
 import { resolveWorktreePath } from "../utils/worktree-path.ts";
+import { readWorktreeHookName } from "../utils/stdin.ts";
 import {
   errorLog,
   log,
@@ -34,6 +35,7 @@ interface StartOptions extends OutputOptions {
   base?: string;
   baseFromEquals?: boolean;
   track?: boolean;
+  worktreeHook?: boolean;
 }
 
 interface ConfigAndHooksOptions {
@@ -60,8 +62,21 @@ export async function startCommand(
     base,
     baseFromEquals = false,
     track = false,
+    worktreeHook = false,
   } = options;
   const outputOpts: OutputOptions = { verbose, quiet };
+
+  // Claude Code WorktreeCreate hook mode: full start flow with stdin name, stdout path
+  const isWorktreeHookMode = worktreeHook;
+  if (isWorktreeHookMode) {
+    await startWorktreeHookMode(
+      branchName,
+      { noHooks, noCopy, dryRun, base, track },
+      outputOpts,
+      ctx,
+    );
+    return;
+  }
 
   const isBranchNameEmpty = !branchName;
   if (isBranchNameEmpty) {
@@ -523,4 +538,179 @@ async function runPostStartHooks(
     trackerInfo,
     ctx,
   );
+}
+
+/**
+ * Claude Code WorktreeCreate hook mode.
+ *
+ * Replaces Claude Code's default git worktree creation with the full vibe start flow.
+ * Reads the worktree name from stdin JSON (WorktreeCreate hook format: {"name": "..."}).
+ * Outputs the worktree path to stdout (required by WorktreeCreate hook protocol).
+ *
+ * Flow:
+ * 1. Read name from stdin (or use CLI branch name argument)
+ * 2. Full start flow: pre_start hooks → worktree creation → copy → post_start hooks
+ * 3. Output worktree path to stdout
+ */
+async function startWorktreeHookMode(
+  cliBranchName: string,
+  options: {
+    noHooks: boolean;
+    noCopy: boolean;
+    dryRun: boolean;
+    base?: string;
+    track: boolean;
+  },
+  outputOpts: OutputOptions,
+  ctx: AppContext,
+): Promise<void> {
+  const { noHooks, noCopy, dryRun, base, track } = options;
+
+  // Resolve branch name: CLI argument takes precedence, then stdin name
+  const stdinName = cliBranchName ? undefined : await readWorktreeHookName(ctx);
+  const branchName = cliBranchName || stdinName;
+
+  const hasBranchName = branchName !== undefined && branchName.length > 0;
+  if (!hasBranchName) {
+    errorLog(
+      "Error: --claude-code-worktree-hook requires a name via stdin or branch argument",
+      outputOpts,
+    );
+    ctx.runtime.control.exit(1);
+    return;
+  }
+
+  try {
+    const repoRoot = await getRepoRoot(ctx);
+    const repoName = await getRepoName(ctx);
+    const sanitizedBranch = sanitizeBranchName(branchName);
+
+    verboseLog(`[cc-worktree-hook] Repository root: ${repoRoot}`, outputOpts);
+    verboseLog(`[cc-worktree-hook] Branch name: ${branchName}`, outputOpts);
+
+    // Validate branch for worktree creation
+    const validation = await validateBranchForWorktree(branchName, ctx);
+
+    // In worktree-hook mode, if branch is already used in a worktree, output existing path
+    const isBranchUsedInWorktree = !validation.isValid;
+    if (isBranchUsedInWorktree) {
+      const existingPath = validation.existingWorktreePath!;
+      verboseLog(`[cc-worktree-hook] Branch already in worktree: ${existingPath}`, outputOpts);
+      if (!dryRun) {
+        console.log(existingPath);
+      }
+      return;
+    }
+
+    const baseRef = typeof base === "string" ? base.trim() : undefined;
+    if (baseRef && !validation.branchExists) {
+      const baseExists = await revisionExists(baseRef, ctx);
+      if (!baseExists) {
+        errorLog(`Error: Base '${baseRef}' not found`, outputOpts);
+        ctx.runtime.control.exit(1);
+        return;
+      }
+    }
+
+    // Load settings and config
+    const settings = await loadUserSettings(ctx);
+    const config = await loadVibeConfig(repoRoot, ctx);
+
+    // Resolve worktree path
+    const worktreePath = await resolveWorktreePath(
+      config,
+      settings,
+      {
+        repoName,
+        branchName,
+        sanitizedBranch,
+        repoRoot,
+      },
+      ctx,
+    );
+
+    verboseLog(`[cc-worktree-hook] Worktree path: ${worktreePath}`, outputOpts);
+
+    // Check for conflicts at target path
+    const conflict = await checkWorktreeConflict(worktreePath, branchName, ctx);
+
+    if (conflict.conflictType === "same-branch") {
+      // Same branch exists - reuse: run hooks/config, output existing path
+      const tracker = new ProgressTracker({ title: `Setting up worktree ${branchName}` }, ctx);
+      await runConfigAndHooks(
+        config,
+        repoRoot,
+        worktreePath,
+        tracker,
+        {
+          skipHooks: noHooks,
+          skipCopy: noCopy,
+          dryRun,
+        },
+        ctx,
+      );
+      if (!dryRun) {
+        console.log(worktreePath);
+      }
+      return;
+    }
+
+    if (conflict.hasConflict) {
+      // Different branch at same path - force remove and recreate
+      await removeWorktree({ worktreePath, force: true }, ctx);
+    }
+
+    // Create the worktree
+    const createOpts = {
+      branchName,
+      worktreePath,
+      branchExists: validation.branchExists,
+      baseRef: baseRef && !validation.branchExists ? baseRef : undefined,
+      track,
+    };
+
+    if (dryRun) {
+      const cmd = getCreateWorktreeCommand(createOpts);
+      logDryRun(`[cc-worktree-hook] Would run: ${cmd}`);
+      logDryRun(`[cc-worktree-hook] Worktree path: ${worktreePath}`);
+    } else {
+      const cmd = getCreateWorktreeCommand(createOpts);
+      verboseLog(`[cc-worktree-hook] Running: ${cmd}`, outputOpts);
+      await createWorktree(createOpts, ctx);
+    }
+
+    // Create progress tracker
+    const tracker = new ProgressTracker({ title: `Setting up worktree ${branchName}` }, ctx);
+
+    // Run hooks and config (post_start hook failures are non-fatal for worktree creation)
+    try {
+      await runConfigAndHooks(
+        config,
+        repoRoot,
+        worktreePath,
+        tracker,
+        {
+          skipHooks: noHooks,
+          skipCopy: noCopy,
+          dryRun,
+        },
+        ctx,
+      );
+    } catch (error) {
+      // Log hook/copy failures but don't fail worktree creation
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      warnLog(`Warning: Post-setup failed: ${errorMessage}`);
+    }
+
+    // Output worktree path to stdout (required by WorktreeCreate hook protocol)
+    if (!dryRun) {
+      console.log(worktreePath);
+    } else {
+      logDryRun(`[cc-worktree-hook] Would output path: ${worktreePath}`);
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    errorLog(`Error: ${errorMessage}`, outputOpts);
+    ctx.runtime.control.exit(1);
+  }
 }
