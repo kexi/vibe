@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { cleanCommand } from "./clean.ts";
-import { createMockContext } from "../context/testing.ts";
+import { createMockContext, createMockStdin } from "../context/testing.ts";
 import type { RunResult } from "../runtime/types.ts";
 
 describe("cleanCommand", () => {
@@ -293,26 +293,6 @@ describe("cleanCommand --claude-code-worktree-hook mode", () => {
     console.log = originalLog;
     console.warn = originalWarn;
   });
-
-  /**
-   * Create a mock stdin that returns the given data bytes, then EOF.
-   */
-  function createMockStdin(data: string) {
-    const encoded = new TextEncoder().encode(data);
-    let offset = 0;
-    return {
-      read: (buf: Uint8Array) => {
-        const isEof = offset >= encoded.length;
-        if (isEof) return Promise.resolve(null);
-        const remaining = encoded.length - offset;
-        const bytesToCopy = Math.min(remaining, buf.length);
-        buf.set(encoded.subarray(offset, offset + bytesToCopy));
-        offset += bytesToCopy;
-        return Promise.resolve(bytesToCopy);
-      },
-      isTerminal: () => false,
-    };
-  }
 
   it("exits with error when stdin has no worktree_path", async () => {
     let exitCode: number | null = null;
