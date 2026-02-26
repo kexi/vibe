@@ -903,7 +903,7 @@ describe("startCommand --claude-code-worktree-hook mode", () => {
       options.worktreeListOutput ?? `worktree ${repoRoot}\nHEAD abc123\nbranch refs/heads/main\n\n`;
 
     // Create stdin mock
-    const stdinMock = options.stdinData ? createMockStdin(options.stdinData) : createMockStdin("");
+    const stdinMock = createMockStdin(options.stdinData ?? "");
 
     const ctx = createMockContext({
       env: {
