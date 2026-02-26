@@ -857,6 +857,467 @@ describe("startCommand", () => {
   });
 });
 
+describe("startCommand --claude-code-worktree-hook mode", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * Helper to create a mock context for claude-code-worktree-hook mode tests.
+   * Simulates stdin JSON input and git commands.
+   */
+  function createWorktreeHookContext(options: {
+    stdinData?: string;
+    branchExists?: boolean;
+    worktreeListOutput?: string;
+    repoRoot?: string;
+    repoName?: string;
+    vibeTomlContent?: string;
+    hookRunCwd?: string[];
+  }) {
+    const {
+      branchExists = false,
+      repoRoot = "/tmp/mock-repo",
+      repoName = "mock-repo",
+      vibeTomlContent,
+      hookRunCwd = [],
+    } = options;
+
+    const homePath = "/tmp/test-home";
+    const settingsJsonPath = `${homePath}/.config/vibe/settings.json`;
+
+    let exitCode: number | null = null;
+    const stderrOutput: string[] = [];
+    const stdoutOutput: string[] = [];
+
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      stderrOutput.push(args.map(String).join(" "));
+    });
+    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      stdoutOutput.push(args.map(String).join(" "));
+    });
+    const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    // Build worktree list output
+    const worktreeListOutput =
+      options.worktreeListOutput ?? `worktree ${repoRoot}\nHEAD abc123\nbranch refs/heads/main\n\n`;
+
+    // Create stdin mock
+    let stdinOffset = 0;
+    const stdinEncoded = options.stdinData
+      ? new TextEncoder().encode(options.stdinData)
+      : new Uint8Array(0);
+    const stdinMock = {
+      read: (buf: Uint8Array) => {
+        const isEof = stdinOffset >= stdinEncoded.length;
+        if (isEof) return Promise.resolve(null);
+        const remaining = stdinEncoded.length - stdinOffset;
+        const bytesToCopy = Math.min(remaining, buf.length);
+        buf.set(stdinEncoded.subarray(stdinOffset, stdinOffset + bytesToCopy));
+        stdinOffset += bytesToCopy;
+        return Promise.resolve(bytesToCopy);
+      },
+      isTerminal: () => false,
+    };
+
+    const ctx = createMockContext({
+      env: {
+        get: (key: string) => {
+          const isHome = key === "HOME";
+          if (isHome) return homePath;
+          return undefined;
+        },
+        set: () => {},
+        delete: () => {},
+        toObject: () => ({}),
+      },
+      process: {
+        run: (opts) => {
+          const args = opts.args as string[];
+
+          // Track cwd of hook execution
+          const isHookCommand =
+            !args.includes("git") && args.length > 0 && !args[0]?.startsWith("git");
+          if (isHookCommand && opts.cwd) {
+            hookRunCwd.push(String(opts.cwd));
+          }
+
+          // Mock: git rev-parse --show-toplevel
+          const isRevParseShowToplevel =
+            args.includes("rev-parse") && args.includes("--show-toplevel");
+          if (isRevParseShowToplevel) {
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new TextEncoder().encode(`${repoRoot}\n`),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+
+          // Mock: git rev-parse --show-superproject-working-tree
+          const isRevParseSuperproject =
+            args.includes("rev-parse") && args.includes("--show-superproject-working-tree");
+          if (isRevParseSuperproject) {
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new Uint8Array(),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+
+          // Mock: git remote get-url origin
+          const isRemoteGetUrl = args.includes("remote") && args.includes("get-url");
+          if (isRemoteGetUrl) {
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new TextEncoder().encode(`git@github.com:kexi/${repoName}.git\n`),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+
+          // Mock: git worktree list
+          const isWorktreeList = args.includes("worktree") && args.includes("list");
+          if (isWorktreeList) {
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new TextEncoder().encode(worktreeListOutput),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+
+          // Mock: git show-ref --verify (branch exists check)
+          const isShowRefVerify = args.includes("show-ref") && args.includes("--verify");
+          if (isShowRefVerify) {
+            return Promise.resolve({
+              code: branchExists ? 0 : 1,
+              success: branchExists,
+              stdout: new Uint8Array(),
+              stderr: branchExists
+                ? new Uint8Array()
+                : new TextEncoder().encode("fatal: bad ref\n"),
+            } as RunResult);
+          }
+
+          // Mock: git branch --list
+          const isBranchList = args.includes("branch") && args.includes("--list");
+          if (isBranchList) {
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new Uint8Array(),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+
+          // Mock: git worktree add (success)
+          const isWorktreeAdd = args.includes("worktree") && args.includes("add");
+          if (isWorktreeAdd) {
+            return Promise.resolve({
+              code: 0,
+              success: true,
+              stdout: new Uint8Array(),
+              stderr: new Uint8Array(),
+            } as RunResult);
+          }
+
+          // Mock: git config (for getRepoInfoFromPath)
+          const isConfigGet = args.includes("config") && args.includes("--get");
+          if (isConfigGet) {
+            return Promise.resolve({
+              code: 1,
+              success: false,
+              stdout: new Uint8Array(),
+              stderr: new TextEncoder().encode("no remote\n"),
+            } as RunResult);
+          }
+
+          return Promise.resolve({
+            code: 0,
+            success: true,
+            stdout: new Uint8Array(),
+            stderr: new Uint8Array(),
+          } as RunResult);
+        },
+      },
+      fs: {
+        stat: (path) => {
+          const pathStr = String(path);
+          const isVibeToml = pathStr.endsWith(".vibe.toml") && !pathStr.endsWith(".local.toml");
+          if (isVibeToml) {
+            const hasContent = vibeTomlContent !== undefined;
+            if (hasContent) {
+              return Promise.resolve({
+                isFile: true,
+                isDirectory: false,
+                isSymlink: false,
+                size: 100,
+                mtime: null,
+                atime: null,
+                birthtime: null,
+                mode: null,
+              });
+            }
+            return Promise.reject(new Error("ENOENT"));
+          }
+          const isLocalToml = pathStr.endsWith(".vibe.local.toml");
+          if (isLocalToml) {
+            return Promise.reject(new Error("ENOENT"));
+          }
+          return Promise.reject(new Error("Not found"));
+        },
+        readTextFile: (path) => {
+          const pathStr = String(path);
+          const isSettingsJson = pathStr === settingsJsonPath;
+          if (isSettingsJson) {
+            return Promise.resolve(
+              JSON.stringify({
+                version: 3,
+                skipHashCheck: true,
+                permissions: {
+                  allow: [
+                    {
+                      repoId: { repoRoot },
+                      relativePath: ".vibe.toml",
+                      hashes: [],
+                      skipHashCheck: true,
+                    },
+                  ],
+                  deny: [],
+                },
+              }),
+            );
+          }
+          const isVibeToml = pathStr.endsWith(".vibe.toml");
+          if (isVibeToml && vibeTomlContent) {
+            return Promise.resolve(vibeTomlContent);
+          }
+          return Promise.reject(new Error("File not found"));
+        },
+        exists: () => Promise.resolve(false),
+        readFile: () => Promise.resolve(new Uint8Array()),
+        writeTextFile: () => Promise.resolve(),
+        mkdir: () => Promise.resolve(),
+        remove: () => Promise.resolve(),
+        rename: () => Promise.resolve(),
+        lstat: () =>
+          Promise.resolve({
+            isFile: true,
+            isDirectory: false,
+            isSymlink: false,
+            size: 0,
+            mtime: null,
+            atime: null,
+            birthtime: null,
+            mode: null,
+          }),
+        copyFile: () => Promise.resolve(),
+        readDir: async function* () {},
+        makeTempDir: () => Promise.resolve("/tmp/mock"),
+        realPath: (path) => Promise.resolve(path),
+      },
+      control: {
+        exit: ((code: number) => {
+          exitCode = code;
+        }) as never,
+        cwd: () => repoRoot,
+        chdir: () => {},
+        execPath: () => "/mock/exec",
+        args: [],
+      },
+      io: {
+        stdin: stdinMock,
+        stderr: {
+          writeSync: () => 0,
+          write: () => Promise.resolve(0),
+          isTerminal: () => false,
+        },
+      },
+      errors: {
+        isNotFound: (error: unknown) =>
+          error instanceof Error &&
+          (error.message === "File not found" ||
+            error.message === "Not found" ||
+            error.message === "ENOENT"),
+      },
+    });
+
+    return {
+      ctx,
+      getExitCode: () => exitCode,
+      stderrOutput,
+      stdoutOutput,
+      consoleErrorSpy,
+      consoleLogSpy,
+      consoleWarnSpy,
+      hookRunCwd,
+    };
+  }
+
+  it("reads branch name from stdin and outputs worktree path to stdout", async () => {
+    const { ctx, getExitCode, stdoutOutput } = createWorktreeHookContext({
+      stdinData: JSON.stringify({ name: "test-feature" }),
+    });
+
+    await startCommand("", { worktreeHook: true, quiet: true }, ctx);
+
+    expect(getExitCode()).toBeNull();
+    const hasWorktreePath = stdoutOutput.some((line) => line.includes("test-feature"));
+    expect(hasWorktreePath).toBe(true);
+  });
+
+  it("CLI branch name takes precedence over stdin name", async () => {
+    const { ctx, getExitCode, stdoutOutput } = createWorktreeHookContext({
+      stdinData: JSON.stringify({ name: "stdin-name" }),
+    });
+
+    await startCommand("cli-branch", { worktreeHook: true, quiet: true }, ctx);
+
+    expect(getExitCode()).toBeNull();
+    const hasCliBranch = stdoutOutput.some((line) => line.includes("cli-branch"));
+    expect(hasCliBranch).toBe(true);
+    const hasStdinName = stdoutOutput.some((line) => line.includes("stdin-name"));
+    expect(hasStdinName).toBe(false);
+  });
+
+  it("exits with error when no branch name from stdin or CLI", async () => {
+    const { ctx, getExitCode, stderrOutput } = createWorktreeHookContext({
+      stdinData: JSON.stringify({ cwd: "/tmp/project" }),
+    });
+
+    await startCommand("", { worktreeHook: true }, ctx);
+
+    expect(getExitCode()).toBe(1);
+    const hasError = stderrOutput.some((line) =>
+      line.includes("--claude-code-worktree-hook requires a name"),
+    );
+    expect(hasError).toBe(true);
+  });
+
+  it("exits with error when stdin is empty and no CLI branch", async () => {
+    const { ctx, getExitCode, stderrOutput } = createWorktreeHookContext({});
+
+    await startCommand("", { worktreeHook: true }, ctx);
+
+    expect(getExitCode()).toBe(1);
+    const hasError = stderrOutput.some((line) =>
+      line.includes("--claude-code-worktree-hook requires a name"),
+    );
+    expect(hasError).toBe(true);
+  });
+
+  it("outputs raw worktree path (not formatCdCommand)", async () => {
+    const { ctx, stdoutOutput } = createWorktreeHookContext({
+      stdinData: JSON.stringify({ name: "my-feature" }),
+    });
+
+    await startCommand("", { worktreeHook: true, quiet: true }, ctx);
+
+    // Should NOT contain "cd" command format
+    const hasCdCommand = stdoutOutput.some((line) => line.startsWith("cd "));
+    expect(hasCdCommand).toBe(false);
+    // Should contain a raw path
+    const hasRawPath = stdoutOutput.some((line) => line.startsWith("/"));
+    expect(hasRawPath).toBe(true);
+  });
+
+  it("does not output path in dry-run mode", async () => {
+    const { ctx, stdoutOutput, stderrOutput } = createWorktreeHookContext({
+      stdinData: JSON.stringify({ name: "dry-run-test" }),
+    });
+
+    await startCommand("", { worktreeHook: true, dryRun: true }, ctx);
+
+    // stdout should be empty (no path output in dry-run)
+    expect(stdoutOutput).toHaveLength(0);
+    // stderr should have dry-run messages
+    const hasDryRun = stderrOutput.some((line) => line.includes("[dry-run]"));
+    expect(hasDryRun).toBe(true);
+  });
+
+  it("skips hooks when --no-hooks is specified", async () => {
+    const hookRunCwd: string[] = [];
+    const { ctx, getExitCode } = createWorktreeHookContext({
+      stdinData: JSON.stringify({ name: "no-hooks-test" }),
+      vibeTomlContent:
+        '[hooks]\npre_start = ["echo pre"]\npost_start = ["echo post"]\n\n[copy]\nfiles = ["README.md"]\n',
+      hookRunCwd,
+    });
+
+    await startCommand("", { worktreeHook: true, noHooks: true, quiet: true }, ctx);
+
+    expect(getExitCode()).toBeNull();
+    // No hooks should have been executed
+    expect(hookRunCwd).toHaveLength(0);
+  });
+
+  it("handles branch already used in another worktree by outputting existing path", async () => {
+    const existingPath = "/tmp/existing-worktree";
+    const { ctx, getExitCode, stdoutOutput } = createWorktreeHookContext({
+      stdinData: JSON.stringify({ name: "existing-branch" }),
+      worktreeListOutput:
+        `worktree /tmp/mock-repo\nHEAD abc123\nbranch refs/heads/main\n\n` +
+        `worktree ${existingPath}\nHEAD def456\nbranch refs/heads/existing-branch\n\n`,
+    });
+
+    await startCommand("", { worktreeHook: true, quiet: true }, ctx);
+
+    expect(getExitCode()).toBeNull();
+    const hasExistingPath = stdoutOutput.some((line) => line === existingPath);
+    expect(hasExistingPath).toBe(true);
+  });
+
+  it("reuses existing worktree when same-branch conflict at target path", async () => {
+    const repoRoot = "/tmp/mock-repo";
+    const worktreePath = `${repoRoot}/../mock-repo-same-branch`;
+    const { ctx, getExitCode, stdoutOutput } = createWorktreeHookContext({
+      stdinData: JSON.stringify({ name: "same-branch" }),
+      worktreeListOutput:
+        `worktree ${repoRoot}\nHEAD abc123\nbranch refs/heads/main\n\n` +
+        `worktree ${worktreePath}\nHEAD def456\nbranch refs/heads/same-branch\n\n`,
+      branchExists: true,
+    });
+
+    // Override process.run to track worktree commands
+    const originalRun = ctx.runtime.process.run;
+    let worktreeAddCalled = false;
+    ctx.runtime.process.run = (opts) => {
+      const args = opts.args as string[];
+      const isWorktreeAdd = args.includes("worktree") && args.includes("add");
+      if (isWorktreeAdd) {
+        worktreeAddCalled = true;
+      }
+      return originalRun(opts);
+    };
+
+    await startCommand("", { worktreeHook: true, quiet: true }, ctx);
+
+    expect(getExitCode()).toBeNull();
+    // Should output the worktree path (reuse, not recreate)
+    const hasPath = stdoutOutput.some((line) => line.includes("same-branch"));
+    expect(hasPath).toBe(true);
+    // Should NOT have called worktree add (reuse existing)
+    expect(worktreeAddCalled).toBe(false);
+  });
+
+  it("handles git errors with exit code 1", async () => {
+    const { ctx, getExitCode, stderrOutput } = createWorktreeHookContext({
+      stdinData: JSON.stringify({ name: "error-test" }),
+    });
+
+    // Override process.run to simulate git failure
+    ctx.runtime.process.run = () => Promise.reject(new Error("git command failed"));
+
+    await startCommand("", { worktreeHook: true }, ctx);
+
+    expect(getExitCode()).toBe(1);
+    const hasError = stderrOutput.some((line) => line.includes("Error:"));
+    expect(hasError).toBe(true);
+  });
+});
+
 describe("resolveCopyConcurrency", () => {
   afterEach(() => {
     vi.restoreAllMocks();

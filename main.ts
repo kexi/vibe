@@ -39,6 +39,7 @@ const parseArgsOptions: ParseArgsConfig["options"] = {
   track: { type: "boolean" },
   target: { type: "string" },
   shell: { type: "string" },
+  "claude-code-worktree-hook": { type: "boolean" },
 };
 
 const HELP_TEXT = `vibe - git worktree helper
@@ -85,6 +86,7 @@ Command Options:
   --keep-branch     Keep the branch after removing the worktree (clean)
   --check           Check for updates without showing upgrade instructions (upgrade)
   --shell <name>    Specify shell type: bash, zsh, fish, nushell, powershell (shell-setup)
+  --claude-code-worktree-hook   Claude Code worktree hook mode (start, clean)
 
 Setup:
   Add this to your .zshrc:
@@ -178,6 +180,7 @@ async function main(): Promise<void> {
         typeof args.base === "string" ? args.base : args.base === undefined ? undefined : "";
       const baseFromEquals = rawArgs.some((arg) => arg.startsWith("--base="));
       const track = args.track === true;
+      const worktreeHook = args["claude-code-worktree-hook"] === true;
       await startCommand(branchName, {
         reuse,
         noHooks,
@@ -188,6 +191,7 @@ async function main(): Promise<void> {
         base,
         baseFromEquals,
         track,
+        worktreeHook,
       });
       break;
     }
@@ -220,7 +224,15 @@ async function main(): Promise<void> {
         runtime.control.exit(1);
       }
 
-      await cleanCommand({ force, deleteBranch, keepBranch, verbose, quiet });
+      const worktreeHookClean = args["claude-code-worktree-hook"] === true;
+      await cleanCommand({
+        force,
+        deleteBranch,
+        keepBranch,
+        verbose,
+        quiet,
+        worktreeHook: worktreeHookClean,
+      });
       break;
     }
     case "home": {

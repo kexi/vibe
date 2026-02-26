@@ -28,12 +28,14 @@ import {
   fastRemoveDirectory,
   isFastRemoveSupported,
 } from "../utils/fast-remove.ts";
+import { readWorktreeHookPath } from "../utils/stdin.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
 
 interface CleanOptions extends OutputOptions {
   force?: boolean;
   deleteBranch?: boolean;
   keepBranch?: boolean;
+  worktreeHook?: boolean;
 }
 
 /**
@@ -142,8 +144,15 @@ export async function cleanCommand(
   ctx: AppContext = getGlobalContext(),
 ): Promise<void> {
   const { runtime } = ctx;
-  const { verbose = false, quiet = false } = options;
+  const { verbose = false, quiet = false, worktreeHook = false } = options;
   const outputOpts: OutputOptions = { verbose, quiet };
+
+  // Claude Code WorktreeRemove hook mode: read worktree_path from stdin, clean up
+  const isWorktreeHookMode = worktreeHook;
+  if (isWorktreeHookMode) {
+    await cleanWorktreeHookMode(options, outputOpts, ctx);
+    return;
+  }
 
   try {
     const worktreeLink = await detectBrokenWorktreeLink(ctx);
@@ -304,6 +313,142 @@ export async function cleanCommand(
 
     // Output cd command for shell wrapper to eval
     console.log(formatCdCommand(mainPath));
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    errorLog(`Error: ${errorMessage}`, outputOpts);
+    runtime.control.exit(1);
+  }
+}
+
+/**
+ * Claude Code WorktreeRemove hook mode.
+ *
+ * Reads the worktree path from stdin JSON (WorktreeRemove hook format: {"worktree_path": "..."}).
+ * Runs pre_clean/post_clean hooks and removes the worktree.
+ *
+ * WorktreeRemove hooks have no decision control in Claude Code -
+ * failures are logged in debug mode only. We still exit non-zero on
+ * critical errors so the user sees something went wrong.
+ */
+async function cleanWorktreeHookMode(
+  options: CleanOptions,
+  outputOpts: OutputOptions,
+  ctx: AppContext,
+): Promise<void> {
+  const { runtime } = ctx;
+  const { deleteBranch = false, keepBranch = false } = options;
+
+  const worktreePath = await readWorktreeHookPath(ctx);
+
+  const hasWorktreePath = worktreePath !== undefined && worktreePath.length > 0;
+  if (!hasWorktreePath) {
+    errorLog("Error: --claude-code-worktree-hook requires worktree_path via stdin", outputOpts);
+    runtime.control.exit(1);
+    return;
+  }
+
+  try {
+    // Determine the main worktree path from the target worktree
+    const mainPath = await getMainWorktreePath(ctx);
+
+    verboseLog(`[cc-worktree-hook] Worktree path: ${worktreePath}`, outputOpts);
+    verboseLog(`[cc-worktree-hook] Main path: ${mainPath}`, outputOpts);
+
+    // Get worktree info (branch name) before removal
+    const worktreeInfo = await getWorktreeByPath(worktreePath, ctx);
+
+    // Already removed - nothing to do
+    if (worktreeInfo === null) {
+      verboseLog("[cc-worktree-hook] Worktree already removed", outputOpts);
+      return;
+    }
+
+    const currentBranch = worktreeInfo.branch;
+
+    // Load configuration from the worktree being removed
+    const config = await loadVibeConfig(worktreePath, ctx);
+
+    // Create progress tracker
+    const tracker = new ProgressTracker({ title: "Cleaning up worktree" }, ctx);
+
+    // Run pre_clean hooks
+    const preCleanHooks = config?.hooks?.pre_clean;
+    const hasPreCleanHooks = preCleanHooks !== undefined && preCleanHooks.length > 0;
+    if (hasPreCleanHooks) {
+      tracker.start();
+      const phaseId = tracker.addPhase("Pre-clean hooks");
+      const taskIds = preCleanHooks.map((hook) => tracker.addTask(phaseId, hook));
+      const trackerInfo: HookTrackerInfo = { tracker, taskIds };
+
+      await runHooks(
+        preCleanHooks,
+        worktreePath,
+        {
+          worktreePath,
+          originPath: mainPath,
+        },
+        trackerInfo,
+        ctx,
+      );
+
+      await tracker.finish();
+    }
+
+    // Load user settings for fast_remove preference
+    const settings = await loadUserSettings(ctx);
+    const useFastRemove = settings.clean?.fast_remove ?? true;
+
+    // Ensure cwd is not inside the worktree being removed (defensive - Claude Code
+    // typically sets cwd elsewhere, but if the hook is invoked from the worktree
+    // directory, removal may fail on some platforms)
+    try {
+      runtime.control.chdir(mainPath);
+    } catch {
+      // mainPath doesn't exist or is inaccessible - continue anyway since
+      // Claude Code may have already set cwd to a valid location
+      verboseLog(`[cc-worktree-hook] Could not chdir to ${mainPath}`, outputOpts);
+    }
+
+    // Remove worktree (always force in hook mode - Claude Code is controlling this)
+    await removeWorktree(mainPath, worktreePath, true, useFastRemove, outputOpts, ctx);
+
+    // Run post_clean hooks from main worktree
+    const postCleanHooks = config?.hooks?.post_clean;
+    const hasPostCleanHooks = postCleanHooks !== undefined && postCleanHooks.length > 0;
+    if (hasPostCleanHooks) {
+      await runHooks(
+        postCleanHooks,
+        mainPath,
+        {
+          worktreePath,
+          originPath: mainPath,
+        },
+        undefined,
+        ctx,
+      );
+    }
+
+    verboseLog(`[cc-worktree-hook] Worktree ${worktreePath} removed.`, outputOpts);
+
+    // Determine whether to delete branch
+    let shouldDeleteBranch = false;
+    if (deleteBranch) {
+      shouldDeleteBranch = true;
+    } else if (keepBranch) {
+      shouldDeleteBranch = false;
+    } else if (config?.clean?.delete_branch !== undefined) {
+      shouldDeleteBranch = config.clean.delete_branch;
+    }
+
+    if (shouldDeleteBranch && currentBranch) {
+      try {
+        await runGitCommand(["-C", mainPath, "branch", "-d", currentBranch], ctx);
+        verboseLog(`[cc-worktree-hook] Branch ${currentBranch} deleted.`, outputOpts);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        warnLog(`Warning: Could not delete branch ${currentBranch}: ${errorMessage}`);
+      }
+    }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     errorLog(`Error: ${errorMessage}`, outputOpts);
