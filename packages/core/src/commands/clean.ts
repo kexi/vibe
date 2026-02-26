@@ -398,6 +398,17 @@ async function cleanWorktreeHookMode(
     const settings = await loadUserSettings(ctx);
     const useFastRemove = settings.clean?.fast_remove ?? true;
 
+    // Ensure cwd is not inside the worktree being removed (defensive - Claude Code
+    // typically sets cwd elsewhere, but if the hook is invoked from the worktree
+    // directory, removal may fail on some platforms)
+    try {
+      runtime.control.chdir(mainPath);
+    } catch {
+      // mainPath doesn't exist or is inaccessible - continue anyway since
+      // Claude Code may have already set cwd to a valid location
+      verboseLog(`[cc-worktree-hook] Could not chdir to ${mainPath}`, outputOpts);
+    }
+
     // Remove worktree (always force in hook mode - Claude Code is controlling this)
     await removeWorktree(mainPath, worktreePath, true, useFastRemove, outputOpts, ctx);
 
