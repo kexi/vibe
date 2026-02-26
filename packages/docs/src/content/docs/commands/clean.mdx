@@ -5,6 +5,8 @@ sidebar:
   order: 3
 ---
 
+import { Badge } from "@astrojs/starlight/components";
+
 The `clean` command removes the current worktree and returns you to the main repository.
 
 ## Usage
@@ -54,6 +56,16 @@ Suppress non-essential output.
 ```bash
 vibe clean --quiet
 ```
+
+### `--claude-code-worktree-hook` <Badge text="v0.23.0+" />
+
+Claude Code WorktreeRemove hook mode. Reads worktree path from stdin and removes the worktree.
+
+```bash
+vibe clean --claude-code-worktree-hook --force
+```
+
+See [Claude Code Integration](/configuration/hooks/#claude-code-integration) for setup details.
 
 ## Configuration
 
