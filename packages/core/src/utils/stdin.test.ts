@@ -5,38 +5,7 @@ import {
   readWorktreeHookPath,
   readTargetFromStdin,
 } from "./stdin.ts";
-import { createMockContext } from "../context/testing.ts";
-import type { RuntimeIO } from "../runtime/types.ts";
-
-/**
- * Create a mock stdin that returns the given data bytes, then EOF.
- */
-function createMockStdin(data: string, isTerminal = false): RuntimeIO["stdin"] {
-  const encoded = new TextEncoder().encode(data);
-  let offset = 0;
-  return {
-    read: (buf: Uint8Array) => {
-      const isEof = offset >= encoded.length;
-      if (isEof) return Promise.resolve(null);
-      const remaining = encoded.length - offset;
-      const bytesToCopy = Math.min(remaining, buf.length);
-      buf.set(encoded.subarray(offset, offset + bytesToCopy));
-      offset += bytesToCopy;
-      return Promise.resolve(bytesToCopy);
-    },
-    isTerminal: () => isTerminal,
-  };
-}
-
-/**
- * Create a mock stdin that returns EOF immediately (empty stdin).
- */
-function createEmptyStdin(isTerminal = false): RuntimeIO["stdin"] {
-  return {
-    read: () => Promise.resolve(null),
-    isTerminal: () => isTerminal,
-  };
-}
+import { createMockContext, createMockStdin, createEmptyStdin } from "../context/testing.ts";
 
 describe("readStdinJson", () => {
   afterEach(() => {

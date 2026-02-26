@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { copyCommand } from "./copy.ts";
-import { createMockContext } from "../context/testing.ts";
+import { createMockContext, createMockStdin, createEmptyStdin } from "../context/testing.ts";
 import type { RuntimeIO, RunResult } from "../runtime/types.ts";
 import { CopyService } from "../utils/copy/index.ts";
 
@@ -213,36 +213,6 @@ function createCopyTestContext(options: {
   });
 
   return { ctx, getExitCode: () => exitCode, stderrOutput, consoleErrorSpy, consoleWarnSpy };
-}
-
-/**
- * Create a mock stdin that returns the given data bytes, then EOF.
- */
-function createMockStdin(data: string, isTerminal = false): RuntimeIO["stdin"] {
-  const encoded = new TextEncoder().encode(data);
-  let offset = 0;
-  return {
-    read: (buf: Uint8Array) => {
-      const isEof = offset >= encoded.length;
-      if (isEof) return Promise.resolve(null);
-      const remaining = encoded.length - offset;
-      const bytesToCopy = Math.min(remaining, buf.length);
-      buf.set(encoded.subarray(offset, offset + bytesToCopy));
-      offset += bytesToCopy;
-      return Promise.resolve(bytesToCopy);
-    },
-    isTerminal: () => isTerminal,
-  };
-}
-
-/**
- * Create a mock stdin that returns EOF immediately (empty stdin).
- */
-function createEmptyStdin(isTerminal = false): RuntimeIO["stdin"] {
-  return {
-    read: () => Promise.resolve(null),
-    isTerminal: () => isTerminal,
-  };
 }
 
 describe("copyCommand", () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { startCommand } from "./start.ts";
 import { resolveCopyConcurrency } from "../utils/copy-runner.ts";
-import { createMockContext } from "../context/testing.ts";
+import { createMockContext, createMockStdin } from "../context/testing.ts";
 import type { RunResult } from "../runtime/types.ts";
 import type { VibeConfig } from "../types/config.ts";
 
@@ -903,22 +903,7 @@ describe("startCommand --claude-code-worktree-hook mode", () => {
       options.worktreeListOutput ?? `worktree ${repoRoot}\nHEAD abc123\nbranch refs/heads/main\n\n`;
 
     // Create stdin mock
-    let stdinOffset = 0;
-    const stdinEncoded = options.stdinData
-      ? new TextEncoder().encode(options.stdinData)
-      : new Uint8Array(0);
-    const stdinMock = {
-      read: (buf: Uint8Array) => {
-        const isEof = stdinOffset >= stdinEncoded.length;
-        if (isEof) return Promise.resolve(null);
-        const remaining = stdinEncoded.length - stdinOffset;
-        const bytesToCopy = Math.min(remaining, buf.length);
-        buf.set(stdinEncoded.subarray(stdinOffset, stdinOffset + bytesToCopy));
-        stdinOffset += bytesToCopy;
-        return Promise.resolve(bytesToCopy);
-      },
-      isTerminal: () => false,
-    };
+    const stdinMock = createMockStdin(options.stdinData ?? "");
 
     const ctx = createMockContext({
       env: {
