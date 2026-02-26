@@ -1,10 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import {
-  readStdinJson,
-  readWorktreeHookName,
-  readWorktreeHookPath,
-  readTargetFromStdin,
-} from "./stdin.ts";
+import { readStdinJson, readWorktreeHookName, readWorktreeHookPath } from "./stdin.ts";
 import { createMockContext, createMockStdin, createEmptyStdin } from "../context/testing.ts";
 
 describe("readStdinJson", () => {
@@ -289,69 +284,5 @@ describe("readWorktreeHookPath", () => {
     });
 
     await expect(readWorktreeHookPath(ctx)).rejects.toThrow("null byte");
-  });
-});
-
-describe("readTargetFromStdin", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("returns cwd from valid stdin JSON", async () => {
-    const ctx = createMockContext({
-      io: { stdin: createMockStdin(JSON.stringify({ cwd: "/tmp/worktree" })) },
-    });
-
-    const result = await readTargetFromStdin(ctx);
-
-    expect(result).toBe("/tmp/worktree");
-  });
-
-  it("returns undefined when stdin is empty", async () => {
-    const ctx = createMockContext({
-      io: { stdin: createEmptyStdin() },
-    });
-
-    const result = await readTargetFromStdin(ctx);
-
-    expect(result).toBeUndefined();
-  });
-
-  it("returns undefined when cwd field is missing", async () => {
-    const ctx = createMockContext({
-      io: { stdin: createMockStdin(JSON.stringify({ name: "test" })) },
-    });
-
-    const result = await readTargetFromStdin(ctx);
-
-    expect(result).toBeUndefined();
-  });
-
-  it("returns undefined when cwd is a relative path", async () => {
-    const ctx = createMockContext({
-      io: { stdin: createMockStdin(JSON.stringify({ cwd: "./relative/path" })) },
-    });
-
-    const result = await readTargetFromStdin(ctx);
-
-    expect(result).toBeUndefined();
-  });
-
-  it("returns undefined when cwd is an empty string", async () => {
-    const ctx = createMockContext({
-      io: { stdin: createMockStdin(JSON.stringify({ cwd: "" })) },
-    });
-
-    const result = await readTargetFromStdin(ctx);
-
-    expect(result).toBeUndefined();
-  });
-
-  it("throws when cwd contains null byte", async () => {
-    const ctx = createMockContext({
-      io: { stdin: createMockStdin(JSON.stringify({ cwd: "/tmp/test\0malicious" })) },
-    });
-
-    await expect(readTargetFromStdin(ctx)).rejects.toThrow("null byte");
   });
 });
