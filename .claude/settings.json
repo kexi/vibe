@@ -1,12 +1,22 @@
 {
   "hooks": {
-    "PostToolUse": [
+    "WorktreeCreate": [
       {
-        "matcher": "EnterWorktree",
         "hooks": [
           {
             "type": "command",
-            "command": "vibe copy --quiet 2>/dev/null || true",
+            "command": "vibe start --claude-code-worktree-hook --quiet 2>/dev/null",
+            "timeout": 300
+          }
+        ]
+      }
+    ],
+    "WorktreeRemove": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "vibe clean --claude-code-worktree-hook --force --quiet 2>/dev/null",
             "timeout": 120
           }
         ]
