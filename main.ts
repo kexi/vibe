@@ -1,6 +1,7 @@
 import { parseArgs, type ParseArgsConfig } from "node:util";
 import { startCommand } from "./packages/core/src/commands/start.ts";
 import { cleanCommand } from "./packages/core/src/commands/clean.ts";
+import { copyCommand } from "./packages/core/src/commands/copy.ts";
 import { homeCommand } from "./packages/core/src/commands/home.ts";
 import { trustCommand } from "./packages/core/src/commands/trust.ts";
 import { untrustCommand } from "./packages/core/src/commands/untrust.ts";
@@ -36,7 +37,9 @@ const parseArgsOptions: ParseArgsConfig["options"] = {
   check: { type: "boolean" },
   base: { type: "string" },
   track: { type: "boolean" },
+  target: { type: "string" },
   shell: { type: "string" },
+  "claude-code-worktree-hook": { type: "boolean" },
 };
 
 const HELP_TEXT = `vibe - git worktree helper
@@ -54,6 +57,7 @@ Installation:
 Usage:
   vibe start <branch-name> [options]  Create a new worktree with the given branch
   vibe jump <branch-name> [options]   Jump to an existing worktree by branch name
+  vibe copy [options]                 Copy files/dirs from main worktree using CoW
   vibe clean [options]                Remove current worktree and return to main
   vibe home                           Return to main worktree without removing current
   vibe trust                          Trust .vibe.toml in current repository
@@ -75,12 +79,14 @@ Command Options:
   --track           Set upstream tracking when using --base (start)
   --no-hooks        Skip pre-start and post-start hooks (start)
   --no-copy         Skip copying files and directories (start)
-  -n, --dry-run     Show what would be executed without making changes (start)
+  -n, --dry-run     Show what would be executed without making changes (start, copy)
+  --target <path>   Target worktree path for copy (copy)
   -f, --force       Skip confirmation prompts (clean)
   --delete-branch   Delete the branch after removing the worktree (clean)
   --keep-branch     Keep the branch after removing the worktree (clean)
   --check           Check for updates without showing upgrade instructions (upgrade)
   --shell <name>    Specify shell type: bash, zsh, fish, nushell, powershell (shell-setup)
+  --claude-code-worktree-hook   Claude Code worktree hook mode (start, clean)
 
 Setup:
   Add this to your .zshrc:
@@ -174,6 +180,7 @@ async function main(): Promise<void> {
         typeof args.base === "string" ? args.base : args.base === undefined ? undefined : "";
       const baseFromEquals = rawArgs.some((arg) => arg.startsWith("--base="));
       const track = args.track === true;
+      const worktreeHook = args["claude-code-worktree-hook"] === true;
       await startCommand(branchName, {
         reuse,
         noHooks,
@@ -184,6 +191,7 @@ async function main(): Promise<void> {
         base,
         baseFromEquals,
         track,
+        worktreeHook,
       });
       break;
     }
@@ -192,6 +200,14 @@ async function main(): Promise<void> {
       const verbose = args.verbose === true;
       const quiet = args.quiet === true;
       await jumpCommand(branchName, { verbose, quiet });
+      break;
+    }
+    case "copy": {
+      const dryRun = args["dry-run"] === true;
+      const verbose = args.verbose === true;
+      const quiet = args.quiet === true;
+      const target = typeof args.target === "string" ? args.target : undefined;
+      await copyCommand({ target, dryRun, verbose, quiet });
       break;
     }
     case "clean": {
@@ -208,7 +224,15 @@ async function main(): Promise<void> {
         runtime.control.exit(1);
       }
 
-      await cleanCommand({ force, deleteBranch, keepBranch, verbose, quiet });
+      const worktreeHookClean = args["claude-code-worktree-hook"] === true;
+      await cleanCommand({
+        force,
+        deleteBranch,
+        keepBranch,
+        verbose,
+        quiet,
+        worktreeHook: worktreeHookClean,
+      });
       break;
     }
     case "home": {

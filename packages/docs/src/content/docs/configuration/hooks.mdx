@@ -143,3 +143,67 @@ You can skip hooks with the `--no-hooks` option:
 ```bash
 vibe start feat/quick-fix --no-hooks
 ```
+
+## Claude Code Integration
+
+vibe integrates with [Claude Code](https://claude.ai/code)'s `WorktreeCreate` and `WorktreeRemove` hooks. This replaces Claude Code's default `git worktree add` behavior with vibe's full workflow, including hooks, CoW file copying, and configuration.
+
+### Setup
+
+Add the following to your Claude Code `settings.json`:
+
+```json
+{
+  "hooks": {
+    "WorktreeCreate": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "vibe start --claude-code-worktree-hook --quiet 2>/dev/null"
+          }
+        ]
+      }
+    ],
+    "WorktreeRemove": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "vibe clean --claude-code-worktree-hook --force 2>/dev/null"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### How It Works
+
+When Claude Code creates a worktree (via natural language, `isolation: "worktree"`, or the `/worktree` command), vibe handles the full lifecycle:
+
+**WorktreeCreate:**
+
+1. Reads worktree name from stdin (Claude Code hook protocol)
+2. Runs `pre_start` hooks in the origin repository
+3. Creates the git worktree
+4. Copies files/directories using CoW
+5. Runs `post_start` hooks in the new worktree (e.g., `pnpm install`)
+6. Outputs the worktree path to stdout for Claude Code
+
+**WorktreeRemove:**
+
+1. Reads worktree path from stdin (Claude Code hook protocol)
+2. Runs `pre_clean` hooks in the worktree
+3. Removes the git worktree
+4. Runs `post_clean` hooks in the main repository
+
+### Benefits
+
+Without this integration, Claude Code's worktree creation only runs `git worktree add`. By using vibe's hooks, you get:
+
+- **Automatic dependency installation** (`pnpm install`, `bun install`, etc.)
+- **CoW file copying** (`.env`, `node_modules`, etc.)
+- **Custom setup scripts** (database migrations, Docker containers, etc.)
+- **Cleanup hooks** on worktree removal
