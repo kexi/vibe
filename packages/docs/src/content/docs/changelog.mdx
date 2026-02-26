@@ -5,6 +5,23 @@ description: Version history and release notes for vibe
 
 All notable changes to vibe are documented here.
 
+## v0.23.0
+
+**Released:** 2026-02-26
+
+### Added
+
+- `vibe copy` command to copy files and directories from main worktree using Copy-on-Write
+- Claude Code worktree hook integration (`--claude-code-worktree-hook` mode for `start` and `clean` commands)
+- `WorktreeCreate` / `WorktreeRemove` hook support for Claude Code
+
+### Fixed
+
+- Path validation for `--target` option
+- Defensive directory change before worktree removal in hook mode
+
+---
+
 ## v0.22.2
 
 **Released:** 2026-02-13
