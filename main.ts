@@ -86,7 +86,7 @@ Command Options:
   --keep-branch     Keep the branch after removing the worktree (clean)
   --check           Check for updates without showing upgrade instructions (upgrade)
   --shell <name>    Specify shell type: bash, zsh, fish, nushell, powershell (shell-setup)
-  --claude-code-worktree-hook   Claude Code WorktreeCreate hook mode (start)
+  --claude-code-worktree-hook   Claude Code worktree hook mode (start, clean)
 
 Setup:
   Add this to your .zshrc:
@@ -224,7 +224,15 @@ async function main(): Promise<void> {
         runtime.control.exit(1);
       }
 
-      await cleanCommand({ force, deleteBranch, keepBranch, verbose, quiet });
+      const worktreeHookClean = args["claude-code-worktree-hook"] === true;
+      await cleanCommand({
+        force,
+        deleteBranch,
+        keepBranch,
+        verbose,
+        quiet,
+        worktreeHook: worktreeHookClean,
+      });
       break;
     }
     case "home": {
