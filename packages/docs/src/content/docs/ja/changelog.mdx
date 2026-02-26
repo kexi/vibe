@@ -5,6 +5,23 @@ description: vibeのバージョン履歴とリリースノート
 
 vibeの主要な変更はここに記録されています。
 
+## v0.23.0
+
+**リリース日:** 2026年2月26日
+
+### 追加
+
+- メインワークツリーからCopy-on-Writeを使用してファイルをコピーする `vibe copy` コマンドを追加
+- Claude Code worktree hook 統合（`start` / `clean` コマンドに `--claude-code-worktree-hook` モードを追加）
+- Claude Code 向け `WorktreeCreate` / `WorktreeRemove` hook サポート
+
+### 修正
+
+- `--target` オプションのパスバリデーションを追加
+- hook モードでのworktree削除前に防御的なディレクトリ変更を追加
+
+---
+
 ## v0.22.2
 
 **リリース日:** 2026年2月13日
