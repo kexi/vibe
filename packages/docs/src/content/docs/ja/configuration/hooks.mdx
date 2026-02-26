@@ -143,3 +143,67 @@ pre_clean = ["docker-compose down"]
 ```bash
 vibe start feat/quick-fix --no-hooks
 ```
+
+## Claude Code連携
+
+vibeは[Claude Code](https://claude.ai/code)の`WorktreeCreate`および`WorktreeRemove`フックと連携できます。これにより、Claude Codeのデフォルトの`git worktree add`動作をvibeのフルワークフロー（フック、CoWファイルコピー、設定を含む）に置き換えます。
+
+### セットアップ
+
+Claude Codeの`settings.json`に以下を追加してください：
+
+```json
+{
+  "hooks": {
+    "WorktreeCreate": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "vibe start --claude-code-worktree-hook --quiet 2>/dev/null"
+          }
+        ]
+      }
+    ],
+    "WorktreeRemove": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "vibe clean --claude-code-worktree-hook --force 2>/dev/null"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### 動作の仕組み
+
+Claude CodeがWorktreeを作成する場合（自然言語、`isolation: "worktree"`、または`/worktree`コマンド経由）、vibeがフルライフサイクルを管理します：
+
+**WorktreeCreate:**
+
+1. stdinからWorktree名を読み取り（Claude Codeフックプロトコル）
+2. 元リポジトリで`pre_start`フックを実行
+3. git Worktreeを作成
+4. CoWを使用してファイル/ディレクトリをコピー
+5. 新しいWorktreeで`post_start`フックを実行（例：`pnpm install`）
+6. Claude Code向けにWorktreeパスをstdoutに出力
+
+**WorktreeRemove:**
+
+1. stdinからWorktreeパスを読み取り（Claude Codeフックプロトコル）
+2. Worktreeで`pre_clean`フックを実行
+3. git Worktreeを削除
+4. メインリポジトリで`post_clean`フックを実行
+
+### メリット
+
+この連携がない場合、Claude CodeのWorktree作成は`git worktree add`のみを実行します。vibeのフックを使用することで、以下が自動的に行われます：
+
+- **依存関係の自動インストール**（`pnpm install`、`bun install`など）
+- **CoWファイルコピー**（`.env`、`node_modules`など）
+- **カスタムセットアップスクリプト**（データベースマイグレーション、Dockerコンテナなど）
+- **Worktree削除時のクリーンアップフック**
