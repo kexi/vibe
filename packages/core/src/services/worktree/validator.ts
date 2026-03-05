@@ -4,7 +4,12 @@
  * Provides validation for branch and worktree operations.
  */
 
-import { branchExists, findWorktreeByBranch, getWorktreeByPath } from "../../utils/git.ts";
+import {
+  branchExists,
+  remoteBranchExists,
+  findWorktreeByBranch,
+  getWorktreeByPath,
+} from "../../utils/git.ts";
 import { type AppContext, getGlobalContext } from "../../context/index.ts";
 
 /**
@@ -53,7 +58,8 @@ export async function validateBranchForWorktree(
     };
   }
 
-  const exists = await branchExists(branchName, ctx);
+  const localExists = await branchExists(branchName, ctx);
+  const exists = localExists || (await remoteBranchExists(branchName, "origin", ctx));
 
   return {
     isValid: true,

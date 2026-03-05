@@ -166,6 +166,22 @@ export async function branchExists(
   }
 }
 
+export async function remoteBranchExists(
+  branchName: string,
+  remote: string = "origin",
+  ctx: AppContext = getGlobalContext(),
+): Promise<boolean> {
+  try {
+    await runGitCommand(
+      ["show-ref", "--verify", "--quiet", `refs/remotes/${remote}/${branchName}`],
+      ctx,
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function revisionExists(
   ref: string,
   ctx: AppContext = getGlobalContext(),

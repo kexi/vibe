@@ -869,6 +869,7 @@ describe("startCommand --claude-code-worktree-hook mode", () => {
   function createWorktreeHookContext(options: {
     stdinData?: string;
     branchExists?: boolean;
+    remoteBranchExists?: boolean;
     worktreeListOutput?: string;
     repoRoot?: string;
     repoName?: string;
@@ -877,6 +878,7 @@ describe("startCommand --claude-code-worktree-hook mode", () => {
   }) {
     const {
       branchExists = false,
+      remoteBranchExists = false,
       repoRoot = "/tmp/mock-repo",
       repoName = "mock-repo",
       vibeTomlContent,
@@ -976,13 +978,14 @@ describe("startCommand --claude-code-worktree-hook mode", () => {
           // Mock: git show-ref --verify (branch exists check)
           const isShowRefVerify = args.includes("show-ref") && args.includes("--verify");
           if (isShowRefVerify) {
+            const refArg = args.find((a) => a.startsWith("refs/"));
+            const isRemoteRef = refArg?.startsWith("refs/remotes/") ?? false;
+            const exists = isRemoteRef ? remoteBranchExists : branchExists;
             return Promise.resolve({
-              code: branchExists ? 0 : 1,
-              success: branchExists,
+              code: exists ? 0 : 1,
+              success: exists,
               stdout: new Uint8Array(),
-              stderr: branchExists
-                ? new Uint8Array()
-                : new TextEncoder().encode("fatal: bad ref\n"),
+              stderr: exists ? new Uint8Array() : new TextEncoder().encode("fatal: bad ref\n"),
             } as RunResult);
           }
 
@@ -1252,6 +1255,34 @@ describe("startCommand --claude-code-worktree-hook mode", () => {
     expect(getExitCode()).toBeNull();
     const hasExistingPath = stdoutOutput.some((line) => line === existingPath);
     expect(hasExistingPath).toBe(true);
+  });
+
+  it("uses existing remote branch via DWIM when local branch does not exist", async () => {
+    const { ctx, getExitCode, stdoutOutput } = createWorktreeHookContext({
+      stdinData: JSON.stringify({ name: "remote-only-branch" }),
+      branchExists: false,
+      remoteBranchExists: true,
+    });
+
+    let worktreeAddArgs: string[] = [];
+    const originalRun = ctx.runtime.process.run;
+    ctx.runtime.process.run = (opts) => {
+      const args = opts.args as string[];
+      const isWorktreeAdd = args.includes("worktree") && args.includes("add");
+      if (isWorktreeAdd) {
+        worktreeAddArgs = [...args];
+      }
+      return originalRun(opts);
+    };
+
+    await startCommand("", { worktreeHook: true, quiet: true }, ctx);
+
+    expect(getExitCode()).toBeNull();
+    // Should use `git worktree add <path> <branch>` (DWIM form, no -b flag)
+    expect(worktreeAddArgs).not.toContain("-b");
+    expect(worktreeAddArgs).toContain("remote-only-branch");
+    const hasPath = stdoutOutput.some((line) => line.includes("remote-only-branch"));
+    expect(hasPath).toBe(true);
   });
 
   it("reuses existing worktree when same-branch conflict at target path", async () => {
