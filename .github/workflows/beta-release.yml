@@ -195,6 +195,24 @@ jobs:
         run: |
           VERSION="${{ needs.prepare.outputs.version }}"
 
+          # Validate version format
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+            echo "Error: Invalid version format: $VERSION"
+            exit 1
+          fi
+
+          # Validate SHA256 values are not empty
+          SHA_DARWIN_ARM64="${{ steps.sha256.outputs.darwin_arm64 }}"
+          SHA_DARWIN_X64="${{ steps.sha256.outputs.darwin_x64 }}"
+          SHA_LINUX_ARM64="${{ steps.sha256.outputs.linux_arm64 }}"
+          SHA_LINUX_X64="${{ steps.sha256.outputs.linux_x64 }}"
+          for sha_val in "$SHA_DARWIN_ARM64" "$SHA_DARWIN_X64" "$SHA_LINUX_ARM64" "$SHA_LINUX_X64"; do
+            if [ -z "$sha_val" ]; then
+              echo "Error: One or more SHA256 values are empty"
+              exit 1
+            fi
+          done
+
           gh repo clone kexi/homebrew-tap homebrew-tap
 
           # Copy template from source repository
@@ -218,5 +236,27 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/vibe-beta.rb
+
+          # Generate versioned formula for beta
+          CLASSNAME=$(echo "$VERSION" | tr -d '.' | tr -d '-')
+          VERSIONED_FORMULA="vibe-beta@${VERSION}.rb"
+
+          cp "../vibe-source/Formula/vibe-beta-versioned.rb" "Formula/${VERSIONED_FORMULA}"
+          sed -i "s/CLASSNAME_PLACEHOLDER/$CLASSNAME/g" "Formula/${VERSIONED_FORMULA}"
+          sed -i "s/VERSION_PLACEHOLDER/$VERSION/g" "Formula/${VERSIONED_FORMULA}"
+          sed -i "s/SHA256_DARWIN_ARM64/${{ steps.sha256.outputs.darwin_arm64 }}/g" "Formula/${VERSIONED_FORMULA}"
+          sed -i "s/SHA256_DARWIN_X64/${{ steps.sha256.outputs.darwin_x64 }}/g" "Formula/${VERSIONED_FORMULA}"
+          sed -i "s/SHA256_LINUX_ARM64/${{ steps.sha256.outputs.linux_arm64 }}/g" "Formula/${VERSIONED_FORMULA}"
+          sed -i "s/SHA256_LINUX_X64/${{ steps.sha256.outputs.linux_x64 }}/g" "Formula/${VERSIONED_FORMULA}"
+
+          # Verify all placeholders were replaced
+          if grep -q "PLACEHOLDER" "Formula/${VERSIONED_FORMULA}"; then
+            echo "Error: Placeholders were not replaced correctly in versioned formula"
+            grep "PLACEHOLDER" "Formula/${VERSIONED_FORMULA}"
+            exit 1
+          fi
+
+          git add "Formula/${VERSIONED_FORMULA}"
+
           git commit -m "Update vibe-beta to $VERSION"
-          git push https://x-access-token:${GH_TOKEN}@github.com/kexi/homebrew-tap.git HEAD:main
+          git push --quiet https://x-access-token:${GH_TOKEN}@github.com/kexi/homebrew-tap.git HEAD:main
