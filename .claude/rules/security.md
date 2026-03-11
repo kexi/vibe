@@ -1,8 +1,8 @@
+---
+globs: "packages/core/src/**/*.ts"
+---
+
 # Security Rules
-
-## Glob Pattern
-
-`packages/core/src/**/*.ts`
 
 ## Guidelines
 
