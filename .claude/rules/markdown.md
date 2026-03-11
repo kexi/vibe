@@ -1,5 +1,9 @@
 # Markdown File Synchronization Rules
 
+## Glob Pattern
+
+`**/*.md`
+
 ## Naming Convention
 
 - `*.md` - English version (default)
