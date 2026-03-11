@@ -2,6 +2,8 @@
 description: Release a new version of vibe (version bump, sync, PR creation)
 argument-hint: "[patch|minor|major|X.Y.Z]"
 allowed-tools: Bash(git *), Bash(gh *), Bash(pnpm *), Bash(bun *), Read, Edit
+context: fork
+disable-model-invocation: true
 ---
 
 # vibe Release Workflow
@@ -286,7 +288,7 @@ Display the PR URL and inform the user:
 1. Review and merge the PR
 2. After merging, Step 6 will create the `develop` → `main` PR
 
-**Note**: Wait until the PR is merged. After merging, invoke `/vibe/release-new-version` again or manually execute Step 6.
+**Note**: Wait until the PR is merged. After merging, invoke `/vibe-release-new-version` again or manually execute Step 6.
 
 ---
 
@@ -325,7 +327,7 @@ Display the PR URL and inform the user:
 1. Review and merge the PR
 2. After merging, execute Step 7 to finalize the release
 
-**Note**: Wait until the PR is merged. After merging, invoke `/vibe/release-new-version` again or manually execute Step 7.
+**Note**: Wait until the PR is merged. After merging, invoke `/vibe-release-new-version` again or manually execute Step 7.
 
 ---
 
@@ -511,23 +513,6 @@ vibe is a super fast Git worktree management tool with Copy-on-Write optimizatio
 🔗 https://github.com/kexi/vibe/releases/tag/vX.Y.Z
 
 #vibe #git #worktree #devtools
-```
-
-**Japanese version (optional, with mentions):**
-
-```
-🎉 vibe vX.Y.Z をリリースしました！
-
-vibeはCopy-on-Write最適化による超高速なGit worktree管理ツールです。
-
-✨ 主な変更点:
-- Summary of new features/fixes (1-3 lines)
-
-🙏 Thanks to @contributor!
-
-🔗 https://github.com/kexi/vibe/releases/tag/vX.Y.Z
-
-#vibe #git #worktree #開発ツール
 ```
 
 **When 3 or more contributors (reply tweet):**
