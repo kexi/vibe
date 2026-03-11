@@ -243,7 +243,7 @@ jobs:
 
           VERSIONED_FORMULA="vibe@${VERSION}.rb"
 
-          cp "vibe-source/Formula/vibe-versioned.rb" "Formula/${VERSIONED_FORMULA}"
+          cp "../vibe-source/Formula/vibe-versioned.rb" "Formula/${VERSIONED_FORMULA}"
           sed -i "s/CLASSNAME_PLACEHOLDER/$CLASSNAME/g" "Formula/${VERSIONED_FORMULA}"
           sed -i "s/VERSION_PLACEHOLDER/$VERSION/g" "Formula/${VERSIONED_FORMULA}"
           sed -i "s/SHA256_DARWIN_ARM64/${{ steps.sha256.outputs.darwin_arm64 }}/g" "Formula/${VERSIONED_FORMULA}"
