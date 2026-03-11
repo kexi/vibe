@@ -233,8 +233,34 @@ jobs:
             exit 1
           fi
 
+          # Generate versioned formula (e.g., vibe@2.0.0-beta.1.rb)
+          # Compute Homebrew class_s-compatible class name via Ruby
+          CLASSNAME=$(ruby -e "
+            v = '${VERSION}'.capitalize
+            v = v.gsub(/[-_.\s]([a-zA-Z0-9])/) { Regexp.last_match(1).upcase }
+            puts v
+          ")
+
+          VERSIONED_FORMULA="vibe@${VERSION}.rb"
+
+          cp "vibe-source/Formula/vibe-versioned.rb" "Formula/${VERSIONED_FORMULA}"
+          sed -i "s/CLASSNAME_PLACEHOLDER/$CLASSNAME/g" "Formula/${VERSIONED_FORMULA}"
+          sed -i "s/VERSION_PLACEHOLDER/$VERSION/g" "Formula/${VERSIONED_FORMULA}"
+          sed -i "s/SHA256_DARWIN_ARM64/${{ steps.sha256.outputs.darwin_arm64 }}/g" "Formula/${VERSIONED_FORMULA}"
+          sed -i "s/SHA256_DARWIN_X64/${{ steps.sha256.outputs.darwin_x64 }}/g" "Formula/${VERSIONED_FORMULA}"
+          sed -i "s/SHA256_LINUX_ARM64/${{ steps.sha256.outputs.linux_arm64 }}/g" "Formula/${VERSIONED_FORMULA}"
+          sed -i "s/SHA256_LINUX_X64/${{ steps.sha256.outputs.linux_x64 }}/g" "Formula/${VERSIONED_FORMULA}"
+
+          # Verify all placeholders were replaced
+          if grep -q "PLACEHOLDER" "Formula/${VERSIONED_FORMULA}"; then
+            echo "Error: Placeholders not replaced in versioned formula"
+            grep "PLACEHOLDER" "Formula/${VERSIONED_FORMULA}"
+            exit 1
+          fi
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/vibe-beta.rb
+          git add "Formula/${VERSIONED_FORMULA}"
           git commit -m "Update vibe-beta to $VERSION"
           git push --quiet https://x-access-token:${GH_TOKEN}@github.com/kexi/homebrew-tap.git HEAD:main
