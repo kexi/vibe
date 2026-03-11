@@ -232,11 +232,15 @@ jobs:
           git add "Formula/${FORMULA_TEMPLATE}"
 
           # Generate versioned formula for stable releases only
-          # Pre-release versions (e.g., 2.0.0-beta.1) are not compatible with
-          # Homebrew's @version naming convention (class_s expects digits after @)
+          # Beta versions are handled by beta-release.yml
           IS_PRERELEASE="${{ github.event.release.prerelease }}"
           if [ "$IS_PRERELEASE" != "true" ]; then
-            CLASSNAME=$(echo "$VERSION" | tr -d '.')
+            # Compute Homebrew class_s-compatible class name via Ruby
+            CLASSNAME=$(ruby -e "
+              v = '${VERSION}'.capitalize
+              v = v.gsub(/[-_.\s]([a-zA-Z0-9])/) { Regexp.last_match(1).upcase }
+              puts v
+            ")
             VERSIONED_FORMULA="vibe@${VERSION}.rb"
 
             cp "../vibe-source/Formula/vibe-versioned.rb" "Formula/${VERSIONED_FORMULA}"
