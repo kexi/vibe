@@ -1,8 +1,8 @@
+---
+globs: "**/.github/workflows/*.yml"
+---
+
 # CI/CD Workflow Rules
-
-## Glob Pattern
-
-`**/.github/workflows/*.yml`
 
 ## Tool Setup Requirements
 

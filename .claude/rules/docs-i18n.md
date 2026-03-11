@@ -1,8 +1,8 @@
+---
+globs: "packages/docs/src/content/docs/**/*.mdx"
+---
+
 # Documentation i18n Synchronization Rules
-
-## Glob Pattern
-
-`packages/docs/src/content/docs/**/*.mdx`
 
 ## Directory Structure
 
