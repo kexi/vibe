@@ -288,7 +288,7 @@ Display the PR URL and inform the user:
 1. Review and merge the PR
 2. After merging, Step 6 will create the `develop` → `main` PR
 
-**Note**: Wait until the PR is merged. After merging, invoke `/vibe/release-new-version` again or manually execute Step 6.
+**Note**: Wait until the PR is merged. After merging, invoke `/vibe-release-new-version` again or manually execute Step 6.
 
 ---
 
@@ -327,7 +327,7 @@ Display the PR URL and inform the user:
 1. Review and merge the PR
 2. After merging, execute Step 7 to finalize the release
 
-**Note**: Wait until the PR is merged. After merging, invoke `/vibe/release-new-version` again or manually execute Step 7.
+**Note**: Wait until the PR is merged. After merging, invoke `/vibe-release-new-version` again or manually execute Step 7.
 
 ---
 
