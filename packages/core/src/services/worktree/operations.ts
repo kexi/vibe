@@ -66,10 +66,11 @@ export async function removeWorktree(
 ): Promise<void> {
   const { worktreePath, force = false } = options;
 
-  const args = ["worktree", "remove", worktreePath];
+  const args = ["worktree", "remove"];
   if (force) {
     args.push("--force");
   }
+  args.push(worktreePath);
 
   await runGitCommand(args, ctx);
 }
