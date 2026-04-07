@@ -20,7 +20,7 @@ jobs:
       should_release: ${{ steps.check.outputs.should_release }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Determine beta version
         id: version
@@ -72,9 +72,9 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         env:
           MISE_HTTP_TIMEOUT: "120"
 
@@ -139,7 +139,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}
@@ -149,7 +149,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
         with:
           path: artifacts
           merge-multiple: true
@@ -172,7 +172,7 @@ jobs:
 
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
         with:
           path: artifacts
           merge-multiple: true
@@ -185,7 +185,7 @@ jobs:
           echo "linux_arm64=$(sha256sum artifacts/vibe-linux-arm64 | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
           echo "linux_x64=$(sha256sum artifacts/vibe-linux-x64 | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           path: vibe-source
 
@@ -194,6 +194,24 @@ jobs:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           VERSION="${{ needs.prepare.outputs.version }}"
+
+          # Validate version format
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+            echo "Error: Invalid version format: $VERSION"
+            exit 1
+          fi
+
+          # Validate SHA256 values are not empty
+          SHA_DARWIN_ARM64="${{ steps.sha256.outputs.darwin_arm64 }}"
+          SHA_DARWIN_X64="${{ steps.sha256.outputs.darwin_x64 }}"
+          SHA_LINUX_ARM64="${{ steps.sha256.outputs.linux_arm64 }}"
+          SHA_LINUX_X64="${{ steps.sha256.outputs.linux_x64 }}"
+          for sha_val in "$SHA_DARWIN_ARM64" "$SHA_DARWIN_X64" "$SHA_LINUX_ARM64" "$SHA_LINUX_X64"; do
+            if [ -z "$sha_val" ]; then
+              echo "Error: One or more SHA256 values are empty"
+              exit 1
+            fi
+          done
 
           gh repo clone kexi/homebrew-tap homebrew-tap
 
@@ -219,4 +237,4 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/vibe-beta.rb
           git commit -m "Update vibe-beta to $VERSION"
-          git push https://x-access-token:${GH_TOKEN}@github.com/kexi/homebrew-tap.git HEAD:main
+          git push --quiet https://x-access-token:${GH_TOKEN}@github.com/kexi/homebrew-tap.git HEAD:main

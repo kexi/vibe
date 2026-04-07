@@ -1,3 +1,7 @@
+---
+globs: "**/*.md"
+---
+
 # Markdown File Synchronization Rules
 
 ## Naming Convention
