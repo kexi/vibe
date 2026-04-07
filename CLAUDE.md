@@ -35,3 +35,4 @@ source .vibedev
 - **Runtime**: Bun-based CLI tool
 - **Purpose**: Git worktree management (start, clean, trust, untrust, verify, config, upgrade)
 - **CoW Optimization**: Copy-on-Write support for APFS, Btrfs, XFS filesystems
+- **Package Manager**: pnpm (monorepo)
