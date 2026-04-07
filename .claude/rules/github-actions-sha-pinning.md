@@ -6,9 +6,9 @@ globs:
 
 # GitHub Actions SHA Pinning
 
-- サードパーティアクションは必ずコミットハッシュで固定すること（`action@<full-sha> # vX.Y.Z` 形式）
-- タグのみの指定（`@v4`, `@v3` 等）は禁止
-- ローカル/compositeアクション（`uses: ./.github/actions/setup`）は対象外
-- 新規アクション追加時はタグで記述後、`pinact run` でSHA固定に変換すること
-- `pinact` は mise 経由でインストール済み（`.mise.toml` 参照）
-- CIの `pinact-verify` ジョブ（`pinact run --check`）で未固定アクションを自動検知する
+- Third-party actions must be pinned to a full commit SHA (`action@<full-sha> # vX.Y.Z` format)
+- Tag-only references (`@v4`, `@v3`, etc.) are prohibited
+- Local/composite actions (`uses: ./.github/actions/setup`) are exempt
+- When adding a new action, write the tag first, then convert to SHA via `pinact run`
+- `pinact` is installed via mise (see `.mise.toml`)
+- The `pinact-verify` CI job (`pinact run --check`) automatically detects unpinned actions

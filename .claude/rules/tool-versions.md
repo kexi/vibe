@@ -4,8 +4,8 @@ globs:
   - ".tool-versions"
 ---
 
-# ツールバージョン管理
+# Tool Version Management
 
-- `.mise.toml` および `.tool-versions` で管理するツールは、必ずパッチバージョンまで指定すること（例: `3.9.0`）
-- `latest` やメジャーバージョンのみの指定（例: `3`）は禁止。サプライチェーン攻撃のリスクがある
-- バージョンを更新する際は、動作確認後に具体的なバージョン番号を記載すること
+- Tools managed in `.mise.toml` and `.tool-versions` must specify the full patch version (e.g., `3.9.0`)
+- Using `latest` or major-only versions (e.g., `3`) is prohibited due to supply chain attack risks
+- When updating versions, verify functionality before committing the specific version number
