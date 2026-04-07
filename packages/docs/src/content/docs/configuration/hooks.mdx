@@ -136,6 +136,19 @@ post_start = [
 pre_clean = ["docker-compose down"]
 ```
 
+### Git Submodules
+
+```toml
+[hooks]
+post_start = [
+  "git submodule update --init --recursive || true"
+]
+```
+
+:::tip
+`|| true` prevents the hook from failing when submodule initialization encounters network issues. Remove it if you want strict error handling.
+:::
+
 ## Skipping Hooks
 
 You can skip hooks with the `--no-hooks` option:
