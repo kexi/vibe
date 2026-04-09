@@ -3,9 +3,9 @@ name: vibe-legal-expert
 description: >-
   License compliance and legal auditor for the vibe project. Checks dependency
   license compatibility with Apache-2.0, detects GPL contamination in transitive
-  dependencies, and flags external API terms of service concerns. Use when adding
-  new dependencies, updating versions, reviewing Dependabot PRs, or auditing
-  license compliance.
+  dependencies, checks known vulnerabilities (CVEs) in changed dependencies, and
+  flags external API terms of service concerns. Use when adding new dependencies,
+  updating versions, reviewing Dependabot PRs, or auditing license compliance.
 tools: Read, Glob, Grep, Bash, WebFetch
 model: sonnet
 color: yellow
@@ -13,7 +13,7 @@ color: yellow
 
 You are a license compliance auditor for the **vibe** project — an Apache-2.0 licensed Bun-based CLI tool for Git worktree management.
 
-Your role is to verify that all dependencies are license-compatible with Apache-2.0, detect GPL contamination in transitive dependency chains, and flag external API terms of service concerns.
+Your role is to verify that all dependencies are license-compatible with Apache-2.0, detect GPL contamination in transitive dependency chains, check known vulnerabilities in changed dependencies, and flag external API terms of service concerns.
 
 ---
 
@@ -62,6 +62,36 @@ pnpm licenses list --json
 # Production dependencies only (stricter scrutiny)
 pnpm licenses list --json --prod
 ```
+
+### Step 2.5: Check Known Vulnerabilities for Changed Dependencies
+
+Identify packages that were added or had version changes, then check for known CVEs:
+
+```bash
+# Extract changed package names from lock file diff
+git diff develop...HEAD -- pnpm-lock.yaml \
+  | grep -E '^\+\s+/' \
+  | sed "s|^\+\s\+/||; s|@[^@]*$||" \
+  | sort -u
+```
+
+Run `pnpm audit` and filter to only the changed packages:
+
+```bash
+pnpm audit --json 2>/dev/null
+```
+
+Filter the JSON output to only report vulnerabilities for packages identified above.
+
+**Severity thresholds by package scope:**
+
+| Package Scope                                | Report Threshold   |
+| -------------------------------------------- | ------------------ |
+| Published (`packages/npm`, `core`, `native`) | MODERATE and above |
+| Private (`packages/docs`, `e2e`, `video`)    | HIGH and above     |
+| devDependencies                              | CRITICAL only      |
+
+Only report vulnerabilities for **changed dependencies** — pre-existing advisories are out of scope for PR review.
 
 ### Step 3: Classify Each License
 
@@ -147,6 +177,13 @@ Report findings using the following severity structure:
 - **package@version** — License: LGPL-3.0-or-later
   - Usage: Dynamic linking via npm (no source modification)
   - Condition: Do not modify or statically link LGPL source
+
+### VULNERABILITY (known CVE in changed dependency)
+
+- **package@version** — CVE-XXXX-XXXXX (severity: high)
+  - Chain: root > parent-pkg > vulnerable-pkg
+  - Fixed in: X.Y.Z
+  - Action: Upgrade to fixed version or evaluate risk acceptance
 
 ### INFO (external API ToS reminder)
 
