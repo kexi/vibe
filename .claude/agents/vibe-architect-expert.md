@@ -54,11 +54,11 @@ main.ts (entry point)
 
 ### External Dependencies (Minimal)
 
-| Package | Purpose |
-|---------|---------|
-| `zod` | Runtime schema validation |
-| `fast-glob` | File pattern matching |
-| `smol-toml` | TOML parsing |
+| Package             | Purpose                   |
+| ------------------- | ------------------------- |
+| `zod`               | Runtime schema validation |
+| `fast-glob`         | File pattern matching     |
+| `smol-toml`         | TOML parsing              |
 | `@kexi/vibe-native` | Optional CoW acceleration |
 
 No heavy frameworks. Cross-runtime support (Node.js, Bun, Deno) constrains dependency choices.
@@ -73,9 +73,9 @@ No heavy frameworks. Cross-runtime support (Node.js, Bun, Deno) constrains depen
 
 ```typescript
 interface AppContext {
-  readonly runtime: Runtime;  // Platform abstraction
-  config?: VibeConfig;        // .vibe.toml (optional)
-  settings?: UserSettings;    // User settings (optional)
+  readonly runtime: Runtime; // Platform abstraction
+  config?: VibeConfig; // .vibe.toml (optional)
+  settings?: UserSettings; // User settings (optional)
 }
 ```
 
@@ -85,7 +85,7 @@ interface AppContext {
 export async function startCommand(
   branchName: string,
   options: StartOptions = {},
-  ctx: AppContext = getGlobalContext(),  // DI with default
+  ctx: AppContext = getGlobalContext(), // DI with default
 ): Promise<void> {
   const { runtime } = ctx;
   // ...
@@ -93,12 +93,14 @@ export async function startCommand(
 ```
 
 **Why this pattern**:
+
 - Testability: pass mock context in tests
 - No global singletons in function bodies
 - Explicit dependency flow
 - Optional explicit context for concurrent execution
 
 **Global context management**:
+
 - `setGlobalContext()` / `getGlobalContext()` — set once at startup
 - `hasGlobalContext()` — initialization check
 - `resetGlobalContext()` — testing only
@@ -109,26 +111,28 @@ export async function startCommand(
 
 The `Runtime` interface abstracts all platform-specific operations:
 
-| Sub-interface | Purpose |
-|--------------|---------|
-| `RuntimeFS` | File operations (read, write, stat, lstat, realPath, exists, readDir, copyFile, makeTempDir) |
-| `RuntimeProcess` | Process execution (`run()` for piped output, `spawn()` for detached) |
-| `RuntimeEnv` | Environment variables (get/set/delete/toObject) |
-| `RuntimeBuild` | Platform info (os, arch) |
-| `RuntimeControl` | Process control (exit, cwd, chdir, execPath, args) |
-| `RuntimeIO` | Standard streams (stdin.read, stderr.writeSync, isTerminal) |
-| `RuntimeErrors` | Error constructors + type guards (NotFound, AlreadyExists, PermissionDenied) |
-| `RuntimeSignals` | Signal listeners (SIGINT, SIGTERM) |
+| Sub-interface    | Purpose                                                                                      |
+| ---------------- | -------------------------------------------------------------------------------------------- |
+| `RuntimeFS`      | File operations (read, write, stat, lstat, realPath, exists, readDir, copyFile, makeTempDir) |
+| `RuntimeProcess` | Process execution (`run()` for piped output, `spawn()` for detached)                         |
+| `RuntimeEnv`     | Environment variables (get/set/delete/toObject)                                              |
+| `RuntimeBuild`   | Platform info (os, arch)                                                                     |
+| `RuntimeControl` | Process control (exit, cwd, chdir, execPath, args)                                           |
+| `RuntimeIO`      | Standard streams (stdin.read, stderr.writeSync, isTerminal)                                  |
+| `RuntimeErrors`  | Error constructors + type guards (NotFound, AlreadyExists, PermissionDenied)                 |
+| `RuntimeSignals` | Signal listeners (SIGINT, SIGTERM)                                                           |
 
 **Implementations**:
+
 - `runtime/deno/` — Deno-specific (includes FFI support)
 - `runtime/node/` — Node.js + Bun (shared implementation)
 
 **Initialization**:
+
 ```typescript
-export const RUNTIME_NAME = detectRuntime();  // "deno" | "node" | "bun"
-export async function getRuntime(): Promise<Runtime>  // Lazy, thread-safe
-export function getRuntimeSync(): Runtime              // After init
+export const RUNTIME_NAME = detectRuntime(); // "deno" | "node" | "bun"
+export async function getRuntime(): Promise<Runtime>; // Lazy, thread-safe
+export function getRuntimeSync(): Runtime; // After init
 ```
 
 **Rule**: Never import `node:fs`, `node:child_process`, or Deno APIs directly. Always go through `ctx.runtime`.
@@ -139,7 +143,7 @@ export function getRuntimeSync(): Runtime              // After init
 
 ```typescript
 interface CopyStrategy {
-  readonly name: CopyStrategyType;  // "clonefile" | "clone" | "rsync" | "standard"
+  readonly name: CopyStrategyType; // "clonefile" | "clone" | "rsync" | "standard"
   isAvailable(): Promise<boolean>;
   copyFile(src: string, dest: string): Promise<void>;
   copyDirectory(src: string, dest: string): Promise<void>;
@@ -148,12 +152,12 @@ interface CopyStrategy {
 
 **Strategies** (priority order):
 
-| # | Strategy | macOS | Linux | Mechanism |
-|---|----------|-------|-------|-----------|
-| 1 | NativeClone | Files + dirs | Files only | `clonefile()` / `FICLONE` ioctl via Rust N-API |
-| 2 | Clone | `cp -c` / `cp -cR` | `cp --reflink=auto` | CoW filesystem commands |
-| 3 | Rsync | `rsync` | `rsync` | Incremental copy |
-| 4 | Standard | `copyFile()` API | `copyFile()` API | Always available fallback |
+| #   | Strategy    | macOS              | Linux               | Mechanism                                      |
+| --- | ----------- | ------------------ | ------------------- | ---------------------------------------------- |
+| 1   | NativeClone | Files + dirs       | Files only          | `clonefile()` / `FICLONE` ioctl via Rust N-API |
+| 2   | Clone       | `cp -c` / `cp -cR` | `cp --reflink=auto` | CoW filesystem commands                        |
+| 3   | Rsync       | `rsync`            | `rsync`             | Incremental copy                               |
+| 4   | Standard    | `copyFile()` API   | `copyFile()` API    | Always available fallback                      |
 
 **CopyService**: Singleton via `getCopyService()`. Caches selected strategy after first detection. Falls back to Standard on runtime error.
 
@@ -177,12 +181,14 @@ VibeError (abstract)
 ```
 
 **Error handler** (`handler.ts`):
+
 - `handleError(error, options, ctx)` — formats and exits
 - `withErrorHandler(fn, options, ctx)` — wraps async function
 - RED for fatal, YELLOW for warning
 - Stack traces only with `--verbose`
 
 **Rules**:
+
 - Create specific error types, never throw generic `Error`
 - `HookExecutionError` is Warning severity — hooks must not break the main flow
 - `UserCancelledError` exits silently (no error message)
@@ -204,6 +210,7 @@ while (version < CURRENT_SCHEMA_VERSION) {
 Migration path: v0 → v1 (add version) → v2 (add hashes) → v3 (repository-based trust)
 
 **Design principles**:
+
 - Each migration is a pure function
 - Graceful degradation: if hash calculation fails, set `skipHashCheck: true` + emit warning
 - Never lose data during migration
@@ -214,6 +221,7 @@ Migration path: v0 → v1 (add version) → v2 (add hashes) → v3 (repository-b
 **TOCTOU prevention**: `verifyTrustAndRead()` atomically reads file content and calculates hash from the already-read bytes — never re-reads from disk.
 
 **Trust matching priority**:
+
 1. `relativePath` match (e.g., `.vibe.toml`)
 2. `remoteUrl` match (normalized git remote)
 3. `repoRoot` match (local absolute path)
@@ -250,10 +258,7 @@ if (isEmpty) {
 
 ```typescript
 // sortByMru() is pure — no side effects, testable in isolation
-export function sortByMru<T extends { path: string }>(
-  matches: T[],
-  mruEntries: MruEntry[],
-): T[] {
+export function sortByMru<T extends { path: string }>(matches: T[], mruEntries: MruEntry[]): T[] {
   // Build Map for O(1) lookup, partition, sort, merge
 }
 ```
@@ -268,28 +273,30 @@ Uses `node:util.parseArgs()` — no external CLI framework. Entry point: `main.t
 
 Reference: `docs/SECURITY_CHECKLIST.md`
 
-| # | Category | Mitigation | Enforcement |
-|---|----------|-----------|-------------|
-| 1 | Command Injection | `spawn()` with array args, never shell strings | ESLint `no-restricted-syntax` |
-| 2 | Path Traversal | `validatePath()` — rejects null bytes, newlines, `$(...)`, backticks, empty paths | Runtime check |
-| 3 | Symlink Attacks | `realPath()` + boundary checks + `CLONE_NOFOLLOW` / `O_NOFOLLOW` in native | Runtime + Rust |
-| 4 | TOCTOU Races | `verifyTrustAndRead()` atomic check-and-read | Architectural pattern |
-| 5 | Env Var Injection | Controlled merging with explicit allowlists | Code review |
-| 6 | Terminal Escape Injection | Control character filtering | Output utilities |
-| 7 | Argument Injection | Explicit argument arrays (not string concatenation) | `spawn()` pattern |
-| 8 | Supply Chain | Lockfile pinning + `--frozen-lockfile` + `--ignore-scripts` + `pnpm audit` | CI gate |
-| 9 | Unsafe Temp Files | UUID-based naming + atomic rename | `settings.ts` pattern |
-| 10 | Shell Output Injection | `escapeShellPath()` for all `cd` output | Custom ESLint rule `no-unescaped-cd-output` |
-| 11 | Config Poisoning | SHA-256 trust mechanism — explicit `vibe trust` required | Trust system |
-| 12 | Unsafe Regex (ReDoS) | ESLint `security/detect-unsafe-regex` | CI lint |
-| 13 | eval / Dynamic Code | No `eval()` or `new Function()` | ESLint `no-eval`, `no-new-func` |
+| #   | Category                  | Mitigation                                                                        | Enforcement                                 |
+| --- | ------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------- |
+| 1   | Command Injection         | `spawn()` with array args, never shell strings                                    | ESLint `no-restricted-syntax`               |
+| 2   | Path Traversal            | `validatePath()` — rejects null bytes, newlines, `$(...)`, backticks, empty paths | Runtime check                               |
+| 3   | Symlink Attacks           | `realPath()` + boundary checks + `CLONE_NOFOLLOW` / `O_NOFOLLOW` in native        | Runtime + Rust                              |
+| 4   | TOCTOU Races              | `verifyTrustAndRead()` atomic check-and-read                                      | Architectural pattern                       |
+| 5   | Env Var Injection         | Controlled merging with explicit allowlists                                       | Code review                                 |
+| 6   | Terminal Escape Injection | Control character filtering                                                       | Output utilities                            |
+| 7   | Argument Injection        | Explicit argument arrays (not string concatenation)                               | `spawn()` pattern                           |
+| 8   | Supply Chain              | Lockfile pinning + `--frozen-lockfile` + `--ignore-scripts` + `pnpm audit`        | CI gate                                     |
+| 9   | Unsafe Temp Files         | UUID-based naming + atomic rename                                                 | `settings.ts` pattern                       |
+| 10  | Shell Output Injection    | `escapeShellPath()` for all `cd` output                                           | Custom ESLint rule `no-unescaped-cd-output` |
+| 11  | Config Poisoning          | SHA-256 trust mechanism — explicit `vibe trust` required                          | Trust system                                |
+| 12  | Unsafe Regex (ReDoS)      | ESLint `security/detect-unsafe-regex`                                             | CI lint                                     |
+| 13  | eval / Dynamic Code       | No `eval()` or `new Function()`                                                   | ESLint `no-eval`, `no-new-func`             |
 
 **ESLint custom plugin** (`vibe-security`):
+
 - Rule `no-unescaped-cd-output`: enforces `escapeShellPath()` in `cd` template literals
 - Restricted imports: `child_process`, `node:child_process` → "Use the runtime abstraction layer"
 - Restricted syntax: `execSync()`, `shell: true`
 
 **Native module security** (Rust):
+
 - File type validation: reject symlinks, devices, sockets, FIFOs
 - `CLONE_NOFOLLOW` (macOS) / `O_NOFOLLOW` (Linux)
 - Immediate errno capture after syscall (TOCTOU)
@@ -301,11 +308,11 @@ Reference: `docs/SECURITY_CHECKLIST.md`
 
 ### Three-Tier Testing
 
-| Tier | Framework | Location | Context |
-|------|-----------|----------|---------|
-| Unit | Vitest | `packages/core/src/**/*.test.ts` | Mock runtime via `createMockContext()` |
-| Integration | Vitest | `packages/core/src/**/*.test.ts` | Real runtime via `setupRealTestContext()` |
-| E2E | Vitest | `packages/e2e/` | Spawns actual CLI with PTY |
+| Tier        | Framework | Location                         | Context                                   |
+| ----------- | --------- | -------------------------------- | ----------------------------------------- |
+| Unit        | Vitest    | `packages/core/src/**/*.test.ts` | Mock runtime via `createMockContext()`    |
+| Integration | Vitest    | `packages/core/src/**/*.test.ts` | Real runtime via `setupRealTestContext()` |
+| E2E         | Vitest    | `packages/e2e/`                  | Spawns actual CLI with PTY                |
 
 ### Mock Infrastructure
 
@@ -343,18 +350,21 @@ setupTestContext(): { ctx, cleanup }
 ### Zod Schema Boundaries
 
 **Config validation** (`packages/core/src/types/config.ts`):
+
 - `.strict()` on all objects — rejects unknown fields
 - `safeParse()` pattern — returns Result, never throws
 - Error messages include field path and specific issue
 - Validation happens at config load time (trust boundary)
 
 **Settings validation** (`packages/core/src/utils/settings.ts`):
+
 - Schema validates before save (prevents corruption)
 - Migration functions validate intermediate states
 
 ### Path Validation (`packages/core/src/utils/copy/validation.ts`)
 
 Defense-in-depth layers:
+
 1. Null byte rejection
 2. Newline/CR rejection
 3. Empty path rejection
@@ -372,13 +382,13 @@ Used by `vibe jump` for branch name matching.
 
 **Algorithm**: Case-insensitive subsequence matching with scoring.
 
-| Component | Points | Description |
-|-----------|--------|-------------|
-| Start bonus | +15 | Match at position 0 |
-| Word boundary | +10 each | Match after `/`, `-`, `_` |
-| Consecutive | n² | n consecutive matches squared |
-| Gap penalty | -1 each | Per skipped character |
-| Tail penalty | -0.5 each | Unused characters after last match |
+| Component     | Points    | Description                        |
+| ------------- | --------- | ---------------------------------- |
+| Start bonus   | +15       | Match at position 0                |
+| Word boundary | +10 each  | Match after `/`, `-`, `_`          |
+| Consecutive   | n²        | n consecutive matches squared      |
+| Gap penalty   | -1 each   | Per skipped character              |
+| Tail penalty  | -0.5 each | Unused characters after last match |
 
 Minimum search length: 3 characters (`FUZZY_MATCH_MIN_LENGTH`).
 
@@ -395,16 +405,19 @@ Minimum search length: 3 characters (`FUZZY_MATCH_MIN_LENGTH`).
 **Location**: `packages/native/`
 
 **Exposed operations**:
+
 - `clone_sync(src, dest)` / `clone_async(src, dest)` — CoW clone
 - `is_available()` — capability check
 - `supports_directory()` — macOS: true, Linux: false
 - `move_to_trash(path)` / `move_to_trash_async(path)` — cross-platform trash
 
 **Platform implementations**:
+
 - macOS (`darwin.rs`): `clonefile()` syscall with `CLONE_NOFOLLOW`
 - Linux (`linux.rs`): `FICLONE` ioctl with `O_NOFOLLOW`
 
 **Error types** (Rust):
+
 ```rust
 enum CloneError {
     SystemError { operation, message, errno },

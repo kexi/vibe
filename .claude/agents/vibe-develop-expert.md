@@ -21,17 +21,18 @@ You have deep knowledge of every aspect of this project. Use this knowledge to g
 
 ### Operating Systems
 
-| OS | Support Level | Native Clone | Architectures |
-|----|--------------|--------------|---------------|
-| macOS (darwin) | Full | Yes (APFS CoW) | x86_64, aarch64 |
-| Linux | Full | Yes (Btrfs/XFS reflink) | x86_64, aarch64 |
-| Windows | Limited | No | x86_64 |
+| OS             | Support Level | Native Clone            | Architectures   |
+| -------------- | ------------- | ----------------------- | --------------- |
+| macOS (darwin) | Full          | Yes (APFS CoW)          | x86_64, aarch64 |
+| Linux          | Full          | Yes (Btrfs/XFS reflink) | x86_64, aarch64 |
+| Windows        | Limited       | No                      | x86_64          |
 
 - OS type: `type OS = "darwin" | "linux" | "windows"` (`packages/core/src/runtime/types.ts`)
 - Arch type: `type Arch = "x86_64" | "aarch64" | "arm"` (`packages/core/src/runtime/types.ts`)
 - Platform mapping: Node.js (`packages/core/src/runtime/node/env.ts`), Deno (`packages/core/src/runtime/deno/env.ts`)
 
 **Platform-specific behavior:**
+
 - Native clone module (`@kexi/vibe-native`): darwin and linux only (`packages/native/package.json` `os` field)
 - Windows is excluded from native module loading (`packages/core/src/runtime/node/native.ts`)
 - Fast remove: Windows uses `cmd /c start /b rd /s /q`, Unix uses `sh -c nohup rm -rf` (`packages/core/src/utils/fast-remove.ts`)
@@ -48,13 +49,13 @@ You have deep knowledge of every aspect of this project. Use this knowledge to g
 
 ### Shells
 
-| Shell | Wrapper Pattern |
-|-------|----------------|
-| bash | `vibe() { eval "$(command vibe "$@")"; }` |
-| zsh | `vibe() { eval "$(command vibe "$@")"; }` |
-| fish | `function vibe; eval (command vibe $argv); end` |
-| nushell | `def --env vibe [...args] { ^vibe ...$args \| lines \| each { \|line\| nu -c $line } }` |
-| powershell | `function vibe { Invoke-Expression (& vibe.exe $args) }` |
+| Shell      | Wrapper Pattern                                                                         |
+| ---------- | --------------------------------------------------------------------------------------- |
+| bash       | `vibe() { eval "$(command vibe "$@")"; }`                                               |
+| zsh        | `vibe() { eval "$(command vibe "$@")"; }`                                               |
+| fish       | `function vibe; eval (command vibe $argv); end`                                         |
+| nushell    | `def --env vibe [...args] { ^vibe ...$args \| lines \| each { \|line\| nu -c $line } }` |
+| powershell | `function vibe { Invoke-Expression (& vibe.exe $args) }`                                |
 
 - Shell type: `type ShellName = "bash" | "zsh" | "fish" | "nushell" | "powershell"` (`packages/core/src/commands/shell-setup.ts`)
 - Detection: extracts basename from `$SHELL` env var, maps via `shellMap` (e.g., `nu` → `nushell`, `pwsh` → `powershell`)
@@ -66,18 +67,18 @@ You have deep knowledge of every aspect of this project. Use this knowledge to g
 
 ### Commands
 
-| Command | Purpose | Key Options |
-|---------|---------|-------------|
-| `start <branch>` | Create/navigate to worktree | `--base`, `--track`, `--no-hooks`, `--no-copy`, `-n/--dry-run`, `--reuse`, `--claude-code-worktree-hook` |
-| `jump <branch>` | Navigate to existing worktree (exact/partial/fuzzy) | `-V/--verbose`, `-q/--quiet` |
-| `clean` | Remove current worktree, return to main | `-f/--force`, `--delete-branch`, `--keep-branch`, `--claude-code-worktree-hook` |
-| `home` | Return to main worktree without deletion | `-V/--verbose`, `-q/--quiet` |
-| `trust` | Trust `.vibe.toml` and `.vibe.local.toml` | — |
-| `untrust` | Remove trust for config files | — |
-| `verify` | Show trust status and hash history | — |
-| `config` | Display current settings (JSON) | — |
-| `upgrade` | Check for updates from JSR registry | `--check` |
-| `shell-setup` | Output shell wrapper function | `--shell` |
+| Command          | Purpose                                             | Key Options                                                                                              |
+| ---------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `start <branch>` | Create/navigate to worktree                         | `--base`, `--track`, `--no-hooks`, `--no-copy`, `-n/--dry-run`, `--reuse`, `--claude-code-worktree-hook` |
+| `jump <branch>`  | Navigate to existing worktree (exact/partial/fuzzy) | `-V/--verbose`, `-q/--quiet`                                                                             |
+| `clean`          | Remove current worktree, return to main             | `-f/--force`, `--delete-branch`, `--keep-branch`, `--claude-code-worktree-hook`                          |
+| `home`           | Return to main worktree without deletion            | `-V/--verbose`, `-q/--quiet`                                                                             |
+| `trust`          | Trust `.vibe.toml` and `.vibe.local.toml`           | —                                                                                                        |
+| `untrust`        | Remove trust for config files                       | —                                                                                                        |
+| `verify`         | Show trust status and hash history                  | —                                                                                                        |
+| `config`         | Display current settings (JSON)                     | —                                                                                                        |
+| `upgrade`        | Check for updates from JSR registry                 | `--check`                                                                                                |
+| `shell-setup`    | Output shell wrapper function                       | `--shell`                                                                                                |
 
 **Global options:** `-h/--help`, `-v/--version`, `-V/--verbose`, `-q/--quiet`
 
@@ -135,6 +136,7 @@ delete_branch = false                       # Auto-delete branch on clean
 ```
 
 **Merge behavior** (`.vibe.local.toml` over `.vibe.toml`):
+
 - Direct field: complete override
 - `_prepend`: items added before base array
 - `_append`: items added after base array
@@ -143,10 +145,10 @@ delete_branch = false                       # Auto-delete branch on clean
 
 ### Hook Environment Variables
 
-| Variable | Description |
-|----------|-------------|
-| `VIBE_WORKTREE_PATH` | Absolute path to worktree |
-| `VIBE_ORIGIN_PATH` | Absolute path to main repo |
+| Variable             | Description                |
+| -------------------- | -------------------------- |
+| `VIBE_WORKTREE_PATH` | Absolute path to worktree  |
+| `VIBE_ORIGIN_PATH`   | Absolute path to main repo |
 
 ### Settings (per-user)
 
@@ -163,12 +165,12 @@ macOS:  NativeClone → Clone → Rsync → Standard
 Linux:  Clone → Rsync → Standard  (NativeClone skipped for directories)
 ```
 
-| Strategy | macOS Command | Linux Command |
-|----------|--------------|---------------|
+| Strategy    | macOS Command                            | Linux Command                   |
+| ----------- | ---------------------------------------- | ------------------------------- |
 | NativeClone | `clonefile()` syscall + `CLONE_NOFOLLOW` | `ioctl(FICLONE)` + `O_NOFOLLOW` |
-| Clone | `cp -c` (file) / `cp -cR` (dir) | `cp --reflink=auto` |
-| Rsync | `rsync` | `rsync` |
-| Standard | Node.js `copyFile()` API | Node.js `copyFile()` API |
+| Clone       | `cp -c` (file) / `cp -cR` (dir)          | `cp --reflink=auto`             |
+| Rsync       | `rsync`                                  | `rsync`                         |
+| Standard    | Node.js `copyFile()` API                 | Node.js `copyFile()` API        |
 
 - Native module: `packages/native/` (Rust N-API via `@kexi/vibe-native`)
 - Strategy detection and caching: `packages/core/src/utils/copy/detector.ts`
@@ -194,15 +196,16 @@ Linux:  Clone → Rsync → Standard  (NativeClone skipped for directories)
 
 **No external color library.** Raw ANSI escape codes in `packages/core/src/utils/ansi.ts`:
 
-| Color | ANSI Code | Usage |
-|-------|-----------|-------|
-| RED | `\x1b[31m` | Errors |
-| GREEN | `\x1b[32m` | Success messages |
-| YELLOW | `\x1b[33m` | Warnings |
-| DIM | `\x1b[2m` | Secondary info, verbose output, stack traces |
-| RESET | `\x1b[0m` | Reset formatting |
+| Color  | ANSI Code  | Usage                                        |
+| ------ | ---------- | -------------------------------------------- |
+| RED    | `\x1b[31m` | Errors                                       |
+| GREEN  | `\x1b[32m` | Success messages                             |
+| YELLOW | `\x1b[33m` | Warnings                                     |
+| DIM    | `\x1b[2m`  | Secondary info, verbose output, stack traces |
+| RESET  | `\x1b[0m`  | Reset formatting                             |
 
 **Color detection priority:**
+
 1. `FORCE_COLOR` env var (force enable)
 2. `NO_COLOR` env var (force disable)
 3. `process.stderr.isTTY` fallback
@@ -213,18 +216,19 @@ Linux:  Clone → Rsync → Standard  (NativeClone skipped for directories)
 
 All output goes to **stderr**. stdout is reserved for shell eval commands (`cd` output).
 
-| Function | Color | Quiet-safe? | Always shown? |
-|----------|-------|-------------|---------------|
-| `log()` | none | suppressed | no |
-| `verboseLog()` | none, `[verbose]` prefix | suppressed | no |
-| `successLog()` | GREEN | suppressed | no |
-| `errorLog()` | RED | **not suppressed** | **yes** |
-| `warnLog()` | YELLOW | **not suppressed** | **yes** |
-| `logDryRun()` | DIM, `[dry-run]` prefix | **not suppressed** | **yes** |
+| Function       | Color                    | Quiet-safe?        | Always shown? |
+| -------------- | ------------------------ | ------------------ | ------------- |
+| `log()`        | none                     | suppressed         | no            |
+| `verboseLog()` | none, `[verbose]` prefix | suppressed         | no            |
+| `successLog()` | GREEN                    | suppressed         | no            |
+| `errorLog()`   | RED                      | **not suppressed** | **yes**       |
+| `warnLog()`    | YELLOW                   | **not suppressed** | **yes**       |
+| `logDryRun()`  | DIM, `[dry-run]` prefix  | **not suppressed** | **yes**       |
 
 Location: `packages/core/src/utils/output.ts`
 
 **Rules:**
+
 - Use `warnLog()` for warnings, never `console.error`
 - Use `errorLog()` for errors, never `console.warn`
 - Errors and warnings are always visible regardless of `--quiet`
@@ -246,12 +250,14 @@ Custom implementation in `packages/core/src/utils/progress.ts` (no external spin
 | `┗` | Sub-task connector |
 
 **State styling:**
+
 - pending → DIM
 - running → BOLD + animated spinner
 - completed → DIM + STRIKETHROUGH
 - failed → RED + optional error message
 
 **Tree structure:**
+
 ```
 ✶ Processing…
    ☐ Copying files
@@ -280,12 +286,14 @@ Status: ❌ HASH MISMATCH
 Location: `packages/core/src/utils/prompt.ts`
 
 **Y/n confirmation:**
+
 ```
 Message text
 (Y/y/[Enter] = Yes, N/n = No)
 ```
 
 **Numbered selection:**
+
 ```
 Prompt message
   1. Option 1

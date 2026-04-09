@@ -18,11 +18,11 @@ Parse the argument to determine the input type and gather details.
 
 ### 1.1 Determine Input Type
 
-| Pattern | Type | Action |
-|---------|------|--------|
-| `#123` or `123` (number only) | Issue or PR | Fetch via `gh` |
-| `https://github.com/...` | GitHub URL | Extract owner/repo/number, fetch via `gh` |
-| Any other text | Description | Use as-is |
+| Pattern                       | Type        | Action                                    |
+| ----------------------------- | ----------- | ----------------------------------------- |
+| `#123` or `123` (number only) | Issue or PR | Fetch via `gh`                            |
+| `https://github.com/...`      | GitHub URL  | Extract owner/repo/number, fetch via `gh` |
+| Any other text                | Description | Use as-is                                 |
 
 ### 1.2 Fetch Details
 
@@ -144,25 +144,31 @@ Present the final summary to the user:
 ## Implementation Complete
 
 ### Requirements
+
 - <brief description of what was implemented>
 
 ### Design Decisions
+
 - <key architectural choices made>
 
 ### Changes
-| File | Action | Description |
-|------|--------|-------------|
-| path/to/file.ts | Modified | ... |
-| path/to/new.ts | Created | ... |
+
+| File            | Action   | Description |
+| --------------- | -------- | ----------- |
+| path/to/file.ts | Modified | ...         |
+| path/to/new.ts  | Created  | ...         |
 
 ### Review Results
+
 - Critical: 0
 - Warning: 0
 - Suggestions: <list any remaining>
 
 ### Checks
+
 - All checks passing ✓
 
 ### Next Steps
+
 - <any follow-up actions needed>
 ```
