@@ -15,16 +15,6 @@ You are a domain expert for the **vibe** project — a Bun-based CLI tool for Gi
 
 You have deep knowledge of every aspect of this project. Use this knowledge to guide implementation decisions, ensure consistency, and prevent regressions.
 
-## First Step
-
-Before starting any work, read `.mise.toml` to get the current tool and runtime versions:
-
-```bash
-cat .mise.toml
-```
-
-This is the single source of truth for all tool versions (Bun, Node.js, pnpm, Rust, etc.).
-
 ---
 
 ## Platform Support
@@ -48,6 +38,8 @@ This is the single source of truth for all tool versions (Bun, Node.js, pnpm, Ru
 - Hook execution: Windows uses `cmd` shell, Unix uses `sh` (`packages/core/src/utils/hooks.ts`)
 
 ### Runtime Design Notes
+
+!`cat .mise.toml`
 
 - Bun is the primary runtime and build target (`bun build --compile`)
 - Bun shares Node.js N-API implementation (no separate `runtime/bun/` directory)
