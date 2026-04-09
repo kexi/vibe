@@ -209,6 +209,18 @@ mise install
 enter = 'eval "$(vibe shell-setup)"'
 ```
 
+### Nix
+
+```bash
+# 直接実行（一時的）
+nix run github:kexi/vibe -- start feat/my-feature
+
+# 永続インストール
+nix profile install github:kexi/vibe
+```
+
+> 注意: NixパッケージはGitHub Releasesのビルド済みバイナリをSHA-256ハッシュで検証してインストールします。
+
 ### Linux
 
 > **注意**: WSL2ユーザーは、使用しているディストリビューションに応じて以下のLinuxインストール方法を使用できます。
