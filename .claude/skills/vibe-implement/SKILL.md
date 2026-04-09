@@ -130,7 +130,11 @@ Use the Agent tool with `subagent_type: "vibe-code-review-expert"`.
 
 ---
 
-## Step 4.5: Security Audit (vibe-security-expert)
+## Step 4.5: Security Audit & License Check
+
+Run **in parallel** using two agents:
+
+### 4.5a: Security Audit (vibe-security-expert)
 
 Delegate to `vibe-security-expert` to audit all changes made in Step 3.
 
@@ -143,7 +147,32 @@ Use the Agent tool with `subagent_type: "vibe-security-expert"`.
 
 **Receive back**: A security audit with CRITICAL/HIGH/MEDIUM findings.
 
-If **CRITICAL** or **HIGH** findings exist, fix them before proceeding to Step 5.
+### 4.5b: License Audit (vibe-legal-expert)
+
+**Trigger condition**: Run this agent only when Step 3 changed any of the following:
+
+- `package.json` (any workspace package)
+- `pnpm-lock.yaml`
+- New `import`/`require` of an external API or service
+
+If none of these changed, skip this step.
+
+Delegate to `vibe-legal-expert` using the Agent tool with `subagent_type: "vibe-legal-expert"`.
+
+**Include in the prompt:**
+
+- The requirements summary from Step 1
+- Which packages were modified in Step 3
+- Ask the agent to:
+  1. Check license compatibility of any new or updated dependencies
+  2. Trace transitive dependency chains for flagged licenses
+  3. Verify external API terms of service if new API integrations were added
+
+**Receive back**: A license audit with CRITICAL/HIGH/CAUTION/INFO findings.
+
+### Gate
+
+If **CRITICAL** or **HIGH** findings exist from either audit, fix them before proceeding to Step 5.
 
 ---
 
