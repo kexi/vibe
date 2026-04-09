@@ -64,6 +64,31 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     :::
 
   </TabItem>
+  <TabItem label="Nix">
+    ```bash frame="terminal"
+    # Run directly (ephemeral)
+    nix run github:kexi/vibe -- start feat/my-feature
+
+    # Install persistently
+    nix profile install github:kexi/vibe
+    ```
+
+    For NixOS or Home Manager, add as a flake input:
+
+    ```nix
+    {
+      inputs.vibe.url = "github:kexi/vibe";
+
+      # Then use in your configuration:
+      # environment.systemPackages = [ inputs.vibe.packages.${system}.default ];
+    }
+    ```
+
+    :::note
+    The Nix package installs pre-built binaries from GitHub Releases, verified with SHA-256 hashes.
+    :::
+
+  </TabItem>
 </Tabs>
 
 ## Linux

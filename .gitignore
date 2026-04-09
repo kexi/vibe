@@ -43,5 +43,8 @@ packages/native/prebuilds/
 packages/native/target/
 packages/native/*.node
 
+# Nix
+/result
+
 # Test coverage
 coverage/
