@@ -1,0 +1,21 @@
+name: Setup Takumi Guard
+description: Configure Takumi Guard npm security proxy for supply chain protection
+inputs:
+  api-key:
+    description: Takumi Guard API key (tg_anon_* token). Empty on fork PRs where secrets are unavailable.
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Configure Takumi Guard registry
+      if: inputs.api-key != ''
+      shell: bash
+      env:
+        TG_API_KEY: ${{ inputs.api-key }}
+      run: |
+        echo "::add-mask::${TG_API_KEY}"
+        echo "NPM_CONFIG_REGISTRY=https://npm.flatt.tech/" >> "$GITHUB_ENV"
+        # npm/pnpm reads NPM_CONFIG_* env vars as config keys verbatim,
+        # including scoped registry auth (//host/:_authToken)
+        echo "NPM_CONFIG_//npm.flatt.tech/:_authToken=${TG_API_KEY}" >> "$GITHUB_ENV"

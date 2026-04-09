@@ -78,6 +78,10 @@ jobs:
         env:
           MISE_HTTP_TIMEOUT: "120"
 
+      - uses: ./.github/actions/setup-takumi-guard
+        with:
+          api-key: ${{ secrets.TAKUMI_GUARD_API_KEY }}
+
       - name: Install dependencies
         run: pnpm install --ignore-scripts
 
