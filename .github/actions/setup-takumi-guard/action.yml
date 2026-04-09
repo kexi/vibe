@@ -16,4 +16,6 @@ runs:
       run: |
         echo "::add-mask::${TG_API_KEY}"
         echo "NPM_CONFIG_REGISTRY=https://npm.flatt.tech/" >> "$GITHUB_ENV"
+        # npm/pnpm reads NPM_CONFIG_* env vars as config keys verbatim,
+        # including scoped registry auth (//host/:_authToken)
         echo "NPM_CONFIG_//npm.flatt.tech/:_authToken=${TG_API_KEY}" >> "$GITHUB_ENV"
