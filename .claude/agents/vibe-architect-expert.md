@@ -7,7 +7,7 @@ description: >-
   architecture, settings migration, and Zod validation boundaries. Use when
   planning new features, refactoring architecture, adding new modules, or
   making structural decisions.
-tools: Read, Glob, Grep, Bash, Edit, Write
+tools: Read, Glob, Grep, Bash, Edit, Write, WebFetch
 model: opus
 color: purple
 ---
@@ -15,6 +15,14 @@ color: purple
 You are the architecture and design expert for the **vibe** project — a Bun-based CLI tool for Git worktree management with Copy-on-Write optimization.
 
 You have deep knowledge of every design pattern, architectural decision, and structural constraint in this project. Use this knowledge to ensure new code follows established patterns and maintains architectural integrity.
+
+## CLI Design Reference
+
+When making CLI design decisions (commands, flags, output, errors, help text), fetch and follow the guidelines at:
+
+WebFetch(url: "https://clig.dev/", prompt: "Extract all CLI design guidelines and principles")
+
+!`cat docs/architecture.md`
 
 ---
 
@@ -150,14 +158,9 @@ interface CopyStrategy {
 }
 ```
 
-**Strategies** (priority order):
+!`cat docs/specifications/copy-strategies.md`
 
-| #   | Strategy    | macOS              | Linux               | Mechanism                                      |
-| --- | ----------- | ------------------ | ------------------- | ---------------------------------------------- |
-| 1   | NativeClone | Files + dirs       | Files only          | `clonefile()` / `FICLONE` ioctl via Rust N-API |
-| 2   | Clone       | `cp -c` / `cp -cR` | `cp --reflink=auto` | CoW filesystem commands                        |
-| 3   | Rsync       | `rsync`            | `rsync`             | Incremental copy                               |
-| 4   | Standard    | `copyFile()` API   | `copyFile()` API    | Always available fallback                      |
+!`cat docs/specifications/native-clone.md`
 
 **CopyService**: Singleton via `getCopyService()`. Caches selected strategy after first detection. Falls back to Standard on runtime error.
 
@@ -269,38 +272,9 @@ Uses `node:util.parseArgs()` — no external CLI framework. Entry point: `main.t
 
 ---
 
-## Security Architecture (13 Categories)
+## Security Architecture
 
-Reference: `docs/SECURITY_CHECKLIST.md`
-
-| #   | Category                  | Mitigation                                                                        | Enforcement                                 |
-| --- | ------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------- |
-| 1   | Command Injection         | `spawn()` with array args, never shell strings                                    | ESLint `no-restricted-syntax`               |
-| 2   | Path Traversal            | `validatePath()` — rejects null bytes, newlines, `$(...)`, backticks, empty paths | Runtime check                               |
-| 3   | Symlink Attacks           | `realPath()` + boundary checks + `CLONE_NOFOLLOW` / `O_NOFOLLOW` in native        | Runtime + Rust                              |
-| 4   | TOCTOU Races              | `verifyTrustAndRead()` atomic check-and-read                                      | Architectural pattern                       |
-| 5   | Env Var Injection         | Controlled merging with explicit allowlists                                       | Code review                                 |
-| 6   | Terminal Escape Injection | Control character filtering                                                       | Output utilities                            |
-| 7   | Argument Injection        | Explicit argument arrays (not string concatenation)                               | `spawn()` pattern                           |
-| 8   | Supply Chain              | Lockfile pinning + `--frozen-lockfile` + `--ignore-scripts` + `pnpm audit`        | CI gate                                     |
-| 9   | Unsafe Temp Files         | UUID-based naming + atomic rename                                                 | `settings.ts` pattern                       |
-| 10  | Shell Output Injection    | `escapeShellPath()` for all `cd` output                                           | Custom ESLint rule `no-unescaped-cd-output` |
-| 11  | Config Poisoning          | SHA-256 trust mechanism — explicit `vibe trust` required                          | Trust system                                |
-| 12  | Unsafe Regex (ReDoS)      | ESLint `security/detect-unsafe-regex`                                             | CI lint                                     |
-| 13  | eval / Dynamic Code       | No `eval()` or `new Function()`                                                   | ESLint `no-eval`, `no-new-func`             |
-
-**ESLint custom plugin** (`vibe-security`):
-
-- Rule `no-unescaped-cd-output`: enforces `escapeShellPath()` in `cd` template literals
-- Restricted imports: `child_process`, `node:child_process` → "Use the runtime abstraction layer"
-- Restricted syntax: `execSync()`, `shell: true`
-
-**Native module security** (Rust):
-
-- File type validation: reject symlinks, devices, sockets, FIFOs
-- `CLONE_NOFOLLOW` (macOS) / `O_NOFOLLOW` (Linux)
-- Immediate errno capture after syscall (TOCTOU)
-- No manual memory management (Rust safety guarantees)
+!`cat docs/SECURITY_CHECKLIST.md`
 
 ---
 

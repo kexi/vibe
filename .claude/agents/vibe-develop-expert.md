@@ -42,9 +42,8 @@ You have deep knowledge of every aspect of this project. Use this knowledge to g
 
 !`cat .mise.toml`
 
-- Bun is the primary runtime and build target (`bun build --compile`)
-- Bun shares Node.js N-API implementation (no separate `runtime/bun/` directory)
-- Detection order: `globalThis.Deno` → `globalThis.Bun` → `process.versions.node` (`packages/core/src/runtime/index.ts`)
+!`cat docs/specifications/multi-runtime.md`
+
 - Always handle all three runtimes. `if (IS_NODE) ... else if (IS_DENO) ...` without Bun is a bug (Issue #351)
 
 ### Shells
@@ -158,22 +157,12 @@ Location: `~/.config/vibe/settings.json` (schema version 3)
 
 ## Copy-on-Write (CoW) System
 
-### Strategy Priority
+!`cat docs/specifications/copy-strategies.md`
 
-```
-macOS:  NativeClone → Clone → Rsync → Standard
-Linux:  Clone → Rsync → Standard  (NativeClone skipped for directories)
-```
+!`cat docs/specifications/native-clone.md`
 
-| Strategy    | macOS Command                            | Linux Command                   |
-| ----------- | ---------------------------------------- | ------------------------------- |
-| NativeClone | `clonefile()` syscall + `CLONE_NOFOLLOW` | `ioctl(FICLONE)` + `O_NOFOLLOW` |
-| Clone       | `cp -c` (file) / `cp -cR` (dir)          | `cp --reflink=auto`             |
-| Rsync       | `rsync`                                  | `rsync`                         |
-| Standard    | Node.js `copyFile()` API                 | Node.js `copyFile()` API        |
+!`cat docs/specifications/clean-strategies.md`
 
-- Native module: `packages/native/` (Rust N-API via `@kexi/vibe-native`)
-- Strategy detection and caching: `packages/core/src/utils/copy/detector.ts`
 - Concurrency: env `VIBE_COPY_CONCURRENCY` > config `copy.concurrency` > default `4`
 - Files copy sequentially, directories copy concurrently
 
