@@ -1,0 +1,16 @@
+name: Setup Takumi Guard
+description: Configure Takumi Guard npm security proxy for supply chain protection
+inputs:
+  api-key:
+    description: Takumi Guard API key (tg_anon_* token)
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Configure Takumi Guard registry
+      shell: bash
+      env:
+        TG_API_KEY: ${{ inputs.api-key }}
+      run: |
+        echo "NPM_CONFIG_REGISTRY=https://npm.flatt.tech/" >> "$GITHUB_ENV"
+        echo "NPM_CONFIG_//npm.flatt.tech/:_authToken=${TG_API_KEY}" >> "$GITHUB_ENV"
