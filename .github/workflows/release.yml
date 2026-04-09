@@ -339,7 +339,7 @@ jobs:
           fi
 
       - name: Update flake.lock
-        run: nix flake update
+        run: nix flake lock --update-input nixpkgs --update-input flake-utils
 
       - name: Verify build
         run: nix build && ./result/bin/vibe --help

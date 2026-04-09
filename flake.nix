@@ -63,7 +63,7 @@
           meta = with pkgs.lib; {
             description = "Git worktree helper CLI";
             homepage = "https://github.com/kexi/vibe";
-            license = licenses.mit;
+            license = licenses.asl20;
             platforms = builtins.attrNames platforms;
             mainProgram = "vibe";
           };
