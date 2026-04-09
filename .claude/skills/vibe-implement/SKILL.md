@@ -74,6 +74,24 @@ Use the Agent tool with `subagent_type: "vibe-architect-expert"`.
 
 ---
 
+## Step 2.5: Design Security Review (vibe-security-expert)
+
+Delegate to `vibe-security-expert` to review the design plan from Step 2.
+
+Use the Agent tool with `subagent_type: "vibe-security-expert"`.
+
+**Include in the prompt:**
+
+- The requirements summary from Step 1
+- The complete design plan from Step 2
+- Ask the agent to identify security risks in the proposed design before implementation begins
+
+**Receive back**: Security risks and recommendations for the design.
+
+If risks are found, revise the design plan before proceeding to Step 3.
+
+---
+
 ## Step 3: Develop (vibe-develop-expert)
 
 Delegate to the `vibe-develop-expert` agent for implementation.
@@ -109,6 +127,23 @@ Use the Agent tool with `subagent_type: "vibe-code-review-expert"`.
 - The agent will apply its full checklist (Security, Error Handling, Code Quality, Concurrency, Test Coverage, Platform-Specific, Documentation, CI/CD)
 
 **Receive back**: A structured review with Critical/Warning/Suggestion findings.
+
+---
+
+## Step 4.5: Security Audit (vibe-security-expert)
+
+Delegate to `vibe-security-expert` to audit all changes made in Step 3.
+
+Use the Agent tool with `subagent_type: "vibe-security-expert"`.
+
+**Include in the prompt:**
+
+- The requirements summary from Step 1
+- Ask the agent to audit all changes against its attack surface checklist
+
+**Receive back**: A security audit with CRITICAL/HIGH/MEDIUM findings.
+
+If **CRITICAL** or **HIGH** findings exist, fix them before proceeding to Step 5.
 
 ---
 
