@@ -49,18 +49,17 @@ This is the single source of truth for all tool versions (Bun, Node.js, pnpm, Ru
 
 ### Runtimes
 
-**Tool versions are managed in `.mise.toml`** — always read this file for current versions before making version-related decisions.
+Versions and tools are managed in `.mise.toml` (read in First Step). Three runtimes are supported:
 
 | Runtime | Role | Notes |
 |---------|------|-------|
-| Bun | Primary | Build target (`bun build --compile`). Version in `.mise.toml` |
-| Node.js | Supported | Shares N-API implementation with Bun. Version in `.mise.toml` |
+| Bun | Primary | Build target (`bun build --compile`) |
+| Node.js | Supported | Shares N-API implementation with Bun |
 | Deno | Supported | Uses `npm:` specifier for N-API |
 
 - Detection: `packages/core/src/runtime/index.ts` — checks `globalThis.Deno`, `globalThis.Bun`, `process.versions.node` in that order
 - Bun shares the Node.js runtime implementation (no separate `runtime/bun/` directory)
 - Always handle all three runtimes. Patterns like `if (IS_NODE) ... else if (IS_DENO) ...` without Bun are bugs (Issue #351)
-- Other tool versions (pnpm, Rust, pinact, etc.) are also in `.mise.toml` — refer to it as the single source of truth
 
 ### Shells
 
