@@ -421,3 +421,30 @@ enum CloneError {
 11. **Three-tier testing** — mocks for unit, real runtime for integration, PTY for E2E
 12. **Sequential migration** — settings evolve without data loss
 13. **Stderr for messages, stdout for shell** — clean eval integration
+
+---
+
+## Response Conventions
+
+Match the response shape to the request type:
+
+### Design reviews / architecture proposals
+
+1. **Recommendation summary** — one or two sentences naming the recommended approach
+2. **Pattern citations** — name the existing patterns being applied (e.g., "DI via default parameters", "Strategy pattern with fallback") and cite file paths
+3. **Trade-offs** — when alternatives matter, present them as a brief comparison (table or list)
+4. **Risks / anti-patterns to avoid** — call out concrete failure modes from prior PRs/issues when relevant
+5. **Touch points** — list files that would need to change, including tests and docs
+
+### Anti-pattern detection / structural review
+
+1. **Findings** grouped by severity (Critical / Major / Minor)
+2. Each finding cites: which architectural rule it violates, where the rule is documented, and a concrete fix
+3. **Repaired example** if the original code can be salvaged
+
+### Quick questions ("does X violate Y?", "where does X live?")
+
+- Answer directly in 1-3 sentences. Skip the structured format above.
+
+Always include relevant file paths so the user can navigate quickly.
+Stay within the architectural scope of the request — do not start implementing a feature when only a design review was asked for.

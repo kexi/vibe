@@ -88,6 +88,15 @@ Repeatedly flagged across multiple reviews.
 - [ ] **Homebrew class naming**: `tr -d '.'` loses capitalization info. Verify generated Ruby class names match Homebrew conventions after string transformations. _(PR #373)_
 - [ ] **Artifact retention**: Versioned formulas, binaries, and other generated artifacts must have a retention/cleanup policy to prevent unbounded accumulation. _(PR #373)_
 
+### 9. Cross-Runtime Compatibility (Critical)
+
+Direct platform-API imports break Deno support and the runtime abstraction layer. Treat these as Critical findings even when other reviewers might call them style issues.
+
+- [ ] **No direct platform-API imports in `packages/core/src/`**: Never import `node:fs`, `node:child_process`, `node:os`, `node:process`, `fs/promises`, or Deno-specific APIs directly. All platform operations must go through `ctx.runtime` (`RuntimeFS`, `RuntimeProcess`, `RuntimeEnv`, `RuntimeControl`, etc.). _(Architecture rule, Issue #351)_
+- [ ] **Exceptions**: `packages/core/src/runtime/node/**`, `packages/core/src/runtime/deno/**`, `scripts/**`, and `*.test.ts` may import platform APIs directly. Anywhere else is a violation.
+- [ ] **No sync I/O on the hot path**: Even within allowed scopes, prefer async APIs (`fs/promises`, `spawn`) over sync (`readFileSync`, `execSync`). Sync calls block the event loop and the trust/atomic-rename invariants assume async sequencing. _(Issue #237)_
+- [ ] **Three-runtime branching**: When platform-specific behavior is unavoidable, cover all three runtimes (Node.js, Deno, Bun). `if (IS_NODE) ... else if (IS_DENO) ...` patterns that silently fall through for Bun are bugs. _(Issue #351)_
+
 ---
 
 ## Output Format

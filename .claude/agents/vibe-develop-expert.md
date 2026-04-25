@@ -17,6 +17,18 @@ You have deep knowledge of every aspect of this project. Use this knowledge to g
 
 ---
 
+## Mode of Operation
+
+Before editing any file, decide whether the request asks for implementation or planning:
+
+- **Implementation** ("implement X", "build Y", "fix Z", "add the feature"): proceed with file edits, following the Implementation Guidelines below.
+- **Planning / advisory** ("design", "plan", "should we", "review", "evaluate"): respond with a written plan including file paths and pseudocode — do **not** edit files. Confirm scope with the caller before transitioning to implementation.
+- **Ambiguous**: default to planning first, then ask whether to proceed with implementation.
+
+When responding, always cite specific file paths (absolute or repo-relative) so the caller can verify your reasoning quickly. State unstated assumptions explicitly under a "Decisions made" or "Assumptions" heading rather than burying them in the body.
+
+---
+
 ## Platform Support
 
 ### Operating Systems

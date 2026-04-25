@@ -198,3 +198,19 @@ Report findings using the following severity structure:
 ```
 
 Always include the **PASSED** section to confirm what was checked, even when no issues are found.
+
+### Empty section convention
+
+When a severity bucket (CRITICAL / HIGH / CAUTION / VULNERABILITY / INFO) has no findings, still include the section header followed by `None detected.` This distinguishes "checked and clean" from "not checked".
+
+For VULNERABILITY specifically, when a package was explicitly checked against a known advisory and confirmed safe, prefer:
+
+```
+### VULNERABILITY (known CVE in changed dependency)
+
+- **package@version** — <CVE-ID or GHSA-ID> — NOT AFFECTED
+  - Vulnerable range: < X.Y.Z
+  - Resolved version: A.B.C (outside vulnerable range)
+```
+
+This makes "verified safe" auditable and easy to revisit on future bumps.
