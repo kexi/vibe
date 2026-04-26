@@ -136,6 +136,19 @@ post_start = [
 pre_clean = ["docker-compose down"]
 ```
 
+### Gitサブモジュール
+
+```toml
+[hooks]
+post_start = [
+  "git submodule update --init --recursive || true"
+]
+```
+
+:::tip
+`|| true`を付けることで、ネットワークエラー等でサブモジュールの初期化に失敗してもフック全体が失敗しません。厳密なエラーハンドリングが必要な場合は除去してください。
+:::
+
 ## フックのスキップ
 
 `--no-hooks`オプションでフックをスキップできます：

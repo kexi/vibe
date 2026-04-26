@@ -209,6 +209,18 @@ add `[hooks]` to skip [manual shell setup](#setup):
 enter = 'eval "$(vibe shell-setup)"'
 ```
 
+### Nix
+
+```bash
+# Run directly (ephemeral)
+nix run github:kexi/vibe -- start feat/my-feature
+
+# Install persistently
+nix profile install github:kexi/vibe
+```
+
+> Note: The Nix package installs pre-built binaries from GitHub Releases, verified with SHA-256 hashes.
+
 ### Linux
 
 > **Note**: WSL2 users can use the Linux installation methods below based on their distribution.
