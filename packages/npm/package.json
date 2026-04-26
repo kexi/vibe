@@ -1,6 +1,6 @@
 {
   "name": "@kexi/vibe",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Git worktree helper CLI",
   "type": "module",
   "bin": {
