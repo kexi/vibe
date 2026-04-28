@@ -276,9 +276,6 @@ jobs:
     if: github.event.action == 'released'
     needs: release
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     concurrency:
       group: update-nix
       cancel-in-progress: false
@@ -287,6 +284,9 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: develop
+          # PAT (not GITHUB_TOKEN) so gh pr create is not blocked by the
+          # repo-level "Allow GitHub Actions to create pull requests" setting.
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
       - name: Download artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -348,7 +348,7 @@ jobs:
 
       - name: Open PR and merge
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           VERSION="${{ steps.version.outputs.value }}"
           # Suffix with run_id and run_attempt so re-runs and concurrent releases
