@@ -90,6 +90,36 @@ export async function recordMruEntry(
 }
 
 /**
+ * Update an MRU entry's path and branch (used by `vibe rename`).
+ * Finds the entry whose path matches oldPath and rewrites both fields.
+ * Timestamp is preserved so the entry's MRU position is kept.
+ * No-op if no entry matches, or if the targeted entry already has the
+ * desired path and branch.
+ */
+export async function updateMruBranch(
+  oldPath: string,
+  newPath: string,
+  newBranch: string,
+  ctx: AppContext = getGlobalContext(),
+): Promise<void> {
+  const entries = await loadMruData(ctx);
+
+  const idx = entries.findIndex((e) => e.path === oldPath);
+  const notFound = idx === -1;
+  if (notFound) return;
+
+  const current = entries[idx];
+  const noChange = current.path === newPath && current.branch === newBranch;
+  if (noChange) return;
+
+  const updated = entries.map((e, i) =>
+    i === idx ? { branch: newBranch, path: newPath, timestamp: e.timestamp } : e,
+  );
+
+  await saveMruData(updated, ctx);
+}
+
+/**
  * Sort matches by MRU order. Pure function.
  * - Entries found in MRU come first, sorted by timestamp descending (most recent first)
  * - Entries not in MRU maintain their original order after MRU entries

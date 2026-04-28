@@ -10,17 +10,19 @@ A super fast CLI tool for easy Git Worktree management.
 
 ## Usage
 
-| Command                         | Description                                                                       |
-| ------------------------------- | --------------------------------------------------------------------------------- |
-| `vibe start <branch> [options]` | Create a worktree with a new or existing branch (idempotent)                      |
-| `vibe jump <branch> [options]`  | Jump to an existing worktree by branch name (supports partial and fuzzy matching) |
-| `vibe clean [options]`          | Delete current worktree and return to main (prompts if uncommitted changes exist) |
-| `vibe home`                     | Return to main worktree without removing current                                  |
-| `vibe trust`                    | Trust `.vibe.toml` and `.vibe.local.toml` files                                   |
-| `vibe untrust`                  | Untrust `.vibe.toml` and `.vibe.local.toml` files                                 |
-| `vibe verify`                   | Verify trust status and hash history                                              |
-| `vibe config`                   | Show current settings                                                             |
-| `vibe upgrade [options]`        | Check for updates and show upgrade instructions                                   |
+| Command                            | Description                                                                       |
+| ---------------------------------- | --------------------------------------------------------------------------------- |
+| `vibe start <branch> [options]`    | Create a worktree with a new or existing branch (idempotent)                      |
+| `vibe scratch [options]`           | Create a worktree with an auto-generated `scratch/<timestamp>` branch             |
+| `vibe jump <branch> [options]`     | Jump to an existing worktree by branch name (supports partial and fuzzy matching) |
+| `vibe rename <new-name> [options]` | Rename the current worktree's branch and directory                                |
+| `vibe clean [options]`             | Delete current worktree and return to main (prompts if uncommitted changes exist) |
+| `vibe home`                        | Return to main worktree without removing current                                  |
+| `vibe trust`                       | Trust `.vibe.toml` and `.vibe.local.toml` files                                   |
+| `vibe untrust`                     | Untrust `.vibe.toml` and `.vibe.local.toml` files                                 |
+| `vibe verify`                      | Verify trust status and hash history                                              |
+| `vibe config`                      | Show current settings                                                             |
+| `vibe upgrade [options]`           | Check for updates and show upgrade instructions                                   |
 
 ### Examples
 
@@ -38,6 +40,12 @@ vibe start feat/new-feature --base main
 vibe jump feat/new-feature
 vibe jump login
 vibe jump feli  # fuzzy matches "feat/login"
+
+# Create a scratch worktree without picking a name (auto: scratch/<timestamp>)
+vibe scratch
+
+# Promote the current scratch to a real name
+vibe rename my-feature
 
 # After work is done, delete the worktree
 vibe clean

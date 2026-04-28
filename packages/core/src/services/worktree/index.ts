@@ -18,3 +18,12 @@ export {
   removeWorktree,
   type RemoveWorktreeOptions,
 } from "./operations.ts";
+
+export {
+  type BranchUpstream,
+  getBranchUpstream,
+  getMoveWorktreeCommand,
+  getRenameBranchCommand,
+  moveWorktree,
+  renameBranch,
+} from "./rename.ts";
