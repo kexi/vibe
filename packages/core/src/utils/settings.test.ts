@@ -1,16 +1,17 @@
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { mkdtemp, writeFile, rm, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   _internal,
   addTrustedPath,
+  isRepoIdMatch,
   isTrusted,
   loadUserSettings,
   removeTrustedPath,
   saveUserSettings,
 } from "./settings.ts";
-import { getRepoInfoFromPath } from "./git.ts";
+import { getRepoInfoFromPath, type RepoInfo } from "./git.ts";
 import { setupRealTestContext } from "../context/testing.ts";
 
 // Initialize test context with real Deno runtime for filesystem tests
@@ -26,13 +27,7 @@ async function findEntryByPath(
   const repoInfo = await getRepoInfoFromPath(filePath);
   if (!repoInfo) return undefined;
 
-  return settings.permissions.allow.find((e) => {
-    return (
-      e.relativePath === repoInfo.relativePath &&
-      ((e.repoId.remoteUrl && repoInfo.remoteUrl && e.repoId.remoteUrl === repoInfo.remoteUrl) ||
-        (e.repoId.repoRoot && repoInfo.repoRoot && e.repoId.repoRoot === repoInfo.repoRoot))
-    );
-  });
+  return settings.permissions.allow.find((e) => isRepoIdMatch(e, repoInfo));
 }
 
 describe("loadUserSettings", () => {
@@ -515,6 +510,314 @@ describe("getSettingsSchemaUrl", () => {
       const versionPart = versionMatch[1];
       const hasNoBuildMetadata = !versionPart.includes("+");
       expect(hasNoBuildMetadata).toBe(true);
+    }
+  });
+});
+
+describe("isRepoIdMatch", () => {
+  const baseRepoInfo: RepoInfo = {
+    remoteUrl: "github.com/example/repo",
+    repoRoot: "/path/to/repo",
+    relativePath: ".vibe.toml",
+  };
+
+  it("returns true when repoRoot and remoteUrl both match", () => {
+    const entry = {
+      repoId: { remoteUrl: "github.com/example/repo", repoRoot: "/path/to/repo" },
+      relativePath: ".vibe.toml",
+    };
+    expect(isRepoIdMatch(entry, baseRepoInfo)).toBe(true);
+  });
+
+  it("returns false when repoRoot mismatches (spoof regression)", () => {
+    // Even with same remoteUrl, a different repoRoot must not match.
+    // This is the #418 spoofing regression test.
+    const entry = {
+      repoId: { remoteUrl: "github.com/example/repo", repoRoot: "/different/path" },
+      relativePath: ".vibe.toml",
+    };
+    expect(isRepoIdMatch(entry, baseRepoInfo)).toBe(false);
+  });
+
+  it("returns false when remoteUrl mismatches", () => {
+    const entry = {
+      repoId: { remoteUrl: "github.com/attacker/repo", repoRoot: "/path/to/repo" },
+      relativePath: ".vibe.toml",
+    };
+    expect(isRepoIdMatch(entry, baseRepoInfo)).toBe(false);
+  });
+
+  it("returns true when both remoteUrl undefined and repoRoot matches (local-only)", () => {
+    const localRepoInfo: RepoInfo = {
+      repoRoot: "/path/to/repo",
+      relativePath: ".vibe.toml",
+    };
+    const entry = {
+      repoId: { repoRoot: "/path/to/repo" },
+      relativePath: ".vibe.toml",
+    };
+    expect(isRepoIdMatch(entry, localRepoInfo)).toBe(true);
+  });
+
+  it("returns false when stored remoteUrl defined but current undefined (downgrade)", () => {
+    const localRepoInfo: RepoInfo = {
+      repoRoot: "/path/to/repo",
+      relativePath: ".vibe.toml",
+    };
+    const entry = {
+      repoId: { remoteUrl: "github.com/example/repo", repoRoot: "/path/to/repo" },
+      relativePath: ".vibe.toml",
+    };
+    expect(isRepoIdMatch(entry, localRepoInfo)).toBe(false);
+  });
+
+  it("returns false when stored remoteUrl undefined but current defined (identity change)", () => {
+    const entry = {
+      repoId: { repoRoot: "/path/to/repo" },
+      relativePath: ".vibe.toml",
+    };
+    expect(isRepoIdMatch(entry, baseRepoInfo)).toBe(false);
+  });
+
+  it("returns false when relativePath mismatches", () => {
+    const entry = {
+      repoId: { remoteUrl: "github.com/example/repo", repoRoot: "/path/to/repo" },
+      relativePath: ".vibe.local.toml",
+    };
+    expect(isRepoIdMatch(entry, baseRepoInfo)).toBe(false);
+  });
+
+  it("returns false when stored entry missing repoRoot (defensive fail-closed)", () => {
+    const entry = {
+      repoId: { remoteUrl: "github.com/example/repo" },
+      relativePath: ".vibe.toml",
+    };
+    expect(isRepoIdMatch(entry, baseRepoInfo)).toBe(false);
+  });
+});
+
+describe("Migration security regressions (#418)", () => {
+  it("v1→v2 fallback for non-existent path produces empty hashes without skipHashCheck", async () => {
+    const v1Data = {
+      version: 1,
+      permissions: {
+        allow: ["/non/existent/path/that/does/not/exist.toml"],
+        deny: [],
+      },
+    };
+
+    const migrated = (await _internal.migrateSettings(v1Data)) as Awaited<
+      ReturnType<typeof loadUserSettings>
+    >;
+
+    expect(migrated.permissions.allow.length).toBe(1);
+    const entry = migrated.permissions.allow[0];
+    expect(entry.hashes).toEqual([]);
+    expect(entry.skipHashCheck).toBeUndefined();
+  });
+
+  it("v2→v3 success branch drops skipHashCheck:true carryover", async () => {
+    // Build a v2 entry with skipHashCheck: true. Path must be inside an actual
+    // git repo so the migration can resolve repoInfo (success branch).
+    const tempFile = join(process.cwd(), `.test-migration-v2-skip-${Date.now()}.tmp`);
+    await writeFile(tempFile, "test content");
+    try {
+      const v2Data = {
+        version: 2,
+        skipHashCheck: false,
+        permissions: {
+          allow: [{ path: tempFile, hashes: ["abc123"], skipHashCheck: true }],
+          deny: [],
+        },
+      };
+
+      const migrated = (await _internal.migrateSettings(v2Data)) as Awaited<
+        ReturnType<typeof loadUserSettings>
+      >;
+
+      expect(migrated.permissions.allow.length).toBe(1);
+      const entry = migrated.permissions.allow[0];
+      // The skipHashCheck: true carryover must NOT survive into v3.
+      expect(entry.skipHashCheck).toBeUndefined();
+      // hashes are preserved on the success path
+      expect(entry.hashes).toEqual(["abc123"]);
+    } finally {
+      await rm(tempFile).catch(() => {});
+    }
+  });
+
+  it("v2→v3 'no repoInfo' branch drops skipHashCheck:true carryover", async () => {
+    // Path under a non-git temp directory triggers the else branch
+    // (getRepoInfoFromPath returns null). The catch branch is unreachable in
+    // practice because getRepoInfoFromPath swallows errors. Both branches
+    // produce the same shape after the fix; this test exercises the
+    // reachable one.
+    const tempDir = await mkdtemp(join(tmpdir(), "vibe-test-migration-"));
+    const tempFile = join(tempDir, "config.toml");
+    await writeFile(tempFile, "test");
+    try {
+      const v2Data = {
+        version: 2,
+        skipHashCheck: false,
+        permissions: {
+          allow: [{ path: tempFile, hashes: ["abc123"], skipHashCheck: true }],
+          deny: [],
+        },
+      };
+
+      const migrated = (await _internal.migrateSettings(v2Data)) as Awaited<
+        ReturnType<typeof loadUserSettings>
+      >;
+
+      expect(migrated.permissions.allow.length).toBe(1);
+      const entry = migrated.permissions.allow[0];
+      expect(entry.skipHashCheck).toBeUndefined();
+    } finally {
+      await rm(tempDir, { recursive: true }).catch(() => {});
+    }
+  });
+
+  it("v1→v3 end-to-end with non-existent path: empty hashes, no skipHashCheck", async () => {
+    const v1Data = {
+      version: 1,
+      permissions: {
+        allow: ["/non/existent/path/that/does/not/exist.toml"],
+        deny: [],
+      },
+    };
+
+    const migrated = (await _internal.migrateSettings(v1Data)) as Awaited<
+      ReturnType<typeof loadUserSettings>
+    >;
+
+    expect(migrated.version).toBe(_internal.CURRENT_SCHEMA_VERSION);
+    expect(migrated.permissions.allow.length).toBe(1);
+    const entry = migrated.permissions.allow[0];
+    expect(entry.hashes).toEqual([]);
+    expect(entry.skipHashCheck).toBeUndefined();
+  });
+});
+
+describe("removeTrustedPath spoof prevention (#418)", () => {
+  let tempFile: string;
+
+  afterEach(async () => {
+    if (tempFile) {
+      try {
+        await rm(tempFile);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+  });
+
+  it("removing one entry leaves another with same relativePath but different repoRoot", async () => {
+    tempFile = join(process.cwd(), `.test-remove-spoof-${Date.now()}.tmp`);
+    await writeFile(tempFile, "content");
+
+    const repoInfo = await getRepoInfoFromPath(tempFile);
+    expect(repoInfo).not.toBeNull();
+    if (!repoInfo) return;
+
+    const FAKE_REPO_ROOT = "/some/other/repo/root/that/does/not/exist";
+
+    // Inject two entries that share relativePath but live in different repos.
+    const settings = await loadUserSettings();
+    const fakeOtherRepo = {
+      repoId: { remoteUrl: repoInfo.remoteUrl, repoRoot: FAKE_REPO_ROOT },
+      relativePath: repoInfo.relativePath,
+      hashes: ["fake-hash-other-repo"],
+    };
+    settings.permissions.allow.push(fakeOtherRepo);
+    await saveUserSettings(settings);
+
+    try {
+      // Trust the real entry too.
+      await addTrustedPath(tempFile);
+
+      // Remove via the real path.
+      await removeTrustedPath(tempFile);
+
+      // The real entry should be gone, the spoof-targeted entry must survive.
+      const after = await loadUserSettings();
+      const realEntry = after.permissions.allow.find(
+        (e) => e.repoId.repoRoot === repoInfo.repoRoot && e.relativePath === repoInfo.relativePath,
+      );
+      const otherEntry = after.permissions.allow.find(
+        (e) => e.repoId.repoRoot === FAKE_REPO_ROOT && e.relativePath === repoInfo.relativePath,
+      );
+      expect(realEntry).toBeUndefined();
+      expect(otherEntry).toBeDefined();
+    } finally {
+      // Cleanup runs even if assertions above fail, so the user's real
+      // settings.json is never left polluted.
+      const finalSettings = await loadUserSettings();
+      finalSettings.permissions.allow = finalSettings.permissions.allow.filter(
+        (e) => e.repoId.repoRoot !== FAKE_REPO_ROOT,
+      );
+      await saveUserSettings(finalSettings);
+    }
+  });
+
+  it("loadUserSettings strips skipHashCheck:true from migration-fallback artifacts only", async () => {
+    // Two legacy v3 entries from before #418:
+    //   - fallback artifact: hashes:[] + skipHashCheck:true (must be cleaned)
+    //   - manual opt-in: non-empty hashes + skipHashCheck:true (must be preserved)
+    const settings = await loadUserSettings();
+    const FAKE_REPO_ROOT_FALLBACK = "/some/legacy/fallback/repo/root";
+    const fallbackArtifact = {
+      repoId: { repoRoot: FAKE_REPO_ROOT_FALLBACK },
+      relativePath: ".vibe.toml",
+      hashes: [],
+      skipHashCheck: true as const,
+    };
+    const FAKE_REPO_ROOT_MANUAL = "/some/legacy/manual/repo/root";
+    const manualOptIn = {
+      repoId: { repoRoot: FAKE_REPO_ROOT_MANUAL },
+      relativePath: ".vibe.toml",
+      hashes: ["abcdef" + "0".repeat(58)],
+      skipHashCheck: true as const,
+    };
+    settings.permissions.allow.push(fallbackArtifact, manualOptIn);
+    await saveUserSettings(settings);
+
+    try {
+      const reloaded = await loadUserSettings();
+      const cleanedFallback = reloaded.permissions.allow.find(
+        (e) => e.repoId.repoRoot === FAKE_REPO_ROOT_FALLBACK,
+      );
+      const preservedManual = reloaded.permissions.allow.find(
+        (e) => e.repoId.repoRoot === FAKE_REPO_ROOT_MANUAL,
+      );
+      expect(cleanedFallback).toBeDefined();
+      expect(cleanedFallback!.skipHashCheck).toBeUndefined();
+      expect(preservedManual).toBeDefined();
+      expect(preservedManual!.skipHashCheck).toBe(true);
+    } finally {
+      const finalSettings = await loadUserSettings();
+      finalSettings.permissions.allow = finalSettings.permissions.allow.filter(
+        (e) =>
+          e.repoId.repoRoot !== FAKE_REPO_ROOT_FALLBACK &&
+          e.repoId.repoRoot !== FAKE_REPO_ROOT_MANUAL,
+      );
+      await saveUserSettings(finalSettings);
+    }
+  });
+
+  it("removeTrustedPath warns when no matching entry exists", async () => {
+    tempFile = join(process.cwd(), `.test-remove-warn-${Date.now()}.tmp`);
+    await writeFile(tempFile, "content");
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      // Path is in repo but not trusted, so no matching entry.
+      await removeTrustedPath(tempFile);
+      const wasCalled = warnSpy.mock.calls.some((call) =>
+        String(call[0]).includes("No matching trust entry"),
+      );
+      expect(wasCalled).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
     }
   });
 });

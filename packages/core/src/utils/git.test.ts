@@ -233,6 +233,18 @@ describe("normalizeRemoteUrl", () => {
     const result = normalizeRemoteUrl("git@gitlab.com:group/subgroup/repo.git");
     expect(result).toBe("gitlab.com/group/subgroup/repo");
   });
+
+  it("URL with @ in path does not strip path", () => {
+    // Regression: ^[^@]+@ used to greedily strip across /, normalizing
+    // https://attacker.com/legit@github.com/x/y to github.com/x/y.
+    const result = normalizeRemoteUrl("https://attacker.com/legit@github.com/user/repo.git");
+    expect(result).toBe("attacker.com/legit@github.com/user/repo");
+  });
+
+  it("URL with both credentials and @ in path", () => {
+    const result = normalizeRemoteUrl("https://user:pass@host.com/foo@bar/baz.git");
+    expect(result).toBe("host.com/foo@bar/baz");
+  });
 });
 
 describe("detectBrokenWorktreeLink", () => {
