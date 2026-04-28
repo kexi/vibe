@@ -5,6 +5,7 @@ import { getRepoInfoFromPath, type RepoInfo } from "./git.ts";
 import { VERSION } from "../version.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
 import { getConfigDir, ensureConfigDir } from "./config-path.ts";
+import { warnLog } from "./output.ts";
 
 function getUserSettingsFile(ctx: AppContext = getGlobalContext()): string {
   return join(getConfigDir(ctx), "settings.json");
@@ -130,10 +131,10 @@ const migrations: Record<number, MigrationFn> = {
           const errorMessage = error instanceof Error ? error.message : String(error);
           console.warn(
             `Warning: Cannot calculate hash for ${path}: ${errorMessage}\n` +
-              `The path will be kept with hash checking disabled (skipHashCheck: true)`,
+              `The path will be kept with an empty hash list. ` +
+              `Run 'vibe trust' to re-trust this file.`,
           );
-          // Keep the path but disable hash checking instead of removing it
-          return { path, hashes: [], skipHashCheck: true };
+          return { path, hashes: [] };
         }
       }),
     );
@@ -163,7 +164,8 @@ const migrations: Record<number, MigrationFn> = {
           const repoInfo = await getRepoInfoFromPath(entry.path, ctx);
 
           if (repoInfo) {
-            // Successfully converted to repository-based entry
+            // Drop skipHashCheck:true carryover from v2 (could originate in
+            // the v1→v2 fallback) to prevent silent trust-bypass (security: #418).
             return {
               repoId: {
                 remoteUrl: repoInfo.remoteUrl,
@@ -171,12 +173,13 @@ const migrations: Record<number, MigrationFn> = {
               },
               relativePath: repoInfo.relativePath,
               hashes: entry.hashes,
-              skipHashCheck: entry.skipHashCheck,
+              ...(entry.skipHashCheck === false ? { skipHashCheck: false as const } : {}),
             };
           } else {
             // Not in a git repository - use fallback
             migrationWarnings.push(
-              `Cannot determine repository for ${entry.path}. ` + `Using directory as fallback.`,
+              `Cannot determine repository for ${entry.path}. ` +
+                `Using directory as fallback. Run 'vibe trust' to re-trust this file.`,
             );
             return {
               repoId: {
@@ -184,23 +187,21 @@ const migrations: Record<number, MigrationFn> = {
               },
               relativePath: basename(entry.path),
               hashes: entry.hashes,
-              skipHashCheck: entry.skipHashCheck,
+              ...(entry.skipHashCheck === false ? { skipHashCheck: false as const } : {}),
             };
           }
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           migrationWarnings.push(
             `Migration failed for ${entry.path}: ${errorMessage}. ` +
-              `Entry will be preserved with hash checking disabled.`,
+              `Entry preserved with empty hash list; run 'vibe trust' to re-trust.`,
           );
-          // Preserve entry with safe fallback
           return {
             repoId: {
               repoRoot: dirname(entry.path),
             },
             relativePath: basename(entry.path),
-            hashes: entry.hashes || [],
-            skipHashCheck: true,
+            hashes: [],
           };
         }
       }),
@@ -286,9 +287,23 @@ export async function loadUserSettings(
     // Schema validation
     const result = CurrentSettingsSchema.safeParse(migratedData);
     if (result.success) {
-      // Update file if migration was performed
+      // Strip skipHashCheck:true from migration-fallback artifacts written by
+      // older builds (#418). The marker is `hashes:[] && skipHashCheck:true`,
+      // which uniquely identifies entries created by the v1→v2 fallback that
+      // rode through into v3 with hash checking silently disabled. Manual
+      // configurations (non-empty hashes + skipHashCheck:true) are preserved.
+      let didCleanup = false;
+      for (const entry of result.data.permissions.allow) {
+        const isMigrationArtifact = entry.skipHashCheck === true && entry.hashes.length === 0;
+        if (isMigrationArtifact) {
+          delete entry.skipHashCheck;
+          didCleanup = true;
+        }
+      }
+
       const needsMigration = getSchemaVersion(rawData) !== CURRENT_SCHEMA_VERSION;
-      if (needsMigration) {
+      const needsWriteback = needsMigration || didCleanup;
+      if (needsWriteback) {
         await saveUserSettings(result.data, ctx);
       }
       return result.data;
@@ -347,6 +362,38 @@ export async function saveUserSettings(
 // ===== Helper Functions =====
 
 /**
+ * Strict identity match between a stored allow-list entry and current repo info.
+ * Returns true iff:
+ *   - relativePath matches
+ *   - repoRoot is defined on the entry AND equals repoInfo.repoRoot
+ *   - remoteUrl slot matches: both undefined, or both defined and equal
+ *
+ * The slot-equal remoteUrl check prevents spoofing attacks where an attacker
+ * configures a different local repo with the same git remote URL (security: #418).
+ */
+export function isRepoIdMatch(
+  entry: {
+    repoId: { remoteUrl?: string; repoRoot?: string };
+    relativePath: string;
+  },
+  repoInfo: RepoInfo,
+): boolean {
+  const isRelativePathMatch = entry.relativePath === repoInfo.relativePath;
+  if (!isRelativePathMatch) return false;
+
+  const hasStoredRepoRoot = entry.repoId.repoRoot !== undefined;
+  if (!hasStoredRepoRoot) return false;
+
+  const isRepoRootMatch = entry.repoId.repoRoot === repoInfo.repoRoot;
+  if (!isRepoRootMatch) return false;
+
+  const storedRemoteUrl = entry.repoId.remoteUrl ?? null;
+  const currentRemoteUrl = repoInfo.remoteUrl ?? null;
+  const isRemoteUrlSlotMatch = storedRemoteUrl === currentRemoteUrl;
+  return isRemoteUrlSlotMatch;
+}
+
+/**
  * Find a matching entry in the allow list based on repository information
  * @param allowList List of allowed entries
  * @param repoInfo Repository information to match
@@ -356,24 +403,7 @@ function findMatchingEntry(
   allowList: VibeSettings["permissions"]["allow"],
   repoInfo: RepoInfo,
 ): VibeSettings["permissions"]["allow"][number] | undefined {
-  return allowList.find((entry) => {
-    // Check relative path match
-    if (entry.relativePath !== repoInfo.relativePath) {
-      return false;
-    }
-
-    // Priority 1: Match by remote URL (if both have it)
-    if (entry.repoId.remoteUrl && repoInfo.remoteUrl) {
-      return entry.repoId.remoteUrl === repoInfo.remoteUrl;
-    }
-
-    // Priority 2: Match by repo root
-    if (entry.repoId.repoRoot && repoInfo.repoRoot) {
-      return entry.repoId.repoRoot === repoInfo.repoRoot;
-    }
-
-    return false;
-  });
+  return allowList.find((entry) => isRepoIdMatch(entry, repoInfo));
 }
 
 // ===== Public API =====
@@ -448,22 +478,22 @@ export async function removeTrustedPath(
   }
 
   // Find and remove matching entry
-  const allowIndex = settings.permissions.allow.findIndex((entry) => {
-    return (
-      entry.relativePath === repoInfo.relativePath &&
-      ((entry.repoId.remoteUrl &&
-        repoInfo.remoteUrl &&
-        entry.repoId.remoteUrl === repoInfo.remoteUrl) ||
-        (entry.repoId.repoRoot && repoInfo.repoRoot && entry.repoId.repoRoot === repoInfo.repoRoot))
-    );
-  });
+  const allowIndex = settings.permissions.allow.findIndex((entry) =>
+    isRepoIdMatch(entry, repoInfo),
+  );
 
   const isInAllowList = allowIndex !== -1;
   if (isInAllowList) {
     settings.permissions.allow.splice(allowIndex, 1);
+    await saveUserSettings(settings, ctx);
+    return;
   }
 
-  await saveUserSettings(settings, ctx);
+  warnLog(
+    `Warning: No matching trust entry found for ${path}. ` +
+      `If you recently added or removed a git remote, the entry may be stale. ` +
+      `Edit ${getUserSettingsFile(ctx)} manually if needed.`,
+  );
 }
 
 /**

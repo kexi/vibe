@@ -5,6 +5,22 @@ description: Version history and release notes for vibe
 
 All notable changes to vibe are documented here.
 
+## Unreleased
+
+### Security
+
+- **Trust system bypass fix (#418)** — repository identity matching is now strict: an entry is trusted only when both `repoRoot` matches AND the `remoteUrl` slot matches (both unset, or both set to the same value). Previously, matching on `remoteUrl` alone allowed an attacker to spoof a trusted repo by configuring `git remote.origin.url` on a malicious local repo.
+- **Migration fallbacks no longer set `skipHashCheck: true`** — the v1→v2 and v2→v3 migration fallbacks previously preserved entries with hash verification disabled when migration helpers failed. Migrated entries now keep an empty hash list and require `vibe trust` to be re-run.
+- **Stale `skipHashCheck: true` cleanup** — `loadUserSettings` now strips lingering `skipHashCheck: true` flags from existing v3 entries written by older builds.
+- **`normalizeRemoteUrl` credential strip** — fixed a regex bug where `^[^@]+@` greedily matched across `/`, allowing `https://attacker.com/legit@github.com/x/y` to normalize to `github.com/x/y`.
+
+### Behavior changes
+
+- Adding or removing a `git remote` on a previously trusted repository now requires re-running `vibe trust`.
+- `vibe untrust` now warns when no matching trust entry is found, instead of silently doing nothing.
+
+---
+
 ## v1.2.0
 
 **Released:** 2026-04-27

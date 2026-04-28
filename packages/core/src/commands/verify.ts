@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { getRepoInfoFromPath, getRepoRoot } from "../utils/git.ts";
 import { calculateFileHash } from "../utils/hash.ts";
 import { loadUserSettings } from "../utils/trust.ts";
+import { isRepoIdMatch } from "../utils/settings.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
 import { errorLog, log, type OutputOptions, successLog, warnLog } from "../utils/output.ts";
 
@@ -80,15 +81,7 @@ async function displayFileStatus(
   log(`Relative Path: ${repoInfo.relativePath}`, outputOpts);
 
   // Find entry in allow list using repository-based matching
-  const entry = settings.permissions.allow.find((item) => {
-    return (
-      item.relativePath === repoInfo.relativePath &&
-      ((item.repoId.remoteUrl &&
-        repoInfo.remoteUrl &&
-        item.repoId.remoteUrl === repoInfo.remoteUrl) ||
-        (item.repoId.repoRoot && repoInfo.repoRoot && item.repoId.repoRoot === repoInfo.repoRoot))
-    );
-  });
+  const entry = settings.permissions.allow.find((item) => isRepoIdMatch(item, repoInfo));
 
   if (!entry) {
     warnLog("Status: ⚠️  NOT TRUSTED");

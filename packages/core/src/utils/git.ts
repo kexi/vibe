@@ -248,8 +248,8 @@ export function normalizeRemoteUrl(url: string): string {
   // Remove protocol (https://, http://, ssh://)
   normalized = normalized.replace(/^[a-z]+:\/\//, "");
 
-  // Remove credentials if present (user:pass@host)
-  normalized = normalized.replace(/^[^@]+@/, "");
+  // Remove credentials if present (user:pass@host); avoid stripping across `/`
+  normalized = normalized.replace(/^[^@/]+@/, "");
 
   return normalized;
 }

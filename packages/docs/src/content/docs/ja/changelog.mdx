@@ -5,6 +5,22 @@ description: vibeのバージョン履歴とリリースノート
 
 vibeの主要な変更はここに記録されています。
 
+## 未リリース
+
+### セキュリティ
+
+- **Trust システムのバイパス修正 (#418)** — リポジトリの同一性判定を厳格化しました。`repoRoot` が一致し、かつ `remoteUrl` のスロット (両方未設定、または両方が同一値) が一致する場合のみ trust 対象として扱います。従来は `remoteUrl` のみで一致判定していたため、攻撃者が悪意あるローカルリポジトリの `git remote.origin.url` を細工することで、trust 済みリポジトリになりすますことが可能でした。
+- **マイグレーションフォールバックが `skipHashCheck: true` を設定しないように修正** — v1→v2 / v2→v3 のマイグレーション失敗時、従来はハッシュ検証を無効化して entry を保持していました。修正後は空のハッシュリストで保持し、`vibe trust` の再実行を要求します。
+- **既存 v3 entry の `skipHashCheck: true` クリーンアップ** — `loadUserSettings` で、旧バージョンが書き込んだ `skipHashCheck: true` を読み込み時に除去します。
+- **`normalizeRemoteUrl` の認証情報ストリップ修正** — `^[^@]+@` が `/` を跨いで貪欲にマッチするバグを修正しました。これにより `https://attacker.com/legit@github.com/x/y` が `github.com/x/y` に正規化される問題を解消しました。
+
+### 挙動の変更
+
+- trust 済みリポジトリに `git remote` を追加・削除すると、`vibe trust` の再実行が必要になります。
+- `vibe untrust` で一致する trust entry が見つからない場合、従来は無言で終了していましたが、警告を表示するようになりました。
+
+---
+
 ## v1.2.0
 
 **リリース日:** 2026年4月27日
