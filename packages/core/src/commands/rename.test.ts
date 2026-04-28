@@ -407,6 +407,33 @@ describe("renameCommand", () => {
     expect(chdirCalls[0]).toBe("/repo-main-renamed");
   });
 
+  it("keeps slashes in the branch name and only sanitizes the directory path", async () => {
+    const console_ = captureConsoles();
+    const exit = { code: null as number | null };
+    const gitMock = makeGitMock({
+      worktrees: [
+        { path: "/Projects/myrepo", branch: "develop" },
+        { path: "/Projects/myrepo-scratch-x", branch: "scratch/x" },
+      ],
+      currentRepoRoot: "/Projects/myrepo-scratch-x",
+    });
+    const ctx = makeRenameCtx("/Projects/myrepo-scratch-x", gitMock, exit);
+
+    await runAndCatchExit(() => renameCommand("feat/hoge", {}, ctx));
+    console_.restore();
+
+    expect(exit.code).toBe(null);
+    // The git branch name keeps its slash; only the worktree directory
+    // sanitizes `/` to `-`.
+    const branchMove = gitMock.calls.find((c) => c.args[0] === "branch" && c.args[1] === "-m");
+    expect(branchMove?.args).toEqual(["branch", "-m", "scratch/x", "feat/hoge"]);
+
+    const worktreeMove = gitMock.calls.find(
+      (c) => c.args[0] === "worktree" && c.args[1] === "move",
+    );
+    expect(worktreeMove?.args[3]).toBe("/Projects/myrepo-feat-hoge");
+  });
+
   it("computes the new path from the main worktree, not from a secondary one", async () => {
     const console_ = captureConsoles();
     const exit = { code: null as number | null };

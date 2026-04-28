@@ -76,12 +76,12 @@ export async function renameCommand(
     const oldName = currentWorktree.branch;
     const oldPath = currentWorktree.path;
 
-    const sanitizedNew = sanitizeBranchName(trimmedNewName);
-    if (sanitizedNew !== trimmedNewName) {
-      verboseLog(`Sanitized branch name: ${trimmedNewName} -> ${sanitizedNew}`, outputOpts);
-    }
+    // The branch name is kept verbatim (slashes are valid namespacing in git).
+    // Only the on-disk worktree directory needs sanitization.
+    const newName = trimmedNewName;
+    const sanitizedForPath = sanitizeBranchName(newName);
 
-    const isSameName = sanitizedNew === oldName;
+    const isSameName = newName === oldName;
     if (isSameName) {
       log(`Already named '${oldName}'`, outputOpts);
       console.log(formatCdCommand(oldPath));
@@ -98,8 +98,8 @@ export async function renameCommand(
         outputOpts,
       );
       errorLog("To rename manually:", outputOpts);
-      errorLog(`  git branch -m ${oldName} ${sanitizedNew}`, outputOpts);
-      errorLog(`  git push ${remote} -u ${sanitizedNew}`, outputOpts);
+      errorLog(`  git branch -m ${oldName} ${newName}`, outputOpts);
+      errorLog(`  git push ${remote} -u ${newName}`, outputOpts);
       errorLog(`  git push ${remote} --delete ${oldName}`, outputOpts);
       errorLog("  # then move the worktree directory yourself", outputOpts);
       runtime.control.exit(1);
@@ -107,17 +107,17 @@ export async function renameCommand(
     }
 
     const [targetBranchUsed, targetWorktreePath] = await Promise.all([
-      branchExists(sanitizedNew, ctx),
-      findWorktreeByBranch(sanitizedNew, ctx),
+      branchExists(newName, ctx),
+      findWorktreeByBranch(newName, ctx),
     ]);
     if (targetBranchUsed) {
-      errorLog(`Error: branch '${sanitizedNew}' already exists`, outputOpts);
+      errorLog(`Error: branch '${newName}' already exists`, outputOpts);
       runtime.control.exit(1);
       return;
     }
     if (targetWorktreePath !== null) {
       errorLog(
-        `Error: a worktree using '${sanitizedNew}' already exists at ${targetWorktreePath}`,
+        `Error: a worktree using '${newName}' already exists at ${targetWorktreePath}`,
         outputOpts,
       );
       runtime.control.exit(1);
@@ -137,8 +137,8 @@ export async function renameCommand(
       settings,
       {
         repoName,
-        branchName: sanitizedNew,
-        sanitizedBranch: sanitizeBranchName(sanitizedNew),
+        branchName: newName,
+        sanitizedBranch: sanitizedForPath,
         repoRoot: mainWorktreePath,
       },
       ctx,
@@ -153,7 +153,7 @@ export async function renameCommand(
       if (!isPathUnchanged) {
         logDryRun(`Would run: ${getMoveWorktreeCommand(oldPath, newPath)}`);
       }
-      logDryRun(`Would run: ${getRenameBranchCommand(oldName, sanitizedNew)}`);
+      logDryRun(`Would run: ${getRenameBranchCommand(oldName, newName)}`);
       logDryRun(`Would change directory to: ${newPath}`);
       return;
     }
@@ -175,7 +175,7 @@ export async function renameCommand(
     }
 
     try {
-      await renameBranch(oldName, sanitizedNew, ctx);
+      await renameBranch(oldName, newName, ctx);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       errorLog(`Error: failed to rename branch: ${msg}`, outputOpts);
@@ -195,12 +195,12 @@ export async function renameCommand(
     }
 
     try {
-      await updateMruBranch(oldPath, newPath, sanitizedNew, ctx);
+      await updateMruBranch(oldPath, newPath, newName, ctx);
     } catch {
       // MRU update failure should not affect rename
     }
 
-    successLog(`Renamed ${oldName} -> ${sanitizedNew}`, outputOpts);
+    successLog(`Renamed ${oldName} -> ${newName}`, outputOpts);
     if (!isPathUnchanged) {
       log(`Directory: ${oldPath} -> ${newPath}`, outputOpts);
     }
