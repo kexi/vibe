@@ -278,11 +278,43 @@ describe("readWorktreeHookPath", () => {
     expect(result).toBeUndefined();
   });
 
-  it("throws when worktree_path contains null byte", async () => {
+  it("returns undefined when worktree_path contains null byte", async () => {
     const ctx = createMockContext({
       io: { stdin: createMockStdin(JSON.stringify({ worktree_path: "/tmp/test\0malicious" })) },
     });
 
-    await expect(readWorktreeHookPath(ctx)).rejects.toThrow("null byte");
+    const result = await readWorktreeHookPath(ctx);
+
+    expect(result).toBeUndefined();
+  });
+
+  it("returns undefined when worktree_path contains '..' segment", async () => {
+    const ctx = createMockContext({
+      io: { stdin: createMockStdin(JSON.stringify({ worktree_path: "/tmp/../etc" })) },
+    });
+
+    const result = await readWorktreeHookPath(ctx);
+
+    expect(result).toBeUndefined();
+  });
+
+  it("returns undefined when worktree_path starts with '-'", async () => {
+    const ctx = createMockContext({
+      io: { stdin: createMockStdin(JSON.stringify({ worktree_path: "-rf" })) },
+    });
+
+    const result = await readWorktreeHookPath(ctx);
+
+    expect(result).toBeUndefined();
+  });
+
+  it("returns normalized path for clean absolute input", async () => {
+    const ctx = createMockContext({
+      io: { stdin: createMockStdin(JSON.stringify({ worktree_path: "/tmp//foo" })) },
+    });
+
+    const result = await readWorktreeHookPath(ctx);
+
+    expect(result).toBe("/tmp/foo");
   });
 });

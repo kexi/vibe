@@ -2,6 +2,7 @@ import { dirname, isAbsolute, join } from "node:path";
 import type { VibeConfig } from "../types/config.ts";
 import type { VibeSettings } from "./settings.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
+import { validateWorktreePath } from "./worktree-path-validation.ts";
 
 export interface WorktreePathContext {
   repoName: string;
@@ -30,7 +31,7 @@ export async function resolveWorktreePath(
 
   // Default path: {parentDir}/{repoName}-{sanitizedBranch}
   const parentDir = dirname(context.repoRoot);
-  return join(parentDir, `${context.repoName}-${context.sanitizedBranch}`);
+  return validateWorktreePath(join(parentDir, `${context.repoName}-${context.sanitizedBranch}`));
 }
 
 async function executePathScript(
@@ -101,5 +102,5 @@ async function executePathScript(
     throw new Error(`Worktree path script must output an absolute path, got: ${path}`);
   }
 
-  return path;
+  return validateWorktreePath(path);
 }
