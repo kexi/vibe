@@ -24,12 +24,15 @@ Full documentation is available at [vibe.kexi.dev](https://vibe.kexi.dev)
 
 ## Usage
 
-| Command               | Description                                                                       |
-| --------------------- | --------------------------------------------------------------------------------- |
-| `vibe start <branch>` | Create a worktree with a new or existing branch (idempotent)                      |
-| `vibe clean`          | Delete current worktree and return to main (prompts if uncommitted changes exist) |
-| `vibe trust`          | Trust `.vibe.toml` and `.vibe.local.toml` files                                   |
-| `vibe untrust`        | Untrust `.vibe.toml` and `.vibe.local.toml` files                                 |
+| Command                  | Description                                                                       |
+| ------------------------ | --------------------------------------------------------------------------------- |
+| `vibe start <branch>`    | Create a worktree with a new or existing branch (idempotent)                      |
+| `vibe scratch`           | Create a worktree with an auto-generated `scratch/<timestamp>` branch             |
+| `vibe jump <branch>`     | Jump to an existing worktree by branch name (partial / fuzzy match supported)     |
+| `vibe rename <new-name>` | Rename the current worktree's branch and directory                                |
+| `vibe clean`             | Delete current worktree and return to main (prompts if uncommitted changes exist) |
+| `vibe trust`             | Trust `.vibe.toml` and `.vibe.local.toml` files                                   |
+| `vibe untrust`           | Untrust `.vibe.toml` and `.vibe.local.toml` files                                 |
 
 ### Examples
 

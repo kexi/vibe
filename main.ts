@@ -7,6 +7,8 @@ import { untrustCommand } from "./packages/core/src/commands/untrust.ts";
 import { verifyCommand } from "./packages/core/src/commands/verify.ts";
 import { configCommand } from "./packages/core/src/commands/config.ts";
 import { jumpCommand } from "./packages/core/src/commands/jump.ts";
+import { renameCommand } from "./packages/core/src/commands/rename.ts";
+import { scratchCommand } from "./packages/core/src/commands/scratch.ts";
 import { upgradeCommand } from "./packages/core/src/commands/upgrade.ts";
 import { shellSetupCommand } from "./packages/core/src/commands/shell-setup.ts";
 import { BUILD_INFO } from "./packages/core/src/version.ts";
@@ -54,7 +56,9 @@ Installation:
 
 Usage:
   vibe start <branch-name> [options]  Create a new worktree with the given branch
+  vibe scratch [options]              Create a worktree with an auto-generated scratch/<timestamp> name
   vibe jump <branch-name> [options]   Jump to an existing worktree by branch name
+  vibe rename <new-name> [options]    Rename the current worktree's branch and directory
   vibe clean [options]                Remove current worktree and return to main
   vibe home                           Return to main worktree without removing current
   vibe trust                          Trust .vibe.toml in current repository
@@ -98,6 +102,10 @@ Examples:
   vibe start feat/new-feature
   vibe start feat/existing --reuse
   vibe start feat/new-feature --base main
+  vibe scratch
+  vibe scratch --base develop
+  vibe rename my-feature
+  vibe rename my-feature --dry-run
   vibe jump feat/new-feature
   vibe clean
   vibe home
@@ -191,11 +199,43 @@ async function main(): Promise<void> {
       });
       break;
     }
+    case "scratch": {
+      const reuse = args.reuse === true;
+      const noHooks = args["no-hooks"] === true;
+      const noCopy = args["no-copy"] === true;
+      const dryRun = args["dry-run"] === true;
+      const verbose = args.verbose === true;
+      const quiet = args.quiet === true;
+      const base =
+        typeof args.base === "string" ? args.base : args.base === undefined ? undefined : "";
+      const baseFromEquals = rawArgs.some((arg) => arg.startsWith("--base="));
+      const track = args.track === true;
+      await scratchCommand({
+        reuse,
+        noHooks,
+        noCopy,
+        dryRun,
+        verbose,
+        quiet,
+        base,
+        baseFromEquals,
+        track,
+      });
+      break;
+    }
     case "jump": {
       const branchName = String(positionals[1] ?? "");
       const verbose = args.verbose === true;
       const quiet = args.quiet === true;
       await jumpCommand(branchName, { verbose, quiet });
+      break;
+    }
+    case "rename": {
+      const newName = String(positionals[1] ?? "");
+      const dryRun = args["dry-run"] === true;
+      const verbose = args.verbose === true;
+      const quiet = args.quiet === true;
+      await renameCommand(newName, { dryRun, verbose, quiet });
       break;
     }
     case "clean": {

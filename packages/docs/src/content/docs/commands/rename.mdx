@@ -1,0 +1,109 @@
+---
+title: vibe rename
+description: Rename the current worktree's branch and directory
+sidebar:
+  order: 3
+---
+
+The `rename` command renames the current worktree's branch and moves its directory. It is primarily used to promote a scratch worktree (created by [`vibe scratch`](/commands/scratch/)) to a proper name once the work has taken shape.
+
+## Usage
+
+```bash
+vibe rename <new-name> [options]
+```
+
+## Options
+
+| Option            | Description                          |
+| ----------------- | ------------------------------------ |
+| `-n`, `--dry-run` | Preview operations without executing |
+| `-V`, `--verbose` | Show detailed output                 |
+| `-q`, `--quiet`   | Suppress non-essential output        |
+
+## Examples
+
+```bash
+# Promote the current scratch to a real name
+vibe rename my-feature
+
+# Preview without applying
+vibe rename my-feature --dry-run
+
+# Rename any (non-pushed) worktree
+cd /path/to/scratch-20260427-143052
+vibe rename feat/login
+```
+
+Output:
+
+```
+$ vibe rename my-feature
+Renamed scratch/20260427-143052 -> my-feature
+Directory: /path/to/scratch-20260427-143052 -> /path/to/repo-my-feature
+# → cd '/path/to/repo-my-feature'
+```
+
+## Behavior
+
+`vibe rename` performs two operations:
+
+1. `git worktree move <old-path> <new-path>` — rename the directory
+2. `git branch -m <old-name> <new-name>` — rename the branch
+
+After both succeed, vibe updates its internal MRU bookkeeping and emits a `cd` command for the shell wrapper, dropping you into the renamed worktree.
+
+### Pushed branches are not supported
+
+If the current branch has a remote upstream (i.e. it has been pushed), `vibe rename` aborts and prints the exact git commands you would need to run manually:
+
+```
+$ vibe rename my-feature
+Error: branch 'scratch/20260427-143052' is pushed to 'origin'
+vibe rename does not handle pushed branches to avoid remote divergence.
+To rename manually:
+  git branch -m scratch/20260427-143052 my-feature
+  git push origin -u my-feature
+  git push origin --delete scratch/20260427-143052
+  # then move the worktree directory yourself
+```
+
+This keeps vibe's behavior simple and predictable. Renaming a remote-tracking branch is something users should do consciously with git directly.
+
+A local-tracking branch (where `branch.<name>.remote = "."`) is **not** treated as pushed and renaming proceeds normally.
+
+### Conflict detection
+
+`vibe rename` aborts if the target name is already in use:
+
+- A branch with the new name exists
+- A worktree with the new directory path exists
+
+### Main worktree is rejected
+
+`vibe rename` cannot be run from the main worktree (the repository's primary checkout). The directory move would relocate the entire repository, which is unsafe. Use `git` directly if you really need to do this.
+
+### Same-name no-op
+
+Running `vibe rename` with a name that matches the current branch is a no-op: vibe prints `Already named '<name>'` and emits a `cd` command for the current path.
+
+### Failure recovery
+
+If `git worktree move` succeeds but `git branch -m` fails, vibe attempts to roll back the directory move. If rollback also fails, vibe prints a manual recovery command and exits with code 1.
+
+### MRU update
+
+If your worktree was tracked in the MRU list (used by `vibe jump` for ordering), the entry is updated to the new path and branch name. Its timestamp is preserved so MRU ordering does not change.
+
+## Exit Codes
+
+| Code | Condition                                                                |
+| ---- | ------------------------------------------------------------------------ |
+| `0`  | Successful rename, or same-name no-op                                    |
+| `1`  | Error (empty name, main worktree, pushed branch, collision, git failure) |
+
+## Related
+
+- [scratch](/commands/scratch/) - Create an auto-named worktree
+- [start](/commands/start/) - Create a worktree with an explicit name
+- [jump](/commands/jump/) - Navigate between worktrees

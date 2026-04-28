@@ -72,6 +72,19 @@ Matched: feat/login
 # → cd '/path/to/repo-feat-login'
 ```
 
+### Scratch worktree の除外
+
+`scratch/` プレフィクスを持つブランチ（[`vibe scratch`](/ja/commands/scratch/) で作成）は、デフォルトで **単語境界・部分文字列・ファジーマッチの候補から除外** されます。scratch が溜まっても候補リストが汚染されないようにするためです。
+
+scratch にジャンプするには次のいずれかを使います:
+
+- 文字どおり `scratch/` プレフィクスをクエリの先頭に含める（大文字小文字区別なし）。この場合、`scratch/` 配下のブランチも部分一致／ファジーマッチの対象になります:
+  ```
+  $ vibe jump scratch/2026
+  # → cd '/path/to/scratch-20260427-143052'
+  ```
+- ブランチ名を完全に指定する。完全一致は scratch でも常に通ります。
+
 ### 複数一致
 
 ```

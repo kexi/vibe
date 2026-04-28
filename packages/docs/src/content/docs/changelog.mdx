@@ -5,6 +5,23 @@ description: Version history and release notes for vibe
 
 All notable changes to vibe are documented here.
 
+## v1.3.0
+
+**Released:** 2026-04-28
+
+### Added
+
+- `vibe scratch` command — creates a worktree with an auto-generated `scratch/<YYYYMMDD-HHMMSS>` branch name for quick experimentation
+- `vibe rename` command — renames the current worktree's branch and moves its directory in one step, useful for promoting a `vibe scratch` worktree to a real name
+- `vibe jump` now excludes scratch worktrees from non-exact matching to keep transient scratches out of jump suggestions
+
+### Fixed
+
+- `vibe rename feat/hoge` now preserves slashes in branch names (previously sanitized to `feat-hoge`)
+- `vibe rename` is now runnable from secondary worktrees
+
+---
+
 ## v1.2.0
 
 **Released:** 2026-04-27

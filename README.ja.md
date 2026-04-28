@@ -10,17 +10,19 @@ Git Worktreeを簡単かつ超高速に管理するCLIツール。
 
 ## 使い方
 
-| コマンド                        | 説明                                                                     |
-| ------------------------------- | ------------------------------------------------------------------------ |
-| `vibe start <branch> [options]` | 新規または既存ブランチでworktreeを作成（冪等）                           |
-| `vibe jump <branch> [options]`  | ブランチ名で既存のworktreeにジャンプ（部分一致・ファジーマッチ対応）     |
-| `vibe clean [options]`          | 現在のworktreeを削除してメインに戻る（未コミットの変更がある場合は確認） |
-| `vibe home`                     | Worktreeを削除せずにメインに戻る                                         |
-| `vibe trust`                    | `.vibe.toml`と`.vibe.local.toml`ファイルを信頼登録                       |
-| `vibe untrust`                  | `.vibe.toml`と`.vibe.local.toml`ファイルの信頼を解除                     |
-| `vibe verify`                   | 信頼ステータスとハッシュ履歴を検証                                       |
-| `vibe config`                   | 現在の設定を表示                                                         |
-| `vibe upgrade [options]`        | アップデートを確認しアップグレード方法を表示                             |
+| コマンド                           | 説明                                                                     |
+| ---------------------------------- | ------------------------------------------------------------------------ |
+| `vibe start <branch> [options]`    | 新規または既存ブランチでworktreeを作成（冪等）                           |
+| `vibe scratch [options]`           | `scratch/<timestamp>` 形式の自動命名 worktree を作成                     |
+| `vibe jump <branch> [options]`     | ブランチ名で既存のworktreeにジャンプ（部分一致・ファジーマッチ対応）     |
+| `vibe rename <new-name> [options]` | 現在の worktree のブランチとディレクトリをリネーム                       |
+| `vibe clean [options]`             | 現在のworktreeを削除してメインに戻る（未コミットの変更がある場合は確認） |
+| `vibe home`                        | Worktreeを削除せずにメインに戻る                                         |
+| `vibe trust`                       | `.vibe.toml`と`.vibe.local.toml`ファイルを信頼登録                       |
+| `vibe untrust`                     | `.vibe.toml`と`.vibe.local.toml`ファイルの信頼を解除                     |
+| `vibe verify`                      | 信頼ステータスとハッシュ履歴を検証                                       |
+| `vibe config`                      | 現在の設定を表示                                                         |
+| `vibe upgrade [options]`           | アップデートを確認しアップグレード方法を表示                             |
 
 ### 例
 
@@ -38,6 +40,12 @@ vibe start feat/new-feature --base main
 vibe jump feat/new-feature
 vibe jump login
 vibe jump feli  # "feat/login" にファジーマッチ
+
+# 名前を考えずに scratch worktree を作成（自動命名: scratch/<timestamp>）
+vibe scratch
+
+# 現在の scratch を正式名にリネーム（昇格）
+vibe rename my-feature
 
 # 作業完了後、worktreeを削除
 vibe clean

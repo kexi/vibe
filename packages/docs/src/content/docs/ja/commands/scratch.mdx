@@ -1,0 +1,92 @@
+---
+title: vibe scratch
+description: 自動命名のスクラッチブランチで Worktree を作成する
+sidebar:
+  order: 2
+---
+
+`scratch` コマンドは `scratch/<timestamp>` 形式の自動命名ブランチで Git Worktree を作成します。`vibe start` と挙動は同じですが、名前を考える摩擦なくとりあえず試したい時に向いています。
+
+## Usage
+
+```bash
+vibe scratch [options]
+```
+
+## Options
+
+`vibe scratch` は `--claude-code-worktree-hook` を除き、[`vibe start`](/ja/commands/start/) と同じオプションを受け付けます。
+
+| Option            | 説明                                               |
+| ----------------- | -------------------------------------------------- |
+| `--reuse`         | 既存ブランチを使用する（scratch では用途は限定的） |
+| `--base <ref>`    | 新規ブランチのベースとなるブランチ／コミット       |
+| `--track`         | `--base` 使用時に upstream tracking を設定する     |
+| `--no-hooks`      | pre-start / post-start フックをスキップする        |
+| `--no-copy`       | ファイル／ディレクトリのコピーをスキップする       |
+| `-n`, `--dry-run` | 実行せずに操作を確認する                           |
+| `-V`, `--verbose` | 詳細出力を表示する                                 |
+| `-q`, `--quiet`   | 必須でない出力を抑制する                           |
+
+## Examples
+
+```bash
+# scratch worktree を作成
+vibe scratch
+
+# 特定のベースブランチから作成
+vibe scratch --base develop
+
+# フックをスキップして高速に作成
+vibe scratch --no-hooks
+```
+
+出力例:
+
+```
+$ vibe scratch
+Created worktree: scratch/20260427-143052
+Promote with: vibe rename <new-name>
+```
+
+## 挙動
+
+### ブランチ名の生成
+
+ブランチ名は **ローカルタイム** の `scratch/<YYYYMMDD-HHMMSS>` 形式で生成されます。この形式の利点:
+
+- **ソート可能**: `vibe list` で新しい worktree が上位に来る
+- **予測可能**: いつ作業を始めたか直感的に分かる
+- **衝突しない**: 同一秒に重複した場合は `-2`, `-3`, ... サフィックスが付加される
+
+### `vibe start` と同じフロー
+
+ブランチ名が決まった後の処理は `vibe start` と完全に同じです:
+
+1. origin リポジトリで **pre-start フック** 実行
+2. **Worktree 作成**
+3. **ファイルコピー**
+4. 新 worktree で **post-start フック** 実行
+5. 新 worktree への **ディレクトリ変更**
+
+成功後、[`vibe rename`](/ja/commands/rename/) で正式名へ昇格させるためのヒントが表示されます。
+
+### 昇格のタイミング
+
+scratch で作業した内容が形になったら、worktree 内で `vibe rename <name>` を実行します:
+
+```bash
+$ cd /path/to/scratch-20260427-143052
+$ vibe rename my-feature
+Renamed scratch/20260427-143052 -> my-feature
+```
+
+### 不要な scratch の片付け
+
+不要になった scratch は通常の worktree と同様に `vibe clean` で削除できます。scratch だからといって特別な扱いはありません。
+
+## 関連
+
+- [start](/ja/commands/start/) - 明示的な名前で worktree を作成
+- [rename](/ja/commands/rename/) - scratch を正式名に昇格
+- [clean](/ja/commands/clean/) - 作業完了後に worktree を削除

@@ -3,12 +3,26 @@ import { confirm, select } from "../utils/prompt.ts";
 import { log, type OutputOptions, verboseLog } from "../utils/output.ts";
 import { formatCdCommand } from "../utils/shell.ts";
 import { startCommand } from "./start.ts";
+import { SCRATCH_PREFIX } from "./scratch.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
 import { fuzzyMatch, FUZZY_MATCH_MIN_LENGTH } from "../utils/fuzzy.ts";
 import { type MruEntry, loadMruData, recordMruEntry, sortByMru } from "../utils/mru.ts";
 
 /** Word boundary delimiters in branch names */
 const WORD_BOUNDARY_CHARS = new Set(["/", "-", "_"]);
+
+/**
+ * Decide whether scratch worktrees should be excluded from non-exact matching.
+ * Excluded by default; included when the user explicitly types a `scratch/`
+ * prefix (case-insensitive), so explicit jumps to a scratch still work.
+ */
+function shouldFilterOutScratch(query: string): boolean {
+  return !query.toLowerCase().startsWith(SCRATCH_PREFIX);
+}
+
+function isScratchBranch(branch: string): boolean {
+  return branch.startsWith(SCRATCH_PREFIX);
+}
 
 /**
  * Check if search term appears at a word boundary in the branch name.
@@ -145,8 +159,15 @@ export async function jumpCommand(
       return;
     }
 
+    // For non-exact matching, optionally filter out scratch worktrees so they
+    // do not pollute fuzzy/substring/word-boundary candidate lists. The user
+    // can opt back in by typing a literal `scratch/` prefix in the query.
+    const partialMatchPool = shouldFilterOutScratch(trimmedBranchName)
+      ? worktrees.filter((w) => !isScratchBranch(w.branch))
+      : worktrees;
+
     // Word boundary match (case-sensitive)
-    const wordBoundaryMatches = worktrees.filter((w) =>
+    const wordBoundaryMatches = partialMatchPool.filter((w) =>
       isWordBoundaryMatch(w.branch, trimmedBranchName),
     );
 
@@ -162,7 +183,7 @@ export async function jumpCommand(
     }
 
     // Word boundary match (case-insensitive)
-    const wordBoundaryMatchesCI = worktrees.filter((w) =>
+    const wordBoundaryMatchesCI = partialMatchPool.filter((w) =>
       isWordBoundaryMatch(w.branch.toLowerCase(), lowerBranchName),
     );
 
@@ -178,7 +199,7 @@ export async function jumpCommand(
     }
 
     // Substring match (case-sensitive)
-    const substringMatches = worktrees.filter((w) => w.branch.includes(trimmedBranchName));
+    const substringMatches = partialMatchPool.filter((w) => w.branch.includes(trimmedBranchName));
 
     const handledSub = await handlePartialMatches(
       substringMatches,
@@ -192,7 +213,7 @@ export async function jumpCommand(
     }
 
     // Substring match (case-insensitive fallback)
-    const substringMatchesCI = worktrees.filter((w) =>
+    const substringMatchesCI = partialMatchPool.filter((w) =>
       w.branch.toLowerCase().includes(lowerBranchName),
     );
 
@@ -210,7 +231,7 @@ export async function jumpCommand(
     // Fuzzy match (subsequence matching)
     const hasEnoughCharsForFuzzy = trimmedBranchName.length >= FUZZY_MATCH_MIN_LENGTH;
     if (hasEnoughCharsForFuzzy) {
-      const fuzzyResults = worktrees
+      const fuzzyResults = partialMatchPool
         .map((w) => {
           const result = fuzzyMatch(w.branch, trimmedBranchName);
           if (!result) return null;

@@ -1,0 +1,92 @@
+---
+title: vibe scratch
+description: Create a worktree with an auto-generated scratch branch name
+sidebar:
+  order: 2
+---
+
+The `scratch` command creates a Git Worktree with an auto-generated `scratch/<timestamp>` branch name. It is the same as `vibe start` but without the friction of choosing a name upfront — useful for "just trying something."
+
+## Usage
+
+```bash
+vibe scratch [options]
+```
+
+## Options
+
+`vibe scratch` accepts the same options as [`vibe start`](/commands/start/), except for `--claude-code-worktree-hook`.
+
+| Option            | Description                                |
+| ----------------- | ------------------------------------------ |
+| `--reuse`         | Use an existing branch (rarely meaningful) |
+| `--base <ref>`    | Base branch/commit for the new branch      |
+| `--track`         | Set upstream tracking when using `--base`  |
+| `--no-hooks`      | Skip pre-start and post-start hooks        |
+| `--no-copy`       | Skip file and directory copying            |
+| `-n`, `--dry-run` | Preview operations without executing       |
+| `-V`, `--verbose` | Show detailed output                       |
+| `-q`, `--quiet`   | Suppress non-essential output              |
+
+## Examples
+
+```bash
+# Create a scratch worktree
+vibe scratch
+
+# Create from a specific base branch
+vibe scratch --base develop
+
+# Quick scratch without hooks
+vibe scratch --no-hooks
+```
+
+Output:
+
+```
+$ vibe scratch
+Created worktree: scratch/20260427-143052
+Promote with: vibe rename <new-name>
+```
+
+## Behavior
+
+### Branch naming
+
+The generated branch name is `scratch/<YYYYMMDD-HHMMSS>` in local time. The format is:
+
+- **Sortable**: newest worktrees rank highest in `vibe list`
+- **Predictable**: associates a worktree with the time you started it
+- **Collision-free**: if the same second is hit twice (rare in practice), `-2`, `-3`, ... are appended
+
+### Same workflow as `vibe start`
+
+Once the name is generated, `vibe scratch` runs the exact same flow as `vibe start`:
+
+1. **Pre-start hooks** in origin repository
+2. **Worktree creation**
+3. **File copying**
+4. **Post-start hooks** in new worktree
+5. **Directory change** to the new worktree
+
+After success, vibe prints a hint pointing at [`vibe rename`](/commands/rename/) so you can promote the scratch to a real name once your work crystallizes.
+
+### When to promote
+
+If the scratch produces something worth keeping, run `vibe rename <name>` from inside the worktree:
+
+```bash
+$ cd /path/to/scratch-20260427-143052
+$ vibe rename my-feature
+Renamed scratch/20260427-143052 -> my-feature
+```
+
+### Cleaning up
+
+Use `vibe clean` to remove a scratch you no longer need. There is no special treatment for scratches — they behave like any other worktree.
+
+## Related
+
+- [start](/commands/start/) - Create a worktree with an explicit name
+- [rename](/commands/rename/) - Promote a scratch to a real name
+- [clean](/commands/clean/) - Remove a worktree when done
