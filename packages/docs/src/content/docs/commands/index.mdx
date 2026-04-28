@@ -9,15 +9,18 @@ vibe provides a simple set of commands for managing Git Worktrees.
 
 ## Command Summary
 
-| Command                              | Description                                      |
-| ------------------------------------ | ------------------------------------------------ |
-| `vibe start <branch> [--base <ref>]` | Create a worktree with a new or existing branch  |
-| `vibe clean`                         | Delete current worktree and return to main       |
-| `vibe home`                          | Return to main worktree without removing current |
-| `vibe trust`                         | Trust configuration files                        |
-| `vibe untrust`                       | Untrust configuration files                      |
-| `vibe config`                        | Show current configuration                       |
-| `vibe upgrade`                       | Check for updates and show upgrade instructions  |
+| Command                              | Description                                            |
+| ------------------------------------ | ------------------------------------------------------ |
+| `vibe start <branch> [--base <ref>]` | Create a worktree with a new or existing branch        |
+| `vibe scratch`                       | Create a worktree with an auto-generated scratch/ name |
+| `vibe jump <branch>`                 | Jump to an existing worktree by branch name            |
+| `vibe rename <new-name>`             | Rename the current worktree's branch and directory     |
+| `vibe clean`                         | Delete current worktree and return to main             |
+| `vibe home`                          | Return to main worktree without removing current       |
+| `vibe trust`                         | Trust configuration files                              |
+| `vibe untrust`                       | Untrust configuration files                            |
+| `vibe config`                        | Show current configuration                             |
+| `vibe upgrade`                       | Check for updates and show upgrade instructions        |
 
 ## Quick Reference
 
@@ -61,6 +64,9 @@ These options are available for most commands:
 ## Detailed Documentation
 
 - [start](/commands/start/) - Create worktrees
+- [scratch](/commands/scratch/) - Create auto-named "scratch" worktrees
+- [jump](/commands/jump/) - Jump between worktrees
+- [rename](/commands/rename/) - Rename the current worktree
 - [clean](/commands/clean/) - Remove worktrees
 - [home](/commands/home/) - Navigate to main worktree
 - [trust](/commands/trust/) - Manage configuration trust
