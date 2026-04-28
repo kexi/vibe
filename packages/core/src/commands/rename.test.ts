@@ -132,7 +132,12 @@ function captureConsoles(): ConsoleSpies {
   };
 }
 
-function makeRenameCtx(cwd: string, gitMock: GitMockResult, exitTracker: { code: number | null }) {
+function makeRenameCtx(
+  cwd: string,
+  gitMock: GitMockResult,
+  exitTracker: { code: number | null },
+  chdirCalls?: string[],
+) {
   return createMockContext({
     process: gitMock.process,
     env: {
@@ -159,7 +164,9 @@ function makeRenameCtx(cwd: string, gitMock: GitMockResult, exitTracker: { code:
         throw new Error(`__exit_${code}__`);
       }) as never,
       cwd: () => cwd,
-      chdir: () => {},
+      chdir: (path: string) => {
+        chdirCalls?.push(path);
+      },
       execPath: () => "/mock/exec",
       args: [],
     },
@@ -375,5 +382,53 @@ describe("renameCommand", () => {
     // git worktree move should be called twice: forward and rollback
     const moveCalls = gitMock.calls.filter((c) => c.args[0] === "worktree" && c.args[1] === "move");
     expect(moveCalls).toHaveLength(2);
+  });
+
+  it("chdir's into the new path after worktree move so subsequent git spawns have a valid cwd", async () => {
+    const console_ = captureConsoles();
+    const exit = { code: null as number | null };
+    const chdirCalls: string[] = [];
+    const gitMock = makeGitMock({
+      worktrees: [
+        { path: "/repo-main", branch: "develop" },
+        { path: "/repo-feat-x", branch: "feat-x" },
+      ],
+      currentRepoRoot: "/repo-feat-x",
+    });
+    const ctx = makeRenameCtx("/repo-feat-x", gitMock, exit, chdirCalls);
+
+    await runAndCatchExit(() => renameCommand("renamed", {}, ctx));
+    console_.restore();
+
+    expect(exit.code).toBe(null);
+    // After `git worktree move`, the process must chdir into the new path
+    // before running `git branch -m` (otherwise spawn fails with ENOENT).
+    expect(chdirCalls).toHaveLength(1);
+    expect(chdirCalls[0]).toBe("/repo-main-renamed");
+  });
+
+  it("computes the new path from the main worktree, not from a secondary one", async () => {
+    const console_ = captureConsoles();
+    const exit = { code: null as number | null };
+    const gitMock = makeGitMock({
+      worktrees: [
+        // Main worktree: the repo is checked out at /Projects/myrepo
+        { path: "/Projects/myrepo", branch: "develop" },
+        // Secondary scratch worktree (sibling): we run `vibe rename` from here.
+        { path: "/Projects/myrepo-scratch-20260101-000000", branch: "scratch/foo" },
+      ],
+      currentRepoRoot: "/Projects/myrepo-scratch-20260101-000000",
+    });
+    const ctx = makeRenameCtx("/Projects/myrepo-scratch-20260101-000000", gitMock, exit);
+
+    await runAndCatchExit(() => renameCommand("my-feature", {}, ctx));
+    console_.restore();
+
+    expect(exit.code).toBe(null);
+    // newPath must be derived from the main worktree's name ("myrepo"), not
+    // from the scratch worktree's name. Anything else would produce
+    // monstrosities like "myrepo-scratch-20260101-000000-my-feature".
+    const moveCall = gitMock.calls.find((c) => c.args[0] === "worktree" && c.args[1] === "move");
+    expect(moveCall?.args[3]).toBe("/Projects/myrepo-my-feature");
   });
 });

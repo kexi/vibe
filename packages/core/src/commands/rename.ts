@@ -4,7 +4,7 @@ import { loadVibeConfig } from "../utils/config.ts";
 import {
   branchExists,
   findWorktreeByBranch,
-  getRepoRoot,
+  getMainWorktreePath,
   getWorktreeByPath,
   isMainWorktree,
   sanitizeBranchName,
@@ -124,10 +124,13 @@ export async function renameCommand(
       return;
     }
 
-    const repoRoot = await getRepoRoot(ctx);
-    const repoName = basename(repoRoot);
+    // Resolve the path from the main worktree so the new worktree is named
+    // after the repository (e.g. `vibe-<branch>`) and not after whichever
+    // secondary worktree (e.g. a scratch) we happen to be standing in.
+    const mainWorktreePath = await getMainWorktreePath(ctx);
+    const repoName = basename(mainWorktreePath);
     const settings = await loadUserSettings(ctx);
-    const config = await loadVibeConfig(repoRoot, ctx);
+    const config = await loadVibeConfig(mainWorktreePath, ctx);
 
     const newPath = await resolveWorktreePath(
       config,
@@ -136,7 +139,7 @@ export async function renameCommand(
         repoName,
         branchName: sanitizedNew,
         sanitizedBranch: sanitizeBranchName(sanitizedNew),
-        repoRoot,
+        repoRoot: mainWorktreePath,
       },
       ctx,
     );
@@ -158,6 +161,11 @@ export async function renameCommand(
     if (!isPathUnchanged) {
       try {
         await moveWorktree(oldPath, newPath, ctx);
+        // The process was launched from oldPath; that directory no longer
+        // exists after the move. Subsequent git subprocesses inherit cwd
+        // and would fail with ENOENT on spawn. Move into the new path so
+        // further commands have a valid working directory.
+        runtime.control.chdir(newPath);
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         errorLog(`Error: failed to move worktree directory: ${msg}`, outputOpts);
@@ -174,6 +182,7 @@ export async function renameCommand(
       if (!isPathUnchanged) {
         try {
           await moveWorktree(newPath, oldPath, ctx);
+          runtime.control.chdir(oldPath);
           errorLog("Worktree directory rolled back to original path.", outputOpts);
         } catch (rbErr) {
           const rbMsg = rbErr instanceof Error ? rbErr.message : String(rbErr);
