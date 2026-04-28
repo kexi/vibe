@@ -1,6 +1,6 @@
 {
   "name": "@kexi/vibe-core",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "Core components for Vibe - Runtime abstraction, types, errors, and context",
   "type": "module",
   "main": "./dist/index.js",
