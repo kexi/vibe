@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
-import { mkdtemp, writeFile, rm, mkdir, stat } from "node:fs/promises";
+import { mkdtemp, writeFile, rm, mkdir, stat, lstat, symlink, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -10,6 +10,9 @@ import {
   SYSTEM_TRASH_DISPLAY_PATH,
 } from "./fast-remove.ts";
 import { setupRealTestContext } from "../context/testing.ts";
+
+const isWindows = process.platform === "win32";
+const itUnix = isWindows ? it.skip : it;
 
 // Initialize test context with real Deno runtime for filesystem tests
 beforeAll(async () => {
@@ -222,5 +225,187 @@ describe("fast-remove", () => {
     } catch {
       // Directory may already be deleted
     }
+  });
+
+  // ===== Security: TOCTOU symlink-attack regression tests for issue #417 =====
+
+  itUnix("fastRemoveDirectory rejects symlink to directory", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
+    // "Sensitive" directory that must survive untouched.
+    const sensitiveDir = join(tempDir, "sensitive");
+    await mkdir(sensitiveDir);
+    const sensitiveFile = join(sensitiveDir, "secret.txt");
+    await writeFile(sensitiveFile, "do-not-delete");
+
+    // Symlink masquerading as a worktree.
+    const linkPath = join(tempDir, "worktree-link");
+    await symlink(sensitiveDir, linkPath);
+
+    const result = await fastRemoveDirectory(linkPath);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
+    expect(result.error?.message).toContain("symlink");
+
+    // Sensitive directory and file must still be intact.
+    const sensitiveContent = await readFile(sensitiveFile, "utf8");
+    expect(sensitiveContent).toBe("do-not-delete");
+
+    // The symlink itself should still exist (we refused, didn't remove it).
+    const linkInfo = await lstat(linkPath);
+    expect(linkInfo.isSymbolicLink()).toBe(true);
+
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  itUnix("fastRemoveDirectory rejects symlink to file", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
+    const targetFile = join(tempDir, "target.txt");
+    await writeFile(targetFile, "file-content");
+
+    const linkPath = join(tempDir, "link-to-file");
+    await symlink(targetFile, linkPath);
+
+    const result = await fastRemoveDirectory(linkPath);
+
+    expect(result.success).toBe(false);
+    expect(result.error?.message).toContain("symlink");
+
+    // Original file must remain.
+    const fileContent = await readFile(targetFile, "utf8");
+    expect(fileContent).toBe("file-content");
+
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("fastRemoveDirectory rejects regular file", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
+    const filePath = join(tempDir, "just-a-file.txt");
+    await writeFile(filePath, "content");
+
+    const result = await fastRemoveDirectory(filePath);
+
+    expect(result.success).toBe(false);
+    expect(result.error?.message).toContain("not a directory");
+
+    // File must still exist.
+    const content = await readFile(filePath, "utf8");
+    expect(content).toBe("content");
+
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  itUnix("fastRemoveDirectory rejects broken symlink (not treated as not-found)", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
+    const nonexistentTarget = join(tempDir, "does-not-exist");
+    const brokenLink = join(tempDir, "broken-link");
+    await symlink(nonexistentTarget, brokenLink);
+
+    const result = await fastRemoveDirectory(brokenLink);
+
+    // A broken symlink must NOT silently report success; it must be refused
+    // as a symlink (lstat sees the link, even though stat would not).
+    expect(result.success).toBe(false);
+    expect(result.error?.message).toContain("symlink");
+
+    // The link itself should still exist.
+    const linkInfo = await lstat(brokenLink);
+    expect(linkInfo.isSymbolicLink()).toBe(true);
+
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  itUnix("fastRemoveDirectory rejects when parent directory is a symlink", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
+    // Real parent and a real worktree directory inside it.
+    const realParent = join(tempDir, "real-parent");
+    await mkdir(realParent);
+    const realWorktree = join(realParent, "worktree");
+    await mkdir(realWorktree);
+    await writeFile(join(realWorktree, "marker.txt"), "preserve-me");
+
+    // Symlinked alias for the parent directory.
+    const linkedParent = join(tempDir, "linked-parent");
+    await symlink(realParent, linkedParent);
+    const targetViaLink = join(linkedParent, "worktree");
+
+    const result = await fastRemoveDirectory(targetViaLink);
+
+    expect(result.success).toBe(false);
+    // Error should mention parent symlink (we reject before reaching rename).
+    expect(result.error?.message).toContain("parent");
+
+    // Real worktree and its content must still exist.
+    const markerContent = await readFile(join(realWorktree, "marker.txt"), "utf8");
+    expect(markerContent).toBe("preserve-me");
+
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  itUnix(
+    "fastRemoveDirectory succeeds when a deeper ancestor (not the immediate parent) is a symlink",
+    async () => {
+      // The check is intentionally scoped to the immediate parent. Deeper-
+      // ancestor swaps require attacker write access higher up the tree and
+      // are out of #417's threat model. This test pins that behavior so we
+      // don't accidentally re-introduce a false-positive on legitimate paths
+      // whose grandparent (or above) is a symlink (e.g. macOS `/var` →
+      // `/private/var`).
+      const tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
+      const realGrandparent = join(tempDir, "real-grandparent");
+      await mkdir(realGrandparent);
+      const parent = join(realGrandparent, "parent");
+      await mkdir(parent);
+      const worktree = join(parent, "worktree");
+      await mkdir(worktree);
+      await writeFile(join(worktree, "marker.txt"), "ok");
+
+      // Symlinked alias for the *grandparent*; the immediate parent of the
+      // worktree (under the symlinked path) is still a real directory.
+      const linkedGrandparent = join(tempDir, "linked-grandparent");
+      await symlink(realGrandparent, linkedGrandparent);
+      const targetViaSymlinkedGrandparent = join(linkedGrandparent, "parent", "worktree");
+
+      const result = await fastRemoveDirectory(targetViaSymlinkedGrandparent);
+
+      expect(result.success).toBe(true);
+
+      // The original (real) worktree path should no longer exist.
+      let exists = true;
+      try {
+        await stat(worktree);
+      } catch {
+        exists = false;
+      }
+      expect(exists).toBe(false);
+
+      await rm(tempDir, { recursive: true, force: true });
+    },
+  );
+
+  itUnix("cleanupStaleTrash skips symlink named .vibe-trash-*", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
+    // Sensitive directory that must survive.
+    const sensitiveDir = join(tempDir, "sensitive");
+    await mkdir(sensitiveDir);
+    const sensitiveFile = join(sensitiveDir, "important.txt");
+    await writeFile(sensitiveFile, "keep-me");
+
+    // Plant a symlink under a .vibe-trash-* name pointing at the sensitive dir.
+    const malicious = join(tempDir, ".vibe-trash-99999-aaaaaaaaaaaaaaaa");
+    await symlink(sensitiveDir, malicious);
+
+    await cleanupStaleTrash(tempDir);
+
+    // Wait briefly: if the cleanup were to (incorrectly) spawn a delete, it
+    // would happen here. We then verify the sensitive content is still intact.
+    await new Promise((r) => setTimeout(r, 250));
+
+    const sensitiveContent = await readFile(sensitiveFile, "utf8");
+    expect(sensitiveContent).toBe("keep-me");
+
+    // The symlink may or may not still exist (it's not load-bearing for the
+    // security property), but the *target* must be untouched.
+    await rm(tempDir, { recursive: true, force: true });
   });
 });
