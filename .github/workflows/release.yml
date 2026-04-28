@@ -276,6 +276,9 @@ jobs:
     if: github.event.action == 'released'
     needs: release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     concurrency:
       group: update-nix
       cancel-in-progress: false
@@ -284,7 +287,6 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: develop
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
       - name: Download artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -344,10 +346,26 @@ jobs:
       - name: Verify build
         run: nix build && ./result/bin/vibe --help
 
-      - name: Commit and push
+      - name: Open PR and merge
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          VERSION="${{ steps.version.outputs.value }}"
+          # Suffix with run_id and run_attempt so re-runs and concurrent releases
+          # never collide on an existing remote branch.
+          BRANCH="chore/update-nix-flake-${VERSION}-${{ github.run_id }}-${{ github.run_attempt }}"
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
           git add flake.nix flake.lock
-          git commit -m "chore: update Nix flake to ${{ steps.version.outputs.value }}"
-          git push --quiet
+          git commit -m "chore: update Nix flake to ${VERSION}"
+          git push --quiet origin "$BRANCH"
+
+          gh pr create \
+            --base develop \
+            --head "$BRANCH" \
+            --title "chore: update Nix flake to ${VERSION}" \
+            --body "Automated update of \`flake.nix\` and \`flake.lock\` for v${VERSION}."
+
+          gh pr merge "$BRANCH" --merge --delete-branch
