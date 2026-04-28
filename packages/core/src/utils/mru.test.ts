@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { sortByMru, loadMruData, recordMruEntry, type MruEntry, _internal } from "./mru.ts";
+import {
+  sortByMru,
+  loadMruData,
+  recordMruEntry,
+  updateMruBranch,
+  type MruEntry,
+  _internal,
+} from "./mru.ts";
 import { createMockContext } from "../context/testing.ts";
 
 describe("sortByMru", () => {
@@ -338,5 +345,128 @@ describe("recordMruEntry", () => {
     // First entry should still exist
     const hasFirst = saved.some((e: MruEntry) => e.path === "/repo-0");
     expect(hasFirst).toBe(true);
+  });
+});
+
+describe("updateMruBranch", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function makeMockCtx(
+    existing: MruEntry[],
+    capture: { written: string },
+    opts: { writeShouldFail?: boolean } = {},
+  ) {
+    return createMockContext({
+      env: {
+        get: (key: string) => (key === "HOME" ? "/home/test" : undefined),
+        set: () => {},
+        delete: () => {},
+        toObject: () => ({}),
+      },
+      fs: {
+        readTextFile: () => Promise.resolve(JSON.stringify(existing)),
+        writeTextFile: (_path: string, content: string) => {
+          if (opts.writeShouldFail) return Promise.reject(new Error("write failed"));
+          capture.written = content;
+          return Promise.resolve();
+        },
+        mkdir: () => Promise.resolve(),
+        rename: () => Promise.resolve(),
+      },
+    });
+  }
+
+  it("rewrites the matching entry's path and branch while keeping timestamp", async () => {
+    const existing: MruEntry[] = [
+      { branch: "scratch/2026", path: "/repo-old", timestamp: 1000 },
+      { branch: "feat/other", path: "/repo-other", timestamp: 500 },
+    ];
+    const capture = { written: "" };
+    const ctx = makeMockCtx(existing, capture);
+
+    await updateMruBranch("/repo-old", "/repo-new", "my-feature", ctx);
+
+    const saved: MruEntry[] = JSON.parse(capture.written);
+    expect(saved).toHaveLength(2);
+    const updated = saved.find((e) => e.path === "/repo-new");
+    expect(updated).toEqual({ branch: "my-feature", path: "/repo-new", timestamp: 1000 });
+    const other = saved.find((e) => e.path === "/repo-other");
+    expect(other).toEqual({ branch: "feat/other", path: "/repo-other", timestamp: 500 });
+  });
+
+  it("is a no-op when no entry matches", async () => {
+    const existing: MruEntry[] = [{ branch: "feat/a", path: "/repo-a", timestamp: 1000 }];
+    let writeCalled = false;
+    const ctx = createMockContext({
+      env: {
+        get: (key: string) => (key === "HOME" ? "/home/test" : undefined),
+        set: () => {},
+        delete: () => {},
+        toObject: () => ({}),
+      },
+      fs: {
+        readTextFile: () => Promise.resolve(JSON.stringify(existing)),
+        writeTextFile: () => {
+          writeCalled = true;
+          return Promise.resolve();
+        },
+        mkdir: () => Promise.resolve(),
+        rename: () => Promise.resolve(),
+      },
+    });
+
+    await updateMruBranch("/missing", "/new", "feat/x", ctx);
+
+    expect(writeCalled).toBe(false);
+  });
+
+  it("is a no-op when the targeted entry already has the desired path and branch", async () => {
+    const existing: MruEntry[] = [{ branch: "feat/x", path: "/repo-x", timestamp: 1000 }];
+    let writeCalled = false;
+    const ctx = createMockContext({
+      env: {
+        get: (key: string) => (key === "HOME" ? "/home/test" : undefined),
+        set: () => {},
+        delete: () => {},
+        toObject: () => ({}),
+      },
+      fs: {
+        readTextFile: () => Promise.resolve(JSON.stringify(existing)),
+        writeTextFile: () => {
+          writeCalled = true;
+          return Promise.resolve();
+        },
+        mkdir: () => Promise.resolve(),
+        rename: () => Promise.resolve(),
+      },
+    });
+
+    await updateMruBranch("/repo-x", "/repo-x", "feat/x", ctx);
+
+    expect(writeCalled).toBe(false);
+  });
+
+  it("only updates the targeted entry when multiple exist", async () => {
+    const existing: MruEntry[] = [
+      { branch: "feat/a", path: "/repo-a", timestamp: 3000 },
+      { branch: "feat/b", path: "/repo-b", timestamp: 2000 },
+      { branch: "feat/c", path: "/repo-c", timestamp: 1000 },
+    ];
+    const capture = { written: "" };
+    const ctx = makeMockCtx(existing, capture);
+
+    await updateMruBranch("/repo-b", "/repo-b-renamed", "feat/b-renamed", ctx);
+
+    const saved: MruEntry[] = JSON.parse(capture.written);
+    expect(saved).toHaveLength(3);
+    expect(saved[0]).toEqual({ branch: "feat/a", path: "/repo-a", timestamp: 3000 });
+    expect(saved[1]).toEqual({
+      branch: "feat/b-renamed",
+      path: "/repo-b-renamed",
+      timestamp: 2000,
+    });
+    expect(saved[2]).toEqual({ branch: "feat/c", path: "/repo-c", timestamp: 1000 });
   });
 });

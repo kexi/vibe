@@ -1,0 +1,109 @@
+---
+title: vibe rename
+description: 現在の worktree のブランチとディレクトリをリネームする
+sidebar:
+  order: 3
+---
+
+`rename` コマンドは現在の worktree のブランチをリネームし、ディレクトリを移動します。主な用途は、[`vibe scratch`](/ja/commands/scratch/) で作成した scratch worktree が形になった際に、正式な名前へ昇格させることです。
+
+## Usage
+
+```bash
+vibe rename <new-name> [options]
+```
+
+## Options
+
+| Option            | 説明                     |
+| ----------------- | ------------------------ |
+| `-n`, `--dry-run` | 実行せずに操作を確認する |
+| `-V`, `--verbose` | 詳細出力を表示する       |
+| `-q`, `--quiet`   | 必須でない出力を抑制する |
+
+## Examples
+
+```bash
+# 現在の scratch を正式名に昇格
+vibe rename my-feature
+
+# 実行前にプレビュー
+vibe rename my-feature --dry-run
+
+# pushed でない任意の worktree をリネーム
+cd /path/to/scratch-20260427-143052
+vibe rename feat/login
+```
+
+出力例:
+
+```
+$ vibe rename my-feature
+Renamed scratch/20260427-143052 -> my-feature
+Directory: /path/to/scratch-20260427-143052 -> /path/to/repo-my-feature
+# → cd '/path/to/repo-my-feature'
+```
+
+## 挙動
+
+`vibe rename` は2つの操作を順に実行します:
+
+1. `git worktree move <old-path> <new-path>` — ディレクトリを移動
+2. `git branch -m <old-name> <new-name>` — ブランチをリネーム
+
+両方が成功すると、内部の MRU 情報を更新し、shell wrapper 用の `cd` コマンドを出力してリネーム先へ移動します。
+
+### Push 済みブランチは対象外
+
+現在のブランチに remote upstream がある（push 済みである）場合、`vibe rename` は中止され、手動で実行すべき git コマンドが表示されます:
+
+```
+$ vibe rename my-feature
+Error: branch 'scratch/20260427-143052' is pushed to 'origin'
+vibe rename does not handle pushed branches to avoid remote divergence.
+To rename manually:
+  git branch -m scratch/20260427-143052 my-feature
+  git push origin -u my-feature
+  git push origin --delete scratch/20260427-143052
+  # then move the worktree directory yourself
+```
+
+これは vibe の挙動をシンプルに保つための制約です。リモート追跡ブランチのリネームは、ユーザが意識的に git で行う方が安全です。
+
+ローカル追跡ブランチ (`branch.<name>.remote = "."`) は **push 済み扱いにはならず**、通常通りリネームされます。
+
+### 衝突検出
+
+リネーム先の名前が既に使われている場合、中止されます:
+
+- 同名のブランチが存在する
+- 新しいディレクトリパスに既存の worktree がある
+
+### Main worktree からは実行不可
+
+リポジトリ本体のチェックアウト（main worktree）から `vibe rename` は実行できません。ディレクトリ移動がリポジトリ自体の移動になり危険なためです。本当に必要なら git を直接使ってください。
+
+### 同名へのリネーム（no-op）
+
+現在のブランチ名と同じ名前を指定した場合、`Already named '<name>'` と表示し、現在のパスへの `cd` を出力するだけで終了します。
+
+### 失敗時のロールバック
+
+`git worktree move` が成功して `git branch -m` が失敗した場合、ディレクトリ移動のロールバックを試みます。ロールバックも失敗した場合は手動復旧コマンドを表示して exit 1 で終了します。
+
+### MRU の更新
+
+リネーム対象の worktree が MRU リストにあった場合、新しいパス・ブランチ名でエントリが書き換えられます。timestamp は保持されるので MRU の並び順は変わりません。
+
+## Exit Codes
+
+| Code | 条件                                                               |
+| ---- | ------------------------------------------------------------------ |
+| `0`  | リネーム成功、または同名 no-op                                     |
+| `1`  | エラー（名前未指定、main worktree、push 済み、衝突、git 失敗など） |
+
+## 関連
+
+- [scratch](/ja/commands/scratch/) - 自動命名で worktree を作成
+- [start](/ja/commands/start/) - 明示的な名前で worktree を作成
+- [jump](/ja/commands/jump/) - worktree 間を移動
