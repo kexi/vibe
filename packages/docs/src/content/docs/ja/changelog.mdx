@@ -5,6 +5,23 @@ description: vibeのバージョン履歴とリリースノート
 
 vibeの主要な変更はここに記録されています。
 
+## v1.3.0
+
+**リリース日:** 2026年4月28日
+
+### 追加
+
+- `vibe scratch` コマンド — `scratch/<YYYYMMDD-HHMMSS>` 形式の名前が自動生成される worktree を作成し、素早い試作に活用できます
+- `vibe rename` コマンド — 現在の worktree のブランチ名とディレクトリ名を一括でリネーム。`vibe scratch` で作成した worktree を正式な名前に昇格させる用途に便利です
+- `vibe jump` の非完全一致において、scratch worktree を候補から除外。一時的な scratch によるサジェスト汚染を防ぎます
+
+### 修正
+
+- `vibe rename feat/hoge` がブランチ名のスラッシュを保持するように修正（以前は `feat-hoge` に変換されていました）
+- セカンダリ worktree からも `vibe rename` を実行できるように修正
+
+---
+
 ## v1.2.0
 
 **リリース日:** 2026年4月27日
