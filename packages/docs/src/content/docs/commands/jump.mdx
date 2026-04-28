@@ -72,6 +72,19 @@ Matched: feat/login
 # → cd '/path/to/repo-feat-login'
 ```
 
+### Scratch Worktree Exclusion
+
+Worktrees with branches under the `scratch/` prefix (created by [`vibe scratch`](/commands/scratch/)) are **excluded from word-boundary, substring, and fuzzy matching** by default. This keeps the candidate list clean as scratches accumulate.
+
+To jump to a scratch worktree, either:
+
+- Type the literal `scratch/` prefix (case-insensitive). Any branch under `scratch/` will be eligible for substring/fuzzy matching:
+  ```
+  $ vibe jump scratch/2026
+  # → cd '/path/to/scratch-20260427-143052'
+  ```
+- Or use the full exact branch name. Exact matches always work, even for scratches.
+
 ### Multiple Matches
 
 ```

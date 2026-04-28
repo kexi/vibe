@@ -751,4 +751,101 @@ describe("jumpCommand", () => {
     const hasErrorMessage = stderrOutput.some((line) => line.includes("Error:"));
     expect(hasErrorMessage).toBe(true);
   });
+
+  describe("scratch worktree exclusion", () => {
+    it("excludes scratch/ branches from substring/word-boundary/fuzzy matching", async () => {
+      const stdoutOutput: string[] = [];
+      const stderrOutput: string[] = [];
+      const consoleLogSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+        stdoutOutput.push(args.map(String).join(" "));
+      });
+      const consoleErrorSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation((...args: unknown[]) => {
+          stderrOutput.push(args.map(String).join(" "));
+        });
+
+      const exitCode = { value: null as number | null };
+      // Query "scra" would substring-match "scratch/2026..." but should not surface it.
+      const ctx = createWorktreeContext(
+        [
+          { path: "/tmp/main", branch: "main" },
+          { path: "/tmp/scratch-2026", branch: "scratch/20260427-100000" },
+        ],
+        { exitCode, stdinResponses: ["n"] },
+      );
+
+      await jumpCommand("scra", {}, ctx);
+
+      consoleLogSpy.mockRestore();
+      consoleErrorSpy.mockRestore();
+
+      // No cd output because the only substring match was excluded
+      expect(stdoutOutput.some((l) => l.startsWith("cd '"))).toBe(false);
+      // Should report no match found
+      expect(stderrOutput.some((l) => l.includes("No worktree found"))).toBe(true);
+    });
+
+    it("includes scratch/ branches when the query starts with 'scratch/'", async () => {
+      const stdoutOutput: string[] = [];
+      const consoleLogSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+        stdoutOutput.push(args.map(String).join(" "));
+      });
+      vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const exitCode = { value: null as number | null };
+      const ctx = createWorktreeContext(
+        [
+          { path: "/tmp/main", branch: "main" },
+          { path: "/tmp/scratch-2026", branch: "scratch/20260427-100000" },
+        ],
+        { exitCode, stdinResponses: ["n"] },
+      );
+
+      await jumpCommand("scratch/2026", {}, ctx);
+
+      consoleLogSpy.mockRestore();
+      // The query starts with scratch/ so substring match should hit
+      expect(stdoutOutput.some((l) => l.includes("/tmp/scratch-2026"))).toBe(true);
+    });
+
+    it("treats SCRATCH/... (uppercase) the same as scratch/...", async () => {
+      const stdoutOutput: string[] = [];
+      const consoleLogSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+        stdoutOutput.push(args.map(String).join(" "));
+      });
+      vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const exitCode = { value: null as number | null };
+      const ctx = createWorktreeContext([{ path: "/tmp/scratch-foo", branch: "scratch/foo" }], {
+        exitCode,
+        stdinResponses: ["n"],
+      });
+
+      await jumpCommand("SCRATCH/foo", {}, ctx);
+
+      consoleLogSpy.mockRestore();
+      // Case-insensitive exact match should still hit
+      expect(stdoutOutput.some((l) => l.includes("/tmp/scratch-foo"))).toBe(true);
+    });
+
+    it("always surfaces an exact match even on a scratch/ branch", async () => {
+      const stdoutOutput: string[] = [];
+      const consoleLogSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+        stdoutOutput.push(args.map(String).join(" "));
+      });
+      vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const exitCode = { value: null as number | null };
+      const ctx = createWorktreeContext(
+        [{ path: "/tmp/scratch-x", branch: "scratch/20260427-foo" }],
+        { exitCode },
+      );
+
+      await jumpCommand("scratch/20260427-foo", {}, ctx);
+
+      consoleLogSpy.mockRestore();
+      expect(stdoutOutput.some((l) => l.includes("/tmp/scratch-x"))).toBe(true);
+    });
+  });
 });
