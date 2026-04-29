@@ -1,7 +1,7 @@
 ---
 description: Release a new version of vibe (version bump, sync, PR creation)
 argument-hint: "[patch|minor|major|X.Y.Z]"
-allowed-tools: Bash(git *), Bash(gh *), Bash(pnpm *), Bash(bun *), Read, Edit
+allowed-tools: Bash(git *), Bash(gh *), Bash(pnpm *), Bash(bun *), Read, Edit, AskUserQuestion
 context: fork
 disable-model-invocation: true
 ---
@@ -34,7 +34,12 @@ git branch --show-current
 ```
 
 - Must be on the `develop` branch
-- If on a different branch, warn and confirm with the user
+- If on a different branch, use `AskUserQuestion` to warn and confirm:
+  - `question`: "Current branch is `<branch>`, not `develop`. Continue anyway?"
+  - `header`: "Branch check"
+  - `options`:
+    - `Switch to develop` (Recommended) — abort and have the user run `git checkout develop`
+    - `Continue on this branch` — proceed with the release on the current branch
 
 ### 1.3 Remote Sync
 
@@ -43,16 +48,15 @@ git fetch origin
 git log HEAD..origin/develop --oneline
 ```
 
-- If output exists: Remote has newer commits. Recommend `git pull`
+- If output exists: Remote has newer commits. Use `AskUserQuestion` to decide:
+  - `question`: "origin/develop has newer commits. Pull before continuing?"
+  - `header`: "Remote sync"
+  - `options`:
+    - `Pull and continue` (Recommended) — run `git pull` then proceed
+    - `Continue without pulling` — proceed against the local HEAD (release may miss remote changes)
 - If output is empty: In sync
 
-### 1.4 Tag Duplicate Check
-
-Verify the new version tag does not already exist:
-
-```bash
-git tag -l "vX.Y.Z"
-```
+> **Note**: Tag duplicate verification is intentionally **not** in Step 1 — see [Step 2.4](#step-24-tag-duplicate-check) (it cannot run until the version is resolved).
 
 ---
 
@@ -128,15 +132,52 @@ Changes since last release (v0.12.7):
 
 **4. Confirm with user**
 
-Display the suggestion and confirm:
+Display the suggestion summary in a text message, then call `AskUserQuestion` to capture the choice.
 
-- Proceed with the suggested version
-- Choose a different version type (patch/minor/major)
-- Specify an explicit version number
+**Build the `options` list dynamically to avoid duplicates with the recommended suggestion:**
+
+1. **Always** include the recommended option first: `Use <suggested> (<bumpType>)` with `(Recommended)` suffix.
+2. For each bump type in `[patch, minor, major]`, append `Bump as <type> → <computedVersion>` **only when `<type>` differs from `<bumpType>`** (i.e., skip the alternative that would compute the same version as the suggestion).
+3. The resulting list is **2–4 options total**: 1 recommended + the 2 alternatives that differ from the suggestion (and, if the explicit-version path is meaningful, you may surface it as a 4th hint instead — see step 4 below).
+
+Worked examples (suggested = `0.13.0 (minor)` from current `0.12.7`):
+
+| Suggestion       | Final options                                                                                                  |
+| ---------------- | -------------------------------------------------------------------------------------------------------------- |
+| `0.13.0 (minor)` | `Use 0.13.0 (minor)` (Recommended) / `Bump as patch → 0.12.8` / `Bump as major → 1.0.0`                        |
+| `1.0.0 (major)`  | `Use 1.0.0 (major)` (Recommended) / `Bump as patch → 0.12.8` / `Bump as minor → 0.13.0`                        |
+| `0.12.8 (patch)` | `Use 0.12.8 (patch)` (Recommended) / `Bump as minor → 0.13.0` / `Bump as major → 1.0.0`                        |
+
+**Call payload**:
+
+- `question`: "Use the suggested version `<suggested>` (<bumpType>) for this release?"
+- `header`: "Version bump"
+- `options`: built per the rules above (no duplicates of the recommended)
+
+4. **Free-text fallback**: `AskUserQuestion` always exposes an implicit "Other" entry that accepts free text. If the user picks "Other", treat the response as an explicit `X.Y.Z` and validate it against the semver pattern `^\d+\.\d+\.\d+$` before proceeding. Reject anything else and re-ask. (The "Other" entry is provided by the tool — do not list it explicitly in `options`.)
 
 ### 2.3 User Confirmation
 
-Display the calculated or suggested version to the user and confirm before proceeding.
+When the user provided an explicit argument in Step 2.2 (so the auto-suggest flow above did not run), still confirm the resolved version with `AskUserQuestion` before mutating files:
+
+- `question`: "Proceed with releasing `v<resolvedVersion>` (current: `v<currentVersion>`)?"
+- `header`: "Confirm version"
+- `options`:
+  - `Proceed with v<resolvedVersion>` (Recommended) — continue to Step 3
+  - `Pick a different version` — abort and let the user re-run the skill with a corrected argument
+
+If the auto-suggest `AskUserQuestion` from Step 2.2 already captured the user's choice, skip this step.
+
+### 2.4 Tag Duplicate Check
+
+Run **after** the version is resolved (i.e., after Step 2.2 #4 for the auto-suggest path or after Step 2.3 for the explicit-argument path) and **before** Step 3.1 creates the release branch. Do not pre-check `patch` / `minor` / `major` candidates earlier.
+
+```bash
+git tag -l "v<resolvedVersion>"
+```
+
+- If output is empty: OK to proceed to Step 3.
+- If output is non-empty: **Abort** (per the Safety Checks table). Tell the user `v<resolvedVersion>` already exists and have them re-run with a different version.
 
 ---
 
@@ -558,3 +599,12 @@ After PR merge, the following CI workflows run automatically:
 - `release.yml`: Binary build & release asset upload
 - `publish-npm.yml`: npm publish
 - `publish-jsr.yml`: JSR publish
+
+---
+
+## Known Limitations
+
+Areas the skill intentionally leaves to executor judgement (do not silently auto-decide):
+
+- **BREAKING change placement in changelog**: Keep a Changelog interpretation varies. When a `feat!:` / `BREAKING CHANGE:` exists, the executor may place it under `### Changed` (with a `**BREAKING:**` prefix), `### Removed`, or `### Deprecated` based on what changed. Pick one consistently within a single release entry.
+- **Changelog i18n sync**: This skill only edits `packages/docs/src/content/docs/changelog.mdx`. The Japanese counterpart `packages/docs/src/content/docs/ja/changelog.mdx` must be kept in sync per `.claude/rules/docs-i18n.md` — handle that as a separate edit before staging in Step 4.1 (and add it to the `git add` list when present).
