@@ -142,11 +142,11 @@ Display the suggestion summary in a text message, then call `AskUserQuestion` to
 
 Worked examples (suggested = `0.13.0 (minor)` from current `0.12.7`):
 
-| Suggestion       | Final options                                                                                                  |
-| ---------------- | -------------------------------------------------------------------------------------------------------------- |
-| `0.13.0 (minor)` | `Use 0.13.0 (minor)` (Recommended) / `Bump as patch → 0.12.8` / `Bump as major → 1.0.0`                        |
-| `1.0.0 (major)`  | `Use 1.0.0 (major)` (Recommended) / `Bump as patch → 0.12.8` / `Bump as minor → 0.13.0`                        |
-| `0.12.8 (patch)` | `Use 0.12.8 (patch)` (Recommended) / `Bump as minor → 0.13.0` / `Bump as major → 1.0.0`                        |
+| Suggestion       | Final options                                                                           |
+| ---------------- | --------------------------------------------------------------------------------------- |
+| `0.13.0 (minor)` | `Use 0.13.0 (minor)` (Recommended) / `Bump as patch → 0.12.8` / `Bump as major → 1.0.0` |
+| `1.0.0 (major)`  | `Use 1.0.0 (major)` (Recommended) / `Bump as patch → 0.12.8` / `Bump as minor → 0.13.0` |
+| `0.12.8 (patch)` | `Use 0.12.8 (patch)` (Recommended) / `Bump as minor → 0.13.0` / `Bump as major → 1.0.0` |
 
 **Call payload**:
 
