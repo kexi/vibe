@@ -5,6 +5,8 @@
  */
 
 import { runGitCommand } from "../../utils/git.ts";
+import { escapeShellPath } from "../../utils/shell.ts";
+import { validateWorktreePath } from "../../utils/worktree-path-validation.ts";
 import { type AppContext, getGlobalContext } from "../../context/index.ts";
 
 /**
@@ -42,7 +44,8 @@ export async function createWorktree(
   options: CreateWorktreeOptions,
   ctx: AppContext = getGlobalContext(),
 ): Promise<void> {
-  const { branchName, worktreePath, branchExists, baseRef, track } = options;
+  const { branchName, branchExists, baseRef, track } = options;
+  const worktreePath = validateWorktreePath(options.worktreePath);
 
   if (branchExists) {
     await runGitCommand(["worktree", "add", worktreePath, branchName], ctx);
@@ -64,7 +67,8 @@ export async function removeWorktree(
   options: RemoveWorktreeOptions,
   ctx: AppContext = getGlobalContext(),
 ): Promise<void> {
-  const { worktreePath, force = false } = options;
+  const { force = false } = options;
+  const worktreePath = validateWorktreePath(options.worktreePath);
 
   const args = ["worktree", "remove"];
   if (force) {
@@ -77,17 +81,22 @@ export async function removeWorktree(
 
 /**
  * Get the git command that would be run to create a worktree
- * (for dry-run logging)
+ * (for dry-run logging).
+ *
+ * The returned string is for display only and must not be eval'd by a shell.
+ * Throws if `worktreePath` fails validation.
  */
 export function getCreateWorktreeCommand(options: CreateWorktreeOptions): string {
-  const { branchName, worktreePath, branchExists, baseRef, track } = options;
+  const { branchName, branchExists, baseRef, track } = options;
+  const worktreePath = validateWorktreePath(options.worktreePath);
+  const quotedPath = `'${escapeShellPath(worktreePath)}'`;
 
   if (branchExists) {
-    return `git worktree add '${worktreePath}' ${branchName}`;
+    return `git worktree add ${quotedPath} ${branchName}`;
   }
   if (baseRef) {
     const trackFlag = track ? "--track" : "--no-track";
-    return `git worktree add -b ${branchName} ${trackFlag} '${worktreePath}' ${baseRef}`;
+    return `git worktree add -b ${branchName} ${trackFlag} ${quotedPath} ${baseRef}`;
   }
-  return `git worktree add -b ${branchName} '${worktreePath}'`;
+  return `git worktree add -b ${branchName} ${quotedPath}`;
 }

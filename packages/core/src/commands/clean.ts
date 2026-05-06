@@ -29,6 +29,7 @@ import {
   isFastRemoveSupported,
 } from "../utils/fast-remove.ts";
 import { readWorktreeHookPath } from "../utils/stdin.ts";
+import { validateWorktreePath } from "../utils/worktree-path-validation.ts";
 import { type AppContext, getGlobalContext } from "../context/index.ts";
 
 interface CleanOptions extends OutputOptions {
@@ -43,12 +44,13 @@ interface CleanOptions extends OutputOptions {
  */
 async function removeWorktree(
   mainPath: string,
-  worktreePath: string,
+  worktreePathArg: string,
   forceRemove: boolean,
   useFastRemove: boolean,
   outputOpts: OutputOptions,
   ctx: AppContext,
 ): Promise<void> {
+  const worktreePath = validateWorktreePath(worktreePathArg);
   const { runtime } = ctx;
   const shouldUseFastRemove = useFastRemove && isFastRemoveSupported();
 

@@ -155,6 +155,60 @@ describe("resolveWorktreePath", () => {
     );
   });
 
+  it("throws when path_script outputs a path with '..' segment", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
+    const repoRoot = tempDir;
+
+    const scriptPath = join(repoRoot, "traversal-script.sh");
+    await writeFile(scriptPath, `#!/bin/bash\necho "/tmp/../etc/passwd"\n`);
+    await chmod(scriptPath, 0o755);
+
+    const config: VibeConfig = {
+      worktree: { path_script: "./traversal-script.sh" },
+    };
+    const settings = createEmptySettings();
+    const context = createContext(repoRoot);
+
+    await expect(resolveWorktreePath(config, settings, context)).rejects.toThrow(/'\.\.'/);
+  });
+
+  it("throws when path_script outputs a path starting with '-'", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
+    const repoRoot = tempDir;
+
+    const scriptPath = join(repoRoot, "dash-script.sh");
+    await writeFile(scriptPath, `#!/bin/bash\necho "-rf"\n`);
+    await chmod(scriptPath, 0o755);
+
+    const config: VibeConfig = {
+      worktree: { path_script: "./dash-script.sh" },
+    };
+    const settings = createEmptySettings();
+    const context = createContext(repoRoot);
+
+    await expect(resolveWorktreePath(config, settings, context)).rejects.toThrow();
+  });
+
+  it("returns normalized path when path_script outputs trailing slashes", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
+    const repoRoot = tempDir;
+
+    const scriptPath = join(repoRoot, "trailing-script.sh");
+    const customPath = join(tempDir, "custom-worktrees", "my-worktree");
+    await writeFile(scriptPath, `#!/bin/bash\necho "${customPath}/"\n`);
+    await chmod(scriptPath, 0o755);
+
+    const config: VibeConfig = {
+      worktree: { path_script: "./trailing-script.sh" },
+    };
+    const settings = createEmptySettings();
+    const context = createContext(repoRoot);
+
+    const result = await resolveWorktreePath(config, settings, context);
+
+    expect(result).toBe(customPath);
+  });
+
   it("passes environment variables to script", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
     const repoRoot = tempDir;

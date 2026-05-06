@@ -1,5 +1,6 @@
 import { isAbsolute } from "node:path";
 import { validatePath } from "./copy/validation.ts";
+import { validateWorktreePath } from "./worktree-path-validation.ts";
 import { warnLog } from "./output.ts";
 import type { AppContext } from "../context/index.ts";
 
@@ -97,7 +98,12 @@ export async function readWorktreeHookPath(ctx: AppContext): Promise<string | un
   const isAbsolutePath = isAbsolute(worktreePath);
   if (!isAbsolutePath) return undefined;
 
-  validatePath(worktreePath);
-
-  return worktreePath;
+  try {
+    validatePath(worktreePath);
+    return validateWorktreePath(worktreePath);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    warnLog(`Warning: rejected worktree_path from stdin: ${reason}`);
+    return undefined;
+  }
 }

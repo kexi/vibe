@@ -14,7 +14,8 @@ A comprehensive security checklist for the vibe CLI tool. Each category includes
 ## 2. Path Traversal
 
 - **Risk**: Accessing files outside intended directories via `../` sequences
-- **Mitigation**: `validatePath()` ensures paths stay within expected boundaries
+- **Mitigation**: `validatePath()` ensures paths stay within expected boundaries. For git worktree locations, `validateWorktreePath()` additionally rejects relative paths, `..` segments, control characters, leading `-` (argument injection), and Windows drive-relative / long-path / UNC prefixes — applied at both the path-source layer (`resolveWorktreePath`, `path_script` output, hook stdin) and the sink layer (right before `git worktree add/remove`).
+- **Scope**: This is syntactic validation only. Symlink resolution and an allowlist of permitted roots are tracked as future enhancements.
 - **Enforcement**: Code review + runtime validation
 
 ## 3. Symlink Attacks
