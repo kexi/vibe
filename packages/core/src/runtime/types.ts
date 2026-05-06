@@ -81,12 +81,16 @@ export interface RuntimeFS {
   rename(src: string, dest: string): Promise<void>;
 
   /**
-   * Get file/directory information
+   * Get file/directory information, following symlinks.
+   * If `path` is a symlink, returns info about the link target.
+   * For symlink-aware checks, use `lstat` instead.
    */
   stat(path: string): Promise<FileInfo>;
 
   /**
-   * Get file/directory information, following symlinks
+   * Get file/directory information without following symlinks.
+   * If `path` is a symlink, returns info about the link itself (with `isSymlink: true`),
+   * NOT the link target.
    */
   lstat(path: string): Promise<FileInfo>;
 
