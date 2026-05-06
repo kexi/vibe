@@ -149,6 +149,37 @@ echo "${HOME}/worktrees/${VIBE_REPO_NAME}-${VIBE_SANITIZED_BRANCH}"
 The script must output an **absolute path** to stdout.
 :::
 
+#### Security
+
+The environment variables passed to `path_script` (`VIBE_REPO_NAME`,
+`VIBE_BRANCH_NAME`, `VIBE_SANITIZED_BRANCH`, `VIBE_REPO_ROOT`) come from
+user-controlled values such as branch names. To prevent shell injection,
+follow these rules in your `path_script`:
+
+- **Always double-quote** environment variables. Treat unquoted `${VAR}` as a
+  bug:
+
+  ```bash
+  # Good
+  echo "${HOME}/worktrees/${VIBE_REPO_NAME}-${VIBE_SANITIZED_BRANCH}"
+
+  # Bad - allows word-splitting and globbing on attacker-controlled values
+  echo $HOME/worktrees/$VIBE_REPO_NAME-$VIBE_SANITIZED_BRANCH
+  ```
+
+- **Never `eval`** these variables, and avoid `bash -c "... $VAR ..."` patterns
+  that re-parse the value as shell input.
+
+vibe enforces several layers of defense before and after running your script:
+
+| Layer                                     | Behaviour                                                                      |
+| ----------------------------------------- | ------------------------------------------------------------------------------ |
+| Control characters in env values          | **Rejected** (script is not executed). Rename the branch with `git branch -m`. |
+| Shell metacharacters in env values        | **Warning** logged to stderr; script still runs. Fix your script's quoting.    |
+| Control characters in the script's stdout | **Rejected**. The script must output a single absolute path.                   |
+
+Detected metacharacters include: `$` `` ` `` `;` `|` `&` `<` `>` `\` `"` `'`.
+
 ## Full Example
 
 ```toml

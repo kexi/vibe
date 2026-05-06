@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import { join } from "node:path";
 import { mkdtemp, writeFile, rm, chmod } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { resolveWorktreePath } from "./worktree-path.ts";
+import { __resetEmittedWarningsForTest, resolveWorktreePath } from "./worktree-path.ts";
 import type { VibeConfig } from "../types/config.ts";
 import type { VibeSettings } from "./settings.ts";
 import { setupRealTestContext } from "../context/testing.ts";
@@ -10,6 +10,10 @@ import { setupRealTestContext } from "../context/testing.ts";
 // Initialize test context with real runtime for filesystem tests
 beforeAll(async () => {
   await setupRealTestContext();
+});
+
+beforeEach(() => {
+  __resetEmittedWarningsForTest();
 });
 
 const createContext = (repoRoot: string) => ({
@@ -176,5 +180,257 @@ describe("resolveWorktreePath", () => {
     const result = await resolveWorktreePath(config, settings, context);
 
     expect(result).toBe("/worktrees/test-repo-feat-test-branch");
+  });
+
+  it("rejects branch names with control characters before executing the script", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
+    const repoRoot = tempDir;
+
+    const scriptPath = join(repoRoot, "noop.sh");
+    await writeFile(scriptPath, `#!/bin/bash\necho "${tempDir}/should-not-run"\n`);
+    await chmod(scriptPath, 0o755);
+
+    const config: VibeConfig = { worktree: { path_script: "./noop.sh" } };
+    const settings = createEmptySettings();
+    const context = {
+      repoName: "test-repo",
+      branchName: "feat/test\nrm -rf /",
+      sanitizedBranch: "feat-test-branch",
+      repoRoot,
+    };
+
+    await expect(resolveWorktreePath(config, settings, context)).rejects.toThrow(
+      /VIBE_BRANCH_NAME contains a control character \(0x0a\)/,
+    );
+  });
+
+  it("rejects repo root with NUL byte", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
+    const repoRoot = tempDir;
+
+    const scriptPath = join(repoRoot, "noop.sh");
+    await writeFile(scriptPath, `#!/bin/bash\necho "${tempDir}/x"\n`);
+    await chmod(scriptPath, 0o755);
+
+    const config: VibeConfig = { worktree: { path_script: "./noop.sh" } };
+    const settings = createEmptySettings();
+    const context = {
+      repoName: "test-repo",
+      branchName: "feat/test",
+      sanitizedBranch: "feat-test",
+      repoRoot: `${repoRoot}\x00evil`,
+    };
+
+    await expect(resolveWorktreePath(config, settings, context)).rejects.toThrow(
+      /VIBE_REPO_ROOT contains a control character \(0x00\)/,
+    );
+  });
+
+  it("warns when branch name contains shell metacharacters but still executes", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
+    const repoRoot = tempDir;
+
+    const customPath = join(tempDir, "out");
+    const scriptPath = join(repoRoot, "warn-script.sh");
+    await writeFile(scriptPath, `#!/bin/bash\necho "${customPath}"\n`);
+    await chmod(scriptPath, 0o755);
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const config: VibeConfig = { worktree: { path_script: "./warn-script.sh" } };
+    const settings = createEmptySettings();
+    const context = {
+      repoName: "test-repo",
+      branchName: "feat/$evil;rm",
+      sanitizedBranch: "feat-evil-rm",
+      repoRoot,
+    };
+
+    try {
+      const result = await resolveWorktreePath(config, settings, context);
+      expect(result).toBe(customPath);
+
+      const warnings = warnSpy.mock.calls.map((args) => String(args[0]));
+      const hasBranchWarning = warnings.some((w) => w.includes("VIBE_BRANCH_NAME"));
+      expect(hasBranchWarning).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("dedupes warnings for the same field+metachars combination", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
+    const repoRoot = tempDir;
+
+    const customPath = join(tempDir, "out");
+    const scriptPath = join(repoRoot, "warn-script.sh");
+    await writeFile(scriptPath, `#!/bin/bash\necho "${customPath}"\n`);
+    await chmod(scriptPath, 0o755);
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const config: VibeConfig = { worktree: { path_script: "./warn-script.sh" } };
+    const settings = createEmptySettings();
+    const context = {
+      repoName: "test-repo",
+      branchName: "feat/$evil",
+      sanitizedBranch: "feat-evil",
+      repoRoot,
+    };
+
+    try {
+      await resolveWorktreePath(config, settings, context);
+      await resolveWorktreePath(config, settings, context);
+
+      const warnings = warnSpy.mock.calls.map((args) => String(args[0]));
+      const branchWarnings = warnings.filter((w) => w.includes("VIBE_BRANCH_NAME"));
+      expect(branchWarnings).toHaveLength(1);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("does not warn when only repoRoot would otherwise trigger metachar checks", async () => {
+    // repoRoot is intentionally excluded from metachar warnings (paths with `$`
+    // or `\` are common and would just produce noise).
+    tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
+    const repoRoot = tempDir;
+
+    const customPath = join(tempDir, "out");
+    const scriptPath = join(repoRoot, "warn-script.sh");
+    await writeFile(scriptPath, `#!/bin/bash\necho "${customPath}"\n`);
+    await chmod(scriptPath, 0o755);
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const config: VibeConfig = { worktree: { path_script: "./warn-script.sh" } };
+    const settings = createEmptySettings();
+    const context = createContext(repoRoot);
+
+    try {
+      await resolveWorktreePath(config, settings, context);
+      const warnings = warnSpy.mock.calls.map((args) => String(args[0]));
+      const anyVibeWarning = warnings.some((w) => w.includes("VIBE_"));
+      expect(anyVibeWarning).toBe(false);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("rejects script output containing embedded newlines", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
+    const repoRoot = tempDir;
+
+    // Script outputs two lines; trim() would otherwise hide the second.
+    const scriptPath = join(repoRoot, "multiline-script.sh");
+    await writeFile(scriptPath, `#!/bin/bash\nprintf '%s\\n%s\\n' '${tempDir}/a' 'evil'\n`);
+    await chmod(scriptPath, 0o755);
+
+    const config: VibeConfig = { worktree: { path_script: "./multiline-script.sh" } };
+    const settings = createEmptySettings();
+    const context = createContext(repoRoot);
+
+    await expect(resolveWorktreePath(config, settings, context)).rejects.toThrow(
+      /control character \(0x0a\)/,
+    );
+  });
+
+  it("rejects sanitizedBranch with control characters (regression: all four fields are wired)", async () => {
+    // Regression guard: branchName / repoName / repoRoot are clean and only
+    // sanitizedBranch carries a control character. This ensures
+    // `assertNoControlChars` is invoked for VIBE_SANITIZED_BRANCH specifically
+    // and not silently skipped.
+    tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
+    const repoRoot = tempDir;
+
+    const scriptPath = join(repoRoot, "noop.sh");
+    await writeFile(scriptPath, `#!/bin/bash\necho "${tempDir}/should-not-run"\n`);
+    await chmod(scriptPath, 0o755);
+
+    const config: VibeConfig = { worktree: { path_script: "./noop.sh" } };
+    const settings = createEmptySettings();
+    const context = {
+      repoName: "test-repo",
+      branchName: "feat/test-branch",
+      sanitizedBranch: "feat-test\x1bevil",
+      repoRoot,
+    };
+
+    await expect(resolveWorktreePath(config, settings, context)).rejects.toThrow(
+      /VIBE_SANITIZED_BRANCH contains a control character \(0x1b\)/,
+    );
+  });
+
+  it("rejects repoName with control characters", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
+    const repoRoot = tempDir;
+
+    const scriptPath = join(repoRoot, "noop.sh");
+    await writeFile(scriptPath, `#!/bin/bash\necho "${tempDir}/should-not-run"\n`);
+    await chmod(scriptPath, 0o755);
+
+    const config: VibeConfig = { worktree: { path_script: "./noop.sh" } };
+    const settings = createEmptySettings();
+    const context = {
+      repoName: "test\x00repo",
+      branchName: "feat/test-branch",
+      sanitizedBranch: "feat-test-branch",
+      repoRoot,
+    };
+
+    await expect(resolveWorktreePath(config, settings, context)).rejects.toThrow(
+      /VIBE_REPO_NAME contains a control character \(0x00\)/,
+    );
+  });
+
+  it("warns about both branch and repo metacharacters when present in different fields", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
+    const repoRoot = tempDir;
+
+    const customPath = join(tempDir, "out");
+    const scriptPath = join(repoRoot, "warn-script.sh");
+    await writeFile(scriptPath, `#!/bin/bash\necho "${customPath}"\n`);
+    await chmod(scriptPath, 0o755);
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const config: VibeConfig = { worktree: { path_script: "./warn-script.sh" } };
+    const settings = createEmptySettings();
+    const context = {
+      repoName: "test;repo",
+      branchName: "feat/$evil",
+      sanitizedBranch: "feat-evil",
+      repoRoot,
+    };
+
+    try {
+      const result = await resolveWorktreePath(config, settings, context);
+      expect(result).toBe(customPath);
+
+      const warnings = warnSpy.mock.calls.map((args) => String(args[0]));
+      const hasBranchWarning = warnings.some((w) => w.includes("VIBE_BRANCH_NAME"));
+      const hasRepoWarning = warnings.some((w) => w.includes("VIBE_REPO_NAME"));
+      expect(hasBranchWarning).toBe(true);
+      expect(hasRepoWarning).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("rejects script output containing carriage returns", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
+    const repoRoot = tempDir;
+
+    const scriptPath = join(repoRoot, "cr-script.sh");
+    await writeFile(scriptPath, `#!/bin/bash\nprintf '%s\\r\\n' '${tempDir}/a'\n`);
+    await chmod(scriptPath, 0o755);
+
+    const config: VibeConfig = { worktree: { path_script: "./cr-script.sh" } };
+    const settings = createEmptySettings();
+    const context = createContext(repoRoot);
+
+    await expect(resolveWorktreePath(config, settings, context)).rejects.toThrow(
+      /control character \(0x0d\)/,
+    );
   });
 });
