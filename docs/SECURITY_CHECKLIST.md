@@ -49,9 +49,17 @@ A comprehensive security checklist for the vibe CLI tool. Each category includes
 
 ## 8. Supply Chain Attacks
 
-- **Risk**: Compromised dependencies introducing vulnerabilities
-- **Mitigation**: Lockfile pinning + `pnpm audit` + minimum 1-day package age policy
-- **Enforcement**: CI lockfile verification + `--frozen-lockfile` + `--ignore-scripts`
+- **Risk**: Compromised upstream packages, malicious lifecycle scripts, exfiltration from build runners, or hijacked publish tokens — see e.g. the [TanStack npm compromise (2026-05-11)](https://tanstack.com/blog/npm-supply-chain-compromise-postmortem)
+- **Mitigation** (layered):
+  - **Registry hardening**: Takumi Guard proxy (`.github/actions/setup-takumi-guard`) intercepts known-malicious packages; `minimumReleaseAge: 4320` (72 h) quarantine in `pnpm-workspace.yaml` blocks freshly published versions
+  - **No exotic sources**: `blockExoticSubdeps: true` rejects `github:user/repo`, `file:`, `http:` and other non-registry dependencies anywhere in the graph (defeats the wormable `optionalDependencies: github:<sha>` technique)
+  - **Lifecycle scripts off by default**: `strictDepBuilds: true` + explicit `only-built-dependencies` allowlist (currently `node-pty` only, see `.npmrc`); `--ignore-scripts` on every `pnpm install` and `pnpm publish` invocation in CI
+  - **Trust monotonicity**: `trustPolicy: no-downgrade` aborts installation when a package transitions to a less-trusted state
+  - **Lockfile pinning**: `--frozen-lockfile` in every CI install step
+  - **Workflow integrity**: All third-party GitHub Actions pinned to full commit SHA (`pinact-verify` job blocks unpinned references); tool versions pinned to full patch in `.mise.toml`
+  - **Runner egress visibility**: `step-security/harden-runner` (audit mode) on every job logs outbound network traffic and `/proc` access, surfacing exfiltration channels such as the `*.getsession.org` C2 used by Shai-Hulud
+  - **Publish provenance**: `npm publish --provenance` on every release for OIDC-signed attestation
+- **Enforcement**: `pinact-verify` CI job + `pnpm install --frozen-lockfile --ignore-scripts` in CI + `pnpm publish ... --ignore-scripts` + Harden-Runner Insights review after each release
 
 ## 9. Unsafe Temp File Creation
 
