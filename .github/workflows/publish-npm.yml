@@ -173,11 +173,12 @@ jobs:
 
           echo "Version validation passed: $TAG_VERSION"
 
+      - name: Upgrade npm to a version that supports trusted publishing
+        run: npm install -g npm@latest
+
       - name: Publish @kexi/vibe-native
         working-directory: packages/native
-        run: pnpm publish --access public --provenance --no-git-checks --ignore-scripts
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm publish --access public --no-git-checks --ignore-scripts
 
   # Publish @kexi/vibe (main CLI package)
   publish-cli:
@@ -257,8 +258,9 @@ jobs:
         working-directory: packages/npm
         run: pnpm run build
 
+      - name: Upgrade npm to a version that supports trusted publishing
+        run: npm install -g npm@latest
+
       - name: Publish @kexi/vibe
         working-directory: packages/npm
-        run: pnpm publish --access public --provenance --no-git-checks --ignore-scripts
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm publish --access public --no-git-checks --ignore-scripts
