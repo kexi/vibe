@@ -16,8 +16,8 @@ blockExoticSubdeps: true
 
 # Refuse to run lifecycle scripts for any dependency by default. The
 # `onlyBuiltDependencies` allowlist of packages that may run install scripts
-# is intentionally kept in `.npmrc` (`only-built-dependencies[]=node-pty`) so
-# legacy `npm`/`yarn` consumers honour the same allowlist.
+# is intentionally kept in `.npmrc` so legacy `npm`/`yarn` consumers honour
+# the same allowlist.
 strictDepBuilds: true
 
 # Fail the install if a package transitions to a less-trusted state
