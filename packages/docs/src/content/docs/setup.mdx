@@ -35,6 +35,14 @@ vibe needs a shell wrapper function to change directories after creating or clea
     end
     ```
 
+    To also enable tab completion (subcommands, flags, and branch names for `vibe start` / `vibe jump`), use `--with-completion`:
+
+    ```fish
+    vibe shell-setup --shell fish --with-completion | source
+    ```
+
+    Add the above line to `~/.config/fish/config.fish` to load it on every shell start.
+
   </TabItem>
   <TabItem label="Nushell">
     Add to `~/.config/nushell/config.nu`:

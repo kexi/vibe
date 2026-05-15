@@ -218,6 +218,74 @@ describe("shellSetupCommand", () => {
     expect(hasVerboseMessage).toBe(true);
   });
 
+  it("appends fish completion when --with-completion is set with fish", async () => {
+    const ctx = createMockContext({
+      env: {
+        get: (key: string) => (key === "SHELL" ? "/usr/bin/fish" : undefined),
+      },
+      control: {
+        exit: (() => {}) as never,
+        cwd: () => "/mock/cwd",
+        chdir: () => {},
+        execPath: () => "/mock/exec",
+        args: [],
+      },
+    });
+
+    await shellSetupCommand({ withCompletion: true }, ctx);
+
+    const combined = stdoutOutput.join("\n");
+    expect(combined).toContain("function vibe; eval (command vibe $argv); end");
+    expect(combined).toContain("complete -c vibe -f");
+    expect(combined).toContain("__fish_use_subcommand -a start");
+  });
+
+  it("exits with error when --with-completion is used with non-fish shell", async () => {
+    let exitCode: number | null = null;
+    const ctx = createMockContext({
+      env: {
+        get: (key: string) => (key === "SHELL" ? "/bin/bash" : undefined),
+      },
+      control: {
+        exit: ((code: number) => {
+          exitCode = code;
+        }) as never,
+        cwd: () => "/mock/cwd",
+        chdir: () => {},
+        execPath: () => "/mock/exec",
+        args: [],
+      },
+    });
+
+    await shellSetupCommand({ withCompletion: true }, ctx);
+
+    expect(exitCode).toBe(1);
+    const hasErrorMessage = stderrOutput.some((line) =>
+      line.includes("--with-completion is only supported for fish"),
+    );
+    expect(hasErrorMessage).toBe(true);
+  });
+
+  it("does not append completion when --with-completion is not set", async () => {
+    const ctx = createMockContext({
+      env: {
+        get: (key: string) => (key === "SHELL" ? "/usr/bin/fish" : undefined),
+      },
+      control: {
+        exit: (() => {}) as never,
+        cwd: () => "/mock/cwd",
+        chdir: () => {},
+        execPath: () => "/mock/exec",
+        args: [],
+      },
+    });
+
+    await shellSetupCommand({}, ctx);
+
+    expect(stdoutOutput).toHaveLength(1);
+    expect(stdoutOutput[0]).toBe("function vibe; eval (command vibe $argv); end");
+  });
+
   it("suppresses verbose output with quiet option", async () => {
     const ctx = createMockContext({
       env: {

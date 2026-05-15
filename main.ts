@@ -39,6 +39,7 @@ const parseArgsOptions: ParseArgsConfig["options"] = {
   base: { type: "string" },
   track: { type: "boolean" },
   shell: { type: "string" },
+  "with-completion": { type: "boolean" },
   "claude-code-worktree-hook": { type: "boolean" },
 };
 
@@ -86,6 +87,7 @@ Command Options:
   --keep-branch     Keep the branch after removing the worktree (clean)
   --check           Check for updates without showing upgrade instructions (upgrade)
   --shell <name>    Specify shell type: bash, zsh, fish, nushell, powershell (shell-setup)
+  --with-completion Append fish autocompletion script to shell-setup output (fish only)
   --claude-code-worktree-hook   Claude Code worktree hook mode (start, clean)
 
 Setup:
@@ -292,7 +294,8 @@ async function main(): Promise<void> {
       const verbose = args.verbose === true;
       const quiet = args.quiet === true;
       const shell = typeof args.shell === "string" ? args.shell : undefined;
-      await shellSetupCommand({ verbose, quiet, shell });
+      const withCompletion = args["with-completion"] === true;
+      await shellSetupCommand({ verbose, quiet, shell, withCompletion });
       break;
     }
     default:
