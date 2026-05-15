@@ -174,7 +174,11 @@ jobs:
           echo "Version validation passed: $TAG_VERSION"
 
       - name: Upgrade npm to a version that supports trusted publishing
-        run: npm install -g npm@latest
+        # --force avoids the known npm self-upgrade race (e.g. ENOENT on
+        # @npmcli/arborist's promise-retry) caused by the bundled npm replacing
+        # its own modules mid-install. Pin to npm@11 so trusted publishing is
+        # available without chasing a moving "latest" target.
+        run: npm install -g --force npm@11
 
       - name: Publish @kexi/vibe-native
         working-directory: packages/native
@@ -259,7 +263,11 @@ jobs:
         run: pnpm run build
 
       - name: Upgrade npm to a version that supports trusted publishing
-        run: npm install -g npm@latest
+        # --force avoids the known npm self-upgrade race (e.g. ENOENT on
+        # @npmcli/arborist's promise-retry) caused by the bundled npm replacing
+        # its own modules mid-install. Pin to npm@11 so trusted publishing is
+        # available without chasing a moving "latest" target.
+        run: npm install -g --force npm@11
 
       - name: Publish @kexi/vibe
         working-directory: packages/npm
