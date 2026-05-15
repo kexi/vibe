@@ -5,6 +5,14 @@ description: Version history and release notes for vibe
 
 All notable changes to vibe are documented here.
 
+## v1.5.2
+
+**Released:** 2026-05-16
+
+Maintenance release that recovers v1.5.1. The first CI fix attempt (`--force npm@11`) still failed because the bundled npm 10.x in Node 22.22 was missing `@npmcli/arborist`'s `promise-retry` dependency and could not self-upgrade. This release switches the publish jobs to Node 24, whose bundled npm 11.x already supports OIDC trusted publishing — no self-upgrade needed. v1.5.0 / v1.5.1 user-facing changes (fish shell autocompletion) ship for the first time here.
+
+---
+
 ## v1.5.1
 
 **Released:** 2026-05-16
