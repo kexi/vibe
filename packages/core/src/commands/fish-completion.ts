@@ -73,7 +73,10 @@ export const SUBCOMMANDS: readonly CommandSpec[] = [
         takesValue: true,
         valueCandidates: ["bash", "zsh", "fish", "nushell", "powershell"],
       },
-      { long: "with-completion", description: "Include fish autocompletion (fish only)" },
+      {
+        long: "with-completion",
+        description: "Append fish autocompletion script to shell-setup output (fish only)",
+      },
     ],
   },
 ];
@@ -142,8 +145,7 @@ export function generateFishCompletion(): string {
 
   for (const cmd of SUBCOMMANDS) {
     const flags = cmd.flags;
-    const hasFlags = flags !== undefined && flags.length > 0;
-    if (!hasFlags) continue;
+    if (!flags?.length) continue;
     lines.push("", `# ${cmd.name} flags`);
     const condition = `__fish_seen_subcommand_from ${cmd.name}`;
     for (const flag of flags) {

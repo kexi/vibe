@@ -114,7 +114,7 @@ Examples:
   vibe jump feat/new-feature
   vibe clean
   vibe home
-  vibe shell-setup --shell zsh
+  eval "$(vibe shell-setup --shell zsh)"
   vibe shell-setup --shell fish --with-completion | source
 `;
 

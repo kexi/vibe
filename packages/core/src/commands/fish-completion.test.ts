@@ -71,8 +71,7 @@ describe("generateFishCompletion", () => {
  * Returns true only when `fish --version` exits cleanly.
  */
 function isFishAvailable(): boolean {
-  const skipRequested = process.env.SKIP_FISH_TESTS === "1";
-  if (skipRequested) return false;
+  if (process.env.SKIP_FISH_TESTS === "1") return false;
   try {
     const result = spawnSync("fish", ["--version"], { stdio: "ignore" });
     return result.status === 0;
@@ -81,9 +80,11 @@ function isFishAvailable(): boolean {
   }
 }
 
+// This suite is skipped when fish is not on PATH (e.g. default GitHub-hosted runners).
+// Local dev environments with fish installed run the parser check; CI with fish provisioned
+// via mise would also run it. Set SKIP_FISH_TESTS=1 to skip locally.
 describe("generateFishCompletion (fish parser integration)", () => {
   const fishAvailable = isFishAvailable();
-  // Skip the whole suite if fish is not installed (e.g. CI without fish).
   const maybe = fishAvailable ? it : it.skip;
 
   maybe("produces a script that passes `fish -n` syntax check", () => {
