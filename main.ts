@@ -1,4 +1,4 @@
-import { parseArgs, type ParseArgsConfig } from "node:util";
+import { parseArgs } from "node:util";
 import { startCommand } from "./packages/core/src/commands/start.ts";
 import { cleanCommand } from "./packages/core/src/commands/clean.ts";
 import { homeCommand } from "./packages/core/src/commands/home.ts";
@@ -19,28 +19,7 @@ import {
   setGlobalContext,
 } from "./packages/core/src/context/index.ts";
 import { handleError } from "./packages/core/src/errors/index.ts";
-
-/**
- * CLI options configuration for node:util parseArgs
- */
-const parseArgsOptions: ParseArgsConfig["options"] = {
-  help: { type: "boolean", short: "h" },
-  version: { type: "boolean", short: "v" },
-  verbose: { type: "boolean", short: "V" },
-  quiet: { type: "boolean", short: "q" },
-  reuse: { type: "boolean" },
-  "no-hooks": { type: "boolean" },
-  "no-copy": { type: "boolean" },
-  "dry-run": { type: "boolean", short: "n" },
-  force: { type: "boolean", short: "f" },
-  "delete-branch": { type: "boolean" },
-  "keep-branch": { type: "boolean" },
-  check: { type: "boolean" },
-  base: { type: "string" },
-  track: { type: "boolean" },
-  shell: { type: "string" },
-  "claude-code-worktree-hook": { type: "boolean" },
-};
+import { parseArgsOptions } from "./packages/core/src/cli-args-options.ts";
 
 const HELP_TEXT = `vibe - git worktree helper
 
@@ -86,11 +65,12 @@ Command Options:
   --keep-branch     Keep the branch after removing the worktree (clean)
   --check           Check for updates without showing upgrade instructions (upgrade)
   --shell <name>    Specify shell type: bash, zsh, fish, nushell, powershell (shell-setup)
+  --with-completion Append shell autocompletion script to shell-setup output (fish only for now)
   --claude-code-worktree-hook   Claude Code worktree hook mode (start, clean)
 
 Setup:
-  Add this to your .zshrc:
-    vibe() { eval "$(command vibe "$@")" }
+  Run \`vibe shell-setup\` to detect your shell and print the wrapper function.
+  For fish with tab completion, use \`--with-completion\`. See https://vibe.kexi.dev for details.
 
 Examples:
   vibe trust
@@ -109,6 +89,8 @@ Examples:
   vibe jump feat/new-feature
   vibe clean
   vibe home
+  eval "$(vibe shell-setup --shell zsh)"
+  vibe shell-setup --shell fish --with-completion | source
 `;
 
 async function main(): Promise<void> {
@@ -292,7 +274,8 @@ async function main(): Promise<void> {
       const verbose = args.verbose === true;
       const quiet = args.quiet === true;
       const shell = typeof args.shell === "string" ? args.shell : undefined;
-      await shellSetupCommand({ verbose, quiet, shell });
+      const withCompletion = args["with-completion"] === true;
+      await shellSetupCommand({ verbose, quiet, shell, withCompletion });
       break;
     }
     default:
@@ -304,11 +287,13 @@ async function main(): Promise<void> {
   runtime.control.exit(0);
 }
 
-main().catch((error) => {
-  const ctx = getGlobalContext();
-  const exitCode = handleError(error, {}, ctx);
-  const shouldExit = exitCode !== 0;
-  if (shouldExit) {
-    ctx.runtime.control.exit(exitCode);
-  }
-});
+if (import.meta.main) {
+  main().catch((error) => {
+    const ctx = getGlobalContext();
+    const exitCode = handleError(error, {}, ctx);
+    const shouldExit = exitCode !== 0;
+    if (shouldExit) {
+      ctx.runtime.control.exit(exitCode);
+    }
+  });
+}

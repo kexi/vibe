@@ -27,7 +27,17 @@ vibe needs a shell wrapper function to change directories after creating or clea
 
   </TabItem>
   <TabItem label="Fish">
-    Add to `~/.config/fish/config.fish`:
+    Add **one** of the following to `~/.config/fish/config.fish`. Do not add both — the wrapper would be defined twice.
+
+    Recommended — wrapper function with tab completion (subcommands, flags, and branch names for `vibe start` / `vibe jump`):
+
+    ```fish
+    vibe shell-setup --shell fish --with-completion | source
+    ```
+
+    This single line both defines the `vibe` wrapper and registers fish completions.
+
+    Wrapper only (no tab completion):
 
     ```fish
     function vibe
