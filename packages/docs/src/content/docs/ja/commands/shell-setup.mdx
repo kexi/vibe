@@ -1,0 +1,79 @@
+---
+title: vibe shell-setup
+description: シェルラッパー関数（および任意で補完スクリプト）を eval 用に出力
+sidebar:
+  order: 10
+---
+
+`shell-setup` コマンドは、vibe が worktree の作成・削除後にカレントディレクトリを移動できるようにするシェルラッパー関数を出力します。ラッパーに加えて fish の補完スクリプトも一緒に出力できます。
+
+## 使い方
+
+```bash
+vibe shell-setup
+vibe shell-setup --shell <name>
+vibe shell-setup --shell fish --with-completion
+```
+
+デフォルトでは `$SHELL` からシェルを検出してラッパー関数を stdout に出力します。出力を `eval` (bash / zsh) や `source` (fish) にパイプしてください。シェル別のインストール手順は [シェル設定](/ja/setup/) を参照。
+
+## オプション
+
+### `--shell <name>`
+
+`$SHELL` 検出を無視して、特定のシェル用の出力を強制します。指定可能な値: `bash`, `zsh`, `fish`, `nushell`, `powershell`。
+
+```bash
+vibe shell-setup --shell zsh
+```
+
+### `--with-completion`
+
+ラッパー関数の後ろにシェル補完スクリプトを追加します。現状は `fish` のみサポート。他のシェルで指定するとエラー終了します（他シェル対応はフォローアップ予定）。
+
+```bash
+vibe shell-setup --shell fish --with-completion | source
+```
+
+fish 補完がカバーする範囲:
+
+- 全サブコマンドと説明 (`vibe <Tab>`)
+- サブコマンドごとのフラグ (`vibe start --<Tab>`)
+- `vibe start <Tab>` でローカルブランチ名 (`git for-each-ref refs/heads` 経由)
+- `vibe jump <Tab>` で worktree のブランチ名 (`git worktree list --porcelain` 経由)
+
+### `-V`, `--verbose`
+
+ラッパーを stdout に出すのに加えて、検出したシェル名を stderr に表示します。
+
+```bash
+vibe shell-setup --verbose
+```
+
+### `-q`, `--quiet`
+
+不要な出力を抑制します。
+
+## 動作
+
+stdout にはラッパー関数（`--with-completion` 指定時は補完スクリプトも）のみが出力され、ログ・警告・エラーは stderr に分離されるため、`eval` / `source` パイプラインを汚染しません。
+
+`$SHELL` が検出できず `--shell` も指定されていない場合は終了コード 1 で stderr にエラーを出します。
+
+## 例
+
+```bash
+# 自動検出 (zsh / bash 形式)
+eval "$(vibe shell-setup)"
+
+# fish ラッパーを明示的に出力
+vibe shell-setup --shell fish | source
+
+# fish ラッパー + タブ補完を 1 行で
+vibe shell-setup --shell fish --with-completion | source
+```
+
+## 関連
+
+- [シェル設定](/ja/setup/) - シェル別のインストール手順
+- [インストール](/ja/installation/) - vibe のインストールとシェル設定

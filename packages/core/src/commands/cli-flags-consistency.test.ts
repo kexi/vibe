@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseArgsOptions } from "../../../../main.ts";
+import { parseArgsOptions } from "../cli-args-options.ts";
 import { SUBCOMMANDS, GLOBAL_FLAGS } from "./fish-completion.ts";
 
 // Internal flags intentionally excluded from fish completion. Add new entries here

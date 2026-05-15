@@ -75,7 +75,7 @@ export const SUBCOMMANDS: readonly CommandSpec[] = [
       },
       {
         long: "with-completion",
-        description: "Append fish autocompletion script to shell-setup output (fish only)",
+        description: "Append shell autocompletion script to shell-setup output (fish only for now)",
       },
     ],
   },

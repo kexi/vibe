@@ -9,6 +9,13 @@ interface ShellSetupOptions extends OutputOptions {
   withCompletion?: boolean;
 }
 
+// Per-shell autocompletion script generators. Add a new entry here to extend
+// `--with-completion` to another shell; everything else (flag wiring, error
+// messages, supported-shell listing) follows from this map.
+const COMPLETION_GENERATORS: Partial<Record<ShellName, () => string>> = {
+  fish: generateFishCompletion,
+};
+
 /**
  * Detect shell name from a path or name string.
  *
@@ -76,9 +83,14 @@ export async function shellSetupCommand(
     return;
   }
 
-  const completionRequestedForNonFish = withCompletion && shellName !== "fish";
-  if (completionRequestedForNonFish) {
-    errorLog(`Error: --with-completion is only supported for fish (got ${shellName}).`, outputOpts);
+  const completionGenerator = COMPLETION_GENERATORS[shellName];
+  const isCompletionUnsupported = withCompletion && completionGenerator === undefined;
+  if (isCompletionUnsupported) {
+    const supportedShells = Object.keys(COMPLETION_GENERATORS).sort().join(", ");
+    errorLog(
+      `Error: --with-completion currently supports only: ${supportedShells} (got ${shellName}).`,
+      outputOpts,
+    );
     runtime.control.exit(1);
     return;
   }
@@ -86,7 +98,7 @@ export async function shellSetupCommand(
   verboseLog(`Detected shell: ${shellName}`, outputOpts);
   console.log(getShellFunction(shellName));
 
-  if (withCompletion) {
-    console.log(generateFishCompletion());
+  if (withCompletion && completionGenerator !== undefined) {
+    console.log(completionGenerator());
   }
 }

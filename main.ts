@@ -1,4 +1,4 @@
-import { parseArgs, type ParseArgsConfig } from "node:util";
+import { parseArgs } from "node:util";
 import { startCommand } from "./packages/core/src/commands/start.ts";
 import { cleanCommand } from "./packages/core/src/commands/clean.ts";
 import { homeCommand } from "./packages/core/src/commands/home.ts";
@@ -19,32 +19,7 @@ import {
   setGlobalContext,
 } from "./packages/core/src/context/index.ts";
 import { handleError } from "./packages/core/src/errors/index.ts";
-
-/**
- * CLI options configuration for node:util parseArgs.
- *
- * @internal Exported only for cli-flags-consistency.test.ts to verify metadata sync
- * with fish completion. Do not import from production code.
- */
-export const parseArgsOptions: ParseArgsConfig["options"] = {
-  help: { type: "boolean", short: "h" },
-  version: { type: "boolean", short: "v" },
-  verbose: { type: "boolean", short: "V" },
-  quiet: { type: "boolean", short: "q" },
-  reuse: { type: "boolean" },
-  "no-hooks": { type: "boolean" },
-  "no-copy": { type: "boolean" },
-  "dry-run": { type: "boolean", short: "n" },
-  force: { type: "boolean", short: "f" },
-  "delete-branch": { type: "boolean" },
-  "keep-branch": { type: "boolean" },
-  check: { type: "boolean" },
-  base: { type: "string" },
-  track: { type: "boolean" },
-  shell: { type: "string" },
-  "with-completion": { type: "boolean" },
-  "claude-code-worktree-hook": { type: "boolean" },
-};
+import { parseArgsOptions } from "./packages/core/src/cli-args-options.ts";
 
 const HELP_TEXT = `vibe - git worktree helper
 
@@ -90,7 +65,7 @@ Command Options:
   --keep-branch     Keep the branch after removing the worktree (clean)
   --check           Check for updates without showing upgrade instructions (upgrade)
   --shell <name>    Specify shell type: bash, zsh, fish, nushell, powershell (shell-setup)
-  --with-completion Append fish autocompletion script to shell-setup output (fish only)
+  --with-completion Append shell autocompletion script to shell-setup output (fish only for now)
   --claude-code-worktree-hook   Claude Code worktree hook mode (start, clean)
 
 Setup:

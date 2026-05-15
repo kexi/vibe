@@ -1,0 +1,79 @@
+---
+title: vibe shell-setup
+description: Print shell wrapper function (and optional autocompletion) for eval
+sidebar:
+  order: 10
+---
+
+The `shell-setup` command prints a shell wrapper function that lets vibe change your current working directory after creating or cleaning up worktrees. It can also emit a fish autocompletion script alongside the wrapper.
+
+## Usage
+
+```bash
+vibe shell-setup
+vibe shell-setup --shell <name>
+vibe shell-setup --shell fish --with-completion
+```
+
+By default the command detects your shell from `$SHELL` and prints the wrapper to stdout. Pipe the output to `eval` (bash / zsh) or `source` (fish) — see [Shell Setup](/setup/) for per-shell installation snippets.
+
+## Options
+
+### `--shell <name>`
+
+Force the output for a specific shell, bypassing `$SHELL` detection. Supported values: `bash`, `zsh`, `fish`, `nushell`, `powershell`.
+
+```bash
+vibe shell-setup --shell zsh
+```
+
+### `--with-completion`
+
+Append a shell autocompletion script after the wrapper function. Currently only supported for `fish`; using it with any other shell exits with an error. Adding more shells is a follow-up.
+
+```bash
+vibe shell-setup --shell fish --with-completion | source
+```
+
+The fish completion covers:
+
+- All subcommands and their descriptions (`vibe <Tab>`)
+- Per-subcommand flags (`vibe start --<Tab>`)
+- Local branch names for `vibe start <Tab>` (via `git for-each-ref refs/heads`)
+- Worktree branch names for `vibe jump <Tab>` (via `git worktree list --porcelain`)
+
+### `-V`, `--verbose`
+
+Show the detected shell on stderr in addition to the wrapper on stdout.
+
+```bash
+vibe shell-setup --verbose
+```
+
+### `-q`, `--quiet`
+
+Suppress non-essential output.
+
+## Behavior
+
+stdout receives the wrapper function (and completion script when `--with-completion` is set) so the output can be piped directly to `eval` / `source` without extra parsing. Logs, warnings, and errors go to stderr so they never leak into the eval pipeline.
+
+If `$SHELL` cannot be detected and `--shell` is not provided, the command exits with code 1 and prints an error to stderr.
+
+## Examples
+
+```bash
+# Auto-detect shell (zsh / bash style)
+eval "$(vibe shell-setup)"
+
+# Force fish wrapper output
+vibe shell-setup --shell fish | source
+
+# Fish wrapper + tab completion in one line
+vibe shell-setup --shell fish --with-completion | source
+```
+
+## Related
+
+- [Shell Setup](/setup/) - End-to-end setup instructions per shell
+- [Installation](/installation/) - Install vibe and provision your shell

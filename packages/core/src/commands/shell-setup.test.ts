@@ -261,7 +261,7 @@ describe("shellSetupCommand", () => {
 
     expect(exitCode).toBe(1);
     const hasErrorMessage = stderrOutput.some((line) =>
-      line.includes("--with-completion is only supported for fish"),
+      line.includes("--with-completion currently supports only"),
     );
     expect(hasErrorMessage).toBe(true);
   });
@@ -294,8 +294,7 @@ describe("shellSetupCommand", () => {
       expect(exitCode).toBe(1);
       const hasCompletionError = stderrOutput.some(
         (line) =>
-          line.includes("--with-completion is only supported for fish") &&
-          line.includes(expectedName),
+          line.includes("--with-completion currently supports only") && line.includes(expectedName),
       );
       expect(hasCompletionError).toBe(true);
     },
@@ -323,7 +322,7 @@ describe("shellSetupCommand", () => {
     expect(exitCode).toBe(1);
     const hasDetectionError = stderrOutput.some((line) => line.includes("Could not detect shell"));
     const hasCompletionError = stderrOutput.some((line) =>
-      line.includes("--with-completion is only supported"),
+      line.includes("--with-completion currently supports only"),
     );
     expect(hasDetectionError).toBe(true);
     expect(hasCompletionError).toBe(false);
