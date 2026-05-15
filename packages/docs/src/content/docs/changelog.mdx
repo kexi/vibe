@@ -5,6 +5,14 @@ description: Version history and release notes for vibe
 
 All notable changes to vibe are documented here.
 
+## v1.5.1
+
+**Released:** 2026-05-16
+
+Maintenance release that recovers v1.5.0. The v1.5.0 tag was cut but never reached the npm registry — the publish workflow failed during `npm install -g npm@latest` (npm self-upgrade race surfacing as `Cannot find module 'promise-retry'`). This release pins the upgrade to `npm@11` with `--force` and ships the v1.5.0 content (fish shell autocompletion) for the first time. See the v1.5.0 entry below for the feature description.
+
+---
+
 ## v1.5.0
 
 **Released:** 2026-05-16
