@@ -1,4 +1,4 @@
-interface FlagSpec {
+export interface FlagSpec {
   long: string;
   short?: string;
   description: string;
@@ -6,13 +6,13 @@ interface FlagSpec {
   valueCandidates?: readonly string[];
 }
 
-interface CommandSpec {
+export interface CommandSpec {
   name: string;
   description: string;
   flags?: readonly FlagSpec[];
 }
 
-const SUBCOMMANDS: readonly CommandSpec[] = [
+export const SUBCOMMANDS: readonly CommandSpec[] = [
   {
     name: "start",
     description: "Create a new worktree with the given branch",
@@ -78,15 +78,14 @@ const SUBCOMMANDS: readonly CommandSpec[] = [
   },
 ];
 
-const GLOBAL_FLAGS: readonly FlagSpec[] = [
+export const GLOBAL_FLAGS: readonly FlagSpec[] = [
   { long: "help", short: "h", description: "Show help message" },
   { long: "version", short: "v", description: "Show version information" },
   { long: "verbose", short: "V", description: "Show detailed output" },
   { long: "quiet", short: "q", description: "Suppress non-essential output" },
 ];
 
-const ALL_BRANCHES_CMD =
-  "git for-each-ref --format='%(refname:short)' refs/heads refs/remotes 2>/dev/null";
+const ALL_BRANCHES_CMD = "git for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null";
 
 const WORKTREE_BRANCHES_CMD =
   "git worktree list --porcelain 2>/dev/null | string match -rg '^branch refs/heads/(.+)'";
@@ -142,11 +141,12 @@ export function generateFishCompletion(): string {
   );
 
   for (const cmd of SUBCOMMANDS) {
-    const hasFlags = cmd.flags && cmd.flags.length > 0;
+    const flags = cmd.flags;
+    const hasFlags = flags !== undefined && flags.length > 0;
     if (!hasFlags) continue;
     lines.push("", `# ${cmd.name} flags`);
     const condition = `__fish_seen_subcommand_from ${cmd.name}`;
-    for (const flag of cmd.flags!) {
+    for (const flag of flags) {
       lines.push(flagToComplete(flag, condition));
     }
   }

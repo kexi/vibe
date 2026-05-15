@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { generateFishCompletion } from "./fish-completion.ts";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { generateFishCompletion, SUBCOMMANDS } from "./fish-completion.ts";
 
 describe("generateFishCompletion", () => {
   const script = generateFishCompletion();
@@ -9,30 +13,15 @@ describe("generateFishCompletion", () => {
   });
 
   it("registers every subcommand under __fish_use_subcommand", () => {
-    const subcommands = [
-      "start",
-      "scratch",
-      "jump",
-      "rename",
-      "clean",
-      "home",
-      "trust",
-      "untrust",
-      "verify",
-      "config",
-      "upgrade",
-      "shell-setup",
-    ];
-    for (const name of subcommands) {
-      expect(script).toContain(`-n __fish_use_subcommand -a ${name}`);
+    for (const cmd of SUBCOMMANDS) {
+      expect(script).toContain(`-n __fish_use_subcommand -a ${cmd.name}`);
     }
   });
 
   it("emits dynamic branch completion for `vibe start`", () => {
     expect(script).toContain("__fish_seen_subcommand_from start");
-    expect(script).toContain(
-      "git for-each-ref --format='%(refname:short)' refs/heads refs/remotes",
-    );
+    expect(script).toContain("git for-each-ref --format='%(refname:short)' refs/heads");
+    expect(script).not.toContain("refs/remotes");
   });
 
   it("emits worktree-only branch completion for `vibe jump`", () => {
@@ -74,5 +63,53 @@ describe("generateFishCompletion", () => {
 
   it("matches the snapshot", () => {
     expect(script).toMatchSnapshot();
+  });
+});
+
+/**
+ * Detect whether the `fish` binary is available on PATH and can be invoked.
+ * Returns true only when `fish --version` exits cleanly.
+ */
+function isFishAvailable(): boolean {
+  const skipRequested = process.env.SKIP_FISH_TESTS === "1";
+  if (skipRequested) return false;
+  try {
+    const result = spawnSync("fish", ["--version"], { stdio: "ignore" });
+    return result.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+describe("generateFishCompletion (fish parser integration)", () => {
+  const fishAvailable = isFishAvailable();
+  // Skip the whole suite if fish is not installed (e.g. CI without fish).
+  const maybe = fishAvailable ? it : it.skip;
+
+  maybe("produces a script that passes `fish -n` syntax check", () => {
+    const script = generateFishCompletion();
+    const tempDir = mkdtempSync(join(tmpdir(), "vibe-fish-completion-"));
+    const scriptPath = join(tempDir, "vibe.fish");
+    try {
+      writeFileSync(scriptPath, script, "utf8");
+      const result = spawnSync("fish", ["-n", scriptPath], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+
+      const stderr = result.stderr ?? "";
+      const stdout = result.stdout ?? "";
+      const failed = result.status !== 0;
+      if (failed) {
+        // Surface parser diagnostics in the test failure for fast triage.
+        throw new Error(
+          `fish -n exited with status ${result.status}\n--- stdout ---\n${stdout}\n--- stderr ---\n${stderr}`,
+        );
+      }
+      expect(result.status).toBe(0);
+      expect(stderr).toBe("");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });

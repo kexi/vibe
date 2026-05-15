@@ -76,8 +76,7 @@ export async function shellSetupCommand(
     return;
   }
 
-  const isFish = shellName === "fish";
-  const completionRequestedForNonFish = withCompletion && !isFish;
+  const completionRequestedForNonFish = withCompletion && shellName !== "fish";
   if (completionRequestedForNonFish) {
     errorLog(`Error: --with-completion is only supported for fish (got ${shellName}).`, outputOpts);
     runtime.control.exit(1);

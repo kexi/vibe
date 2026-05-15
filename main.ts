@@ -21,9 +21,12 @@ import {
 import { handleError } from "./packages/core/src/errors/index.ts";
 
 /**
- * CLI options configuration for node:util parseArgs
+ * CLI options configuration for node:util parseArgs.
+ *
+ * @internal Exported only for cli-flags-consistency.test.ts to verify metadata sync
+ * with fish completion. Do not import from production code.
  */
-const parseArgsOptions: ParseArgsConfig["options"] = {
+export const parseArgsOptions: ParseArgsConfig["options"] = {
   help: { type: "boolean", short: "h" },
   version: { type: "boolean", short: "v" },
   verbose: { type: "boolean", short: "V" },
@@ -91,8 +94,8 @@ Command Options:
   --claude-code-worktree-hook   Claude Code worktree hook mode (start, clean)
 
 Setup:
-  Add this to your .zshrc:
-    vibe() { eval "$(command vibe "$@")" }
+  Run \`vibe shell-setup\` to detect your shell and print the wrapper function.
+  For fish with tab completion, use \`--with-completion\`. See https://vibe.kexi.dev for details.
 
 Examples:
   vibe trust
@@ -111,6 +114,8 @@ Examples:
   vibe jump feat/new-feature
   vibe clean
   vibe home
+  vibe shell-setup --shell zsh
+  vibe shell-setup --shell fish --with-completion | source
 `;
 
 async function main(): Promise<void> {
@@ -307,11 +312,13 @@ async function main(): Promise<void> {
   runtime.control.exit(0);
 }
 
-main().catch((error) => {
-  const ctx = getGlobalContext();
-  const exitCode = handleError(error, {}, ctx);
-  const shouldExit = exitCode !== 0;
-  if (shouldExit) {
-    ctx.runtime.control.exit(exitCode);
-  }
-});
+if (import.meta.main) {
+  main().catch((error) => {
+    const ctx = getGlobalContext();
+    const exitCode = handleError(error, {}, ctx);
+    const shouldExit = exitCode !== 0;
+    if (shouldExit) {
+      ctx.runtime.control.exit(exitCode);
+    }
+  });
+}

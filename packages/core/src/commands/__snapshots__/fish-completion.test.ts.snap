@@ -25,7 +25,7 @@ complete -c vibe -s V -l verbose -d 'Show detailed output'
 complete -c vibe -s q -l quiet -d 'Suppress non-essential output'
 
 # Dynamic positional completion
-complete -c vibe -n '__fish_seen_subcommand_from start' -k -a "(git for-each-ref --format='%(refname:short)' refs/heads refs/remotes 2>/dev/null)"
+complete -c vibe -n '__fish_seen_subcommand_from start' -k -a "(git for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null)"
 complete -c vibe -n '__fish_seen_subcommand_from jump' -k -a "(git worktree list --porcelain 2>/dev/null | string match -rg '^branch refs/heads/(.+)')"
 
 # start flags

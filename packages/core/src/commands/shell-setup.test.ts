@@ -266,6 +266,91 @@ describe("shellSetupCommand", () => {
     expect(hasErrorMessage).toBe(true);
   });
 
+  it.each([
+    { shellPath: "/usr/bin/zsh", expectedName: "zsh" },
+    { shellPath: "/usr/bin/nu", expectedName: "nushell" },
+    { shellPath: "/usr/local/bin/pwsh", expectedName: "powershell" },
+  ])(
+    "--with-completion errors for $expectedName ($shellPath)",
+    async ({ shellPath, expectedName }) => {
+      let exitCode: number | null = null;
+      const ctx = createMockContext({
+        env: {
+          get: (key: string) => (key === "SHELL" ? shellPath : undefined),
+        },
+        control: {
+          exit: ((code: number) => {
+            exitCode = code;
+          }) as never,
+          cwd: () => "/mock/cwd",
+          chdir: () => {},
+          execPath: () => "/mock/exec",
+          args: [],
+        },
+      });
+
+      await shellSetupCommand({ withCompletion: true }, ctx);
+
+      expect(exitCode).toBe(1);
+      const hasCompletionError = stderrOutput.some(
+        (line) =>
+          line.includes("--with-completion is only supported for fish") &&
+          line.includes(expectedName),
+      );
+      expect(hasCompletionError).toBe(true);
+    },
+  );
+
+  it("prefers shell-detection error over completion error when SHELL is unset", async () => {
+    let exitCode: number | null = null;
+    const ctx = createMockContext({
+      env: {
+        get: () => undefined,
+      },
+      control: {
+        exit: ((code: number) => {
+          exitCode = code;
+        }) as never,
+        cwd: () => "/mock/cwd",
+        chdir: () => {},
+        execPath: () => "/mock/exec",
+        args: [],
+      },
+    });
+
+    await shellSetupCommand({ withCompletion: true }, ctx);
+
+    expect(exitCode).toBe(1);
+    const hasDetectionError = stderrOutput.some((line) => line.includes("Could not detect shell"));
+    const hasCompletionError = stderrOutput.some((line) =>
+      line.includes("--with-completion is only supported"),
+    );
+    expect(hasDetectionError).toBe(true);
+    expect(hasCompletionError).toBe(false);
+  });
+
+  it("fish --with-completion with verbose keeps stdout free of log lines", async () => {
+    const ctx = createMockContext({
+      env: {
+        get: (key: string) => (key === "SHELL" ? "/usr/bin/fish" : undefined),
+      },
+      control: {
+        exit: (() => {}) as never,
+        cwd: () => "/mock/cwd",
+        chdir: () => {},
+        execPath: () => "/mock/exec",
+        args: [],
+      },
+    });
+
+    await shellSetupCommand({ withCompletion: true, verbose: true }, ctx);
+
+    const stdoutHasVerboseLine = stdoutOutput.some((line) => line.includes("Detected shell"));
+    const stderrHasVerboseLine = stderrOutput.some((line) => line.includes("Detected shell"));
+    expect(stdoutHasVerboseLine).toBe(false);
+    expect(stderrHasVerboseLine).toBe(true);
+  });
+
   it("does not append completion when --with-completion is not set", async () => {
     const ctx = createMockContext({
       env: {
