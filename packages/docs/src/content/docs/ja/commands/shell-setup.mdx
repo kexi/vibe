@@ -44,7 +44,7 @@ eval "$(vibe shell-setup --shell zsh --with-completion)"
 - `vibe start <Tab>` でローカルブランチ名 (`git for-each-ref refs/heads` 経由)
 - `vibe jump <Tab>` で worktree のブランチ名 (`git worktree list --porcelain` 経由)
 
-> zsh の場合は、`~/.zshrc` で `autoload -Uz compinit && compinit` を先に呼んでおく必要があります。
+> zsh の場合は、`eval` 行より前に `~/.zshrc` で `autoload -Uz compinit && compinit` を呼んでおく必要があります。`compinit` が実行されていない場合は補完登録が silently スキップされ、`vibe` ラッパー関数のみが定義されます。
 
 ### `-V`, `--verbose`
 

@@ -1,3 +1,8 @@
+// Single source of truth for vibe's CLI subcommand and flag metadata.
+// Consumed by fish-completion.ts and zsh-completion.ts to generate shell-specific
+// completion scripts, and by cli-flags-consistency.test.ts to cross-check that
+// parseArgsOptions in main.ts stays aligned with what users see in `vibe --help`.
+
 export interface FlagSpec {
   long: string;
   short?: string;
@@ -6,16 +11,26 @@ export interface FlagSpec {
   valueCandidates?: readonly string[];
 }
 
+/**
+ * Kind of dynamic completion offered for a subcommand's first positional arg.
+ *
+ * - `all-branches` — every local branch (`git for-each-ref refs/heads`)
+ * - `worktree-branches` — only branches currently checked out as a worktree
+ */
+export type PositionalCompletion = "all-branches" | "worktree-branches";
+
 export interface CommandSpec {
   name: string;
   description: string;
   flags?: readonly FlagSpec[];
+  positionalCompletion?: PositionalCompletion;
 }
 
 export const SUBCOMMANDS: readonly CommandSpec[] = [
   {
     name: "start",
     description: "Create a new worktree with the given branch",
+    positionalCompletion: "all-branches",
     flags: [
       { long: "reuse", description: "Use existing branch instead of creating a new one" },
       { long: "base", description: "Base branch/commit for new branch", takesValue: true },
@@ -38,7 +53,11 @@ export const SUBCOMMANDS: readonly CommandSpec[] = [
       { long: "dry-run", short: "n", description: "Show what would be executed" },
     ],
   },
-  { name: "jump", description: "Jump to an existing worktree by branch name" },
+  {
+    name: "jump",
+    description: "Jump to an existing worktree by branch name",
+    positionalCompletion: "worktree-branches",
+  },
   {
     name: "rename",
     description: "Rename the current worktree's branch and directory",
@@ -75,7 +94,7 @@ export const SUBCOMMANDS: readonly CommandSpec[] = [
       },
       {
         long: "with-completion",
-        description: "Append shell autocompletion script to shell-setup output (fish, zsh)",
+        description: "Append shell autocompletion script to shell-setup output",
       },
     ],
   },

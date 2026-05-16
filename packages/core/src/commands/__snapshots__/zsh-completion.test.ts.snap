@@ -54,8 +54,7 @@ _vibe_scratch() {
     '--track[Set upstream tracking when using --base]' \\
     '--no-hooks[Skip pre-start and post-start hooks]' \\
     '--no-copy[Skip copying files and directories]' \\
-    '(-n --dry-run)'{-n,--dry-run}'[Show what would be executed]' \\
-    '1: :_vibe_branches'
+    '(-n --dry-run)'{-n,--dry-run}'[Show what would be executed]'
 }
 
 _vibe_jump() {
@@ -103,7 +102,7 @@ _vibe_upgrade() {
 _vibe_shell_setup() {
   _arguments \\
     '--shell=[Specify shell type]:shell:(bash zsh fish nushell powershell)' \\
-    '--with-completion[Append shell autocompletion script to shell-setup output (fish, zsh)]'
+    '--with-completion[Append shell autocompletion script to shell-setup output]'
 }
 
 _vibe() {

@@ -20,11 +20,17 @@ describe("generateZshCompletion", () => {
     }
   });
 
-  it("emits _vibe_branches as positional action for start and scratch", () => {
+  it("emits _vibe_branches as positional action for start", () => {
     const startBlock = script.match(/_vibe_start\(\) \{[\s\S]*?\n\}/);
-    const scratchBlock = script.match(/_vibe_scratch\(\) \{[\s\S]*?\n\}/);
     expect(startBlock?.[0]).toContain("'1: :_vibe_branches'");
-    expect(scratchBlock?.[0]).toContain("'1: :_vibe_branches'");
+  });
+
+  it("does not emit dynamic positional completion for scratch", () => {
+    // scratch auto-generates a `scratch/<timestamp>` branch — existing branches
+    // would be misleading candidates. Mirrors fish behavior.
+    const scratchBlock = script.match(/_vibe_scratch\(\) \{[\s\S]*?\n\}/);
+    expect(scratchBlock?.[0]).not.toContain("_vibe_branches");
+    expect(scratchBlock?.[0]).not.toContain("_vibe_worktree_branches");
   });
 
   it("emits _vibe_worktree_branches as positional action for jump", () => {
@@ -110,8 +116,8 @@ describe("generateZshCompletion", () => {
  * Returns true only when `zsh --version` exits cleanly.
  */
 function isZshAvailable(): boolean {
-  const isSkipped = process.env.SKIP_ZSH_TESTS === "1";
-  if (isSkipped) return false;
+  const shouldSkip = process.env.SKIP_ZSH_TESTS === "1";
+  if (shouldSkip) return false;
   try {
     const result = spawnSync("zsh", ["--version"], { stdio: "ignore" });
     return result.status === 0;

@@ -20,7 +20,7 @@ vibe needs a shell wrapper function to change directories after creating or clea
     eval "$(vibe shell-setup --shell zsh --with-completion)"
     ```
 
-    The `compinit` line is required for zsh's completion system. If you already invoke `compinit` elsewhere in your `~/.zshrc`, place the `eval` line *after* that call.
+    The two lines define the `vibe` wrapper and register the zsh completion together. The `compinit` line is required for zsh's completion system — if you already invoke `compinit` elsewhere in your `~/.zshrc`, place the `eval` line *after* that call. If `compinit` has not run, the completion registration is silently skipped and the `vibe` wrapper is still defined.
 
     Wrapper only (no tab completion):
 

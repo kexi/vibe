@@ -44,7 +44,7 @@ The completion script covers:
 - Local branch names for `vibe start <Tab>` (via `git for-each-ref refs/heads`)
 - Worktree branch names for `vibe jump <Tab>` (via `git worktree list --porcelain`)
 
-> Zsh users must call `autoload -Uz compinit && compinit` in `~/.zshrc` before sourcing this script.
+> Zsh users must call `autoload -Uz compinit && compinit` in `~/.zshrc` before the `eval` line. If `compinit` has not run, the completion registration is silently skipped and the `vibe` wrapper is still defined.
 
 ### `-V`, `--verbose`
 

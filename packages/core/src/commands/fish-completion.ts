@@ -1,9 +1,19 @@
-import { type FlagSpec, SUBCOMMANDS, GLOBAL_FLAGS } from "./completion-spec.ts";
+import {
+  type FlagSpec,
+  type PositionalCompletion,
+  SUBCOMMANDS,
+  GLOBAL_FLAGS,
+} from "./completion-spec.ts";
 
 const ALL_BRANCHES_CMD = "git for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null";
 
 const WORKTREE_BRANCHES_CMD =
   "git worktree list --porcelain 2>/dev/null | string match -rg '^branch refs/heads/(.+)'";
+
+const POSITIONAL_COMMAND: Record<PositionalCompletion, string> = {
+  "all-branches": ALL_BRANCHES_CMD,
+  "worktree-branches": WORKTREE_BRANCHES_CMD,
+};
 
 // fish single-quoted strings allow `\'` and `\\` escapes; nothing else needs escaping.
 function escapeFishSingleQuoted(value: string): string {
@@ -48,12 +58,13 @@ export function generateFishCompletion(): string {
   }
 
   lines.push("", "# Dynamic positional completion");
-  lines.push(
-    `complete -c vibe -n '__fish_seen_subcommand_from start' -k -a "(${ALL_BRANCHES_CMD})"`,
-  );
-  lines.push(
-    `complete -c vibe -n '__fish_seen_subcommand_from jump' -k -a "(${WORKTREE_BRANCHES_CMD})"`,
-  );
+  for (const cmd of SUBCOMMANDS) {
+    if (!cmd.positionalCompletion) continue;
+    const shellCmd = POSITIONAL_COMMAND[cmd.positionalCompletion];
+    lines.push(
+      `complete -c vibe -n '__fish_seen_subcommand_from ${cmd.name}' -k -a "(${shellCmd})"`,
+    );
+  }
 
   for (const cmd of SUBCOMMANDS) {
     const flags = cmd.flags;

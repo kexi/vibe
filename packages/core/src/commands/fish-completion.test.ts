@@ -36,6 +36,13 @@ describe("generateFishCompletion", () => {
     expect(renameDynamic).toBeNull();
   });
 
+  it("does not emit dynamic positional completion for `vibe scratch`", () => {
+    // scratch auto-generates a `scratch/<timestamp>` branch name — offering existing
+    // branches as positional completion candidates would be misleading.
+    const scratchDynamic = script.match(/__fish_seen_subcommand_from scratch.*-a "\(git/);
+    expect(scratchDynamic).toBeNull();
+  });
+
   it("marks --base and --shell as requiring an argument", () => {
     expect(script).toMatch(/__fish_seen_subcommand_from start.*-l base -r/);
     expect(script).toMatch(/__fish_seen_subcommand_from shell-setup.*-l shell -r/);
