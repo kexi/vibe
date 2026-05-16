@@ -3,7 +3,8 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { generateFishCompletion, SUBCOMMANDS } from "./fish-completion.ts";
+import { generateFishCompletion } from "./fish-completion.ts";
+import { SUBCOMMANDS } from "./completion-spec.ts";
 
 describe("generateFishCompletion", () => {
   const script = generateFishCompletion();
@@ -33,6 +34,13 @@ describe("generateFishCompletion", () => {
   it("does not emit dynamic completion for `vibe rename`", () => {
     const renameDynamic = script.match(/__fish_seen_subcommand_from rename.*-a "\(git/);
     expect(renameDynamic).toBeNull();
+  });
+
+  it("does not emit dynamic positional completion for `vibe scratch`", () => {
+    // scratch auto-generates a `scratch/<timestamp>` branch name — offering existing
+    // branches as positional completion candidates would be misleading.
+    const scratchDynamic = script.match(/__fish_seen_subcommand_from scratch.*-a "\(git/);
+    expect(scratchDynamic).toBeNull();
   });
 
   it("marks --base and --shell as requiring an argument", () => {

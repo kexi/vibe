@@ -5,7 +5,7 @@ sidebar:
   order: 10
 ---
 
-The `shell-setup` command prints a shell wrapper function that lets vibe change your current working directory after creating or cleaning up worktrees. It can also emit a fish autocompletion script alongside the wrapper.
+The `shell-setup` command prints a shell wrapper function that lets vibe change your current working directory after creating or cleaning up worktrees. It can also emit a fish or zsh autocompletion script alongside the wrapper.
 
 ## Usage
 
@@ -13,6 +13,7 @@ The `shell-setup` command prints a shell wrapper function that lets vibe change 
 vibe shell-setup
 vibe shell-setup --shell <name>
 vibe shell-setup --shell fish --with-completion
+vibe shell-setup --shell zsh --with-completion
 ```
 
 By default the command detects your shell from `$SHELL` and prints the wrapper to stdout. Pipe the output to `eval` (bash / zsh) or `source` (fish) — see [Shell Setup](/setup/) for per-shell installation snippets.
@@ -29,18 +30,21 @@ vibe shell-setup --shell zsh
 
 ### `--with-completion`
 
-Append a shell autocompletion script after the wrapper function. Currently only supported for `fish`; using it with any other shell exits with an error. Adding more shells is a follow-up.
+Append a shell autocompletion script after the wrapper function. Currently supported for `fish` and `zsh`; using it with `bash`/`nushell`/`powershell` exits with an error.
 
 ```bash
 vibe shell-setup --shell fish --with-completion | source
+eval "$(vibe shell-setup --shell zsh --with-completion)"
 ```
 
-The fish completion covers:
+The completion script covers:
 
 - All subcommands and their descriptions (`vibe <Tab>`)
 - Per-subcommand flags (`vibe start --<Tab>`)
 - Local branch names for `vibe start <Tab>` (via `git for-each-ref refs/heads`)
 - Worktree branch names for `vibe jump <Tab>` (via `git worktree list --porcelain`)
+
+> Zsh users must call `autoload -Uz compinit && compinit` in `~/.zshrc` before the `eval` line. If `compinit` has not run, the completion registration is silently skipped and the `vibe` wrapper is still defined.
 
 ### `-V`, `--verbose`
 
@@ -71,6 +75,9 @@ vibe shell-setup --shell fish | source
 
 # Fish wrapper + tab completion in one line
 vibe shell-setup --shell fish --with-completion | source
+
+# Zsh wrapper + tab completion in one line (requires compinit beforehand)
+eval "$(vibe shell-setup --shell zsh --with-completion)"
 ```
 
 ## Related

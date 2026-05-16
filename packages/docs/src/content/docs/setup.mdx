@@ -11,7 +11,18 @@ vibe needs a shell wrapper function to change directories after creating or clea
 
 <Tabs>
   <TabItem label="Zsh">
-    Add to `~/.zshrc`:
+    Add **one** of the following to `~/.zshrc`. Do not add both — the wrapper would be defined twice.
+
+    Recommended — wrapper function with tab completion (subcommands, flags, and branch names for `vibe start` / `vibe jump`):
+
+    ```bash
+    autoload -Uz compinit && compinit
+    eval "$(vibe shell-setup --shell zsh --with-completion)"
+    ```
+
+    The two lines define the `vibe` wrapper and register the zsh completion together. The `compinit` line is required for zsh's completion system — if you already invoke `compinit` elsewhere in your `~/.zshrc`, place the `eval` line *after* that call. If `compinit` has not run, the completion registration is silently skipped and the `vibe` wrapper is still defined.
+
+    Wrapper only (no tab completion):
 
     ```bash
     vibe() { eval "$(command vibe "$@")" }

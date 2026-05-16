@@ -65,12 +65,12 @@ Command Options:
   --keep-branch     Keep the branch after removing the worktree (clean)
   --check           Check for updates without showing upgrade instructions (upgrade)
   --shell <name>    Specify shell type: bash, zsh, fish, nushell, powershell (shell-setup)
-  --with-completion Append shell autocompletion script to shell-setup output (fish only for now)
+  --with-completion Append shell autocompletion script to shell-setup output
   --claude-code-worktree-hook   Claude Code worktree hook mode (start, clean)
 
 Setup:
   Run \`vibe shell-setup\` to detect your shell and print the wrapper function.
-  For fish with tab completion, use \`--with-completion\`. See https://vibe.kexi.dev for details.
+  For fish or zsh with tab completion, use \`--with-completion\`. See https://vibe.kexi.dev for details.
 
 Examples:
   vibe trust
@@ -91,6 +91,7 @@ Examples:
   vibe home
   eval "$(vibe shell-setup --shell zsh)"
   vibe shell-setup --shell fish --with-completion | source
+  eval "$(vibe shell-setup --shell zsh --with-completion)"
 `;
 
 async function main(): Promise<void> {

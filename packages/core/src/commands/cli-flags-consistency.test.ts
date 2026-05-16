@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { parseArgsOptions } from "../cli-args-options.ts";
-import { SUBCOMMANDS, GLOBAL_FLAGS } from "./fish-completion.ts";
+import { SUBCOMMANDS, GLOBAL_FLAGS } from "./completion-spec.ts";
 
-// Internal flags intentionally excluded from fish completion. Add new entries here
+// Internal flags intentionally excluded from completion specs. Add new entries here
 // when introducing internal-only flags that should not surface in user-facing completion.
 const INTERNAL_FLAGS_NOT_EXPOSED_TO_COMPLETION = new Set(["claude-code-worktree-hook"]);
 
@@ -13,14 +13,14 @@ describe("CLI flag metadata consistency", () => {
     ...SUBCOMMANDS.flatMap((c) => c.flags?.map((f) => f.long) ?? []),
   ]);
 
-  it("every parseArgs flag is either in fish completion or explicitly internal", () => {
+  it("every parseArgs flag is either in completion spec or explicitly internal", () => {
     const missing = [...parseArgsKeys].filter(
       (k) => !completionFlagSet.has(k) && !INTERNAL_FLAGS_NOT_EXPOSED_TO_COMPLETION.has(k),
     );
     expect(missing).toEqual([]);
   });
 
-  it("every fish completion flag is defined in parseArgs", () => {
+  it("every completion spec flag is defined in parseArgs", () => {
     const orphan = [...completionFlagSet].filter((k) => !parseArgsKeys.has(k));
     expect(orphan).toEqual([]);
   });
@@ -30,7 +30,7 @@ describe("CLI flag metadata consistency", () => {
     expect(dead).toEqual([]);
   });
 
-  it("short flag aliases agree between parseArgs and fish completion", () => {
+  it("short flag aliases agree between parseArgs and completion specs", () => {
     const completionShorts = new Map<string, string>();
     for (const f of GLOBAL_FLAGS) {
       if (f.short) completionShorts.set(f.long, f.short);
@@ -47,7 +47,7 @@ describe("CLI flag metadata consistency", () => {
     }
   });
 
-  it("every parseArgs short alias is also declared in fish completion", () => {
+  it("every parseArgs short alias is also declared in completion specs", () => {
     const completionShorts = new Set<string>();
     for (const f of GLOBAL_FLAGS) {
       if (f.short) completionShorts.add(f.long);
