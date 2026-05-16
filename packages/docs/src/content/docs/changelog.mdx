@@ -11,7 +11,7 @@ All notable changes to vibe are documented here.
 
 ### Added
 
-- Zsh shell autocompletion for `vibe`. Run `vibe shell-setup --shell zsh --with-completion | source` (or add the line to `~/.zshrc`) to get tab completion for subcommands, flags, local branch names on `vibe start <Tab>`, and worktree branch names on `vibe jump <Tab>`. See [Shell Setup](/setup/) and [`vibe shell-setup`](/commands/shell-setup/) for details.
+- Zsh shell autocompletion for `vibe`. Add `autoload -Uz compinit && compinit` and `eval "$(vibe shell-setup --shell zsh --with-completion)"` to `~/.zshrc` (in that order — `compinit` must run before the `eval`) to get tab completion for subcommands, flags, local branch names on `vibe start <Tab>`, and worktree branch names on `vibe jump <Tab>`. See [Shell Setup](/setup/) and [`vibe shell-setup`](/commands/shell-setup/) for details.
 
 ---
 
