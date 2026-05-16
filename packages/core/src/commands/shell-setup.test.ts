@@ -240,16 +240,13 @@ describe("shellSetupCommand", () => {
     expect(combined).toContain("__fish_use_subcommand -a start");
   });
 
-  it("exits with error when --with-completion is used with non-fish shell", async () => {
-    let exitCode: number | null = null;
+  it("appends zsh completion when --with-completion is set with zsh", async () => {
     const ctx = createMockContext({
       env: {
-        get: (key: string) => (key === "SHELL" ? "/bin/bash" : undefined),
+        get: (key: string) => (key === "SHELL" ? "/usr/bin/zsh" : undefined),
       },
       control: {
-        exit: ((code: number) => {
-          exitCode = code;
-        }) as never,
+        exit: (() => {}) as never,
         cwd: () => "/mock/cwd",
         chdir: () => {},
         execPath: () => "/mock/exec",
@@ -259,15 +256,14 @@ describe("shellSetupCommand", () => {
 
     await shellSetupCommand({ withCompletion: true }, ctx);
 
-    expect(exitCode).toBe(1);
-    const hasErrorMessage = stderrOutput.some((line) =>
-      line.includes("--with-completion currently supports only"),
-    );
-    expect(hasErrorMessage).toBe(true);
+    const combined = stdoutOutput.join("\n");
+    expect(combined).toContain(`vibe() { eval "$(command vibe "$@")"; }`);
+    expect(combined).toContain("#compdef vibe");
+    expect(combined).toContain("_vibe_commands");
   });
 
   it.each([
-    { shellPath: "/usr/bin/zsh", expectedName: "zsh" },
+    { shellPath: "/bin/bash", expectedName: "bash" },
     { shellPath: "/usr/bin/nu", expectedName: "nushell" },
     { shellPath: "/usr/local/bin/pwsh", expectedName: "powershell" },
   ])(
@@ -332,6 +328,28 @@ describe("shellSetupCommand", () => {
     const ctx = createMockContext({
       env: {
         get: (key: string) => (key === "SHELL" ? "/usr/bin/fish" : undefined),
+      },
+      control: {
+        exit: (() => {}) as never,
+        cwd: () => "/mock/cwd",
+        chdir: () => {},
+        execPath: () => "/mock/exec",
+        args: [],
+      },
+    });
+
+    await shellSetupCommand({ withCompletion: true, verbose: true }, ctx);
+
+    const stdoutHasVerboseLine = stdoutOutput.some((line) => line.includes("Detected shell"));
+    const stderrHasVerboseLine = stderrOutput.some((line) => line.includes("Detected shell"));
+    expect(stdoutHasVerboseLine).toBe(false);
+    expect(stderrHasVerboseLine).toBe(true);
+  });
+
+  it("zsh --with-completion with verbose keeps stdout free of log lines", async () => {
+    const ctx = createMockContext({
+      env: {
+        get: (key: string) => (key === "SHELL" ? "/usr/bin/zsh" : undefined),
       },
       control: {
         exit: (() => {}) as never,

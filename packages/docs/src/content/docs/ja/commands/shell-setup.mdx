@@ -5,7 +5,7 @@ sidebar:
   order: 10
 ---
 
-`shell-setup` コマンドは、vibe が worktree の作成・削除後にカレントディレクトリを移動できるようにするシェルラッパー関数を出力します。ラッパーに加えて fish の補完スクリプトも一緒に出力できます。
+`shell-setup` コマンドは、vibe が worktree の作成・削除後にカレントディレクトリを移動できるようにするシェルラッパー関数を出力します。ラッパーに加えて fish / zsh の補完スクリプトも一緒に出力できます。
 
 ## 使い方
 
@@ -13,6 +13,7 @@ sidebar:
 vibe shell-setup
 vibe shell-setup --shell <name>
 vibe shell-setup --shell fish --with-completion
+vibe shell-setup --shell zsh --with-completion
 ```
 
 デフォルトでは `$SHELL` からシェルを検出してラッパー関数を stdout に出力します。出力を `eval` (bash / zsh) や `source` (fish) にパイプしてください。シェル別のインストール手順は [シェル設定](/ja/setup/) を参照。
@@ -29,18 +30,21 @@ vibe shell-setup --shell zsh
 
 ### `--with-completion`
 
-ラッパー関数の後ろにシェル補完スクリプトを追加します。現状は `fish` のみサポート。他のシェルで指定するとエラー終了します（他シェル対応はフォローアップ予定）。
+ラッパー関数の後ろにシェル補完スクリプトを追加します。現状は `fish` と `zsh` をサポート。`bash` / `nushell` / `powershell` で指定するとエラー終了します。
 
 ```bash
 vibe shell-setup --shell fish --with-completion | source
+eval "$(vibe shell-setup --shell zsh --with-completion)"
 ```
 
-fish 補完がカバーする範囲:
+補完スクリプトがカバーする範囲:
 
 - 全サブコマンドと説明 (`vibe <Tab>`)
 - サブコマンドごとのフラグ (`vibe start --<Tab>`)
 - `vibe start <Tab>` でローカルブランチ名 (`git for-each-ref refs/heads` 経由)
 - `vibe jump <Tab>` で worktree のブランチ名 (`git worktree list --porcelain` 経由)
+
+> zsh の場合は、`eval` 行より前に `~/.zshrc` で `autoload -Uz compinit && compinit` を呼んでおく必要があります。`compinit` が実行されていない場合は補完登録が silently スキップされ、`vibe` ラッパー関数のみが定義されます。
 
 ### `-V`, `--verbose`
 
@@ -71,6 +75,9 @@ vibe shell-setup --shell fish | source
 
 # fish ラッパー + タブ補完を 1 行で
 vibe shell-setup --shell fish --with-completion | source
+
+# zsh ラッパー + タブ補完を 1 行で（事前に compinit が必要）
+eval "$(vibe shell-setup --shell zsh --with-completion)"
 ```
 
 ## 関連

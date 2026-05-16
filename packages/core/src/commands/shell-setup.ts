@@ -1,6 +1,7 @@
 import { type AppContext, getGlobalContext } from "../context/index.ts";
 import { errorLog, verboseLog, type OutputOptions } from "../utils/output.ts";
 import { generateFishCompletion } from "./fish-completion.ts";
+import { generateZshCompletion } from "./zsh-completion.ts";
 
 type ShellName = "bash" | "zsh" | "fish" | "nushell" | "powershell";
 
@@ -14,6 +15,7 @@ interface ShellSetupOptions extends OutputOptions {
 // messages, supported-shell listing) follows from this map.
 const COMPLETION_GENERATORS: Partial<Record<ShellName, () => string>> = {
   fish: generateFishCompletion,
+  zsh: generateZshCompletion,
 };
 
 /**
