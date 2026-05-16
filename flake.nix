@@ -8,25 +8,25 @@
 
   outputs = { self, nixpkgs, flake-utils }:
     let
-      version = "1.5.2";
+      version = "1.6.0";
 
       # Platform-specific binary names and SHA-256 hashes
       platforms = {
         x86_64-linux = {
           artifact = "vibe-linux-x64";
-          hash = "sha256-mSXqWSgChiAQGBixv1VUlnIq04EepcW/9G+IVfJoRlY=";
+          hash = "sha256-uyepiJGCOhNOaySw4v2VrWdLcO/bpjB0Ghx2/wE6ywQ=";
         };
         aarch64-linux = {
           artifact = "vibe-linux-arm64";
-          hash = "sha256-2XjspOVZCRFdxZaZ6lY+p241Q4zUUnZikR6AOUPxEqg=";
+          hash = "sha256-tqrwaeZIHcv7uRUd9CZzt7TbS1mY53RhzIpW5J0iKAU=";
         };
         x86_64-darwin = {
           artifact = "vibe-darwin-x64";
-          hash = "sha256-TZjIzq/8mpzyhTV3W4CHd0wJeyr2rmLWpMpJsPBtaz4=";
+          hash = "sha256-dvMNWQlv/jFPnNXaJVfJ0qQcCBF+x2MrpF5aEei2Fz4=";
         };
         aarch64-darwin = {
           artifact = "vibe-darwin-arm64";
-          hash = "sha256-1RvE+9O+wuhg87BZFACt/eUdHXPQj2YmsDGQM6NBT8o=";
+          hash = "sha256-OBWXsztaefIP21y2pDYJYXY7KqXNs9D8bGPJB2qJ6pA=";
         };
       };
     in
