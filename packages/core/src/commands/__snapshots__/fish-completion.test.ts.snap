@@ -58,6 +58,6 @@ complete -c vibe -n '__fish_seen_subcommand_from upgrade' -l check -d 'Check for
 
 # shell-setup flags
 complete -c vibe -n '__fish_seen_subcommand_from shell-setup' -l shell -r -xa 'bash zsh fish nushell powershell' -d 'Specify shell type'
-complete -c vibe -n '__fish_seen_subcommand_from shell-setup' -l with-completion -d 'Append shell autocompletion script to shell-setup output (fish only for now)'
+complete -c vibe -n '__fish_seen_subcommand_from shell-setup' -l with-completion -d 'Append shell autocompletion script to shell-setup output (fish, zsh)'
 "
 `;

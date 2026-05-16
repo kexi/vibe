@@ -3,7 +3,8 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { generateFishCompletion, SUBCOMMANDS } from "./fish-completion.ts";
+import { generateFishCompletion } from "./fish-completion.ts";
+import { SUBCOMMANDS } from "./completion-spec.ts";
 
 describe("generateFishCompletion", () => {
   const script = generateFishCompletion();
