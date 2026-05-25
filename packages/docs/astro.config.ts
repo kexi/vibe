@@ -86,6 +86,11 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
           autogenerate: { directory: "commands" },
         },
         {
+          label: "Recipes",
+          translations: { ja: "レシピ集" },
+          autogenerate: { directory: "recipes" },
+        },
+        {
           label: "Security",
           translations: { ja: "セキュリティ" },
           autogenerate: { directory: "security" },

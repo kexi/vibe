@@ -1,0 +1,31 @@
+---
+title: tmux
+description: Split a tmux pane into the new worktree
+sidebar:
+  order: 3
+---
+
+Split the current tmux window horizontally into the new worktree's directory.
+
+```toml
+[hooks]
+post_start = ['[ -n "$TMUX" ] && tmux split-window -h -c "$VIBE_WORKTREE_PATH"']
+```
+
+The `[ -n "$TMUX" ] &&` guard makes the hook a no-op when you run `vibe start` outside of tmux, so the same config works everywhere.
+
+## Variants
+
+Open a new window instead of splitting:
+
+```toml
+[hooks]
+post_start = ['[ -n "$TMUX" ] && tmux new-window -c "$VIBE_WORKTREE_PATH"']
+```
+
+Vertical split:
+
+```toml
+[hooks]
+post_start = ['[ -n "$TMUX" ] && tmux split-window -v -c "$VIBE_WORKTREE_PATH"']
+```

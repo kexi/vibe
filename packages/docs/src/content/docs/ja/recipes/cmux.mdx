@@ -1,0 +1,20 @@
+---
+title: cmux
+description: 新しいWorktreeでcmuxワークスペースを開く
+sidebar:
+  order: 2
+---
+
+作成したばかりのWorktreeを指す[cmux](https://github.com/kexi/cmux)ワークスペースを新規に開きます。
+
+```toml
+[hooks]
+post_start = ['cmux new-workspace --cwd "$VIBE_WORKTREE_PATH"']
+```
+
+これだけで、`vibe start`のたびにWorktreeパスがcmuxに渡されます。
+
+## 注意点
+
+- `post_start`は新しいWorktree**内**で実行されるため、`--cwd "$VIBE_WORKTREE_PATH"`は厳密には冗長ですが、後で別のフックフェーズに移したときに動作を明確にしておくために残してあります。
+- 非対話シェルの`PATH`にcmuxがない場合は絶対パスを指定してください: `'/usr/local/bin/cmux new-workspace --cwd "$VIBE_WORKTREE_PATH"'`
