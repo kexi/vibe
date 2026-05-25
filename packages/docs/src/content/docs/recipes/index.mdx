@@ -1,0 +1,20 @@
+---
+title: Recipes
+description: Short, copy-pasteable snippets that integrate vibe with other tools
+sidebar:
+  order: 1
+---
+
+A collection of minimal `.vibe.toml` snippets for common "I want vibe to also do X" workflows.
+
+Each recipe is intentionally small — one or two lines of TOML you can paste into your existing config. For full hook reference, see [Hooks](/configuration/hooks/).
+
+## What's here
+
+- [cmux](/recipes/cmux/) — open a cmux workspace in the new worktree
+- [tmux](/recipes/tmux/) — split a tmux pane into the new worktree
+- [direnv](/recipes/direnv/) — auto-`direnv allow` the new worktree
+
+:::tip
+Recipes only use documented environment variables (`VIBE_WORKTREE_PATH`, `VIBE_ORIGIN_PATH`) and `sh`-compatible syntax, so they work on macOS and Linux out of the box.
+:::

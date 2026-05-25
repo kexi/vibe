@@ -1,0 +1,31 @@
+---
+title: tmux
+description: tmuxペインを新しいWorktreeに分割する
+sidebar:
+  order: 3
+---
+
+現在のtmuxウィンドウを水平分割し、新しいWorktreeのディレクトリで開きます。
+
+```toml
+[hooks]
+post_start = ['[ -n "$TMUX" ] && tmux split-window -h -c "$VIBE_WORKTREE_PATH"']
+```
+
+`[ -n "$TMUX" ] &&` のガードがあるので、tmuxの外で`vibe start`を実行した場合はフックが何もしません。同じ設定がどこでも動きます。
+
+## バリエーション
+
+分割ではなく新しいウィンドウを開く場合:
+
+```toml
+[hooks]
+post_start = ['[ -n "$TMUX" ] && tmux new-window -c "$VIBE_WORKTREE_PATH"']
+```
+
+垂直分割の場合:
+
+```toml
+[hooks]
+post_start = ['[ -n "$TMUX" ] && tmux split-window -v -c "$VIBE_WORKTREE_PATH"']
+```
