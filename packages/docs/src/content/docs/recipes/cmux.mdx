@@ -1,0 +1,20 @@
+---
+title: cmux
+description: Open a cmux workspace in the new worktree
+sidebar:
+  order: 2
+---
+
+Open a new [cmux](https://github.com/kexi/cmux) workspace pointing at the freshly created worktree.
+
+```toml
+[hooks]
+post_start = ['cmux new-workspace --cwd "$VIBE_WORKTREE_PATH"']
+```
+
+That's it — every `vibe start` will hand the worktree path to cmux.
+
+## Notes
+
+- `post_start` runs **inside** the new worktree, so `--cwd "$VIBE_WORKTREE_PATH"` is technically redundant but keeps the command unambiguous if you later move it to a different hook phase.
+- If cmux is not on your `PATH` in non-interactive shells, use an absolute path: `'/usr/local/bin/cmux new-workspace --cwd "$VIBE_WORKTREE_PATH"'`.

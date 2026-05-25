@@ -1,0 +1,22 @@
+---
+title: direnv
+description: 新しいWorktreeで.envrcを自動許可する
+sidebar:
+  order: 4
+---
+
+プロジェクトで[direnv](https://direnv.net)を使っていてWorktreeに`.envrc`をコピーしている場合、direnvは`direnv allow`を実行するまで読み込みをブロックします。これを自動化します:
+
+```toml
+[copy]
+files = [".envrc"]
+
+[hooks]
+post_start = ['direnv allow .']
+```
+
+`post_start`は新しいWorktree内で実行されるため、`.`だけで十分です。
+
+:::caution
+`direnv allow`はシェルの完全な権限で`.envrc`を実行します。チェックアウトするブランチのすべてのコミットを信頼できるリポジトリでのみ有効化してください。
+:::

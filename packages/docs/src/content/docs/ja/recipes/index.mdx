@@ -1,0 +1,20 @@
+---
+title: レシピ集
+description: vibeと他ツールを連携させるための短いコピペ可能なスニペット集
+sidebar:
+  order: 1
+---
+
+「vibeで○○もやりたい」というよくあるワークフロー向けの、最小限の`.vibe.toml`スニペット集です。
+
+各レシピは意図的に小さく、既存の設定にそのままコピペできる1〜2行のTOMLで構成されています。フックの完全なリファレンスは [フック](/ja/configuration/hooks/) を参照してください。
+
+## ラインナップ
+
+- [cmux](/ja/recipes/cmux/) — 新しいWorktreeでcmuxワークスペースを開く
+- [tmux](/ja/recipes/tmux/) — tmuxペインを新しいWorktreeに分割する
+- [direnv](/ja/recipes/direnv/) — 新しいWorktreeで自動的に`direnv allow`する
+
+:::tip
+レシピで使うのは公式の環境変数（`VIBE_WORKTREE_PATH`、`VIBE_ORIGIN_PATH`）と`sh`互換構文のみなので、macOSとLinuxでそのまま動作します。
+:::

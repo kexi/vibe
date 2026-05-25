@@ -1,0 +1,22 @@
+---
+title: direnv
+description: Auto-allow .envrc in the new worktree
+sidebar:
+  order: 4
+---
+
+If your project uses [direnv](https://direnv.net) and you copy `.envrc` into worktrees, direnv blocks loading until you run `direnv allow`. Automate that:
+
+```toml
+[copy]
+files = [".envrc"]
+
+[hooks]
+post_start = ['direnv allow .']
+```
+
+`post_start` runs inside the new worktree, so a bare `.` is enough.
+
+:::caution
+`direnv allow` runs the `.envrc` with full shell privileges. Only enable this in repositories where you trust every commit on the branch you're checking out.
+:::
