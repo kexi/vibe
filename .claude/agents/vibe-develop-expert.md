@@ -40,7 +40,7 @@ You have deep knowledge of every aspect of this project. Use this knowledge to g
 
 ### Runtime Design Notes
 
-!`cat .mise.toml`
+!`cat flake.nix`
 
 !`cat docs/specifications/multi-runtime.md`
 

@@ -1,7 +1,6 @@
 [hooks]
 post_start = [
-  "mise trust",
-  "mise install",
+  "direnv allow",
   "pnpm install",
   "pnpm run generate-version"
 ]

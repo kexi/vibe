@@ -146,7 +146,7 @@ Single-quoted strings in POSIX shells have NO variable expansion, NO command sub
 - `pnpm-lock.yaml` must be committed
 - CI uses `--frozen-lockfile` and `--ignore-scripts`
 - GitHub Actions pinned to full SHA (enforced by `pinact`)
-- `.mise.toml` tool versions must be full patch versions (no `latest`)
+- Toolchain versions (`flake.lock`, `rust-toolchain.toml`, and the Windows CI fallback in `.github/actions/setup-toolchain`) must be fully pinned (no `latest`)
 
 ---
 

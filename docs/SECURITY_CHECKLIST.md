@@ -56,7 +56,7 @@ A comprehensive security checklist for the vibe CLI tool. Each category includes
   - **Lifecycle scripts off by default**: `strictDepBuilds: true` + explicit `only-built-dependencies` allowlist (currently `node-pty` only, see `.npmrc`); `--ignore-scripts` on every `pnpm install` and `pnpm publish` invocation in CI
   - **Trust monotonicity**: `trustPolicy: no-downgrade` aborts installation when a package transitions to a less-trusted state
   - **Lockfile pinning**: `--frozen-lockfile` in every CI install step
-  - **Workflow integrity**: All third-party GitHub Actions pinned to full commit SHA (`pinact-verify` job blocks unpinned references); tool versions pinned to full patch in `.mise.toml`
+  - **Workflow integrity**: All third-party GitHub Actions pinned to full commit SHA (`pinact-verify` job blocks unpinned references); the toolchain is pinned reproducibly via `flake.lock` (and `rust-toolchain.toml` for Rust)
   - **Runner egress visibility**: `step-security/harden-runner` (audit mode) on every job logs outbound network traffic and `/proc` access, surfacing exfiltration channels such as the `*.getsession.org` C2 used by Shai-Hulud
   - **Publish provenance**: `npm publish --provenance` on every release for OIDC-signed attestation
 - **Enforcement**: `pinact-verify` CI job + `pnpm install --frozen-lockfile --ignore-scripts` in CI + `pnpm publish ... --ignore-scripts` + Harden-Runner Insights review after each release

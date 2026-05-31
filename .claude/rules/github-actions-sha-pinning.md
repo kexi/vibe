@@ -10,5 +10,5 @@ globs:
 - Tag-only references (`@v4`, `@v3`, etc.) are prohibited
 - Local/composite actions (`uses: ./.github/actions/setup`) are exempt
 - When adding a new action, write the tag first, then convert to SHA via `pinact run`
-- `pinact` is installed via mise (see `.mise.toml`)
+- `pinact` is provided by the Nix dev shell (see `flake.nix`)
 - The `pinact-verify` CI job (`pinact run --check`) automatically detects unpinned actions
