@@ -5,6 +5,20 @@ description: Version history and release notes for vibe
 
 All notable changes to vibe are documented here.
 
+## v1.7.0
+
+**Released:** 2026-05-31
+
+### Added
+
+- Recipes documentation for integrating vibe with external tools — [tmux](/recipes/tmux/), [cmux](/recipes/cmux/), and [direnv](/recipes/direnv/). See the [Recipes](/recipes/) overview.
+
+### Changed
+
+- The Nix flake's default package (`nix run github:kexi/vibe`, `nix profile install github:kexi/vibe`) now builds vibe from source for a reproducible install instead of fetching a prebuilt release binary. If you prefer the prebuilt fast path, use the `#binary` output (e.g. `nix run github:kexi/vibe#binary`). See [Installation → Nix](/installation/).
+
+---
+
 ## v1.6.0
 
 **Released:** 2026-05-16

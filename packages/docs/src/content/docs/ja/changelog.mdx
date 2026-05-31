@@ -5,6 +5,20 @@ description: vibeのバージョン履歴とリリースノート
 
 vibeの主要な変更はここに記録されています。
 
+## v1.7.0
+
+**リリース日:** 2026年5月31日
+
+### 追加
+
+- 外部ツールと vibe を連携させるためのレシピ集ドキュメントを追加しました — [tmux](/ja/recipes/tmux/)、[cmux](/ja/recipes/cmux/)、[direnv](/ja/recipes/direnv/)。概要は [レシピ集](/ja/recipes/) を参照。
+
+### 変更
+
+- Nix flake のデフォルトパッケージ（`nix run github:kexi/vibe`、`nix profile install github:kexi/vibe`）が、ビルド済みリリースバイナリを取得する代わりに、再現可能なインストールのためにソースから vibe をビルドするようになりました。ビルド済みの高速パスを使いたい場合は `#binary` 出力を利用してください（例: `nix run github:kexi/vibe#binary`）。詳細は [インストール → Nix](/ja/installation/) を参照。
+
+---
+
 ## v1.6.0
 
 **リリース日:** 2026年5月16日
