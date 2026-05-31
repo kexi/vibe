@@ -5,6 +5,24 @@ description: Version history and release notes for vibe
 
 All notable changes to vibe are documented here.
 
+## v1.8.0
+
+**Released:** 2026-06-01
+
+### Added
+
+- Windows now has a native `robocopy` copy strategy. When copy-on-write is unavailable, vibe falls back to `robocopy` for faster, more reliable worktree file copies on Windows.
+
+### Changed
+
+- Documented how to mount a Btrfs volume inside WSL2 so that copy-on-write copies are enabled on Windows. See [Installation](/installation/).
+
+### Fixed
+
+- Copy failures on Windows now surface the underlying `robocopy` stdout in the error message, making failed copies easier to diagnose.
+
+---
+
 ## v1.7.1
 
 **Released:** 2026-05-31
