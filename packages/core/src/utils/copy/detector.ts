@@ -17,12 +17,13 @@ export async function detectCapabilities(
     return cachedCapabilities;
   }
 
-  const [cloneSupported, rsyncAvailable] = await Promise.all([
+  const [cloneSupported, rsyncAvailable, robocopyAvailable] = await Promise.all([
     detectCloneSupport(ctx),
     detectRsyncAvailable(ctx),
+    detectRobocopyAvailable(ctx),
   ]);
 
-  cachedCapabilities = { cloneSupported, rsyncAvailable };
+  cachedCapabilities = { cloneSupported, rsyncAvailable, robocopyAvailable };
   return cachedCapabilities;
 }
 
@@ -120,6 +121,33 @@ async function detectRsyncAvailable(ctx: AppContext): Promise<boolean> {
     const result = await ctx.runtime.process.run({
       cmd: "rsync",
       args: ["--version"],
+      stderr: "null",
+      stdout: "null",
+    });
+
+    return result.success;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Detect if robocopy command is available (Windows only).
+ *
+ * Uses `where robocopy` rather than `robocopy --version`: robocopy has no
+ * version flag, and invoking it without source/dest returns exit code 16,
+ * so success-by-exit-code-0 cannot distinguish "present" from "bad args".
+ */
+async function detectRobocopyAvailable(ctx: AppContext): Promise<boolean> {
+  const isWindows = ctx.runtime.build.os === "windows";
+  if (!isWindows) {
+    return false;
+  }
+
+  try {
+    const result = await ctx.runtime.process.run({
+      cmd: "where",
+      args: ["robocopy"],
       stderr: "null",
       stdout: "null",
     });

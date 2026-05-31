@@ -11,6 +11,7 @@ import {
 import { StandardStrategy } from "./strategies/standard.ts";
 import { CloneStrategy } from "./strategies/clone.ts";
 import { RsyncStrategy } from "./strategies/rsync.ts";
+import { RobocopyStrategy } from "./strategies/robocopy.ts";
 import { validatePath } from "./validation.ts";
 import { setupRealTestContext } from "../../context/testing.ts";
 
@@ -102,6 +103,77 @@ describe("RsyncStrategy", () => {
   });
 });
 
+describe("RobocopyStrategy", () => {
+  it("name is robocopy", () => {
+    const strategy = new RobocopyStrategy();
+    expect(strategy.name).toBe("robocopy");
+  });
+
+  it("is unavailable on non-Windows platforms", async () => {
+    resetState();
+    const isWindows = process.platform === "win32";
+    if (isWindows) return;
+
+    const strategy = new RobocopyStrategy();
+    expect(await strategy.isAvailable()).toBe(false);
+  });
+});
+
+// Robocopy only runs on Windows; gate the real-copy assertions accordingly.
+describe.skipIf(process.platform !== "win32")("RobocopyStrategy (Windows)", () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    resetState();
+    tempDir = await mkdtemp(join(tmpdir(), "vibe-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("is available", async () => {
+    const strategy = new RobocopyStrategy();
+    expect(await strategy.isAvailable()).toBe(true);
+  });
+
+  it("copies directory contents into dest", async () => {
+    const srcDir = join(tempDir, "source");
+    const destDir = join(tempDir, "dest");
+
+    await mkdir(srcDir);
+    await writeFile(join(srcDir, "file1.txt"), "content1");
+    await mkdir(join(srcDir, "nested"));
+    await writeFile(join(srcDir, "nested", "file2.txt"), "content2");
+
+    const strategy = new RobocopyStrategy();
+    await strategy.copyDirectory(srcDir, destDir);
+
+    const content1 = await readFile(join(destDir, "file1.txt"), "utf-8");
+    const content2 = await readFile(join(destDir, "nested", "file2.txt"), "utf-8");
+    expect(content1).toBe("content1");
+    expect(content2).toBe("content2");
+  });
+
+  it("re-copying an unchanged directory does not throw", async () => {
+    const srcDir = join(tempDir, "source");
+    const destDir = join(tempDir, "dest");
+
+    await mkdir(srcDir);
+    await writeFile(join(srcDir, "file1.txt"), "content1");
+
+    const strategy = new RobocopyStrategy();
+    // The first copy returns code 1 (files copied) and the second typically
+    // code 0/1 depending on robocopy's diff detection. Both are < 8, so neither
+    // call must reject — that is what the success-by-exit-code-< 8 check buys us.
+    await expect(strategy.copyDirectory(srcDir, destDir)).resolves.toBeUndefined();
+    await expect(strategy.copyDirectory(srcDir, destDir)).resolves.toBeUndefined();
+
+    const content1 = await readFile(join(destDir, "file1.txt"), "utf-8");
+    expect(content1).toBe("content1");
+  });
+});
+
 describe("detectCapabilities", () => {
   it("caches result", async () => {
     resetState();
@@ -111,6 +183,18 @@ describe("detectCapabilities", () => {
 
     // Same reference means it's cached
     expect(result1).toBe(result2);
+  });
+
+  it("reports robocopyAvailable matching the platform", async () => {
+    resetState();
+
+    const result = await detectCapabilities();
+    const isWindows = process.platform === "win32";
+    // robocopy is only detected on Windows; elsewhere it is always false.
+    if (!isWindows) {
+      expect(result.robocopyAvailable).toBe(false);
+    }
+    expect(typeof result.robocopyAvailable).toBe("boolean");
   });
 });
 
@@ -136,6 +220,7 @@ describe("CopyService", () => {
         strategy.name === "clonefile" ||
         strategy.name === "clone" ||
         strategy.name === "rsync" ||
+        strategy.name === "robocopy" ||
         strategy.name === "standard";
       expect(isValidStrategy).toBe(true);
     } finally {
