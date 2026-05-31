@@ -1,0 +1,26 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "semi": true,
+  "singleQuote": false,
+  "tabWidth": 2,
+  "useTabs": false,
+  "printWidth": 100,
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "packages/core/src/version.ts",
+    "packages/docs/**",
+    "packages/video/**",
+    "packages/npm/**",
+    "packages/native/**",
+    "packages/e2e/**",
+    "**/*.json",
+    "**/*.jsonc",
+    "**/*.json5",
+    "**/*.toml",
+    "**/*.yaml",
+    "**/*.yml",
+    "**/*.md",
+    "**/*.mdx"
+  ]
+}
