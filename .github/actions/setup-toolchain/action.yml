@@ -20,11 +20,15 @@ runs:
       env:
         MISE_HTTP_TIMEOUT: "120"
       run: |
-        # Build the flake dev shell once and expose its tool directories on PATH
-        # for all subsequent run steps, so they need no `nix develop --command`
-        # prefix and stay identical to the Windows path.
-        nix develop --command bash -c 'echo "$PATH"' \
-          | tr ':' '\n' | grep '^/nix/store' >> "$GITHUB_PATH"
+        # Build the flake dev shell once and expose only its declared tool
+        # directories on PATH for all subsequent run steps, so they need no
+        # `nix develop --command` prefix and stay identical to the Windows path.
+        # We export just these tools (not the whole shell PATH) so the system
+        # C toolchain stays in front for node-gyp (node-pty) and rustup linking.
+        nix develop --command bash -c '
+          for t in node bun pnpm ruby rustup pinact git; do
+            dirname "$(command -v "$t")"
+          done' | sort -u >> "$GITHUB_PATH"
         echo "SHARP_IGNORE_GLOBAL_LIBVIPS=1" >> "$GITHUB_ENV"
 
     # --- Windows: individual setup actions (Nix does not run on Windows) ---

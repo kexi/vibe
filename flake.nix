@@ -69,7 +69,11 @@
           };
         };
 
-        devShells.default = pkgs.mkShell {
+        # mkShellNoCC (not mkShell) so the shell does not put a Nix C toolchain
+        # (gcc/clang + binutils) on PATH. node-gyp (node-pty) and rustup link
+        # against the system toolchain; a Nix `ld` here shadows it and fails to
+        # find the system crti.o.
+        devShells.default = pkgs.mkShellNoCC {
           # Toolchain that replaces the former .mise.toml. Versions are pinned
           # by flake.lock; node/pnpm follow the lockfile's major (pnpm_10), while
           # Rust is managed by rustup (see rust-toolchain.toml) because the native
