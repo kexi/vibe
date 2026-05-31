@@ -8,7 +8,14 @@
 
   outputs = { self, nixpkgs, flake-utils }:
     let
-      version = "1.7.0"; # release version; bumped by .github/workflows/release.yml (update-nix)
+      # Single source of truth: read the release version from package.json at
+      # eval time instead of hardcoding it here. A literal duplicate drifts out
+      # of sync — the release tag pointed at a commit whose flake.nix still said
+      # the previous version, so a source build / `#binary` from that tag built
+      # the wrong version. Deriving it means flake.nix is correct at every
+      # commit and tag with no release-time bump. (pnpm/native pins below are
+      # tool versions, deliberately independent of the release version.)
+      version = (builtins.fromJSON (builtins.readFile ./package.json)).version;
 
       # Platform-specific metadata.
       # - artifact/hash: prebuilt release binary (packages.default)
