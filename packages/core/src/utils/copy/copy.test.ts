@@ -155,7 +155,7 @@ describe.skipIf(process.platform !== "win32")("RobocopyStrategy (Windows)", () =
     expect(content2).toBe("content2");
   });
 
-  it("treats a no-change re-copy (exit code 1) as success", async () => {
+  it("re-copying an unchanged directory does not throw", async () => {
     const srcDir = join(tempDir, "source");
     const destDir = join(tempDir, "dest");
 
@@ -163,10 +163,11 @@ describe.skipIf(process.platform !== "win32")("RobocopyStrategy (Windows)", () =
     await writeFile(join(srcDir, "file1.txt"), "content1");
 
     const strategy = new RobocopyStrategy();
-    // First copy returns code 1 (files copied); second returns code 0/1
-    // depending on robocopy's diff detection. Both must not throw.
-    await strategy.copyDirectory(srcDir, destDir);
-    await strategy.copyDirectory(srcDir, destDir);
+    // The first copy returns code 1 (files copied) and the second typically
+    // code 0/1 depending on robocopy's diff detection. Both are < 8, so neither
+    // call must reject — that is what the success-by-exit-code-< 8 check buys us.
+    await expect(strategy.copyDirectory(srcDir, destDir)).resolves.toBeUndefined();
+    await expect(strategy.copyDirectory(srcDir, destDir)).resolves.toBeUndefined();
 
     const content1 = await readFile(join(destDir, "file1.txt"), "utf-8");
     expect(content1).toBe("content1");

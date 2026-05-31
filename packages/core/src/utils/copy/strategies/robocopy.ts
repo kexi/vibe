@@ -71,9 +71,14 @@ export class RobocopyStrategy implements CopyStrategy {
     // (code === 0) would wrongly reject a normal successful copy (code 1).
     const isRobocopySuccess = result.code < 8;
     if (!isRobocopySuccess) {
-      const stderr = new TextDecoder().decode(result.stderr);
+      // Robocopy writes its diagnostics (e.g. "ERROR 5 ... Access is denied")
+      // to stdout, not stderr, so the failure detail lives in stdout; stderr is
+      // appended only as a fallback for the rare message that lands there.
+      const stdout = new TextDecoder().decode(result.stdout).trim();
+      const stderr = new TextDecoder().decode(result.stderr).trim();
+      const detail = [stdout, stderr].filter(Boolean).join(" ");
       throw new Error(
-        `Robocopy directory copy failed (code ${result.code}): ${src} -> ${dest}: ${stderr}`,
+        `Robocopy directory copy failed (code ${result.code}): ${src} -> ${dest}: ${detail}`,
       );
     }
   }
