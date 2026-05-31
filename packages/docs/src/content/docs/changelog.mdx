@@ -5,6 +5,14 @@ description: Version history and release notes for vibe
 
 All notable changes to vibe are documented here.
 
+## v1.7.1
+
+**Released:** 2026-05-31
+
+Maintenance release that hardens the Nix release pipeline. The flake version is now derived from `package.json` (a single source of truth) instead of a hardcoded literal, so a release tag can no longer carry a stale version. The post-release flake update was also scoped to leave the pnpm/native tool-version pins untouched — a blanket version rewrite had broken the v1.7.0 source build. No user-facing changes.
+
+---
+
 ## v1.7.0
 
 **Released:** 2026-05-31
