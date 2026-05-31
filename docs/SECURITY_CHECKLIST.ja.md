@@ -56,7 +56,7 @@ vibe CLIツールの包括的なセキュリティチェックリストです。
   - **ライフサイクルスクリプト既定オフ**: `strictDepBuilds: true` + 明示的な `only-built-dependencies` 許可リスト（現在 `node-pty` のみ、`.npmrc` を参照）。CI の全 `pnpm install` / `pnpm publish` に `--ignore-scripts`
   - **信頼レベル単調性**: `trustPolicy: no-downgrade` でパッケージが低信頼状態に遷移した場合にインストールを中断
   - **ロックファイル固定**: 全 CI install ステップで `--frozen-lockfile`
-  - **ワークフロー完全性**: サードパーティ Actions は完全コミット SHA に固定 (`pinact-verify` job が未固定参照をブロック)。`.mise.toml` のツールも patch まで固定
+  - **ワークフロー完全性**: サードパーティ Actions は完全コミット SHA に固定 (`pinact-verify` job が未固定参照をブロック)。ツールチェーンは `flake.lock` (Rust は `rust-toolchain.toml`) で再現的に固定
   - **ランナー egress 可視化**: 全 job に `step-security/harden-runner` (audit モード) を配置し、外向き通信と `/proc` アクセスを記録。Shai-Hulud 系マルウェアが用いる `*.getsession.org` などの C2 を検知可能に
   - **公開時の出所証明**: 全リリースで `npm publish --provenance` を有効化し OIDC 署名された attestation を付与
 - **適用**: CI の `pinact-verify` job + 全 CI install で `pnpm install --frozen-lockfile --ignore-scripts` + `pnpm publish ... --ignore-scripts` + 各リリース後の Harden-Runner Insights レビュー

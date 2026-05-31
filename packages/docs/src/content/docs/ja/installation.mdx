@@ -85,7 +85,13 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     ```
 
     :::note
-    NixパッケージはGitHub Releasesのビルド済みバイナリをSHA-256ハッシュで検証してインストールします。
+    デフォルトパッケージ（`packages.default` / `.#fromSource`）は再現性のため
+    ソースからビルドされます。ビルド済みのリリースバイナリ（コンパイル不要、
+    SHA-256ハッシュで検証）を使いたい場合は `packages.binary` を指定します：
+
+    ```bash frame="terminal"
+    nix run github:kexi/vibe#binary -- start feat/my-feature
+    ```
     :::
 
   </TabItem>

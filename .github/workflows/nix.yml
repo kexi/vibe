@@ -3,9 +3,19 @@ name: Nix
 on:
   push:
     branches: [main, develop]
-    paths:
+    paths: &nix-paths
       - "flake.nix"
       - "flake.lock"
+      # The source build compiles these, so changes here can break it.
+      - "packages/native/**"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - ".github/workflows/nix.yml"
+  # Also run on PRs so a stale pnpm hash or a native-crate change that breaks
+  # the source build is caught before merge, not only on the post-merge push.
+  pull_request:
+    branches: [main, develop]
+    paths: *nix-paths
 
 jobs:
   nix-build:
@@ -25,8 +35,24 @@ jobs:
       - name: Check flake
         run: nix flake check
 
-      - name: Build
-        run: nix build
+      - name: Build native module from source
+        run: nix build .#vibe-native
+
+      - name: Build from source
+        run: nix build .#fromSource
 
       - name: Smoke test
         run: ./result/bin/vibe --help
+
+      # ubuntu-latest is FHS, so `--help` succeeds even if the binary kept a
+      # non-Nix interpreter — which would fail on NixOS. Assert the interpreter
+      # was patched into the Nix store so the NixOS failure mode can't pass
+      # silently.
+      - name: Assert Nix-store ELF interpreter
+        run: |
+          interp=$(nix run nixpkgs#patchelf -- --print-interpreter result/bin/vibe)
+          echo "interpreter: $interp"
+          case "$interp" in
+            /nix/store/*) echo "OK: interpreter is in the Nix store" ;;
+            *) echo "::error::ELF interpreter is not in /nix/store ($interp); the binary would not run on NixOS"; exit 1 ;;
+          esac

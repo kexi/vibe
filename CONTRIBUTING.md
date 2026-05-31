@@ -4,8 +4,17 @@ Thank you for your interest in contributing to vibe!
 
 ## Development Setup
 
+The development toolchain is provided by a Nix flake dev shell. Enter it with:
+
 ```bash
-mise install
+nix develop
+```
+
+Or, with [direnv](https://direnv.net/), allow the included `.envrc` once and the
+shell loads automatically on `cd`:
+
+```bash
+direnv allow
 ```
 
 ## Running vibe in Development

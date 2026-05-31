@@ -28,9 +28,7 @@ jobs:
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        env:
-          MISE_HTTP_TIMEOUT: "120"
+      - uses: ./.github/actions/setup-toolchain
 
       - name: Verify package.json version matches tag
         run: |
@@ -60,9 +58,7 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        env:
-          MISE_HTTP_TIMEOUT: "120"
+      - uses: ./.github/actions/setup-toolchain
 
       - name: Install cargo-audit
         run: cargo install cargo-audit
@@ -96,9 +92,7 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        env:
-          MISE_HTTP_TIMEOUT: "120"
+      - uses: ./.github/actions/setup-toolchain
 
       - name: Add Rust target
         run: rustup target add ${{ matrix.target }}
@@ -129,9 +123,7 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        env:
-          MISE_HTTP_TIMEOUT: "120"
+      - uses: ./.github/actions/setup-toolchain
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
@@ -199,9 +191,7 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        env:
-          MISE_HTTP_TIMEOUT: "120"
+      - uses: ./.github/actions/setup-toolchain
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
