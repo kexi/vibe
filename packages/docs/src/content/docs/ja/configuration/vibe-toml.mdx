@@ -93,12 +93,13 @@ VIBE_COPY_CONCURRENCY=16 vibe start feat/my-feature
 
 vibeはシステムに応じて最適なコピー戦略を自動選択します：
 
-| 戦略            | 使用条件                                    | プラットフォーム |
-| --------------- | ------------------------------------------- | ---------------- |
-| Clone (CoW)     | APFSでのディレクトリコピー                  | macOS            |
-| Clone (reflink) | Btrfs/XFSでのディレクトリコピー             | Linux            |
-| rsync           | cloneが利用できない場合のディレクトリコピー | macOS/Linux      |
-| Standard        | ファイルコピー、またはフォールバック        | 全て             |
+| 戦略             | 使用条件                                    | プラットフォーム |
+| ---------------- | ------------------------------------------- | ---------------- |
+| Clone (CoW)      | APFSでのディレクトリコピー                  | macOS            |
+| Clone (reflink)  | Btrfs/XFSでのディレクトリコピー             | Linux            |
+| rsync            | cloneが利用できない場合のディレクトリコピー | macOS/Linux      |
+| robocopy (`/MT`) | ディレクトリコピー                          | Windows          |
+| Standard         | ファイルコピー、またはフォールバック        | 全て             |
 
 **仕組み：**
 

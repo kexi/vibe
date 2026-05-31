@@ -1,0 +1,65 @@
+---
+title: WSL2 + btrfs
+description: Enable real Copy-on-Write (reflink) copies in WSL2 by mounting a btrfs volume
+sidebar:
+  order: 5
+---
+
+Inside WSL2, vibe runs as Linux and automatically picks the `clone` (`cp --reflink`) or `rsync` [copy strategy](/configuration/vibe-toml/#copy-performance-optimization) — no configuration needed. But the WSL2 root filesystem is always **ext4**, which does not support reflink, so `cp --reflink=auto` silently falls back to a full copy.
+
+To get real Copy-on-Write in WSL2, mount a separate **btrfs** volume and keep your project (e.g. `node_modules`) on it. Once the project lives on btrfs, vibe's existing `clone` strategy produces instant CoW copies automatically.
+
+## Why the WSL root can't do CoW
+
+- The WSL2 root is **ext4** and hardcoded — it is not configurable via `.wslconfig` or `wsl.conf` (ref [microsoft/WSL#9339](https://github.com/microsoft/WSL/issues/9339)).
+- A "btrfs distro" (openSUSE / Fedora) does **not** help: WSL unpacks the rootfs into its own ext4 VHDX regardless.
+- Running `btrfs-convert` on the root is **not viable** — the converted root won't boot in WSL.
+- reflink only works **within the same filesystem**, so the source and the copy must both live on the btrfs volume.
+
+## Recommended setup — mount a secondary btrfs VHD
+
+:::caution
+`wsl --mount` requires Windows 11 (or the Store version of WSL) and an **elevated** PowerShell (Run as Administrator).
+:::
+
+On the Windows side, in an Administrator PowerShell, create a VHD and attach it to WSL:
+
+```powershell
+New-VHD -Path C:\wsl\dev-btrfs.vhdx -Dynamic -SizeBytes 128GB -BlockSizeBytes 1MB
+wsl --mount --vhd C:\wsl\dev-btrfs.vhdx --bare
+```
+
+Then, inside WSL, format and mount the volume once:
+
+```bash
+lsblk                                  # find the new device, e.g. /dev/sdd
+sudo mkfs.btrfs /dev/sdd
+sudo mkdir -p /mnt/btrfs
+sudo blkid /dev/sdd                    # copy the UUID
+echo 'UUID=<uuid> /mnt/btrfs btrfs defaults,nofail 0 0' | sudo tee -a /etc/fstab
+sudo mount -a
+sudo chown $USER:$USER /mnt/btrfs
+
+# Put the project on the btrfs volume; reflink works within it
+mv ~/myproject /mnt/btrfs/myproject
+cd /mnt/btrfs && cp --reflink=always -r myproject myproject-copy
+```
+
+## Re-attach on reboot
+
+`wsl --mount --vhd ... --bare` is a host-side operation and must be re-run after a Windows restart (for example, a Task Scheduler entry set to "Run with highest privileges" at login). Once the disk is attached, `/etc/fstab` mounts it automatically (`automount.mountFsTab` defaults to `true`).
+
+## Caveats
+
+:::caution
+
+- reflink across filesystems is impossible — copying from the ext4 root to the btrfs volume is a full copy.
+- Cross-mountpoint reflink on the same btrfs needs kernel ≥ 5.18; WSL2's 6.6 kernel clears this.
+  :::
+
+## References
+
+- [MS Learn – Mount a Linux disk in WSL2](https://learn.microsoft.com/en-us/windows/wsl/wsl2-mount-disk)
+- [microsoft/WSL#9339 – non-ext4 root filesystem](https://github.com/microsoft/WSL/issues/9339)
+- [btrfs docs – Reflink](https://btrfs.readthedocs.io/en/latest/Reflink.html)
+- vibe – [Copy Performance Optimization](/configuration/vibe-toml/#copy-performance-optimization)
