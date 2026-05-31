@@ -345,8 +345,11 @@ jobs:
           fi
           echo "value=$VERSION" >> "$GITHUB_OUTPUT"
 
-          # Replace version (works for both placeholder and real values)
-          sed -i "s/version = \".*\"/version = \"$VERSION\"/" flake.nix
+          # Bump only the top-level release version. Anchored to its marker
+          # comment so the `version = "..."` pins below it (pnpm, vibe-native)
+          # are never clobbered — a blanket s/version = ".*"/ rewrote all three
+          # and broke the source build (pnpm fetched at the release version).
+          sed -i -E "s|^( *version = )\"[^\"]*\"(; # release version.*)$|\1\"$VERSION\"\2|" flake.nix
 
           # Replace hashes using artifact name as anchor (works for both placeholder and real SRI hashes)
           sed -i '/vibe-linux-x64/,/};/s|hash = ".*"|hash = "${{ steps.hashes.outputs.linux_x64 }}"|' flake.nix
