@@ -333,7 +333,7 @@ jobs:
             echo "${key}=${sri}" >> "$GITHUB_OUTPUT"
           done
 
-      - name: Update flake.nix
+      - name: Update flake.nix binary hashes
         id: version
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
@@ -345,20 +345,17 @@ jobs:
           fi
           echo "value=$VERSION" >> "$GITHUB_OUTPUT"
 
-          # Replace version (works for both placeholder and real values)
-          sed -i "s/version = \".*\"/version = \"$VERSION\"/" flake.nix
-
-          # Replace hashes using artifact name as anchor (works for both placeholder and real SRI hashes)
+          # flake.nix derives `version` from package.json, so there is no version
+          # line to bump here. Only the prebuilt-binary SRI hashes need updating,
+          # and they are unknowable until the release assets exist (post-tag) —
+          # that is why this job runs after release rather than in the release PR.
+          # Anchor each replace on its artifact name so the pnpm/native version
+          # pins are never touched (a blanket s/version = ".*"/ once clobbered all
+          # three and broke the source build).
           sed -i '/vibe-linux-x64/,/};/s|hash = ".*"|hash = "${{ steps.hashes.outputs.linux_x64 }}"|' flake.nix
           sed -i '/vibe-linux-arm64/,/};/s|hash = ".*"|hash = "${{ steps.hashes.outputs.linux_arm64 }}"|' flake.nix
           sed -i '/vibe-darwin-x64/,/};/s|hash = ".*"|hash = "${{ steps.hashes.outputs.darwin_x64 }}"|' flake.nix
           sed -i '/vibe-darwin-arm64/,/};/s|hash = ".*"|hash = "${{ steps.hashes.outputs.darwin_arm64 }}"|' flake.nix
-
-          # Verify version was updated
-          if ! grep -q "version = \"$VERSION\"" flake.nix; then
-            echo "Error: Version was not updated correctly"
-            exit 1
-          fi
 
       - name: Update flake.lock
         run: nix flake lock --update-input nixpkgs --update-input flake-utils
