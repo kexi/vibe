@@ -8,7 +8,7 @@
 
   outputs = { self, nixpkgs, flake-utils }:
     let
-      version = "1.6.0";
+      version = "1.7.0"; # release version; bumped by .github/workflows/release.yml (update-nix)
 
       # Platform-specific metadata.
       # - artifact/hash: prebuilt release binary (packages.default)
@@ -17,22 +17,22 @@
       platforms = {
         x86_64-linux = {
           artifact = "vibe-linux-x64";
-          hash = "sha256-uyepiJGCOhNOaySw4v2VrWdLcO/bpjB0Ghx2/wE6ywQ=";
+          hash = "sha256-MoBfXYFdAuSwZEoVeomfnT04w8eyWiQ1snmrF9BOEfQ=";
           napiNode = "vibe-native.linux-x64-gnu.node";
         };
         aarch64-linux = {
           artifact = "vibe-linux-arm64";
-          hash = "sha256-tqrwaeZIHcv7uRUd9CZzt7TbS1mY53RhzIpW5J0iKAU=";
+          hash = "sha256-iZub4Sum4Uh/oQFksN0xeGDPDNECiPCRW3XJZ5lMMhQ=";
           napiNode = "vibe-native.linux-arm64-gnu.node";
         };
         x86_64-darwin = {
           artifact = "vibe-darwin-x64";
-          hash = "sha256-dvMNWQlv/jFPnNXaJVfJ0qQcCBF+x2MrpF5aEei2Fz4=";
+          hash = "sha256-X3QQjSGZa4zbt2UA3FLkIAZwnCljdRUqXso7J/g6HEc=";
           napiNode = "vibe-native.darwin-x64.node";
         };
         aarch64-darwin = {
           artifact = "vibe-darwin-arm64";
-          hash = "sha256-OBWXsztaefIP21y2pDYJYXY7KqXNs9D8bGPJB2qJ6pA=";
+          hash = "sha256-CQltgfWBj+DnsIZcF7VII4Omo8GxbuWLSWcawPiFeuE=";
           napiNode = "vibe-native.darwin-arm64.node";
         };
       };
