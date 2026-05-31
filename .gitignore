@@ -45,6 +45,7 @@ packages/native/*.node
 
 # Nix
 /result
+.direnv/
 
 # Test coverage
 coverage/

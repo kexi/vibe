@@ -15,9 +15,7 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        env:
-          MISE_HTTP_TIMEOUT: "120"
+      - uses: ./.github/actions/setup-toolchain
       - uses: ./.github/actions/setup-takumi-guard
         with:
           api-key: ${{ secrets.TAKUMI_GUARD_API_KEY }}
@@ -36,9 +34,7 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        env:
-          MISE_HTTP_TIMEOUT: "120"
+      - uses: ./.github/actions/setup-toolchain
       - uses: ./.github/actions/setup-takumi-guard
         with:
           api-key: ${{ secrets.TAKUMI_GUARD_API_KEY }}
@@ -57,9 +53,7 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        env:
-          MISE_HTTP_TIMEOUT: "120"
+      - uses: ./.github/actions/setup-toolchain
       - uses: ./.github/actions/setup-takumi-guard
         with:
           api-key: ${{ secrets.TAKUMI_GUARD_API_KEY }}
@@ -71,9 +65,10 @@ jobs:
         run: bun run test -- packages/core/src
 
   # Deno runtime smoke test - verifies the Deno runtime implementation works
-  # Exception to mise rule: Deno is intentionally not in .mise.toml because
-  # it's not needed for local development (dev uses Bun). It's only needed
-  # for JSR distribution testing, so we use denoland/setup-deno directly here.
+  # Exception to the toolchain rule: Deno is intentionally not in the Nix dev
+  # shell (flake.nix) because it's not needed for local development (dev uses
+  # Bun). It's only needed for JSR distribution testing, so we use
+  # denoland/setup-deno directly here.
   deno-smoke-test:
     runs-on: ubuntu-latest
     steps:
@@ -114,9 +109,7 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        env:
-          MISE_HTTP_TIMEOUT: "120"
+      - uses: ./.github/actions/setup-toolchain
       - uses: ./.github/actions/setup-takumi-guard
         with:
           api-key: ${{ secrets.TAKUMI_GUARD_API_KEY }}
@@ -142,9 +135,7 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        env:
-          MISE_HTTP_TIMEOUT: "120"
+      - uses: ./.github/actions/setup-toolchain
       - uses: ./.github/actions/setup-takumi-guard
         with:
           api-key: ${{ secrets.TAKUMI_GUARD_API_KEY }}
@@ -182,9 +173,7 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        env:
-          MISE_HTTP_TIMEOUT: "120"
+      - uses: ./.github/actions/setup-toolchain
 
       - uses: ./.github/actions/setup-takumi-guard
         with:
@@ -211,9 +200,7 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        env:
-          MISE_HTTP_TIMEOUT: "120"
+      - uses: ./.github/actions/setup-toolchain
 
       - uses: ./.github/actions/setup-takumi-guard
         with:
@@ -266,9 +253,7 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        env:
-          MISE_HTTP_TIMEOUT: "120"
+      - uses: ./.github/actions/setup-toolchain
       - uses: ./.github/actions/setup-takumi-guard
         with:
           api-key: ${{ secrets.TAKUMI_GUARD_API_KEY }}
@@ -284,7 +269,7 @@ jobs:
         run: pnpm -C packages/docs build
 
   pinact-verify:
-    timeout-minutes: 5
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
@@ -292,9 +277,7 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        with:
-          install_args: pinact
+      - uses: ./.github/actions/setup-toolchain
       - run: pinact run --check
 
   build:

@@ -2,7 +2,7 @@
   description = "vibe - Git worktree helper CLI";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -69,15 +69,29 @@
           };
         };
 
-        devShells.default = pkgs.mkShell {
+        # mkShellNoCC (not mkShell) so the shell does not put a Nix C toolchain
+        # (gcc/clang + binutils) on PATH. node-gyp (node-pty) and rustup link
+        # against the system toolchain; a Nix `ld` here shadows it and fails to
+        # find the system crti.o.
+        devShells.default = pkgs.mkShellNoCC {
+          # Toolchain that replaces the former .mise.toml. Versions are pinned
+          # by flake.lock; node/pnpm follow the lockfile's major (pnpm_10), while
+          # Rust is managed by rustup (see rust-toolchain.toml) because the native
+          # module's cross-target builds need `rustup target add`.
           packages = with pkgs; [
             bun
-            nodejs
-            nodePackages.pnpm
-            rustc
-            cargo
+            nodejs_24
+            pnpm_10
+            ruby_3_4
+            rustup
+            pinact
             git
           ];
+
+          # Formerly .mise.toml [env]; avoids sharp pulling in a global libvips.
+          shellHook = ''
+            export SHARP_IGNORE_GLOBAL_LIBVIPS=1
+          '';
         };
       }
     ) // {

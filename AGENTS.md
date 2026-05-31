@@ -52,7 +52,7 @@ WSL2 is supported via Linux binaries.
 
 ## Development Environment
 
-- Runtime: Bun (setup with `mise install`)
+- Runtime: Bun (setup with `nix develop`)
 - Run: `bun run main.ts`
 - Compile: `bun build --compile --minify --outfile vibe main.ts`
 

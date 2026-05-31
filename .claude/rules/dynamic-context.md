@@ -10,7 +10,7 @@ Use `!`command arg1 arg2..`` to expand command output into the prompt context.
 
 Examples:
 
-- !`cat .mise.toml` — tool/runtime versions
+- !`cat flake.nix` — tool/runtime versions
 - !`gh pr diff` — current PR changes
 - !`cat package.json` — project metadata
 
@@ -28,4 +28,4 @@ Examples:
 
 ## Placement
 
-Place `!`command`` in the relevant section of the agent/skill, not in a generic "first step". For example, `!`cat .mise.toml`` belongs in the runtime section, not at the top of the file.
+Place `!`command`` in the relevant section of the agent/skill, not in a generic "first step". For example, `!`cat flake.nix`` belongs in the runtime section, not at the top of the file.

@@ -1,0 +1,49 @@
+name: Setup toolchain
+description: >-
+  Provision the development toolchain. On Linux/macOS this enters the Nix flake
+  dev shell (single source of truth in flake.nix) and exposes its tools to later
+  steps; on Windows, where Nix is unavailable, it falls back to individual setup
+  actions pinned to the same versions.
+runs:
+  using: composite
+  steps:
+    # --- Linux/macOS: Nix flake dev shell ---
+    - name: Install Nix
+      if: runner.os != 'Windows'
+      uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+    - name: Nix store cache
+      if: runner.os != 'Windows'
+      uses: DeterminateSystems/magic-nix-cache-action@565684385bcd71bad329742eefe8d12f2e765b39 # v13
+    - name: Load dev shell into environment
+      if: runner.os != 'Windows'
+      shell: bash
+      env:
+        MISE_HTTP_TIMEOUT: "120"
+      run: |
+        # Build the flake dev shell once and expose only its declared tool
+        # directories on PATH for all subsequent run steps, so they need no
+        # `nix develop --command` prefix and stay identical to the Windows path.
+        # We export just these tools (not the whole shell PATH) so the system
+        # C toolchain stays in front for node-gyp (node-pty) and rustup linking.
+        nix develop --command bash -c '
+          for t in node bun pnpm ruby rustup pinact git; do
+            dirname "$(command -v "$t")"
+          done' | sort -u >> "$GITHUB_PATH"
+        echo "SHARP_IGNORE_GLOBAL_LIBVIPS=1" >> "$GITHUB_ENV"
+
+    # --- Windows: individual setup actions (Nix does not run on Windows) ---
+    - name: Setup Bun (Windows)
+      if: runner.os == 'Windows'
+      uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+      with:
+        bun-version: 1.3.8
+    - name: Setup Node.js (Windows)
+      if: runner.os == 'Windows'
+      uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+      with:
+        node-version: 24.13.0
+    - name: Setup pnpm (Windows)
+      if: runner.os == 'Windows'
+      uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+      with:
+        version: 10.26.2
