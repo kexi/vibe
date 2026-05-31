@@ -24,22 +24,22 @@
       platforms = {
         x86_64-linux = {
           artifact = "vibe-linux-x64";
-          hash = "sha256-MoBfXYFdAuSwZEoVeomfnT04w8eyWiQ1snmrF9BOEfQ=";
+          hash = "sha256-dwzcfFsiBEyWzZAsjIwZutkbfnTx2xLOYxRQBzfatj8=";
           napiNode = "vibe-native.linux-x64-gnu.node";
         };
         aarch64-linux = {
           artifact = "vibe-linux-arm64";
-          hash = "sha256-iZub4Sum4Uh/oQFksN0xeGDPDNECiPCRW3XJZ5lMMhQ=";
+          hash = "sha256-9AkDZOVlLM+O4mFBkREzQDAs6LBLhBish/xlU2wE32M=";
           napiNode = "vibe-native.linux-arm64-gnu.node";
         };
         x86_64-darwin = {
           artifact = "vibe-darwin-x64";
-          hash = "sha256-X3QQjSGZa4zbt2UA3FLkIAZwnCljdRUqXso7J/g6HEc=";
+          hash = "sha256-+Y4RNhPv+JoqsPvS31v26ShDrpcrNSJdu1NUyyBl9fs=";
           napiNode = "vibe-native.darwin-x64.node";
         };
         aarch64-darwin = {
           artifact = "vibe-darwin-arm64";
-          hash = "sha256-CQltgfWBj+DnsIZcF7VII4Omo8GxbuWLSWcawPiFeuE=";
+          hash = "sha256-Ui+3M5+FDOvbrYOC3mjqICXY7Yacz0otC0IRPAUxMhw=";
           napiNode = "vibe-native.darwin-arm64.node";
         };
       };
