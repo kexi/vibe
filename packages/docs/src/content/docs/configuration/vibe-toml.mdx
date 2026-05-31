@@ -93,12 +93,13 @@ The environment variable takes precedence over the config file setting.
 
 vibe automatically selects the best copy strategy based on your system:
 
-| Strategy        | When Used                             | Platform    |
-| --------------- | ------------------------------------- | ----------- |
-| Clone (CoW)     | Directory copy on APFS                | macOS       |
-| Clone (reflink) | Directory copy on Btrfs/XFS           | Linux       |
-| rsync           | Directory copy when clone unavailable | macOS/Linux |
-| Standard        | File copy, or fallback                | All         |
+| Strategy         | When Used                             | Platform    |
+| ---------------- | ------------------------------------- | ----------- |
+| Clone (CoW)      | Directory copy on APFS                | macOS       |
+| Clone (reflink)  | Directory copy on Btrfs/XFS           | Linux       |
+| rsync            | Directory copy when clone unavailable | macOS/Linux |
+| robocopy (`/MT`) | Directory copy                        | Windows     |
+| Standard         | File copy, or fallback                | All         |
 
 **How it works:**
 
