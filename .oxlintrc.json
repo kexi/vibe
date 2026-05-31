@@ -1,0 +1,64 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "oxc", "import"],
+  "categories": {
+    "correctness": "error"
+  },
+  "jsPlugins": ["./.oxlint/plugins/vibe-security.js"],
+  "rules": {
+    "typescript/no-unused-vars": [
+      "error",
+      { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }
+    ],
+    "typescript/no-explicit-any": "warn",
+    "no-eval": "error",
+    "no-new-func": "error",
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "child_process",
+            "message": "Use the runtime abstraction layer instead."
+          },
+          {
+            "name": "node:child_process",
+            "message": "Use the runtime abstraction layer instead."
+          }
+        ]
+      }
+    ],
+    "vibe-security/no-unescaped-cd-output": "error",
+    "vibe-security/no-execsync": "error",
+    "vibe-security/no-shell-true": "error"
+  },
+  "overrides": [
+    {
+      "files": ["packages/core/src/runtime/node/process.ts", "scripts/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": "off",
+        "vibe-security/no-execsync": "off",
+        "vibe-security/no-shell-true": "off"
+      }
+    },
+    {
+      "files": ["**/*.test.ts", "**/*.spec.ts"],
+      "rules": {
+        "no-restricted-imports": "off",
+        "vibe-security/no-execsync": "off",
+        "vibe-security/no-shell-true": "off"
+      }
+    }
+  ],
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "packages/core/src/version.ts",
+    "packages/video/**",
+    "packages/npm/**",
+    "packages/native/**",
+    "packages/e2e/**",
+    "vitest.config.ts",
+    "benchmarks/**"
+  ]
+}

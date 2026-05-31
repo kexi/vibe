@@ -280,12 +280,17 @@
             ruby_3_4
             rustup
             pinact
+            lefthook
             git
           ];
 
           # Formerly .mise.toml [env]; avoids sharp pulling in a global libvips.
+          # lefthook install registers the git hooks defined in lefthook.yml;
+          # done here (not via an npm "prepare" script) so hook setup is owned by
+          # the Nix dev shell and does not depend on the JS package lifecycle.
           shellHook = ''
             export SHARP_IGNORE_GLOBAL_LIBVIPS=1
+            lefthook install >/dev/null 2>&1 || true
           '';
         };
       }

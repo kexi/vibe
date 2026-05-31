@@ -1,0 +1,10 @@
+{
+  "extends": ["../../.oxlintrc.json"],
+  "ignorePatterns": ["dist/", ".astro/"],
+  "rules": {
+    "no-restricted-imports": "off",
+    "vibe-security/no-unescaped-cd-output": "off",
+    "vibe-security/no-execsync": "off",
+    "vibe-security/no-shell-true": "off"
+  }
+}
