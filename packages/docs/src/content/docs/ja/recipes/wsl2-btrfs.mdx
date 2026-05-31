@@ -1,0 +1,65 @@
+---
+title: WSL2 + btrfs
+description: btrfs ボリュームをマウントして WSL2 で実 Copy-on-Write (reflink) コピーを有効化する
+sidebar:
+  order: 5
+---
+
+WSL2 内では vibe は Linux として動作し、`clone`（`cp --reflink`）または `rsync` の[コピー戦略](/ja/configuration/vibe-toml/#コピーパフォーマンスの最適化)を自動的に選択します（設定不要）。しかし WSL2 のルートファイルシステムは常に **ext4** であり reflink に対応していないため、`cp --reflink=auto` は黙ってフルコピーにフォールバックします。
+
+WSL2 で実 Copy-on-Write を得るには、別途 **btrfs** ボリュームをマウントし、プロジェクト（例: `node_modules`）をその上に置きます。プロジェクトが btrfs 上に乗れば、vibe の既存の `clone` 戦略が自動的に瞬時の CoW コピーを生成します。
+
+## WSL ルートで CoW ができない理由
+
+- WSL2 のルートは **ext4** でハードコードされており、`.wslconfig` や `wsl.conf` で変更できません（参照: [microsoft/WSL#9339](https://github.com/microsoft/WSL/issues/9339)）。
+- 「btrfs ディストリ」（openSUSE / Fedora）を使っても**解決しません**。WSL はディストリに関係なく rootfs を自身の ext4 VHDX に展開するためです。
+- ルートに対する `btrfs-convert` は**実用的ではありません**。変換後のルートは WSL で起動しません。
+- reflink は**同一ファイルシステム内でのみ**動作するため、コピー元とコピー先の両方が btrfs ボリューム上に存在する必要があります。
+
+## 推奨セットアップ — 二次 btrfs VHD をマウントする
+
+:::caution
+`wsl --mount` には Windows 11（または Store 版の WSL）と、**管理者権限**の PowerShell（管理者として実行）が必要です。
+:::
+
+Windows 側で、管理者権限の PowerShell を開き、VHD を作成して WSL にアタッチします:
+
+```powershell
+New-VHD -Path C:\wsl\dev-btrfs.vhdx -Dynamic -SizeBytes 128GB -BlockSizeBytes 1MB
+wsl --mount --vhd C:\wsl\dev-btrfs.vhdx --bare
+```
+
+次に WSL 内で、ボリュームを一度だけフォーマットしてマウントします:
+
+```bash
+lsblk                                  # 新しいデバイスを確認（例: /dev/sdd）
+sudo mkfs.btrfs /dev/sdd
+sudo mkdir -p /mnt/btrfs
+sudo blkid /dev/sdd                    # UUID をコピー
+echo 'UUID=<uuid> /mnt/btrfs btrfs defaults,nofail 0 0' | sudo tee -a /etc/fstab
+sudo mount -a
+sudo chown $USER:$USER /mnt/btrfs
+
+# プロジェクトを btrfs ボリュームに置く。reflink はその中で動作する
+mv ~/myproject /mnt/btrfs/myproject
+cd /mnt/btrfs && cp --reflink=always -r myproject myproject-copy
+```
+
+## 再起動後の再アタッチ
+
+`wsl --mount --vhd ... --bare` はホスト側の操作であり、Windows の再起動後に再実行する必要があります（例: ログイン時に「最上位の特権で実行する」よう設定したタスクスケジューラのエントリ）。ディスクがアタッチされれば、`/etc/fstab` が自動的にマウントします（`automount.mountFsTab` の既定値は `true`）。
+
+## 注意点
+
+:::caution
+
+- ファイルシステムをまたぐ reflink は不可能です。ext4 ルートから btrfs ボリュームへのコピーはフルコピーになります。
+- 同一 btrfs 上でのマウントポイントをまたぐ reflink にはカーネル ≥ 5.18 が必要です。WSL2 の 6.6 カーネルはこの条件を満たします。
+  :::
+
+## 参考リンク
+
+- [MS Learn – WSL2 で Linux ディスクをマウントする](https://learn.microsoft.com/ja-jp/windows/wsl/wsl2-mount-disk)
+- [microsoft/WSL#9339 – ext4 以外のルートファイルシステム](https://github.com/microsoft/WSL/issues/9339)
+- [btrfs docs – Reflink](https://btrfs.readthedocs.io/en/latest/Reflink.html)
+- vibe – [コピーパフォーマンスの最適化](/ja/configuration/vibe-toml/#コピーパフォーマンスの最適化)
