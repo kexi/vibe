@@ -282,6 +282,7 @@
             pinact
             lefthook
             git
+            gitleaks
           ];
 
           # Formerly .mise.toml [env]; avoids sharp pulling in a global libvips.

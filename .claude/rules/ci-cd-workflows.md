@@ -64,6 +64,9 @@ steps:
   Bun); it is only needed for JSR distribution testing
 - `actions/setup-node` with `registry-url` - used in publish jobs for npm
   registry auth / OIDC, layered on top of `setup-toolchain`
+- `gitleaks/gitleaks-action` - secret scanning; the official action bundles its
+  own gitleaks binary and maintained scan / PR-comment logic. The Nix dev shell
+  still provides gitleaks for the local pre-commit hook (lefthook)
 - Platform-specific SDK setup (e.g., Xcode, Android SDK)
 
 ### Benefits

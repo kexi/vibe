@@ -59,7 +59,16 @@ A comprehensive security checklist for the vibe CLI tool. Each category includes
   - **Workflow integrity**: All third-party GitHub Actions pinned to full commit SHA (`pinact-verify` job blocks unpinned references); the toolchain is pinned reproducibly via `flake.lock` (and `rust-toolchain.toml` for Rust)
   - **Runner egress visibility**: `step-security/harden-runner` (audit mode) on every job logs outbound network traffic and `/proc` access, surfacing exfiltration channels such as the `*.getsession.org` C2 used by Shai-Hulud
   - **Publish provenance**: `npm publish --provenance` on every release for OIDC-signed attestation
-- **Enforcement**: `pinact-verify` CI job + `pnpm install --frozen-lockfile --ignore-scripts` in CI + `pnpm publish ... --ignore-scripts` + Harden-Runner Insights review after each release
+  - **Secret scanning**: `gitleaks` (config `.gitleaks.toml`) blocks credentials from entering the repo — staged-change scan in the `pre-commit` hook (`lefthook.yml`) and a full-history scan in the `gitleaks` CI job
+- **Enforcement**: `pinact-verify` CI job + `pnpm install --frozen-lockfile --ignore-scripts` in CI + `pnpm publish ... --ignore-scripts` + `gitleaks` CI job + Harden-Runner Insights review after each release
+
+### Responding to a gitleaks detection
+
+A gitleaks hit means the secret is already in the working tree or git history and must be treated as compromised:
+
+1. **Rotate immediately**: revoke/rotate the leaked credential at its source (the provider) before anything else — once committed it must be assumed public.
+2. **Purge from history**: consider rewriting history (e.g. `git filter-repo`) to remove the secret, recognizing the old value stays compromised regardless.
+3. **Allowlist only for false positives**: add a value/regex entry to `.gitleaks.toml` only when the match is genuinely not a secret — never to silence a real leak.
 
 ## 9. Unsafe Temp File Creation
 
@@ -102,3 +111,4 @@ A comprehensive security checklist for the vibe CLI tool. Each category includes
 | Custom security script | Pattern matching | `pnpm run security:check` |
 | Claude Code hook       | Edit-time check  | PostToolUse (Write/Edit)  |
 | CI security-check job  | PR gate          | Every push/PR             |
+| gitleaks               | Secret scanning  | `pre-commit` (staged) + CI `gitleaks` job (full history) |
