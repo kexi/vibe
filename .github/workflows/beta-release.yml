@@ -1,13 +1,12 @@
 name: Beta Release
 
 on:
-  push:
-    branches: [develop]
+  workflow_dispatch:
 
-# Prevent duplicate beta releases by limiting concurrent runs
+# Serialize concurrent manual runs without killing an in-flight build
 concurrency:
   group: beta-release
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
