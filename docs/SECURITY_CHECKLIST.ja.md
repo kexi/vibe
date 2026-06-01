@@ -59,7 +59,16 @@ vibe CLIツールの包括的なセキュリティチェックリストです。
   - **ワークフロー完全性**: サードパーティ Actions は完全コミット SHA に固定 (`pinact-verify` job が未固定参照をブロック)。ツールチェーンは `flake.lock` (Rust は `rust-toolchain.toml`) で再現的に固定
   - **ランナー egress 可視化**: 全 job に `step-security/harden-runner` (audit モード) を配置し、外向き通信と `/proc` アクセスを記録。Shai-Hulud 系マルウェアが用いる `*.getsession.org` などの C2 を検知可能に
   - **公開時の出所証明**: 全リリースで `npm publish --provenance` を有効化し OIDC 署名された attestation を付与
-- **適用**: CI の `pinact-verify` job + 全 CI install で `pnpm install --frozen-lockfile --ignore-scripts` + `pnpm publish ... --ignore-scripts` + 各リリース後の Harden-Runner Insights レビュー
+  - **シークレットスキャン**: `gitleaks` (設定 `.gitleaks.toml`) が認証情報のリポジトリ混入を遮断 — `pre-commit` フック (`lefthook.yml`) でステージ済み変更を、CI の `gitleaks` job で全履歴をスキャン
+- **適用**: CI の `pinact-verify` job + 全 CI install で `pnpm install --frozen-lockfile --ignore-scripts` + `pnpm publish ... --ignore-scripts` + CI の `gitleaks` job + 各リリース後の Harden-Runner Insights レビュー
+
+### gitleaks 検出時の対応
+
+gitleaks のヒットは、シークレットが既にワーキングツリーまたは git 履歴に存在することを意味し、漏洩済みとして扱う必要があります:
+
+1. **即時ローテーション**: まず何よりも先に、漏洩した認証情報を発行元（プロバイダ）で無効化・ローテーションする — コミットされた時点で公開済みとみなす。
+2. **履歴からの除去**: 履歴の書き換え（例: `git filter-repo`）でシークレットの除去を検討する。ただし旧値は除去後も漏洩済みである点に留意する。
+3. **allowlist は誤検知のみ**: マッチが本当にシークレットでない場合に限り `.gitleaks.toml` に値/regex エントリを追加する — 本物の漏洩を黙らせる目的では決して使わない。
 
 ## 9. 安全でない一時ファイル作成
 
@@ -102,3 +111,4 @@ vibe CLIツールの包括的なセキュリティチェックリストです。
 | カスタムセキュリティスクリプト | パターンマッチング | `pnpm run security:check` |
 | Claude Code フック             | 編集時チェック     | PostToolUse (Write/Edit)  |
 | CI security-check ジョブ       | PR ゲート          | プッシュ/PR ごと          |
+| gitleaks                       | シークレットスキャン | `pre-commit` (ステージ済み) + CI `gitleaks` job (全履歴) |

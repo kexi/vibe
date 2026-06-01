@@ -33,3 +33,9 @@ pre-commit:
       exclude:
         - "packages/core/src/version.ts"
       run: pnpm exec oxlint {staged_files}
+    # Fast pre-commit check on staged changes only (--staged); gitleaks resolves
+    # the staged set itself, so no glob/{staged_files} is passed. This is a
+    # convenience tripwire that `git commit --no-verify` can bypass, so the CI
+    # `gitleaks` job (full history) remains the authoritative gate.
+    gitleaks:
+      run: gitleaks git --staged --config .gitleaks.toml --redact --no-banner
