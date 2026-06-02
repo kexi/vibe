@@ -57,6 +57,35 @@ jobs:
 
       - uses: ./.github/actions/setup-toolchain
 
+      # bug #490: `bun build --compile` bakes the running bun into the binary.
+      # The Nix-store bun links libicucore.A.dylib by /nix/store path, so the
+      # released binary fails dyld resolution on non-Nix (Homebrew) hosts. Build
+      # the binary with an official bun instead. Pin it to the Nix bun version
+      # (derived from the flake.lock-locked nixpkgs bun) so the two never drift.
+      - name: Pin official bun to the Nix bun version
+        if: runner.os != 'Windows'
+        id: bunver
+        shell: bash
+        run: echo "version=$(bun --version)" >> "$GITHUB_OUTPUT"
+      - name: Setup official bun
+        if: runner.os != 'Windows'
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+        with:
+          bun-version: ${{ steps.bunver.outputs.version }}
+      - name: Resolve official bun path
+        if: runner.os != 'Windows'
+        id: officialbun
+        shell: bash
+        run: |
+          # Fail loudly if setup-bun did not land where expected, rather than
+          # silently falling back to the Nix bun and re-introducing #490.
+          bun_path="$HOME/.bun/bin/bun"
+          if [ ! -x "$bun_path" ]; then
+            echo "::error::official bun not found at $bun_path"
+            exit 1
+          fi
+          echo "path=$bun_path" >> "$GITHUB_OUTPUT"
+
       - uses: ./.github/actions/setup-takumi-guard
         with:
           api-key: ${{ secrets.TAKUMI_GUARD_API_KEY }}
@@ -81,6 +110,11 @@ jobs:
           fi
 
       - name: Build release binary
+        env:
+          # Non-Windows: bake the official bun (resolved above) as the baseclient
+          # so no /nix/store dependency is embedded (bug #490). Windows leaves this
+          # empty and uses the PATH bun (the official setup-bun from setup-toolchain).
+          VIBE_COMPILE_BUN: ${{ runner.os != 'Windows' && steps.officialbun.outputs.path || '' }}
         run: bun run scripts/build.ts --target ${{ matrix.target }} --output ${{ matrix.artifact }} --distribution binary
 
       - name: Verify native module embedding
@@ -91,6 +125,32 @@ jobs:
             exit 1
           fi
           echo "Native module embedding verified"
+
+      - name: Assert no /nix/store references in release binary
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          BIN: ${{ matrix.artifact }}
+        run: |
+          # bug #490 regression guard: a /nix/store path in the released binary
+          # (linked dylib or embedded string) breaks launch on non-Nix hosts.
+          fail=0
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            otool -L "$BIN" || true
+            if otool -L "$BIN" | grep -q '/nix/store'; then fail=1; fi
+          else
+            if ldd "$BIN" 2>/dev/null | grep -q '/nix/store'; then fail=1; fi
+          fi
+          if strings "$BIN" | grep -q '/nix/store'; then
+            echo "::error::release binary embeds /nix/store path(s)"
+            strings "$BIN" | grep '/nix/store' | head
+            fail=1
+          fi
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::$BIN depends on /nix/store; breaks on non-Nix hosts (#490 regression)"
+            exit 1
+          fi
+          echo "OK: no /nix/store references"
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -118,6 +178,29 @@ jobs:
 
       - uses: ./.github/actions/setup-toolchain
 
+      # bug #490: same official-bun baseclient as the build job, so the deb's
+      # rebuilt binary carries no /nix/store dependency.
+      - name: Pin official bun to the Nix bun version
+        id: bunver
+        shell: bash
+        run: echo "version=$(bun --version)" >> "$GITHUB_OUTPUT"
+      - name: Setup official bun
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+        with:
+          bun-version: ${{ steps.bunver.outputs.version }}
+      - name: Resolve official bun path
+        id: officialbun
+        shell: bash
+        run: |
+          # Fail loudly if setup-bun did not land where expected, rather than
+          # silently falling back to the Nix bun and re-introducing #490.
+          bun_path="$HOME/.bun/bin/bun"
+          if [ ! -x "$bun_path" ]; then
+            echo "::error::official bun not found at $bun_path"
+            exit 1
+          fi
+          echo "path=$bun_path" >> "$GITHUB_OUTPUT"
+
       - uses: ./.github/actions/setup-takumi-guard
         with:
           api-key: ${{ secrets.TAKUMI_GUARD_API_KEY }}
@@ -132,9 +215,32 @@ jobs:
         run: pnpm install --ignore-scripts
 
       - name: Rebuild with deb distribution metadata
+        env:
+          # bug #490: bake the official bun, not the Nix-store bun, into the deb binary.
+          VIBE_COMPILE_BUN: ${{ steps.officialbun.outputs.path }}
         run: |
           TARGET="${{ matrix.arch == 'amd64' && 'x86_64-unknown-linux-gnu' || 'aarch64-unknown-linux-gnu' }}"
           bun run scripts/build.ts --target "$TARGET" --output vibe-deb --distribution deb
+
+      - name: Assert no /nix/store references in deb binary
+        shell: bash
+        run: |
+          # bug #490 regression guard for the Linux/deb binary. This job runs on
+          # an amd64 runner for both arches, so `ldd` cannot resolve the arm64
+          # binary (architecture mismatch) — `strings` grep is the primary check;
+          # ldd is a best-effort extra signal only on the amd64 build.
+          fail=0
+          if ldd vibe-deb 2>/dev/null | grep -q '/nix/store'; then fail=1; fi
+          if strings vibe-deb | grep -q '/nix/store'; then
+            echo "::error::deb binary embeds /nix/store path(s)"
+            strings vibe-deb | grep '/nix/store' | head
+            fail=1
+          fi
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::vibe-deb depends on /nix/store; breaks on non-Nix hosts (#490 regression)"
+            exit 1
+          fi
+          echo "OK: no /nix/store references"
 
       - name: Build .deb package
         run: |
