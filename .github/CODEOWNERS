@@ -1,0 +1,10 @@
+# Security-sensitive configuration requires owner review. Scoped to the files
+# that actually gate security — the secret-scanning ruleset and the CI
+# workflows/actions that enforce it — rather than all of .github/, so routine
+# changes (issue/PR templates) do not trigger review fatigue that would dull
+# scrutiny of the entries that matter. This file lives under .github/ and is
+# itself owner-protected by the /.github/CODEOWNERS entry below.
+/.gitleaks.toml @kexi
+/.github/workflows/ @kexi
+/.github/actions/ @kexi
+/.github/CODEOWNERS @kexi

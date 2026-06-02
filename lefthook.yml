@@ -1,0 +1,41 @@
+# Git hooks managed by lefthook (provided by the Nix dev shell, see flake.nix).
+# Runs oxfmt/oxlint on staged core files and Prettier on staged docs files.
+# glob is a list because lefthook matches each pattern separately and does not
+# expand brace alternation like `{a,b}`. Patterns use `dir/**/*.ts` rooted at
+# the package dir (not `dir/sub/**/*.ts`) because lefthook's `**` does not match
+# files directly under the prefixed directory.
+pre-commit:
+  parallel: false # fmt must run before lint so lint sees formatted output
+  commands:
+    oxfmt:
+      glob:
+        - "main.ts"
+        - "packages/core/**/*.ts"
+        - "scripts/**/*.ts"
+      exclude:
+        - "packages/core/src/version.ts"
+      run: pnpm exec oxfmt {staged_files}
+      stage_fixed: true
+    prettier-docs:
+      glob:
+        - "packages/docs/**/*.mdx"
+        - "packages/docs/**/*.astro"
+        - "packages/docs/**/*.ts"
+      run: pnpm exec prettier --write {staged_files}
+      stage_fixed: true
+    oxlint:
+      glob:
+        - "main.ts"
+        - "packages/core/**/*.ts"
+        - "scripts/**/*.ts"
+        - "packages/docs/**/*.ts"
+        - "packages/docs/**/*.astro"
+      exclude:
+        - "packages/core/src/version.ts"
+      run: pnpm exec oxlint {staged_files}
+    # Fast pre-commit check on staged changes only (--staged); gitleaks resolves
+    # the staged set itself, so no glob/{staged_files} is passed. This is a
+    # convenience tripwire that `git commit --no-verify` can bypass, so the CI
+    # `gitleaks` job (full history) remains the authoritative gate.
+    gitleaks:
+      run: gitleaks git --staged --config .gitleaks.toml --redact --no-banner

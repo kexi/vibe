@@ -5,6 +5,16 @@ description: Version history and release notes for vibe
 
 All notable changes to vibe are documented here.
 
+## v1.8.1
+
+**Released:** 2026-06-02
+
+### Fixed
+
+- Homebrew-distributed binaries no longer abort at launch with a dyld error on non-Nix hosts. Release binaries are now built with the official Bun toolchain so they don't depend on `/nix/store` dynamic libraries.
+
+---
+
 ## v1.8.0
 
 **Released:** 2026-06-01

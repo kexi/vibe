@@ -24,22 +24,22 @@
       platforms = {
         x86_64-linux = {
           artifact = "vibe-linux-x64";
-          hash = "sha256-dwzcfFsiBEyWzZAsjIwZutkbfnTx2xLOYxRQBzfatj8=";
+          hash = "sha256-IK3Mus3OPVnxqojBI2dLFOyKwganV6tfGs5duGCoqWg=";
           napiNode = "vibe-native.linux-x64-gnu.node";
         };
         aarch64-linux = {
           artifact = "vibe-linux-arm64";
-          hash = "sha256-9AkDZOVlLM+O4mFBkREzQDAs6LBLhBish/xlU2wE32M=";
+          hash = "sha256-6i98Hh5jnThHIXFPUoc2/XXEqzwBc6ZuEWP1JAAu3hg=";
           napiNode = "vibe-native.linux-arm64-gnu.node";
         };
         x86_64-darwin = {
           artifact = "vibe-darwin-x64";
-          hash = "sha256-+Y4RNhPv+JoqsPvS31v26ShDrpcrNSJdu1NUyyBl9fs=";
+          hash = "sha256-ly10wj0u/jh7J5Tyo2RlAEAMHV7n3FUGfaSyaa8U1kw=";
           napiNode = "vibe-native.darwin-x64.node";
         };
         aarch64-darwin = {
           artifact = "vibe-darwin-arm64";
-          hash = "sha256-Ui+3M5+FDOvbrYOC3mjqICXY7Yacz0otC0IRPAUxMhw=";
+          hash = "sha256-A95UEErpNXknVXSl8+ZBvXDNHL7WuW+ogsirMLGN2BY=";
           napiNode = "vibe-native.darwin-arm64.node";
         };
       };
@@ -165,7 +165,7 @@
               ;
             pnpm = pnpmPinned;
             fetcherVersion = 3;
-            hash = "sha256-RPW842JniDhnnpPiU+n+LP3LovZHnsamVN/RmDmxyyQ=";
+            hash = "sha256-qU/e6Q3HGPrVXIfgHq9gbUsPUiW/+IEtE3fcYJvruTE=";
           };
 
           nativeBuildInputs = [
@@ -280,12 +280,18 @@
             ruby_3_4
             rustup
             pinact
+            lefthook
             git
+            gitleaks
           ];
 
           # Formerly .mise.toml [env]; avoids sharp pulling in a global libvips.
+          # lefthook install registers the git hooks defined in lefthook.yml;
+          # done here (not via an npm "prepare" script) so hook setup is owned by
+          # the Nix dev shell and does not depend on the JS package lifecycle.
           shellHook = ''
             export SHARP_IGNORE_GLOBAL_LIBVIPS=1
+            lefthook install >/dev/null 2>&1 || true
           '';
         };
       }

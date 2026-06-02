@@ -11,9 +11,19 @@ runs:
     - name: Install Nix
       if: runner.os != 'Windows'
       uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+    # Cache the Nix store via the standard GitHub Actions cache (actions/cache
+    # under the hood). Unlike magic-nix-cache, this does not reverse-engineer
+    # GitHub's cache API, so it is not subject to the 418/429 throttling that
+    # made CI flaky. Keyed on the flake inputs so the cache invalidates only
+    # when the toolchain changes; restore-prefixes lets unrelated changes still
+    # reuse the previous store. purge is left off so no `actions: write`
+    # permission is required.
     - name: Nix store cache
       if: runner.os != 'Windows'
-      uses: DeterminateSystems/magic-nix-cache-action@565684385bcd71bad329742eefe8d12f2e765b39 # v13
+      uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
+      with:
+        primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+        restore-prefixes-first-match: nix-${{ runner.os }}-
     - name: Load dev shell into environment
       if: runner.os != 'Windows'
       shell: bash

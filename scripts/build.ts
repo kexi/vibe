@@ -185,7 +185,19 @@ async function compile(options: CompileOptions): Promise<void> {
   args.push("--outfile", options.output);
   args.push("main.ts");
 
-  await runCommand("bun", args, { inherit: true });
+  // `bun build --compile` bakes the *running* bun runtime into the binary as the
+  // baseclient, so the binary inherits that bun's dynamic-library dependencies.
+  // VIBE_COMPILE_BUN lets CI point this at an official (oven-sh) bun instead of
+  // the PATH bun. Why not just rely on PATH: in CI the PATH bun is the Nix-store
+  // bun, which links libicucore.A.dylib (and friends) by absolute /nix/store
+  // path — those paths do not exist on a Homebrew/non-Nix host, so the embedded
+  // baseclient fails dyld resolution at launch (bug #490). Unset locally, the
+  // default "bun" keeps dev and Nix source builds unchanged.
+  // Why `||` not `??`: CI passes an empty string on Windows (the ternary's else
+  // branch), and an empty bun path must fall back to "bun", not spawn("").
+  const bunBin = process.env.VIBE_COMPILE_BUN || "bun";
+
+  await runCommand(bunBin, args, { inherit: true });
 }
 
 const parseArgsOptions: ParseArgsConfig["options"] = {

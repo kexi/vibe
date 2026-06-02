@@ -1,0 +1,34 @@
+# Secret scanning config consumed by gitleaks. The pre-commit hook
+# (lefthook.yml, using the Nix dev-shell gitleaks) scans staged changes; the CI
+# `gitleaks` job (gitleaks/gitleaks-action) scans full git history and points at
+# this file via GITLEAKS_CONFIG.
+#
+# This in-repo config does not by itself stop a PR from weakening the ruleset
+# (gitleaks reads whatever .gitleaks.toml is in the tree). That is guarded
+# operationally: CODEOWNERS protects this file and branch protection requires
+# the CI gitleaks check before merge.
+
+# Inherit gitleaks' built-in ruleset (AWS keys, GitHub tokens, private keys,
+# generic high-entropy secrets, etc.). The default ruleset also ships a global
+# path allowlist that already excludes lock files (pnpm-lock.yaml,
+# package-lock.json, yarn.lock, …) — verified with `--log-level trace`:
+# "skipping file: global allowlist allowed-path=true path=pnpm-lock.yaml".
+[extend]
+useDefault = true
+
+# Allowlist policy (Why no project-level allowlist):
+# - The pnpm-lock.yaml `integrity: sha512-…` digests that motivated a project
+#   suppression are content hashes, not secrets. They are already covered by the
+#   default ruleset's lock-file path allowlist above, so a project entry is
+#   redundant.
+# - Why not a project-level `regexes = ['''sha512-…''']` (the MEDIUM finding): a
+#   bare global `regexes` allowlist applies to EVERY scanned file, so a real
+#   sha512-shaped secret pasted into any other file would be silently exempted.
+# - Why not scope it with `paths` (AND): gitleaks 8.30.1 ignores
+#   `matchCondition = "AND"` on a global allowlist and evaluates commit/path with
+#   OR regardless (verified: trace logs `condition=OR`, and an AWS key dropped
+#   into pnpm-lock.yaml is skipped by path alone). `paths` would therefore blind
+#   the scanner to the whole lock file rather than narrowing the regex.
+# - So there is intentionally no project allowlist. Add one only for a concrete
+#   false positive, scoped to the specific value/regex — never by excluding a
+#   containing path.
