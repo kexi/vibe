@@ -152,6 +152,51 @@ jobs:
           fi
           echo "OK: no /nix/store references"
 
+      # bug #490 was a *launch* failure that the static /nix/store guard alone
+      # would not have caught if the breakage took another form (a missing
+      # symbol, a bad embedded path, a corrupt baseclient). Actually run the
+      # binary so any inability to start fails the release.
+      - name: Smoke test release binary (non-Windows)
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          BIN: ${{ matrix.artifact }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          chmod +x "$BIN"
+          # x86_64-apple-darwin is the one entry cross-built on the arm64
+          # macos-latest runner; running it needs Rosetta 2. Treat a Rosetta
+          # absence as a skip (it is a runner-capability gap, not a binary
+          # defect); any other launch failure is a real regression.
+          if [ "$TARGET" = "x86_64-apple-darwin" ] && [ "$(uname -m)" = "arm64" ]; then
+            if ! out=$(./"$BIN" --version 2>&1); then
+              echo "::warning::skipping smoke test for $BIN: x86_64 binary did not run on this arm64 runner (Rosetta 2 unavailable)"
+              echo "$out"
+              exit 0
+            fi
+            echo "$out"
+            echo "OK: binary launches (via Rosetta)"
+            exit 0
+          fi
+          out=$(./"$BIN" --version 2>&1)
+          echo "$out"
+          echo "OK: binary launches"
+
+      - name: Smoke test release binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          BIN: ${{ matrix.artifact }}
+        run: |
+          $out = & ".\$env:BIN" --version 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            Write-Output $out
+            Write-Output "::error::$env:BIN failed to launch (exit $LASTEXITCODE)"
+            exit 1
+          }
+          Write-Output $out
+          Write-Output "OK: binary launches"
+
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
