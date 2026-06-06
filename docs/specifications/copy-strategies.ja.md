@@ -1,4 +1,8 @@
+> 🇺🇸 [English](./copy-strategies.md)
+
 # コピー戦略
+
+> **歴史的な注記:** ここで説明している TypeScript 実装（Deno API / `packages/core`）は、Rust 移植の Phase 6 で削除されました。vibe は現在単一の Rust バイナリであり、コピーのロジックは `rust/crates/vibe-core`（ネイティブ CoW は `rust/crates/vibe-native`）にあります。このドキュメントは設計の歴史として残しています。
 
 vibeはディレクトリコピーにCopy-on-Write (CoW) を活用し、高速でディスク効率の良い操作を実現しています。
 

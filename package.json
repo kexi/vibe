@@ -15,41 +15,32 @@
     "pnpm": ">=9.0.0"
   },
   "scripts": {
-    "dev": "bun run main.ts",
-    "build": "bun run scripts/build.ts",
-    "build:compile": "bun build --compile --minify --outfile vibe main.ts",
-    "test": "vitest run",
-    "test:watch": "vitest",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
-    "check": "tsc --noEmit",
-    "ci": "pnpm run fmt:check && pnpm run lint && pnpm run check && pnpm run test",
-    "generate-version": "bun run scripts/build.ts --generate-version-only",
+    "fmt:rust": "cargo fmt --manifest-path rust/Cargo.toml --all",
+    "fmt:rust:check": "cargo fmt --manifest-path rust/Cargo.toml --all --check",
+    "lint:rust": "cargo clippy --manifest-path rust/Cargo.toml --workspace --all-targets -- -D warnings",
+    "test:rust": "cargo test --manifest-path rust/Cargo.toml --workspace",
+    "build:rust": "cargo build --manifest-path rust/Cargo.toml -p vibe --release",
+    "check:rust": "pnpm run fmt:rust:check && pnpm run lint:rust && pnpm run test:rust",
     "get-version": "node -e \"console.log(JSON.parse(require('fs').readFileSync('package.json')).version)\"",
     "install:all": "pnpm install",
-    "build:npm": "pnpm -C packages/npm build",
-    "build:native": "pnpm -C packages/native build",
     "test:npm": "pnpm -C packages/npm test",
     "test:e2e": "pnpm -C packages/e2e test",
     "clean": "pnpm -r exec rm -rf node_modules dist",
     "check:docs": "pnpm -C packages/docs lint && pnpm -C packages/docs format && pnpm -C packages/docs check",
     "check:video": "pnpm -C packages/video typecheck",
-    "check:all": "pnpm run ci && pnpm run check:docs && pnpm run check:video"
+    "check:all": "pnpm run fmt:check && pnpm run lint && pnpm run check:rust && pnpm run test:npm && pnpm run check:docs && pnpm run check:video"
   },
   "dependencies": {
-    "fast-glob": "^3.3.3",
     "smol-toml": "^1.6.0"
   },
   "devDependencies": {
     "@oxlint/plugins": "^1.67.0",
-    "@types/deno": "^2.5.0",
-    "bun-types": "1.1.43",
     "oxfmt": "^0.52.0",
     "oxlint": "^1.67.0",
-    "prettier": "^3.8.0",
-    "typescript": "^5.9.3",
-    "vitest": "^4.0.18"
+    "prettier": "^3.8.0"
   }
 }

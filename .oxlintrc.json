@@ -34,7 +34,7 @@
   },
   "overrides": [
     {
-      "files": ["packages/core/src/runtime/node/process.ts", "scripts/**/*.ts"],
+      "files": ["scripts/**/*.ts"],
       "rules": {
         "no-restricted-imports": "off",
         "vibe-security/no-execsync": "off",
@@ -53,12 +53,9 @@
   "ignorePatterns": [
     "**/node_modules/**",
     "**/dist/**",
-    "packages/core/src/version.ts",
     "packages/video/**",
     "packages/npm/**",
-    "packages/native/**",
     "packages/e2e/**",
-    "vitest.config.ts",
     "benchmarks/**"
   ]
 }

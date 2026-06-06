@@ -2,6 +2,8 @@
 
 # Native Clone Implementation
 
+> **Historical note:** The TypeScript runtime split described here was removed in Phase 6 of the Rust port. vibe is now a single Rust binary and the native CoW implementation lives in `rust/crates/vibe-native` (statically linked into `rust/crates/vibe-core`). This document is retained as design history.
+
 This document explains why vibe uses Rust for native Copy-on-Write (CoW) operations and how the implementation differs between Deno and Node.js runtimes.
 
 ## Why Rust?
@@ -200,4 +202,4 @@ opt-level = "z"      # Optimize for size
 
 - [Copy Strategies](./copy-strategies.md) - Overall copy strategy selection
 - [Multi-Runtime Support](./multi-runtime.md) - Runtime abstraction layer
-- [@kexi/vibe-native README](../../packages/native/README.md) - Package API documentation
+- `@kexi/vibe-native` README - Package API documentation (the `packages/native` package was removed in Phase 6; the native CoW implementation now lives in `rust/crates/vibe-native`)

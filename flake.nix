@@ -18,29 +18,26 @@
       version = (builtins.fromJSON (builtins.readFile ./package.json)).version;
 
       # Platform-specific metadata.
-      # - artifact/hash: prebuilt release binary (packages.default)
-      # - napiNode: filename the runtime's literal require() expects for the
-      #   N-API native module (see packages/core/src/runtime/node/native.ts)
+      # - artifact/hash: prebuilt release binary (packages.binary). The artifact
+      #   is now the Rust binary, but the names (vibe-linux-x64, ...) and the
+      #   fetchurl+install path are unchanged, so the update-nix hash mechanism
+      #   in release.yml still applies.
       platforms = {
         x86_64-linux = {
           artifact = "vibe-linux-x64";
           hash = "sha256-UBS9+p13knX1kzMYRphrkj3rTV/uLdP/Wgn5WifQFZw=";
-          napiNode = "vibe-native.linux-x64-gnu.node";
         };
         aarch64-linux = {
           artifact = "vibe-linux-arm64";
           hash = "sha256-nDABUwRqEQZ/g0JAdL6WWXuR/M+Q01uKt7UIGFZJI0M=";
-          napiNode = "vibe-native.linux-arm64-gnu.node";
         };
         x86_64-darwin = {
           artifact = "vibe-darwin-x64";
           hash = "sha256-fGAdMJIQBR3L+Z7ClRgMlDoHEyN+omRfaAdnpyHgTIU=";
-          napiNode = "vibe-native.darwin-x64.node";
         };
         aarch64-darwin = {
           artifact = "vibe-darwin-arm64";
           hash = "sha256-mqlfWzIXnYZ0k+zdOKV9bMpK2rjxu4Y5LiIS4DwQUfk=";
-          napiNode = "vibe-native.darwin-arm64.node";
         };
       };
     in
@@ -50,167 +47,42 @@
         platformInfo = platforms.${system};
         isLinux = pkgs.lib.hasSuffix "-linux" system;
 
-        # ---- Source build (nixpkgs-style: compile everything from source) ----
+        # ---- Source build (compile the Rust binary from source) ----
 
-        # Pin pnpm to the repo's own version (package.json `packageManager`).
-        # nixpkgs' pnpm_10 (10.33.4) writes the newer v11 store (a binary
-        # `index.db`), which nixpkgs fetchPnpmDeps only round-trips correctly at
-        # fetcherVersion >= 4 (unavailable here, max 3); the result is a mangled
-        # index and ERR_PNPM_NO_OFFLINE_TARBALL at build time. 10.26.2 writes the
-        # v10 store that fetcherVersion 3 handles, and matches the lockfile.
-        pnpmPinned = pkgs.pnpm_10.override {
-          version = "10.26.2";
-          hash = "sha256-Y7UKS6Fc3iAAbdul2eIf1iPiPwlMn2O7FfaGsOSWrtY=";
-        };
+        # The shipped vibe is a native Rust binary. The source build compiles the
+        # `vibe` crate (which statically links its own `vibe-native` crate) with
+        # rustPlatform.buildRustPackage, replacing the former pnpm + bun-compile +
+        # N-API-embed pipeline. The commit comes from the flake's own revision
+        # (git is unavailable in the pure sandbox), preserving the
+        # `<version>+<commit>` provenance the build.rs would otherwise read from
+        # git.
+        commitRev = self.shortRev or self.dirtyShortRev or "";
 
-        # N-API native module (Copy-on-Write clone helpers). napi-rs emits a
-        # cdylib that the runtime loads as `<napiNode>`; we build the crate with
-        # plain cargo (napi-build sets the link flags) and rename the resulting
-        # shared object to the name the runtime's literal require() expects.
-        vibe-native = pkgs.rustPlatform.buildRustPackage {
-          pname = "vibe-native";
-          version = "0.12.0"; # packages/native/Cargo.toml
-          src = ./packages/native;
-          cargoLock.lockFile = ./packages/native/Cargo.lock;
-
-          # No Rust tests are meant to run without a Node host.
-          doCheck = false;
-
-          installPhase = ''
-            runHook preInstall
-            mkdir -p $out
-            lib=$(find . \( -name 'libvibe_native.so' -o -name 'libvibe_native.dylib' \) -type f | head -n1)
-            if [ -z "$lib" ]; then
-              echo "vibe-native: built shared object not found" >&2
-              exit 1
-            fi
-            cp "$lib" "$out/${platformInfo.napiNode}"
-            runHook postInstall
-          '';
-        };
-
-        # Deterministic stand-in for scripts/build.ts version generation, which
-        # shells out to git (unavailable in the sandbox) and stamps a wall-clock
-        # build time (non-reproducible). The commit comes from the flake's own
-        # revision instead of git, preserving the `<version>+<commit>` provenance
-        # that scripts/build.ts produces.
-        commitRev = self.shortRev or self.dirtyShortRev or "unknown";
-        versionFile = pkgs.writeText "version.ts" ''
-          // This file is provided by the Nix build (see flake.nix).
-          export interface BuildInfo {
-            version: string;
-            repository: string;
-            platform: string;
-            arch: string;
-            target: string;
-            distribution: string;
-            buildTime: string;
-            buildEnv: string;
-          }
-
-          export const BUILD_INFO: BuildInfo = {
-            version: "${version}+${commitRev}",
-            repository: "git+https://github.com/kexi/vibe.git",
-            platform: "${if isLinux then "linux" else "darwin"}",
-            arch: "${if pkgs.lib.hasPrefix "x86_64" system then "x64" else "arm64"}",
-            target: "${system}",
-            distribution: "nix",
-            buildTime: "",
-            buildEnv: "nix",
-          };
-
-          // Backwards compatibility
-          export const VERSION = BUILD_INFO.version;
-          export const REPOSITORY_URL = BUILD_INFO.repository;
-        '';
-
-        # pnpm-workspace.yaml carries supply-chain policies (trustPolicy,
-        # minimumReleaseAge) that re-verify packages against the npm registry at
-        # install time. They depend on wall-clock time and live registry trust
-        # state, so inside the pure build sandbox they are non-deterministic and
-        # fail the fixed-output pnpm fetch (the host pnpm cache that masks this
-        # locally is not visible). Integrity for the Nix build is instead pinned
-        # by the fetch output hash + the frozen lockfile, so strip just those two
-        # registry-time policies from a build-only copy of the source, shared by
-        # both the fetch and the compile so they stay consistent.
-        nixSrc = pkgs.runCommandLocal "vibe-src" { } ''
-          cp -r ${self} $out
-          chmod -R +w $out
-          ${pkgs.yq-go}/bin/yq -i \
-            'del(.trustPolicy) | del(.minimumReleaseAge) | del(.minimumReleaseAgeExclude)' \
-            $out/pnpm-workspace.yaml
-        '';
-
-        vibe-source = pkgs.stdenv.mkDerivation (finalAttrs: {
+        vibe-source = pkgs.rustPlatform.buildRustPackage {
           pname = "vibe";
           inherit version;
-          src = nixSrc;
+          src = ./rust;
+          cargoLock.lockFile = ./rust/Cargo.lock;
 
-          # The CLI binary only needs the root project (main.ts) and
-          # @kexi/vibe-core; the other workspaces (docs/video/e2e) pull in heavy,
-          # platform-specific trees (astro, remotion, pagefind) that bloat and
-          # destabilise the fetch without contributing to the binary. Restrict
-          # both the fetch and the offline install to just these two projects.
-          pnpmWorkspaces = [
-            "vibe-monorepo"
-            "@kexi/vibe-core"
-          ];
+          cargoBuildFlags = [ "-p" "vibe" ];
 
-          pnpmDeps = pkgs.fetchPnpmDeps {
-            inherit (finalAttrs)
-              pname
-              version
-              src
-              pnpmWorkspaces
-              ;
-            pnpm = pnpmPinned;
-            fetcherVersion = 3;
-            hash = "sha256-qU/e6Q3HGPrVXIfgHq9gbUsPUiW/+IEtE3fcYJvruTE=";
-          };
+          # build.rs reads these (cargo:rustc-env) so the binary's --version is
+          # accurate and reproducible without calling git / a wall clock.
+          VIBE_BUILD_COMMIT = commitRev;
+          VIBE_BUILD_DISTRIBUTION = "nix";
+          VIBE_BUILD_ENV = "nix";
 
-          nativeBuildInputs = [
-            pkgs.bun
-            pkgs.nodejs_24
-            pnpmPinned
-            pkgs.pnpmConfigHook
-          ]
-          # `bun build --compile` copies the (Nix-patched) bun runtime as the
-          # base executable, but the result and the embedded N-API module still
-          # need their ELF interpreter/rpath rewritten to Nix store paths, or
-          # they fail to start on NixOS (no FHS /lib64/ld-linux). Mirror what
-          # packages.binary does for the downloaded binary.
-          ++ pkgs.lib.optionals isLinux [ pkgs.autoPatchelfHook ];
+          # The Rust workspace tests run in the dedicated CI `rust` job (which
+          # builds the macOS native code too); skip them here to keep the Nix
+          # build focused on producing the binary.
+          doCheck = false;
 
+          # aws-lc-rs (via rustls) links libgcc_s at runtime on Linux;
+          # buildRustPackage applies autoPatchelfHook there, and this provides the
+          # shared object it needs.
           buildInputs = pkgs.lib.optionals isLinux [
             pkgs.stdenv.cc.cc.lib
           ];
-
-          preBuild = ''
-            # Drop the prebuilt N-API module where the literal require() in
-            # packages/core/src/runtime/node/native.ts looks for it, so that
-            # `bun build --compile` statically embeds it into the binary.
-            cp ${vibe-native}/${platformInfo.napiNode} packages/native/${platformInfo.napiNode}
-
-            # Deterministic version.ts instead of the git/timestamp generator.
-            cp ${versionFile} packages/core/src/version.ts
-          '';
-
-          buildPhase = ''
-            runHook preBuild
-            export HOME=$TMPDIR
-            export SHARP_IGNORE_GLOBAL_LIBVIPS=1
-            bun build --compile --minify --outfile vibe main.ts
-            runHook postBuild
-          '';
-
-          installPhase = ''
-            runHook preInstall
-            install -Dm755 vibe $out/bin/vibe
-            runHook postInstall
-          '';
-
-          # The output is a self-contained Bun executable; stripping corrupts it.
-          dontStrip = true;
 
           meta = with pkgs.lib; {
             description = "Git worktree helper CLI";
@@ -219,7 +91,7 @@
             platforms = builtins.attrNames platforms;
             mainProgram = "vibe";
           };
-        });
+        };
       in
       {
         # Default to the source build: it is reproducible and avoids the
@@ -227,7 +99,6 @@
         # kept as an explicit alias for clarity and CI.
         packages.default = vibe-source;
         packages.fromSource = vibe-source;
-        packages.vibe-native = vibe-native;
 
         # Prebuilt release binary (fast path; skips compiling). Requires the
         # per-platform hashes above to be bumped on every release, so it is no

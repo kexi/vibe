@@ -2,6 +2,8 @@
 
 # ネイティブクローン実装
 
+> **歴史的な注記:** ここで説明している TypeScript ランタイムの分岐は、Rust 移植の Phase 6 で削除されました。vibe は現在単一の Rust バイナリであり、ネイティブの CoW 実装は `rust/crates/vibe-native`（`rust/crates/vibe-core` に静的リンク）にあります。このドキュメントは設計の歴史として残しています。
+
 このドキュメントでは、vibeがネイティブのCopy-on-Write（CoW）操作にRustを使用する理由と、DenoとNode.jsランタイム間での実装の違いについて説明します。
 
 ## なぜRustなのか？
@@ -200,4 +202,4 @@ opt-level = "z"      # サイズ最適化
 
 - [コピー戦略](./copy-strategies.ja.md) - 全体的なコピー戦略の選択
 - [マルチランタイムサポート](./multi-runtime.ja.md) - ランタイム抽象化レイヤー
-- [@kexi/vibe-native README](../../packages/native/README.md) - パッケージAPIドキュメント
+- `@kexi/vibe-native` README - パッケージAPIドキュメント（`packages/native` パッケージは Phase 6 で削除されました。ネイティブの CoW 実装は現在 `rust/crates/vibe-native` にあります）

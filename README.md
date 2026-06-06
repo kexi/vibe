@@ -163,7 +163,7 @@ npm install -g @kexi/vibe
 npx @kexi/vibe start feat/my-feature
 ```
 
-> Note: The npm package includes optional native bindings (`@kexi/vibe-native`) for optimized Copy-on-Write file cloning on macOS (APFS) and Linux (Btrfs/XFS). These are automatically used when available.
+> Note: The npm package is a thin launcher that runs the native `vibe` binary for your platform (installed automatically as a per-platform `optionalDependency`, e.g. `@kexi/vibe-darwin-arm64`). Optimized Copy-on-Write file cloning on macOS (APFS) and Linux (Btrfs/XFS) is built directly into that binary.
 
 ### Bun (1.2.0+)
 
@@ -175,19 +175,7 @@ bun add -g @kexi/vibe
 bunx @kexi/vibe start feat/my-feature
 ```
 
-> Note: Bun uses the same npm package as Node.js. Native bindings for Copy-on-Write file cloning are automatically used when available.
-
-### Deno (2.0+)
-
-```bash
-# Install via JSR
-deno install -A --global jsr:@kexi/vibe
-
-# Or run directly
-deno run -A jsr:@kexi/vibe start feat/my-feature
-```
-
-> Note: Deno 2.0+ is required for JSR distribution.
+> Note: Bun uses the same npm package as Node.js — it launches the native `vibe` binary for your platform.
 
 ### mise
 
@@ -262,21 +250,23 @@ chmod +x vibe
 sudo mv vibe /usr/local/bin/
 ```
 
-### Windows (PowerShell)
+### Windows
 
-```powershell
-# Download
-Invoke-WebRequest -Uri "https://github.com/kexi/vibe/releases/latest/download/vibe-windows-x64.exe" -OutFile "$env:LOCALAPPDATA\vibe.exe"
-
-# Add to PATH (first time only)
-$path = [Environment]::GetEnvironmentVariable("Path", "User")
-[Environment]::SetEnvironmentVariable("Path", "$path;$env:LOCALAPPDATA", "User")
-```
+> [!CAUTION]
+> Windows binary distribution is being reworked. The current release no longer
+> ships a `vibe-windows-x64.exe` asset, and there is no `@kexi/vibe-win32-x64`
+> package yet, so installing `@kexi/vibe` via npm on Windows leaves the launcher
+> without a binary and it will exit with a clear error.
+>
+> Until native Windows builds return, run vibe under
+> [WSL2](https://learn.microsoft.com/windows/wsl/) using the Linux instructions
+> above, or build from source with the Rust toolchain (see [Manual Build](#manual-build)).
 
 ### Manual Build
 
 ```bash
-bun build --compile --minify --outfile vibe main.ts
+cargo build --manifest-path rust/Cargo.toml -p vibe --release
+# binary at: rust/target/release/vibe
 ```
 
 ## Setup
@@ -420,7 +410,7 @@ Vibe automatically selects the best copy strategy based on your system:
 
 - **File copy**: Always uses native `copyFile()` for best single-file performance
 - **Directory copy**: Automatically uses the fastest available method:
-  - On macOS with APFS: Uses native `clonefile()` syscall via `@kexi/vibe-native` for instant CoW cloning. Falls back to `cp -cR` if native module is unavailable
+  - On macOS with APFS: Uses the native `clonefile()` syscall (built into the binary) for instant CoW cloning. Falls back to `cp -cR` if unavailable
   - On Linux with Btrfs/XFS: Uses `cp --reflink=auto` for CoW cloning
   - Falls back to rsync or standard copy if CoW is unavailable
 
@@ -610,8 +600,8 @@ The following environment variables are available in all hook commands:
 
 Vibe follows security best practices for CLI tools:
 
-- **Shell injection prevention**: All shell output is escaped via `escapeShellPath()` to prevent command injection through crafted directory names
-- **No shell string execution**: Uses Node.js `spawn` instead of `exec`/`execSync` to avoid shell interpretation
+- **Shell injection prevention**: The `cd` lines printed for the shell wrapper to `eval` are single-quote escaped (`rust/crates/vibe-core/src/shell.rs`) to prevent command injection through crafted directory names
+- **No shell string execution**: Subprocesses are spawned via `std::process::Command` with argument arrays, never shell strings, so there is no shell interpretation of arguments
 - **Configuration trust mechanism**: SHA-256 hash verification for `.vibe.toml` and `.vibe.local.toml` files
 - **Path validation**: All user-supplied paths are validated before use
 

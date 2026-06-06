@@ -12,7 +12,7 @@ npm install -g @kexi/vibe
 npx @kexi/vibe start feat/my-feature
 ```
 
-> **Note**: The npm package includes optional native bindings (`@kexi/vibe-native`) for optimized Copy-on-Write file cloning on macOS (APFS) and Linux (Btrfs/XFS). These are automatically used when available.
+> **Note**: `@kexi/vibe` is a thin launcher. On install, npm pulls in the matching per-platform package (`@kexi/vibe-<platform>-<arch>`, e.g. `@kexi/vibe-darwin-arm64`) via `optionalDependencies`, and the launcher execs the Rust binary it ships. Copy-on-Write file cloning (macOS APFS, Linux Btrfs/XFS) is built into that Rust binary — there is no separate native add-on to install.
 
 ### Other Installation Methods
 
@@ -92,6 +92,11 @@ end
 
 <details>
 <summary>PowerShell ($PROFILE)</summary>
+
+> **Note:** native Windows is not yet supported. Installing `@kexi/vibe` on
+> Windows currently leaves the launcher with no platform binary (there is no
+> `@kexi/vibe-win32-x64` package yet), so it will error at runtime. Use WSL2 /
+> Linux for now. The shell function below is kept for when Windows support lands.
 
 ```powershell
 function vibe { Invoke-Expression (& vibe.exe $args) }

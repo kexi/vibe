@@ -6,9 +6,9 @@ on:
     paths: &nix-paths
       - "flake.nix"
       - "flake.lock"
-      # The source build compiles these, so changes here can break it.
-      - "packages/native/**"
-      - "pnpm-lock.yaml"
+      # The source build now compiles the Rust workspace, so changes there can
+      # break it. (The former pnpm/native inputs no longer feed the Nix build.)
+      - "rust/**"
       - "package.json"
       - ".github/workflows/nix.yml"
   # Also run on PRs so a stale pnpm hash or a native-crate change that breaks
@@ -18,8 +18,17 @@ on:
     paths: *nix-paths
 
 jobs:
+  # G-8: build the source derivation on BOTH Linux and macOS. The dev only
+  # verified `nix build .#fromSource` on macOS locally, and CI previously only
+  # exercised Linux, so a macOS-specific source-build break (e.g. the clonefile
+  # cfg path or a Darwin-only dependency) could slip through. nix-on-macOS in CI
+  # is heavier (no magic-nix-cache hits on a cold runner) but catches that gap.
   nix-build:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Harden Runner
@@ -35,9 +44,6 @@ jobs:
       - name: Check flake
         run: nix flake check
 
-      - name: Build native module from source
-        run: nix build .#vibe-native
-
       - name: Build from source
         run: nix build .#fromSource
 
@@ -47,8 +53,10 @@ jobs:
       # ubuntu-latest is FHS, so `--help` succeeds even if the binary kept a
       # non-Nix interpreter — which would fail on NixOS. Assert the interpreter
       # was patched into the Nix store so the NixOS failure mode can't pass
-      # silently.
+      # silently. Linux-only: macOS Mach-O binaries have no ELF interpreter and
+      # patchelf does not apply.
       - name: Assert Nix-store ELF interpreter
+        if: runner.os == 'Linux'
         run: |
           interp=$(nix run nixpkgs#patchelf -- --print-interpreter result/bin/vibe)
           echo "interpreter: $interp"

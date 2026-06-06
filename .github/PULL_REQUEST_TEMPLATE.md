@@ -19,8 +19,8 @@
 <!--
   How did you verify your changes work correctly?
   Examples:
-  - Added unit tests in `packages/core/src/...`
-  - Ran `pnpm run test` and all tests pass
+  - Added unit tests in `rust/crates/vibe-core/src/...`
+  - Ran `pnpm run check:all` and all checks pass
   - Manually tested with `vibe start <branch>`
 -->
 

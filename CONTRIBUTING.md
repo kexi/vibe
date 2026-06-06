@@ -19,42 +19,41 @@ direnv allow
 
 ## Running vibe in Development
 
-Source the development helper to use `vibe` command directly:
+vibe is a Rust binary. Run it directly with cargo:
 
 ```bash
-source .vibedev
-vibe start feat/my-feature
-vibe clean
+cargo run --manifest-path rust/Cargo.toml -p vibe -- start feat/my-feature
+cargo run --manifest-path rust/Cargo.toml -p vibe -- clean
 ```
 
-Or run via pnpm:
+Build a release binary (the artifact that ships) with:
 
 ```bash
-pnpm run dev start feat/my-feature
+pnpm run build:rust   # -> rust/target/release/vibe
 ```
 
-Note: The shell function uses `eval` because `vibe start` outputs shell commands for directory navigation.
+Note: `vibe start` outputs shell commands for directory navigation, so wrap it
+in `eval "$(vibe start ...)"` when you want it to change the current directory.
 
 ## Available Tasks
 
 All tasks are defined in `package.json` to ensure consistency between local development and CI:
 
 ```bash
-# Run all CI checks (same as CI runs)
-pnpm run check:core
+# Run all checks (same as CI runs)
+pnpm run check:all
 
 # Individual checks
-pnpm run format:check  # Check code formatting
-pnpm run lint          # Run linter
-pnpm run typecheck     # Type check
-pnpm run test          # Run tests
+pnpm run fmt:check     # Check TS-script formatting (oxfmt)
+pnpm run lint          # Run linter (oxlint) on the TS scripts
+pnpm run check:rust    # Rust: cargo fmt --check + clippy -D warnings + workspace tests
+pnpm run test:npm      # npm launcher-shim + release-script tests
+pnpm run check:docs    # Docs package checks
+pnpm run check:video   # Video package typecheck
 
 # Auto-fix formatting
-pnpm run format
-
-# Development
-pnpm run dev           # Run in development mode
-pnpm run compile       # Build binaries for all platforms
+pnpm run fmt           # TS scripts (oxfmt)
+pnpm run fmt:rust      # Rust (cargo fmt)
 ```
 
 ## Running CI Checks Locally
@@ -62,15 +61,17 @@ pnpm run compile       # Build binaries for all platforms
 Before pushing, run the same checks that CI will run:
 
 ```bash
-pnpm run check:core
+pnpm run check:all
 ```
 
 This runs:
 
-1. Format check (`pnpm run format:check`)
+1. Format check (`pnpm run fmt:check`)
 2. Linter (`pnpm run lint`)
-3. Type check (`pnpm run typecheck`)
-4. Tests (`pnpm run test`)
+3. Rust checks (`pnpm run check:rust`)
+4. npm shim / release-script tests (`pnpm run test:npm`)
+5. Docs checks (`pnpm run check:docs`)
+6. Video typecheck (`pnpm run check:video`)
 
 ## Release Process
 
@@ -192,18 +193,18 @@ When contributing to vibe, please keep these security considerations in mind:
 ### Input Validation
 
 - Always validate user inputs, especially file paths and branch names
-- Use `validatePath()` from `packages/core/src/utils/copy/validation.ts` for path validation
+- Use `validate_path()` from `rust/crates/vibe-core/src/copy/types.rs` for path validation
 - Check for null bytes, newlines, and shell command substitution patterns
 
 ### External Command Execution
 
-- Use Node.js `spawn` with argument arrays, not shell strings, to prevent injection
+- Use `std::process::Command` with argument arrays, not shell strings, to prevent injection
 - Never pass untrusted input directly to shell commands
-- The `runHooks()` function in `packages/core/src/utils/hooks.ts` executes user-defined commands - this is intentional, but the trust mechanism must be respected
+- The `run_hooks()` function in `rust/crates/vibe-core/src/hooks.rs` executes user-defined commands - this is intentional, but the trust mechanism must be respected
 
 ### Trust Mechanism
 
-- The trust system (`packages/core/src/utils/settings.ts`) uses SHA-256 hashes to verify configuration file integrity
+- The trust system (`rust/crates/vibe-core/src/settings_io.rs`) uses SHA-256 hashes to verify configuration file integrity
 - Trust is repository-based (identified by remote URL or repo root)
 - Always require explicit user consent before executing hook commands from untrusted sources
 
@@ -211,7 +212,7 @@ When contributing to vibe, please keep these security considerations in mind:
 
 - Use atomic file operations (temp file + rename) for settings to prevent corruption
 - Validate paths before copy operations to prevent directory traversal
-- The `TOCTOU` (time-of-check to time-of-use) race condition is addressed in `verifyTrustAndRead()` - this function reads the file content and verifies its hash atomically, preventing attackers from modifying the file between the check and use
+- The `TOCTOU` (time-of-check to time-of-use) race condition is addressed in `verify_trust_and_read()` (`rust/crates/vibe-core/src/settings_io.rs`) - this function reads the file content and verifies its hash atomically, preventing attackers from modifying the file between the check and use
 
 ### Reporting Security Issues
 

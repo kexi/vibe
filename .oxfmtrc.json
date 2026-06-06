@@ -8,11 +8,9 @@
   "ignorePatterns": [
     "**/node_modules/**",
     "**/dist/**",
-    "packages/core/src/version.ts",
     "packages/docs/**",
     "packages/video/**",
     "packages/npm/**",
-    "packages/native/**",
     "packages/e2e/**",
     "**/*.json",
     "**/*.jsonc",
