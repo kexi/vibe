@@ -238,17 +238,23 @@ jobs:
   # End-to-end npm install→run on every package manager (G-1/G-2). The shim unit
   # tests mock require.resolve/realpath; this job proves the REAL flow under each
   # package manager's actual on-disk layout (npm hoisted, pnpm .pnpm symlink
-  # farm, yarn-classic), which is the only place the containment guard (security
-  # A-2) and the os/cpu gating are exercised for real. It runs on the
-  # host-matching platform package only: building all four targets per runner is
-  # unnecessary, and a foreign-arch binary could not be smoke-run anyway.
+  # farm), which is the only place the containment guard (security A-2) and the
+  # os/cpu gating are exercised for real. It runs on the host-matching platform
+  # package only: building all four targets per runner is unnecessary, and a
+  # foreign-arch binary could not be smoke-run anyway.
   npm-install-matrix:
     needs: build-rust-binaries
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        pm: [npm, pnpm, yarn]
+        # npm (hoisted node_modules) and pnpm (.pnpm symlink farm) cover the two
+        # distinct install layouts the shim must resolve against. yarn classic is
+        # omitted: it is not a realistic global-install path for vibe (and is
+        # EOL-bound), its layout mirrors npm's hoisted one, and its strict
+        # optionalDependencies resolution fails on the not-yet-published platform
+        # packages — adding noise without unique coverage.
+        pm: [npm, pnpm]
         include:
           # Host platform package + node arch for each runner.
           - os: ubuntu-latest
@@ -334,8 +340,6 @@ jobs:
           case "$PM" in
             npm)  npm install "$SHIM" "$PLAT" ;;
             pnpm) pnpm add "$SHIM" "$PLAT" ;;
-            yarn) corepack enable && corepack prepare yarn@1.22.22 --activate
-                  yarn add "file:$SHIM" "file:$PLAT" ;;
           esac
           # `vibe --version` writes the banner to stderr (stdout is reserved for
           # the shell-eval `cd` contract), so capture both streams.
@@ -369,8 +373,6 @@ jobs:
           case "$PM" in
             npm)  npm install --no-optional "$SHIM" ;;
             pnpm) pnpm add --no-optional "$SHIM" ;;
-            yarn) corepack enable && corepack prepare yarn@1.22.22 --activate
-                  yarn add --ignore-optional "file:$SHIM" ;;
           esac
           set +e
           out=$(./node_modules/.bin/vibe --version 2>&1)
