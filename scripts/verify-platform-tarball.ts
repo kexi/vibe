@@ -36,7 +36,14 @@ interface PackResult {
   files: PackEntry[];
 }
 
-const REQUIRED_FILES = ["bin/vibe", "THIRD-PARTY-LICENSES.md"] as const;
+// The Windows package ships `bin/vibe.exe`; every other platform ships the
+// extensionless `bin/vibe`. The caller derives the right name from the package.
+const LICENSE_FILE = "THIRD-PARTY-LICENSES.md";
+
+/** The staged binary's path inside the tarball for a given package directory. */
+export function binaryPathFor(dir: string): string {
+  return dir.includes("win32") ? "bin/vibe.exe" : "bin/vibe";
+}
 
 function parseDir(argv: string[]): string {
   for (let i = 0; i < argv.length; i++) {
@@ -61,15 +68,16 @@ function parseDir(argv: string[]): string {
 }
 
 /**
- * Validate a `npm pack --dry-run --json` result against REQUIRED_FILES. Pure so
- * it can be unit-tested without invoking npm. Returns the list of problems
- * (empty = OK): a missing required file, or bin/vibe present but not executable.
+ * Validate a `npm pack --dry-run --json` result. Pure so it can be unit-tested
+ * without invoking npm. `binName` is the expected binary entry (e.g. `bin/vibe`
+ * or `bin/vibe.exe`). Returns the list of problems (empty = OK): a missing
+ * required file, or the binary present but not executable.
  */
-export function findTarballProblems(files: PackEntry[]): string[] {
+export function findTarballProblems(files: PackEntry[], binName: string): string[] {
   const byPath = new Map(files.map((f) => [f.path, f]));
   const problems: string[] = [];
 
-  for (const required of REQUIRED_FILES) {
+  for (const required of [binName, LICENSE_FILE]) {
     if (!byPath.has(required)) {
       problems.push(`missing required file: ${required}`);
     }
@@ -77,10 +85,11 @@ export function findTarballProblems(files: PackEntry[]): string[] {
 
   // The shim chmods +x at launch if needed, but a non-executable published bin
   // is still a smell (and breaks `bin` wiring on some installs), so require the
-  // staged mode to carry an execute bit.
-  const bin = byPath.get("bin/vibe");
-  if (bin && (bin.mode & 0o111) === 0) {
-    problems.push(`bin/vibe is not executable (mode ${bin.mode.toString(8)})`);
+  // staged mode to carry an execute bit. (Skipped for the .exe: npm tarball mode
+  // bits are not meaningful for Windows binaries.)
+  const bin = byPath.get(binName);
+  if (bin && !binName.endsWith(".exe") && (bin.mode & 0o111) === 0) {
+    problems.push(`${binName} is not executable (mode ${bin.mode.toString(8)})`);
   }
 
   return problems;
@@ -89,23 +98,19 @@ export function findTarballProblems(files: PackEntry[]): string[] {
 async function main(): Promise<void> {
   const dir = parseDir(process.argv.slice(2));
 
-  // On Windows `npm` is a `.cmd` batch file: Node's execFile cannot spawn it
-  // directly (uv_spawn ENOENT, even with the `.cmd` name) because a batch file
-  // needs cmd.exe — hence `shell: true` on win32. The args here are FIXED
-  // literals (no interpolation) and the variable `dir` is passed via `cwd`, not
-  // the command line, so the shell sees no attacker-controlled input.
-  const isWin = process.platform === "win32";
-  const { stdout } = await execFileAsync("npm", ["pack", "--dry-run", "--json"], {
-    cwd: dir,
-    shell: isWin,
-  });
+  // This G-3 check runs only on Linux/macOS (the CI win32 leg skips it — Bun on
+  // Windows cannot spawn the npm.cmd shim; the assertion is platform-independent
+  // and covered by the unix legs / the ubuntu-run publish job), so a bare `npm`
+  // resolves fine and no shell/.cmd handling is needed.
+  const { stdout } = await execFileAsync("npm", ["pack", "--dry-run", "--json"], { cwd: dir });
   const parsed = JSON.parse(stdout) as PackResult[];
   const result = parsed[0];
   if (!result || !Array.isArray(result.files)) {
     throw new Error(`unexpected npm pack output for ${dir}`);
   }
 
-  const problems = findTarballProblems(result.files);
+  const binName = binaryPathFor(dir);
+  const problems = findTarballProblems(result.files, binName);
   if (problems.length > 0) {
     console.error(`✗ ${dir}: tarball is missing required content:`);
     for (const p of problems) {
@@ -114,7 +119,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`✓ ${dir}: tarball includes ${REQUIRED_FILES.join(", ")}`);
+  console.log(`✓ ${dir}: tarball includes ${binName}, ${LICENSE_FILE}`);
 }
 
 if (import.meta.main) {

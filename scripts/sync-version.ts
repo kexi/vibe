@@ -100,12 +100,7 @@ async function writeJsonFile(path: string, data: unknown): Promise<void> {
   // baseDir is a test fixture: prettier is not wired to format an arbitrary temp
   // dir, and the test asserts on the raw written JSON, not its formatting.
   if (baseDir === ".") {
-    // On Windows `pnpm` is a `.cmd` batch file that Node's execFile cannot spawn
-    // directly — it needs cmd.exe, hence `shell: true` on win32. `path` here is
-    // an internal fixed TARGETS entry (e.g. "packages/npm/package.json"), never
-    // attacker input, so passing it through the shell is safe.
-    const isWin = process.platform === "win32";
-    await execFileAsync("pnpm", ["exec", "prettier", "--write", path], { shell: isWin });
+    await execFileAsync("pnpm", ["exec", "prettier", "--write", path]);
   }
 }
 

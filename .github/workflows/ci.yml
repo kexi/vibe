@@ -291,8 +291,8 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
           ARCH: ${{ matrix.arch }}
         run: |
-          # cargo emits vibe.exe on Windows; the staging script renames it to the
-          # extensionless bin/vibe so the shim resolves it uniformly.
+          # cargo emits vibe.exe on Windows; pass it explicitly so the staging
+          # script writes bin/vibe.exe (the shim resolves/spawns the .exe on win32).
           BIN="rust/target/release/vibe"
           if [ "${{ runner.os }}" = "Windows" ]; then
             BIN="${BIN}.exe"

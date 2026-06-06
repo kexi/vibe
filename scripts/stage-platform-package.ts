@@ -8,13 +8,12 @@
  * for one <platform>-<arch> into that platform package's `bin/vibe` so it can be
  * published (the bin/ dirs are gitignored and staged at build/release time).
  *
- * The on-disk name is `bin/vibe` (no extension) on EVERY platform, Windows
- * included. Why not `bin/vibe.exe` on Windows: the shim resolves the binary via
- * `require.resolve(".../bin/vibe")`, which never tries a `.exe` suffix — keeping
- * one name across platforms means the shim's resolution and the tarball verifier
- * stay branch-free. On Windows the caller passes `--binary <...>/vibe.exe`; the
- * copy below renames it to `bin/vibe`, and Node's `spawnSync` launches the PE by
- * its header, not its extension.
+ * The on-disk name is `bin/vibe` on Unix and `bin/vibe.exe` on Windows. Why the
+ * .exe on Windows: Node's spawn launches a PE by its extension (an extensionless
+ * PE does not run via CreateProcess from a npm .bin shim), and require.resolve
+ * never tries a `.exe` suffix, so the shim must ask for the explicit name. This
+ * mirrors esbuild (esbuild.exe on win32, bin/esbuild elsewhere). On Windows the
+ * caller passes `--binary <...>/vibe.exe`; the copy below keeps the .exe name.
  *
  * Usage:
  *   bun run scripts/stage-platform-package.ts --platform <p> --arch <a> [--binary <path>]
@@ -108,10 +107,10 @@ export interface StageOptions {
 }
 
 /**
- * Copy the built binary into `packages/vibe-<platform>-<arch>/bin/vibe` (0o755)
- * and stage THIRD-PARTY-LICENSES.md beside it. Returns the staged binary path.
- * Throws if the source binary does not exist. The root is injected so tests run
- * against a temp dir instead of the real repo.
+ * Copy the built binary into `packages/vibe-<platform>-<arch>/bin/vibe`
+ * (`bin/vibe.exe` on win32, 0o755) and stage THIRD-PARTY-LICENSES.md beside it.
+ * Returns the staged binary path. Throws if the source binary does not exist.
+ * The root is injected so tests run against a temp dir instead of the real repo.
  */
 export async function stagePlatformPackage(
   args: Args,
@@ -129,7 +128,11 @@ export async function stagePlatformPackage(
   }
 
   const pkgDir = packageDir(root, args.platform, args.arch);
-  const dest = join(pkgDir, "bin", "vibe");
+  // Windows binaries keep the .exe extension so Node's spawn can launch the PE
+  // and the shim's require.resolve(".../bin/vibe.exe") finds it (esbuild does
+  // the same: esbuild.exe on win32). Unix stays extensionless.
+  const binName = args.platform === "win32" ? "vibe.exe" : "vibe";
+  const dest = join(pkgDir, "bin", binName);
 
   await mkdir(dirname(dest), { recursive: true });
   await copyFile(args.binary, dest);

@@ -243,7 +243,9 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: |
           src_sha=$(sha256sum "dist-bin/$ARTIFACT" | cut -d ' ' -f 1)
-          staged="packages/vibe-${PLATFORM}-${ARCH}/bin/vibe"
+          # The Windows package stages bin/vibe.exe; every other platform bin/vibe.
+          binname="vibe"; [ "$PLATFORM" = "win32" ] && binname="vibe.exe"
+          staged="packages/vibe-${PLATFORM}-${ARCH}/bin/${binname}"
           staged_sha=$(sha256sum "$staged" | cut -d ' ' -f 1)
           echo "release artifact: $src_sha"
           echo "staged npm bin : $staged_sha"

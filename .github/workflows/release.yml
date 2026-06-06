@@ -77,9 +77,10 @@ jobs:
           TARGET: ${{ matrix.target }}
           ARTIFACT: ${{ matrix.artifact }}
         run: |
-          # cargo emits vibe.exe on Windows; copy it to the extensionless
-          # artifact name so the staging/publish flow stays uniform across
-          # platforms (the shim resolves an extensionless bin/vibe everywhere).
+          # cargo emits vibe.exe on Windows; the release ASSET is named
+          # extensionless (vibe-win32-x64) for symmetry with the other four. The
+          # staging script later receives it via --binary and writes bin/vibe.exe
+          # into the npm package (so the shim can spawn the PE on Windows).
           SRC="rust/target/${TARGET}/release/vibe"
           if [ "${{ runner.os }}" = "Windows" ]; then
             SRC="${SRC}.exe"
@@ -235,7 +236,7 @@ jobs:
           name: platform-package-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
             packages/vibe-${{ matrix.platform }}-${{ matrix.arch }}/package.json
-            packages/vibe-${{ matrix.platform }}-${{ matrix.arch }}/bin/vibe
+            packages/vibe-${{ matrix.platform }}-${{ matrix.arch }}/bin/vibe*
             packages/vibe-${{ matrix.platform }}-${{ matrix.arch }}/THIRD-PARTY-LICENSES.md
           if-no-files-found: error
 

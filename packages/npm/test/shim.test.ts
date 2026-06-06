@@ -77,16 +77,17 @@ describe("resolveBinary", () => {
     expect(resolve).toHaveBeenCalledWith("@kexi/vibe-linux-x64/bin/vibe", { paths: [dirname] });
   });
 
-  it("resolves the Windows binary as extensionless bin/vibe (not vibe.exe)", () => {
-    // The staged Windows binary is bin/vibe (no .exe), so require.resolve — which
-    // never tries a .exe suffix — must be asked for the extensionless path.
-    const resolved = path.join(path.sep, "proj", "node_modules", "@kexi", "vibe-win32-x64", "bin", "vibe");
+  it("resolves the Windows binary as bin/vibe.exe (not extensionless)", () => {
+    // The staged Windows binary is bin/vibe.exe so Node can spawn the PE;
+    // require.resolve never tries a .exe suffix, so the shim must ask for the
+    // explicit name (mirroring esbuild's esbuild.exe on win32).
+    const resolved = path.join(path.sep, "proj", "node_modules", "@kexi", "vibe-win32-x64", "bin", "vibe.exe");
     const resolve = vi.fn().mockReturnValue(resolved);
 
     const out = shim.resolveBinary({ platform: "win32", arch: "x64", resolve, realpath, dirname });
 
     expect(out).toBe(resolved);
-    expect(resolve).toHaveBeenCalledWith("@kexi/vibe-win32-x64/bin/vibe", { paths: [dirname] });
+    expect(resolve).toHaveBeenCalledWith("@kexi/vibe-win32-x64/bin/vibe.exe", { paths: [dirname] });
   });
 
   it("throws EUNSUPPORTED for an unsupported platform", () => {

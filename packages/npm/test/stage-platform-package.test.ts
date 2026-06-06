@@ -89,9 +89,9 @@ describe("stagePlatformPackage", () => {
     expect(readFileSync(license, "utf-8")).toBe("# notices");
   });
 
-  it("stages the Windows vibe.exe source to an extensionless bin/vibe", async () => {
-    // On Windows the cargo artifact is vibe.exe, but the staged name must stay
-    // bin/vibe (no extension) so the shim's require.resolve(".../bin/vibe") works.
+  it("stages the Windows binary as bin/vibe.exe (keeps the extension)", async () => {
+    // On Windows the cargo artifact is vibe.exe and the staged name keeps the
+    // .exe so Node can spawn the PE and the shim resolves bin/vibe.exe.
     const binary = writeBinary("vibe.exe", "WIN-BINARY-BYTES");
 
     const dest = await stagePlatformPackage(
@@ -99,7 +99,7 @@ describe("stagePlatformPackage", () => {
       { root },
     );
 
-    expect(dest).toBe(join(root, "packages", "vibe-win32-x64", "bin", "vibe"));
+    expect(dest).toBe(join(root, "packages", "vibe-win32-x64", "bin", "vibe.exe"));
     expect(readFileSync(dest, "utf-8")).toBe("WIN-BINARY-BYTES");
   });
 

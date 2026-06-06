@@ -115,9 +115,15 @@ function resolveBinary({ platform, arch, resolve, realpath, dirname }) {
     throw err;
   }
 
+  // Windows binaries are named `bin/vibe.exe`: Node's spawn launches a PE by its
+  // extension, and require.resolve never tries a `.exe` suffix, so the name must
+  // be explicit. Unix uses the extensionless `bin/vibe`. (This mirrors how
+  // esbuild ships `esbuild.exe` on win32 vs `bin/esbuild` elsewhere.)
+  const subpath = platform === "win32" ? "bin/vibe.exe" : "bin/vibe";
+
   let resolved;
   try {
-    resolved = resolve(`${pkg}/bin/vibe`, { paths: [dirname] });
+    resolved = resolve(`${pkg}/${subpath}`, { paths: [dirname] });
   } catch {
     const err = new Error(
       `platform package ${pkg} not installed for ${platform}/${arch}; ` +
