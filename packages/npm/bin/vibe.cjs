@@ -54,6 +54,7 @@ function platformPackageName(platform, arch) {
     "linux-arm64": "@kexi/vibe-linux-arm64",
     "darwin-x64": "@kexi/vibe-darwin-x64",
     "darwin-arm64": "@kexi/vibe-darwin-arm64",
+    "win32-x64": "@kexi/vibe-win32-x64",
   };
   const key = `${platform}-${arch}`;
   return SUPPORTED[key] ?? null;
@@ -114,9 +115,15 @@ function resolveBinary({ platform, arch, resolve, realpath, dirname }) {
     throw err;
   }
 
+  // Windows binaries are named `bin/vibe.exe`: Node's spawn launches a PE by its
+  // extension, and require.resolve never tries a `.exe` suffix, so the name must
+  // be explicit. Unix uses the extensionless `bin/vibe`. (This mirrors how
+  // esbuild ships `esbuild.exe` on win32 vs `bin/esbuild` elsewhere.)
+  const subpath = platform === "win32" ? "bin/vibe.exe" : "bin/vibe";
+
   let resolved;
   try {
-    resolved = resolve(`${pkg}/bin/vibe`, { paths: [dirname] });
+    resolved = resolve(`${pkg}/${subpath}`, { paths: [dirname] });
   } catch {
     const err = new Error(
       `platform package ${pkg} not installed for ${platform}/${arch}; ` +

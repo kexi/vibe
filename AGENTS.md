@@ -29,9 +29,9 @@ develop ─┴──●──●──●──●─────┴────
 | ------- | ------------- | -------------------------------------- |
 | macOS   | x64, ARM64    | Homebrew available                     |
 | Linux   | x64, ARM64    | .deb package available (Ubuntu/Debian) |
-| Windows | x64           | Native build pending; use WSL2 / Linux |
+| Windows | x64           | Native npm package available           |
 
-WSL2 is supported via Linux binaries.
+WSL2 is also supported via Linux binaries.
 
 ### Filesystem (Copy-on-Write Optimization)
 

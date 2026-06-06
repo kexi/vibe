@@ -1,0 +1,24 @@
+{
+  "name": "@kexi/vibe-win32-x64",
+  "version": "2.0.0",
+  "description": "Windows x64 binary for the vibe CLI",
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin/",
+    "THIRD-PARTY-LICENSES.md"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kexi/vibe.git"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

@@ -72,7 +72,8 @@ pub fn supports_directory() -> bool {
     platform::supports_directory()
 }
 
-/// The current platform name: `"darwin"`, `"linux"`, or `"unsupported"`.
+/// The current platform name: `"darwin"`, `"linux"`, `"windows"`, or
+/// `"unsupported"`.
 pub fn get_platform() -> &'static str {
     platform::get_platform()
 }
@@ -94,7 +95,7 @@ mod tests {
     fn get_platform_is_known() {
         let p = get_platform();
         assert!(
-            p == "darwin" || p == "linux" || p == "unsupported",
+            p == "darwin" || p == "linux" || p == "windows" || p == "unsupported",
             "unexpected platform: {p}"
         );
     }

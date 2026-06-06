@@ -69,9 +69,11 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
 
   </TabItem>
   <TabItem label="Windows">
-    :::caution
-    ネイティブな Windows バイナリは再構築中で現在は配布されておらず、Windows 向け npm パッケージもまだありません。[WSL2](https://learn.microsoft.com/ja-jp/windows/wsl/) 上で Linux の手順を使うか、ソースからビルドしてください。詳しくは[インストール → Windows](/ja/installation/#windows)を参照してください。
-    :::
+    ```bash frame="terminal"
+    npm install -g @kexi/vibe
+    ```
+
+    Windows x64 は `@kexi/vibe-win32-x64` バイナリパッケージ経由でサポートされています。WSL2 ユーザーは上記の Linux 手順も利用できます。
 
   </TabItem>
 </Tabs>

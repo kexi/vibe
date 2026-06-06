@@ -29,6 +29,7 @@ const JSON_TARGETS = [
   "packages/vibe-linux-arm64/package.json",
   "packages/vibe-darwin-x64/package.json",
   "packages/vibe-darwin-arm64/package.json",
+  "packages/vibe-win32-x64/package.json",
 ];
 const CARGO_TARGETS = [
   "rust/crates/vibe/Cargo.toml",
@@ -40,6 +41,7 @@ const PLATFORM_DEPS = [
   "@kexi/vibe-linux-arm64",
   "@kexi/vibe-darwin-x64",
   "@kexi/vibe-darwin-arm64",
+  "@kexi/vibe-win32-x64",
 ];
 
 let root: string;

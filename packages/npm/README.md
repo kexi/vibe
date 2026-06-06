@@ -93,10 +93,9 @@ end
 <details>
 <summary>PowerShell ($PROFILE)</summary>
 
-> **Note:** native Windows is not yet supported. Installing `@kexi/vibe` on
-> Windows currently leaves the launcher with no platform binary (there is no
-> `@kexi/vibe-win32-x64` package yet), so it will error at runtime. Use WSL2 /
-> Linux for now. The shell function below is kept for when Windows support lands.
+> **Note:** native Windows x64 is supported through the
+> `@kexi/vibe-win32-x64` optional dependency. WSL2 users can use the Linux
+> package instead.
 
 ```powershell
 function vibe { Invoke-Expression (& vibe.exe $args) }

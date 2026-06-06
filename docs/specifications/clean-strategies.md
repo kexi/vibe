@@ -18,10 +18,10 @@ Trash Strategy moves directories to a temporary location instead of deleting the
 
 ## Strategy Overview
 
-| Strategy     | Implementation          | macOS        | Linux            | Windows             |
-| ------------ | ----------------------- | ------------ | ---------------- | ------------------- |
-| **Trash**    | Native trash + fallback | Finder Trash | XDG Trash / /tmp | %TEMP% + background |
-| **Standard** | git worktree remove     | Supported    | Supported        | Supported           |
+| Strategy     | Implementation          | macOS        | Linux            | Windows              |
+| ------------ | ----------------------- | ------------ | ---------------- | -------------------- |
+| **Trash**    | Native trash + fallback | Finder Trash | XDG Trash / /tmp | Recycle Bin / %TEMP% |
+| **Standard** | git worktree remove     | Supported    | Supported        | Supported            |
 
 ### Native Trash Support
 
@@ -29,7 +29,7 @@ vibe uses the [trash crate](https://lib.rs/crates/trash) (via `@kexi/vibe-native
 
 - **macOS**: Finder Trash (same as before)
 - **Linux**: XDG Trash (`~/.local/share/Trash`) following [FreeDesktop.org specification](https://specifications.freedesktop.org/trash-spec/trashspec-latest.html)
-- **Windows**: Recycle Bin (not currently built)
+- **Windows**: Recycle Bin
 
 Files moved to XDG Trash appear in your desktop environment's trash folder (GNOME Files, Dolphin, Nautilus, etc.) and can be restored.
 
@@ -59,7 +59,8 @@ Files moved to XDG Trash appear in your desktop environment's trash folder (GNOM
 
 ### Windows
 
-1. **Primary**: Move to `%TEMP%` directory + background deletion via `cmd /c start /b rd /s /q`
+1. **Primary**: Move to the Recycle Bin via the Rust `trash` crate
+2. **Fallback**: Move to `%TEMP%` directory + background deletion via `cmd /c rmdir /s /q`
 
 ## Strategy Details
 

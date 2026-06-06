@@ -9,9 +9,17 @@ All notable changes to vibe are documented here.
 
 **Released:** 2026-06-06
 
+### Added
+
+- Native Windows (x64) support. Installing `@kexi/vibe` via npm on Windows now pulls in the `@kexi/vibe-win32-x64` binary package and runs the native binary. Copy-on-Write cloning is not available on Windows, so worktree creation falls back to a standard file copy; all commands and behavior otherwise match Linux and macOS.
+
 ### Changed
 
 - vibe is now a standalone Rust binary instead of a Node.js/Bun application. The npm package (`@kexi/vibe`) ships a thin launcher shim that runs the prebuilt binary for your platform, pulled in as a per-platform `optionalDependency`. All commands, flags, output, and the SHA-256 trust model are unchanged — your existing `eval "$(vibe start ...)"` setup and `.vibe.toml` files keep working exactly as before. This is a major version bump to mark the runtime and distribution overhaul, not because of any change to CLI behavior.
+
+### Removed
+
+- Deno / JSR distribution (`deno install jsr:@kexi/vibe`) is no longer published. Install via npm, Homebrew, the `.deb` package, or a prebuilt binary instead.
 
 ---
 
