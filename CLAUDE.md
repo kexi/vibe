@@ -4,31 +4,35 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Development Commands
 
+`just` is the unified entrypoint (a thin facade over the pnpm scripts; run
+`just` with no args to list recipes). The equivalent `pnpm run` command is shown
+alongside each — both work.
+
 ```bash
 # Run ALL checks (REQUIRED before creating PR):
 # fmt:check + lint (oxfmt/oxlint on scripts) + check:rust + test:npm + check:docs + check:video
 # NOTE: check:all does NOT run test:e2e (it needs a built binary); CI's e2e-test
-# job gates that. Run `pnpm run test:e2e` manually when touching command behavior.
-pnpm run check:all
+# job gates that. Run `just test-e2e` manually when touching command behavior.
+just check                   # = pnpm run check:all
 
 # Rust (the shipped binary) — fmt + clippy + workspace tests
-pnpm run check:rust
+just check-rust              # = pnpm run check:rust
 
 # Build the shipped Rust binary (release)
-pnpm run build:rust          # cargo build --manifest-path rust/Cargo.toml -p vibe --release
+just build                   # = pnpm run build:rust (cargo build --manifest-path rust/Cargo.toml -p vibe --release)
 
 # Run the Rust binary directly during development
-cargo run --manifest-path rust/Cargo.toml -p vibe -- <command>
+just run -- <command>        # = cargo run --manifest-path rust/Cargo.toml -p vibe -- <command>
 
 # npm launcher-shim tests (shim resolution + the surviving release scripts)
-pnpm run test:npm
+just test-npm                # = pnpm run test:npm
 
 # E2E tests (drive the built binary through node-pty)
-pnpm run test:e2e
+just test-e2e                # = pnpm run test:e2e
 
 # Checks for docs / video packages only
-pnpm run check:docs
-pnpm run check:video
+just check-docs              # = pnpm run check:docs
+just check-video             # = pnpm run check:video
 ```
 
 ## Architecture
