@@ -375,7 +375,7 @@ mod tests {
         assert_eq!(argv[3], "/s");
         assert_eq!(argv[4], "/q");
         assert_eq!(argv[5], path); // verbatim, not spliced into any fixed arg.
-        // The hostile tail never appears merged into an earlier argv element.
+                                   // The hostile tail never appears merged into an earlier argv element.
         assert!(!argv[2].contains("del"));
     }
 
