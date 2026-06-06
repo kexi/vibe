@@ -1091,7 +1091,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vibe"
-version = "1.8.1"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1102,7 +1102,7 @@ dependencies = [
 
 [[package]]
 name = "vibe-core"
-version = "1.8.1"
+version = "2.0.0"
 dependencies = [
  "globset",
  "indicatif",
@@ -1134,7 +1134,7 @@ dependencies = [
 
 [[package]]
 name = "vibe-test-support"
-version = "1.8.1"
+version = "2.0.0"
 dependencies = [
  "tempfile",
 ]
