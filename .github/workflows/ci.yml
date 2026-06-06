@@ -356,9 +356,19 @@ jobs:
             pnpm) pnpm add "$SHIM" "$PLAT" ;;
           esac
           # `vibe --version` writes the banner to stderr (stdout is reserved for
-          # the shell-eval `cd` contract), so capture both streams.
+          # the shell-eval `cd` contract), so capture both streams. Capture the
+          # exit code WITHOUT `set -e` killing us first, so a nonzero exit (e.g.
+          # the shim failing to launch the binary on Windows) still surfaces the
+          # captured stderr in the log instead of dying silently.
+          set +e
           out=$(./node_modules/.bin/vibe --version 2>&1)
-          echo "vibe --version => $out"
+          rc=$?
+          set -e
+          echo "vibe --version (exit $rc) => $out"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::vibe --version exited $rc"
+            exit 1
+          fi
           # Exact-match the version on the `vibe <version>[+commit]` line, so e.g.
           # 1.8.1 does not spuriously match a 1.8.10 binary.
           printed=$(printf '%s\n' "$out" | awk '/^vibe /{print $2; exit}')
