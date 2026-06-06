@@ -304,7 +304,15 @@ jobs:
       # G-3: the published tarball MUST contain bin/vibe (executable) and
       # THIRD-PARTY-LICENSES.md. Assert it before packing so a bad `files` glob
       # fails here rather than shipping an empty package.
+      #
+      # Skipped on Windows: the assertion is platform-INDEPENDENT (the `files`
+      # glob is the same package.json on every OS, already verified by the
+      # ubuntu/macos legs), and the script's `npm pack` spawn does not work under
+      # Bun on Windows (Bun's execFile cannot launch the npm.cmd shim). The
+      # Windows leg's real purpose — that the shim execs the binary — is covered
+      # by the steps below, which run npm/pnpm through Git Bash, not Bun.
       - name: Assert platform tarball contents (G-3)
+        if: runner.os != 'Windows'
         env:
           PLATFORM: ${{ matrix.platform }}
           ARCH: ${{ matrix.arch }}
