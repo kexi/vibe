@@ -1,5 +1,8 @@
 [toolchain]
 channel = "1.92.0"
+# rustfmt + clippy are needed by the `rust` CI job (cargo fmt --check / clippy);
+# declaring them here makes rustup install them with the pinned toolchain.
+components = ["rustfmt", "clippy"]
 targets = [
   "x86_64-unknown-linux-gnu",
   "aarch64-unknown-linux-gnu",

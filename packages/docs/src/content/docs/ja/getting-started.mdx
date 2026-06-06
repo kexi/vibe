@@ -69,12 +69,9 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
 
   </TabItem>
   <TabItem label="Windows">
-    ```powershell frame="terminal"
-    Invoke-WebRequest -Uri "https://github.com/kexi/vibe/releases/latest/download/vibe-windows-x64.exe" -OutFile "$env:LOCALAPPDATA\vibe.exe"
-    # PATHに追加（初回のみ）
-    $path = [Environment]::GetEnvironmentVariable("Path", "User")
-    [Environment]::SetEnvironmentVariable("Path", "$path;$env:LOCALAPPDATA", "User")
-    ```
+    :::caution
+    ネイティブな Windows バイナリは再構築中で現在は配布されておらず、Windows 向け npm パッケージもまだありません。[WSL2](https://learn.microsoft.com/ja-jp/windows/wsl/) 上で Linux の手順を使うか、ソースからビルドしてください。詳しくは[インストール → Windows](/ja/installation/#windows)を参照してください。
+    :::
 
   </TabItem>
 </Tabs>

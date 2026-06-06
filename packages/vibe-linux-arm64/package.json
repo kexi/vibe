@@ -1,0 +1,24 @@
+{
+  "name": "@kexi/vibe-linux-arm64",
+  "version": "1.8.1",
+  "description": "Linux arm64 binary for the vibe CLI",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "bin/",
+    "THIRD-PARTY-LICENSES.md"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kexi/vibe.git"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

@@ -2,6 +2,8 @@
 
 # アーキテクチャ概要
 
+> **歴史的な注記:** ここで説明している TypeScript のランタイム抽象化（Deno/Node.js）と `@kexi/vibe-native` N-API モジュールは、Rust 移植の Phase 6 で削除されました。vibe は現在単一の Rust バイナリであり、worktree のロジックは `rust/crates/vibe-core` に、ネイティブの CoW 実装は `rust/crates/vibe-native`（静的リンク）にあります。このドキュメントは設計の歴史として残しています。
+
 このドキュメントでは、Vibe CLI ツールのアーキテクチャについて説明します。
 
 ## ランタイム抽象化レイヤー
@@ -170,10 +172,10 @@ vibe() { eval "$(command vibe "$@")"; }
 
 これにより `vibe` コマンドをラップし、適切な場合にその出力を評価するシェル関数が定義されます。
 
-Vibe 自体の開発者は、代わりに `.vibedev` ファイルを source します：
+Vibe 自体の開発者は、Cargo ワークスペースからバイナリを直接実行します：
 
 ```bash
-source .vibedev
+cargo run --manifest-path rust/Cargo.toml -p vibe -- <command>
 ```
 
 ### 同様のパターンを使用する他のツール

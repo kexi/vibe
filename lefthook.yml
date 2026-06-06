@@ -1,5 +1,5 @@
 # Git hooks managed by lefthook (provided by the Nix dev shell, see flake.nix).
-# Runs oxfmt/oxlint on staged core files and Prettier on staged docs files.
+# Runs oxfmt/oxlint on staged TS scripts and Prettier on staged docs files.
 # glob is a list because lefthook matches each pattern separately and does not
 # expand brace alternation like `{a,b}`. Patterns use `dir/**/*.ts` rooted at
 # the package dir (not `dir/sub/**/*.ts`) because lefthook's `**` does not match
@@ -9,11 +9,7 @@ pre-commit:
   commands:
     oxfmt:
       glob:
-        - "main.ts"
-        - "packages/core/**/*.ts"
         - "scripts/**/*.ts"
-      exclude:
-        - "packages/core/src/version.ts"
       run: pnpm exec oxfmt {staged_files}
       stage_fixed: true
     prettier-docs:
@@ -25,13 +21,9 @@ pre-commit:
       stage_fixed: true
     oxlint:
       glob:
-        - "main.ts"
-        - "packages/core/**/*.ts"
         - "scripts/**/*.ts"
         - "packages/docs/**/*.ts"
         - "packages/docs/**/*.astro"
-      exclude:
-        - "packages/core/src/version.ts"
       run: pnpm exec oxlint {staged_files}
     # Fast pre-commit check on staged changes only (--staged); gitleaks resolves
     # the staged set itself, so no glob/{staged_files} is passed. This is a

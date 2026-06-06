@@ -1,0 +1,26 @@
+[package]
+name = "vibe-native"
+version = "0.12.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Native Copy-on-Write clone + trash operations for vibe (clonefile on macOS, FICLONE on Linux)"
+
+# Why a plain `rlib` (the default), not the `cdylib` of packages/native: the TS
+# build loads this through N-API as a dynamic library, but the Rust `vibe-core`
+# links it as an ordinary Rust dependency. All napi/tokio scaffolding is stripped
+# (see lib.rs) and only synchronous `pub fn`s remain.
+
+[dependencies]
+thiserror = { workspace = true }
+trash = "5.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2.169"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2.169"
+nix = { version = "0.29.0", features = ["ioctl", "fs"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }

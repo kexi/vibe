@@ -1,9 +1,15 @@
-# Compiled binary
-/vibe
+# Compiled binary (the e2e fallback path when VIBE_BINARY_PATH is unset)
 /vibe-e2e
 
-# Auto-generated files
-packages/core/src/version.ts
+# Per-platform npm package binaries are staged at build/release time by
+# scripts/stage-platform-package.ts (from the Rust release artifact), never
+# committed. Keep the bin/ dirs themselves (via .gitkeep) so the package layout
+# is visible in the repo.
+packages/vibe-*/bin/*
+!packages/vibe-*/bin/.gitkeep
+# THIRD-PARTY-LICENSES.md is also staged into each platform package at build time
+# (the canonical copy lives at the repo root and is checked in).
+packages/vibe-*/THIRD-PARTY-LICENSES.md
 
 # OS
 .DS_Store
@@ -35,14 +41,10 @@ package-lock.json
 
 # Build output
 dist/
-packages/npm/dist/
 packages/video/out/
 
-# Native module build artifacts
-packages/native/build/
-packages/native/prebuilds/
-packages/native/target/
-packages/native/*.node
+# Rust workspace build artifacts
+rust/target/
 
 # Nix
 /result

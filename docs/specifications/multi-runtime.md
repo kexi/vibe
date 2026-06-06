@@ -2,6 +2,8 @@
 
 # Multi-Runtime Support
 
+> **Historical note:** The TypeScript implementation described here was removed in Phase 6 of the Rust port. vibe is now a single Rust binary and the worktree logic lives in `rust/crates/vibe-core`. This document is retained as design history.
+
 vibe provides a runtime abstraction layer that enables the CLI to run on multiple JavaScript/TypeScript runtimes including Deno, Node.js, and Bun.
 
 ## What is the Runtime Abstraction Layer?

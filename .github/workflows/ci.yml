@@ -31,82 +31,15 @@ jobs:
       - name: Run linter
         run: bun run lint
 
-  typecheck:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      - uses: ./.github/actions/setup-toolchain
-      - uses: ./.github/actions/setup-takumi-guard
-        with:
-          api-key: ${{ secrets.TAKUMI_GUARD_API_KEY }}
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Generate version.ts
-        run: bun run scripts/generate-version.ts
-      - name: Type check
-        run: bun run check
-
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      - uses: ./.github/actions/setup-toolchain
-      - uses: ./.github/actions/setup-takumi-guard
-        with:
-          api-key: ${{ secrets.TAKUMI_GUARD_API_KEY }}
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Generate version.ts
-        run: bun run scripts/generate-version.ts
-      - name: Run tests
-        run: bun run test -- packages/core/src
-
-  # Deno runtime smoke test - verifies the Deno runtime implementation works
-  # Exception to the toolchain rule: Deno is intentionally not in the Nix dev
-  # shell (flake.nix) because it's not needed for local development (dev uses
-  # Bun). It's only needed for JSR distribution testing, so we use
-  # denoland/setup-deno directly here.
-  deno-smoke-test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      - uses: denoland/setup-deno@667a34cdef165d8d2b2e98dde39547c9daac7282 # v2.0.4
-        with:
-          deno-version: v2.x
-      - name: Run Deno smoke tests
-        run: deno test --allow-env --allow-read --allow-run packages/core/src/runtime/deno/smoke.test.ts
-
-  build-binaries:
+  # Run the Rust checks on both Linux and macOS. macOS coverage matters because
+  # vibe-native's clonefile path and other cfg(target_os = "macos") code is only
+  # compiled (and its tests only run) on a macOS runner — a Linux-only job left
+  # that native code unverified.
+  rust:
     strategy:
+      fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            target: bun-linux-x64
-            name: linux-x64
-          - os: ubuntu-24.04-arm
-            target: bun-linux-arm64
-            name: linux-arm64
-          - os: macos-latest
-            target: bun-darwin-x64
-            name: darwin-x64
-          - os: macos-latest
-            target: bun-darwin-arm64
-            name: darwin-arm64
-          - os: windows-latest
-            target: bun-windows-x64
-            name: windows-x64
+        os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Harden Runner
@@ -115,84 +48,118 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - uses: ./.github/actions/setup-toolchain
-      - uses: ./.github/actions/setup-takumi-guard
-        with:
-          api-key: ${{ secrets.TAKUMI_GUARD_API_KEY }}
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Generate version.ts
-        run: bun run scripts/generate-version.ts
-      - name: Build binary (${{ matrix.name }})
-        run: bun run scripts/build.ts --target ${{ matrix.target }} --output vibe-${{ matrix.name }}
+      - name: Check formatting
+        working-directory: rust
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy --manifest-path rust/Cargo.toml --workspace --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --manifest-path rust/Cargo.toml --workspace
 
-  build-deb:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - arch: amd64
-            target: bun-linux-x64
-          - arch: arm64
-            target: bun-linux-arm64
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      - uses: ./.github/actions/setup-toolchain
-      - uses: ./.github/actions/setup-takumi-guard
-        with:
-          api-key: ${{ secrets.TAKUMI_GUARD_API_KEY }}
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Generate version.ts
-        run: bun run scripts/generate-version.ts
-      - name: Build Linux binary
-        run: bun run scripts/build.ts --target ${{ matrix.target }} --output vibe-test
-      - name: Build .deb package
-        run: |
-          VERSION=$(bun run scripts/get-version.ts)
-          bun run scripts/build-deb.ts "$VERSION" ${{ matrix.arch }} vibe-test
-
-  build-native:
+  # Compile the shipped Rust binary for every supported target so a
+  # target-specific build break is caught on PR. The x86_64-apple-darwin entry
+  # cross-compiles on the arm64 macos-latest runner via `rustup target add`;
+  # the others build natively. Windows is intentionally absent (the native
+  # module is not built on Windows; a Windows release is deferred).
+  build-rust-binaries:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-24.04-arm
-          - target: x86_64-apple-darwin
-            os: macos-latest
-          - target: aarch64-apple-darwin
-            os: macos-latest
-
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            name: linux-x64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            name: linux-arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            name: darwin-x64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            name: darwin-arm64
     runs-on: ${{ matrix.os }}
-
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-
       - uses: ./.github/actions/setup-toolchain
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+      - name: Build binary (${{ matrix.name }})
+        run: cargo build --manifest-path rust/Cargo.toml -p vibe --release --target ${{ matrix.target }}
+      - name: Smoke test (${{ matrix.name }})
+        # The `darwin-x64` leg is the ONLY one cross-built on an arm64 runner;
+        # running it needs Rosetta 2, which may be absent, so a Rosetta gap is a
+        # skip (runner-capability, not a binary defect). There is no dedicated
+        # Intel-runner CI leg (GitHub's macos-13 runners are scarce and being
+        # retired); the x86_64-darwin binary is still built + shipped, just not
+        # natively smoke-tested in CI. Every other target runs natively and must
+        # launch.
+        shell: bash
+        run: |
+          BIN="rust/target/${{ matrix.target }}/release/vibe"
+          if [ "${{ matrix.name }}" = "darwin-x64" ]; then
+            if ! "$BIN" --version; then
+              echo "::warning::skipping smoke test: x86_64 binary did not run on this arm64 runner (Rosetta 2 unavailable)"
+            fi
+          else
+            "$BIN" --version
+          fi
 
+  build-deb:
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - arch: arm64
+            target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: ./.github/actions/setup-toolchain
       - uses: ./.github/actions/setup-takumi-guard
         with:
           api-key: ${{ secrets.TAKUMI_GUARD_API_KEY }}
+      - name: Build Linux binary
+        run: cargo build --manifest-path rust/Cargo.toml -p vibe --release --target ${{ matrix.target }}
+      - name: Build .deb package
+        run: |
+          VERSION=$(bun run scripts/get-version.ts)
+          bun run scripts/build-deb.ts "$VERSION" ${{ matrix.arch }} "rust/target/${{ matrix.target }}/release/vibe"
 
-      - name: Add Rust target
-        run: rustup target add ${{ matrix.target }}
-
-      - name: Install dependencies
-        run: pnpm install --filter @kexi/vibe-native --ignore-scripts
-
-      - name: Build native module
-        working-directory: packages/native
-        run: pnpm exec napi build --platform --release --target ${{ matrix.target }}
+      # G-11: install the freshly built .deb and run the installed binary, so a
+      # broken package layout (wrong install path, missing exec bit, bad control
+      # metadata) fails the build instead of shipping. Both legs run on native
+      # Linux runners matching the .deb arch, so dpkg can install and execute it.
+      - name: Install .deb and smoke test
+        run: |
+          set -euo pipefail
+          VERSION=$(bun run scripts/get-version.ts)
+          DEB="vibe_${VERSION}_${{ matrix.arch }}.deb"
+          sudo dpkg -i "$DEB"
+          installed=$(command -v vibe)
+          echo "installed vibe at: $installed"
+          # `vibe --version` writes the banner to stderr (stdout is reserved for
+          # the shell-eval `cd` contract), so capture both streams.
+          out=$(vibe --version 2>&1)
+          echo "vibe --version => $out"
+          # Exact-match the version on the `vibe <version>[+commit]` line, so e.g.
+          # 1.8.1 does not spuriously match a 1.8.10 binary.
+          printed=$(printf '%s\n' "$out" | awk '/^vibe /{print $2; exit}')
+          if [ "$printed" != "$VERSION" ] && [ "${printed%%+*}" != "$VERSION" ]; then
+            echo "version mismatch: expected $VERSION, got $printed" >&2
+            exit 1
+          fi
 
   e2e-test:
     runs-on: ${{ matrix.os }}
@@ -216,17 +183,13 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y build-essential
 
-      # Install all dependencies
+      # Install all dependencies (the E2E harness drives the CLI through node-pty)
       - name: Install dependencies
         run: pnpm install --ignore-scripts
 
-      # Generate version.ts for vibe
-      - name: Generate version.ts
-        run: bun run scripts/generate-version.ts
-
-      # Build vibe binary for E2E tests
+      # Build the shipped Rust binary for the E2E tests to exercise.
       - name: Build vibe binary for E2E tests
-        run: bun run scripts/build.ts --output vibe-e2e
+        run: cargo build --manifest-path rust/Cargo.toml -p vibe --release
 
       # Build node-pty native addon from source
       - name: Build node-pty
@@ -239,16 +202,174 @@ jobs:
       # Verify binary exists and has execute permission
       - name: Verify vibe binary
         run: |
-          ls -la vibe-e2e
-          file vibe-e2e
-          chmod +x vibe-e2e
-          ./vibe-e2e --version
+          ls -la rust/target/release/vibe
+          file rust/target/release/vibe
+          chmod +x rust/target/release/vibe
+          ./rust/target/release/vibe --version
 
       # Run E2E tests with Vitest
       - name: Run E2E tests
         run: pnpm -C packages/e2e run test
         env:
-          VIBE_BINARY_PATH: ${{ github.workspace }}/vibe-e2e
+          VIBE_BINARY_PATH: ${{ github.workspace }}/rust/target/release/vibe
+
+  # End-to-end npm install→run on every package manager (G-1/G-2). The shim unit
+  # tests mock require.resolve/realpath; this job proves the REAL flow under each
+  # package manager's actual on-disk layout (npm hoisted, pnpm .pnpm symlink
+  # farm), which is the only place the containment guard (security A-2) and the
+  # os/cpu gating are exercised for real. It runs on the host-matching platform
+  # package only: building all four targets per runner is unnecessary, and a
+  # foreign-arch binary could not be smoke-run anyway.
+  npm-install-matrix:
+    needs: build-rust-binaries
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        # npm (hoisted node_modules) and pnpm (.pnpm symlink farm) cover the two
+        # distinct install layouts the shim must resolve against. yarn classic is
+        # omitted: it is not a realistic global-install path for vibe (and is
+        # EOL-bound), its layout mirrors npm's hoisted one, and its strict
+        # optionalDependencies resolution fails on the not-yet-published platform
+        # packages — adding noise without unique coverage.
+        pm: [npm, pnpm]
+        exclude:
+          # `pnpm add` of the local tarballs is reproducibly SIGKILLed (exit 137)
+          # on the macOS runner — a runner/pnpm environment limit, not a shim
+          # bug. pnpm's .pnpm symlink-farm layout is OS-independent and is already
+          # covered by the ubuntu pnpm leg; macOS still runs npm (hoisted) to
+          # cover the OS difference.
+          - os: macos-latest
+            pm: pnpm
+        include:
+          # Host platform package + node arch for each runner.
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+          - os: macos-latest
+            platform: darwin
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: ./.github/actions/setup-toolchain
+
+      - name: Read version
+        id: ver
+        shell: bash
+        run: echo "version=$(bun run scripts/get-version.ts)" >> "$GITHUB_OUTPUT"
+
+      # Build the host binary and stage it into its per-platform package, exactly
+      # as the release flow does (same scripts), so the packed tarball is the one
+      # users would install.
+      - name: Build host binary
+        run: cargo build --manifest-path rust/Cargo.toml -p vibe --release
+
+      - name: Generate THIRD-PARTY-LICENSES.md
+        run: bun run scripts/generate-third-party-licenses.ts
+
+      - name: Stage host platform package
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          bun run scripts/stage-platform-package.ts \
+            --platform "$PLATFORM" --arch "$ARCH" \
+            --binary rust/target/release/vibe
+
+      # G-3: the published tarball MUST contain bin/vibe (executable) and
+      # THIRD-PARTY-LICENSES.md. Assert it before packing so a bad `files` glob
+      # fails here rather than shipping an empty package.
+      - name: Assert platform tarball contents (G-3)
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+        run: bun run scripts/verify-platform-tarball.ts --package "vibe-${PLATFORM}-${ARCH}"
+
+      - name: Pack shim and platform tarballs
+        id: pack
+        shell: bash
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tgz"
+          shim_tgz=$(cd packages/npm && npm pack --pack-destination "$RUNNER_TEMP/tgz" | tail -n1)
+          plat_tgz=$(cd "packages/vibe-${PLATFORM}-${ARCH}" && npm pack --pack-destination "$RUNNER_TEMP/tgz" | tail -n1)
+          echo "shim=$RUNNER_TEMP/tgz/$shim_tgz" >> "$GITHUB_OUTPUT"
+          echo "platform=$RUNNER_TEMP/tgz/$plat_tgz" >> "$GITHUB_OUTPUT"
+
+      # Install BOTH tarballs into a throwaway project with the matrix's package
+      # manager. The shim's optionalDependencies can't resolve the (unpublished)
+      # platform packages from the registry in a test, so the host platform
+      # tarball is installed explicitly alongside the shim. The expectation is
+      # exit 0 + the version string from `vibe --version`.
+      - name: Install both tarballs and run vibe --version
+        id: success
+        shell: bash
+        env:
+          PM: ${{ matrix.pm }}
+          SHIM: ${{ steps.pack.outputs.shim }}
+          PLAT: ${{ steps.pack.outputs.platform }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          proj="$RUNNER_TEMP/install-ok"
+          mkdir -p "$proj"
+          cd "$proj"
+          npm init -y >/dev/null
+          case "$PM" in
+            npm)  npm install "$SHIM" "$PLAT" ;;
+            pnpm) pnpm add "$SHIM" "$PLAT" ;;
+          esac
+          # `vibe --version` writes the banner to stderr (stdout is reserved for
+          # the shell-eval `cd` contract), so capture both streams.
+          out=$(./node_modules/.bin/vibe --version 2>&1)
+          echo "vibe --version => $out"
+          # Exact-match the version on the `vibe <version>[+commit]` line, so e.g.
+          # 1.8.1 does not spuriously match a 1.8.10 binary.
+          printed=$(printf '%s\n' "$out" | awk '/^vibe /{print $2; exit}')
+          if [ "$printed" != "$VERSION" ] && [ "${printed%%+*}" != "$VERSION" ]; then
+            echo "version mismatch: expected $VERSION, got $printed" >&2
+            exit 1
+          fi
+
+      # The missing-platform case: install ONLY the shim (no platform package).
+      # The shim must exit nonzero with the "platform package ... not installed"
+      # message rather than crashing or silently doing nothing.
+      - name: Assert clear error when platform package is absent
+        shell: bash
+        env:
+          PM: ${{ matrix.pm }}
+          SHIM: ${{ steps.pack.outputs.shim }}
+        run: |
+          set -euo pipefail
+          proj="$RUNNER_TEMP/install-missing"
+          mkdir -p "$proj"
+          cd "$proj"
+          npm init -y >/dev/null
+          # --no-optional / --ignore-optional so the optionalDependency platform
+          # packages are NOT pulled (they would fail to resolve from the registry
+          # anyway, but be explicit about reproducing the "missing binary" state).
+          case "$PM" in
+            npm)  npm install --no-optional "$SHIM" ;;
+            pnpm) pnpm add --no-optional "$SHIM" ;;
+          esac
+          set +e
+          out=$(./node_modules/.bin/vibe --version 2>&1)
+          code=$?
+          set -e
+          echo "exit=$code output: $out"
+          if [ "$code" -eq 0 ]; then
+            echo "::error::shim should fail when the platform package is missing"
+            exit 1
+          fi
+          echo "$out" | grep -F "not installed"
 
   docs:
     runs-on: ubuntu-latest
@@ -325,7 +446,18 @@ jobs:
           GITLEAKS_CONFIG: .gitleaks.toml
 
   build:
-    needs: [build-binaries, build-deb, build-native]
+    needs:
+      [
+        lint,
+        rust,
+        build-rust-binaries,
+        build-deb,
+        e2e-test,
+        npm-install-matrix,
+        docs,
+        pinact-verify,
+        gitleaks,
+      ]
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner

@@ -1,0 +1,46 @@
+[package]
+name = "vibe-core"
+version = "1.8.1"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Core library for the vibe git worktree CLI"
+
+[features]
+# Exposes in-memory fakes (FakeIo, etc.) to downstream test code (the binary's
+# integration tests). Always on under `cfg(test)` within this crate.
+test-util = []
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+# vibe-native is depended on UNCONDITIONALLY (cfg-gating lives inside that crate),
+# so this consumer stays free of per-OS cfg. Phase 4 copy/fast-remove deps.
+vibe-native.workspace = true
+globset.workspace = true
+walkdir.workspace = true
+indicatif.workspace = true
+uuid.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+# localtime_r for broken-down LOCAL time in RealClock (scratch timestamps). Only
+# needed on unix; the dev shell / CI build matrix is macOS + Linux.
+libc = "0.2.169"
+# rustls for the upgrade command's HTTPS check. `default-features = false` drops
+# ureq's default `gzip`. Why not the plain `rustls` feature: it pulls in ureq's
+# `_ring` (rustls/ring) crypto provider. We require aws-lc-rs, so we take
+# `rustls-no-provider` + bundled webpki roots here, and depend on `rustls`
+# directly below with only its `aws-lc-rs` feature, then install that provider as
+# the process default in `http.rs`. `cargo tree -i ring` must stay empty.
+ureq = { version = "3", default-features = false, features = [
+    "rustls-no-provider",
+    "rustls-webpki-roots",
+] }
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+vibe-test-support.workspace = true

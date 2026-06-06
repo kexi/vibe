@@ -2,6 +2,8 @@
 
 # Clean Strategies
 
+> **歴史的な注記:** ここで説明している TypeScript 実装（`packages/core` の `fast-remove.ts` など）は、Rust 移植の Phase 6 で削除されました。vibe は現在単一の Rust バイナリであり、clean のロジックは `rust/crates/vibe-core`（ネイティブのゴミ箱サポートは `rust/crates/vibe-native`）にあります。このドキュメントは設計の歴史として残しています。
+
 vibe は `vibe clean` コマンドにおいて、「Trash Strategy（ゴミ箱戦略）」と呼ばれる高速削除戦略を使用し、即座に応答を返すことでユーザー体験を向上させています。
 
 ## Trash Strategy とは？

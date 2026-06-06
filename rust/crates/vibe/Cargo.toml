@@ -1,0 +1,25 @@
+[package]
+name = "vibe"
+version = "1.8.1"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Git worktree helper CLI"
+build = "build.rs"
+
+[[bin]]
+name = "vibe"
+path = "src/main.rs"
+
+[dependencies]
+vibe-core.workspace = true
+clap = { workspace = true }
+anyhow.workspace = true
+
+[dev-dependencies]
+# Enable vibe-core's in-memory fakes (FakeIo, FakeHttpClient, ...) for the
+# binary's integration tests.
+vibe-core = { workspace = true, features = ["test-util"] }
+vibe-test-support.workspace = true
+# Real-binary eval-contract integration tests build temp git worktrees.
+tempfile.workspace = true

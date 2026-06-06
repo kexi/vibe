@@ -1,38 +1,105 @@
 name: Publish to npm
 
+# Runs AFTER the Release workflow succeeds, not on the `release` event itself.
+#
+# Why workflow_run (security/correctness C-1): publish-platform-packages and
+# publish-cli `gh release download` the GitHub Release assets. The Release
+# workflow BUILDS those assets and is triggered by the same `release` event, so
+# firing both on `on: release` raced — the download ran while the assets were
+# still being built and failed with "asset not found". Gating on
+# `workflow_run: completed` (success) guarantees the assets exist before we
+# fetch them. The `workflows: ["Release"]` filter must match release.yml's
+# top-level `name:` ("Release").
 on:
-  release:
-    types: [released]
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
 
 permissions:
   contents: read
   id-token: write # Required for npm provenance
 
 jobs:
+  # Establish the release tag/version and enforce the publish gate. workflow_run
+  # does NOT set GITHUB_REF_NAME to the tag (it points at the default branch),
+  # so the tag is taken from the triggering run's head_branch (the tag a release
+  # build runs on). We also re-assert the stable-release semantics the old
+  # `on: release: types: [released]` trigger gave for free:
+  #   - the triggering Release run must have succeeded (job-level `if` below),
+  #   - the release must NOT be a prerelease (beta releases are excluded), and
+  #   - the release must target the main branch.
+  # All downstream jobs consume `resolve-release.outputs.{tag,version}` instead
+  # of GITHUB_REF_NAME.
+  resolve-release:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Resolve release tag and enforce stable-release gate
+        id: meta
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # For a Release run triggered by the `release` event, head_branch is
+          # the release tag (e.g. "v1.8.1").
+          TAG: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          if [ -z "$TAG" ]; then
+            echo "::error::could not determine release tag from workflow_run.head_branch"
+            exit 1
+          fi
+          # Validate tag format (vX.Y.Z[-prerelease]) so it cannot inject shell.
+          if ! echo "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+            echo "::error::unexpected tag format: $TAG"
+            exit 1
+          fi
+
+          # Read the release's prerelease flag and target branch from the API.
+          # isPrerelease distinguishes stable `released` from beta `prereleased`,
+          # which workflow_run alone cannot tell us.
+          read -r IS_PRERELEASE TARGET < <(gh release view "$TAG" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --json isPrerelease,targetCommitish \
+            --jq '[.isPrerelease, .targetCommitish] | @tsv')
+
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            echo "Release $TAG is a prerelease (beta); skipping npm publish."
+            echo "::error::publish-npm only runs for stable releases (not prereleases)."
+            exit 1
+          fi
+          if [ "$TARGET" != "main" ]; then
+            echo "::error::Releases must target the main branch (got: $TARGET)."
+            exit 1
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "Resolved stable release: tag=$TAG version=${TAG#v}"
+
   # Verify all versions are in sync before any build/publish
   verify-versions:
+    needs: resolve-release
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
-      - name: Verify release targets main branch
-        run: |
-          if [ "${{ github.event.release.target_commitish }}" != "main" ]; then
-            echo "::error::Releases must target the main branch."
-            echo "  Target branch: ${{ github.event.release.target_commitish }}"
-            exit 1
-          fi
-          echo "Release targets main branch"
-
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - uses: ./.github/actions/setup-toolchain
 
       - name: Verify package.json version matches tag
+        env:
+          TAG_VERSION: ${{ needs.resolve-release.outputs.version }}
         run: |
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
           PKG_VERSION=$(node -p "require('./package.json').version")
 
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
@@ -44,10 +111,16 @@ jobs:
 
           echo "package.json version validation passed: $PKG_VERSION"
 
-      - name: Verify all package.json versions are in sync
+      - name: Verify all versions are in sync (package.json, Cargo.toml, platform pkgs)
         run: bun run scripts/sync-version.ts --check
 
-  # Security audit for Rust dependencies (runs once, not per platform)
+      - name: Verify THIRD-PARTY-LICENSES.md is up to date
+        run: bun run scripts/generate-third-party-licenses.ts --check
+
+  # Security audit for the shipped Rust dependency tree (runs once, not per
+  # platform). Audits rust/ — the shipped binary the @kexi/vibe-<platform>
+  # packages distribute (pulls in aws-lc-rs / rustls / etc). The old napi crate
+  # under packages/native was removed in Phase 6, so it is no longer audited.
   security-audit:
     needs: verify-versions
     runs-on: ubuntu-latest
@@ -63,59 +136,39 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit
 
-      - name: Run security audit
-        working-directory: packages/native
-        run: cargo audit
+      - name: Audit shipped Rust binary (rust/)
+        run: cargo audit --file rust/Cargo.lock
 
-  # Build native binaries for each platform using napi-rs
-  build-native:
-    needs: verify-versions
+  # Publish the four per-platform binary packages (@kexi/vibe-<platform>-<arch>).
+  # Each downloads its binary from the GitHub release assets and stages THAT
+  # file (no rebuild), so the published npm bytes equal the release artifact
+  # bytes by construction (security B-2); an explicit sha256 compare backs this
+  # up. An `npm view` idempotency guard (security D-1) skips a version already on
+  # the registry so re-runs are safe. The assets are guaranteed to exist because
+  # this workflow only runs after the Release workflow finished (security C-1).
+  publish-platform-packages:
+    needs: [resolve-release, security-audit, verify-versions]
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-24.04-arm
-          - target: x86_64-apple-darwin
-            os: macos-latest
-          - target: aarch64-apple-darwin
-            os: macos-latest
-
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-
-      - uses: ./.github/actions/setup-toolchain
-
-      - name: Add Rust target
-        run: rustup target add ${{ matrix.target }}
-
-      - name: Install dependencies
-        run: pnpm install --filter @kexi/vibe-native --ignore-scripts
-
-      - name: Build native module
-        working-directory: packages/native
-        run: pnpm exec napi build --platform --release --target ${{ matrix.target }}
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: bindings-${{ matrix.target }}
-          path: packages/native/*.node
-          if-no-files-found: error
-
-  # Publish @kexi/vibe-native package with all platform binaries
-  publish-native:
-    needs: [security-audit, build-native]
-    runs-on: ubuntu-latest
-
+          - package: vibe-linux-x64
+            artifact: vibe-linux-x64
+            platform: linux
+            arch: x64
+          - package: vibe-linux-arm64
+            artifact: vibe-linux-arm64
+            platform: linux
+            arch: arm64
+          - package: vibe-darwin-x64
+            artifact: vibe-darwin-x64
+            platform: darwin
+            arch: x64
+          - package: vibe-darwin-arm64
+            artifact: vibe-darwin-arm64
+            platform: darwin
+            arch: arm64
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
@@ -130,58 +183,99 @@ jobs:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          path: packages/native/artifacts
-
-      - name: Move artifacts to package root
-        working-directory: packages/native
+      - name: Idempotency guard (skip if already published)
+        id: guard
+        env:
+          PKG: "@kexi/${{ matrix.package }}"
+          VERSION: ${{ needs.resolve-release.outputs.version }}
         run: |
-          find artifacts -name "*.node" -exec mv {} . \;
-          rm -rf artifacts
-          ls -la *.node
-
-      - name: Install dependencies
-        working-directory: packages/native
-        run: pnpm install --ignore-scripts
-
-      - name: Generate index.js and index.d.ts
-        working-directory: packages/native
-        run: pnpm exec napi build --platform --release --js index.js --dts index.d.ts
-
-      - name: Validate version consistency
-        working-directory: packages/native
-        run: |
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          PKG_VERSION=$(node -p "require('./package.json').version")
-
-          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "Error: Version mismatch!"
-            echo "  Git tag version: $TAG_VERSION"
-            echo "  package.json version: $PKG_VERSION"
-            exit 1
+          if npm view "${PKG}@${VERSION}" version >/dev/null 2>&1; then
+            echo "${PKG}@${VERSION} already published; skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Download release binary
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARTIFACT: ${{ matrix.artifact }}
+          TAG: ${{ needs.resolve-release.outputs.tag }}
+        run: |
+          mkdir -p dist-bin
+          gh release download "$TAG" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern "$ARTIFACT" \
+            --dir dist-bin
+
+      - name: Generate THIRD-PARTY-LICENSES.md
+        if: steps.guard.outputs.skip != 'true'
+        run: bun run scripts/generate-third-party-licenses.ts
+
+      - name: Stage platform package
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+          ARTIFACT: ${{ matrix.artifact }}
+        run: |
+          chmod +x "dist-bin/$ARTIFACT"
+          bun run scripts/stage-platform-package.ts \
+            --platform "$PLATFORM" --arch "$ARCH" --binary "dist-bin/$ARTIFACT"
+
+      - name: Assert tarball contents (bin/vibe + THIRD-PARTY-LICENSES.md) (G-3)
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+        run: bun run scripts/verify-platform-tarball.ts --package "vibe-${PLATFORM}-${ARCH}"
+
+      - name: Assert staged binary matches release artifact (security B-2)
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          ARTIFACT: ${{ matrix.artifact }}
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          src_sha=$(sha256sum "dist-bin/$ARTIFACT" | cut -d ' ' -f 1)
+          staged="packages/vibe-${PLATFORM}-${ARCH}/bin/vibe"
+          staged_sha=$(sha256sum "$staged" | cut -d ' ' -f 1)
+          echo "release artifact: $src_sha"
+          echo "staged npm bin : $staged_sha"
+          if [ "$src_sha" != "$staged_sha" ]; then
+            echo "::error::staged binary sha256 != release artifact sha256"
+            exit 1
+          fi
+          echo "OK: staged binary is byte-identical to the release artifact"
+
+      - name: Validate version consistency
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          TAG_VERSION: ${{ needs.resolve-release.outputs.version }}
+        working-directory: packages/vibe-${{ matrix.platform }}-${{ matrix.arch }}
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::version mismatch: tag=$TAG_VERSION pkg=$PKG_VERSION"
+            exit 1
+          fi
           echo "Version validation passed: $TAG_VERSION"
 
-      - name: Verify npm version (trusted publishing requires npm >= 11.5)
-        # Node 24 ships with npm 11.x which already supports OIDC trusted
-        # publishing. The previous workaround of `npm install -g npm@latest`
-        # was unstable -- the bundled npm 10.x in Node 22.22 was missing
-        # @npmcli/arborist's promise-retry dependency and could not self-
-        # upgrade. Switching to Node 24 sidesteps the self-upgrade entirely.
-        run: |
-          npm --version
-          node --version
+      - name: Publish @kexi/${{ matrix.package }}
+        if: steps.guard.outputs.skip != 'true'
+        working-directory: packages/vibe-${{ matrix.platform }}-${{ matrix.arch }}
+        run: npm publish --provenance --access public
 
-      - name: Publish @kexi/vibe-native
-        working-directory: packages/native
-        run: pnpm publish --access public --no-git-checks --ignore-scripts
-
-  # Publish @kexi/vibe (main CLI package)
+  # Publish @kexi/vibe (the launcher shim). It needs ALL four platform packages
+  # to be published first (security D-1) so a freshly published shim never
+  # resolves a not-yet-published optionalDependency. @kexi/vibe depends only on
+  # those per-platform binary packages (the Rust binary statically links its own
+  # clone code; the old @kexi/vibe-native napi package was removed in Phase 6).
+  # The shim ships only bin/vibe.cjs — no tsdown build and no version.ts
+  # generation are needed.
   publish-cli:
-    needs: publish-native
+    needs: [resolve-release, publish-platform-packages]
     runs-on: ubuntu-latest
 
     steps:
@@ -198,10 +292,24 @@ jobs:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
 
+      - name: Idempotency guard (skip if already published)
+        id: guard
+        env:
+          VERSION: ${{ needs.resolve-release.outputs.version }}
+        run: |
+          if npm view "@kexi/vibe@${VERSION}" version >/dev/null 2>&1; then
+            echo "@kexi/vibe@${VERSION} already published; skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Validate version consistency
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          TAG_VERSION: ${{ needs.resolve-release.outputs.version }}
         working-directory: packages/npm
         run: |
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
           PKG_VERSION=$(node -p "require('./package.json').version")
 
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
@@ -212,59 +320,8 @@ jobs:
           fi
 
           echo "Version validation passed: $TAG_VERSION"
-
-      - name: Install dependencies
-        run: pnpm install --ignore-scripts
-
-      - name: Generate version.ts for npm
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          REPOSITORY=$(node -p "require('./package.json').repository.url")
-          BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
-          cat > packages/core/src/version.ts << EOF
-          // This file is auto-generated during npm publishing
-          export interface BuildInfo {
-            version: string;
-            repository: string;
-            platform: string;
-            arch: string;
-            target: string;
-            distribution: string;
-            buildTime: string;
-            buildEnv: string;
-          }
-
-          export const BUILD_INFO: BuildInfo = {
-            version: "$VERSION",
-            repository: "$REPOSITORY",
-            platform: "npm",
-            arch: "npm",
-            target: "npm",
-            distribution: "npm",
-            buildTime: "$BUILD_TIME",
-            buildEnv: "github-actions",
-          };
-
-          // Backwards compatibility
-          export const VERSION = BUILD_INFO.version;
-          export const REPOSITORY_URL = BUILD_INFO.repository;
-          EOF
-          echo "Generated packages/core/src/version.ts with VERSION = \"$VERSION\" for npm distribution"
-
-      - name: Build CLI
-        working-directory: packages/npm
-        run: pnpm run build
-
-      - name: Verify npm version (trusted publishing requires npm >= 11.5)
-        # Node 24 ships with npm 11.x which already supports OIDC trusted
-        # publishing. The previous workaround of `npm install -g npm@latest`
-        # was unstable -- the bundled npm 10.x in Node 22.22 was missing
-        # @npmcli/arborist's promise-retry dependency and could not self-
-        # upgrade. Switching to Node 24 sidesteps the self-upgrade entirely.
-        run: |
-          npm --version
-          node --version
 
       - name: Publish @kexi/vibe
+        if: steps.guard.outputs.skip != 'true'
         working-directory: packages/npm
-        run: pnpm publish --access public --no-git-checks --ignore-scripts
+        run: npm publish --provenance --access public

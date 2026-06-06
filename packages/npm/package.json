@@ -4,43 +4,23 @@
   "description": "Git worktree helper CLI",
   "type": "module",
   "bin": {
-    "vibe": "./bin/vibe.js"
-  },
-  "main": "./dist/main.js",
-  "exports": {
-    ".": {
-      "import": "./dist/main.js"
-    }
+    "vibe": "./bin/vibe.cjs"
   },
   "files": [
     "bin",
-    "dist",
     "README.md"
   ],
   "scripts": {
-    "build": "tsdown",
-    "build:watch": "tsdown --watch",
-    "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist",
     "test": "vitest run",
-    "test:bun": "bun test test/bun/",
-    "test:watch": "vitest",
-    "prepublishOnly": "pnpm run build"
-  },
-  "dependencies": {
-    "zod": "^3.23.0"
+    "test:watch": "vitest"
   },
   "optionalDependencies": {
-    "@kexi/vibe-native": "workspace:^"
+    "@kexi/vibe-linux-x64": "1.8.1",
+    "@kexi/vibe-linux-arm64": "1.8.1",
+    "@kexi/vibe-darwin-x64": "1.8.1",
+    "@kexi/vibe-darwin-arm64": "1.8.1"
   },
   "devDependencies": {
-    "@jsr/std__cli": "^1.0.0",
-    "@jsr/std__fs": "^1.0.0",
-    "@jsr/std__path": "^1.0.0",
-    "@jsr/std__toml": "^1.0.0",
-    "@types/node": "^22.10.2",
-    "tsdown": "^0.20.1",
-    "typescript": "^5.7.2",
     "vitest": "^2.1.0"
   },
   "engines": {

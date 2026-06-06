@@ -28,6 +28,7 @@ jobs:
   build:
     needs: verify-branch
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -42,9 +43,9 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact: vibe-darwin-arm64
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            artifact: vibe-windows-x64.exe
+          # Windows is deferred: the shipped binary is now Rust and the Windows
+          # native target is not built in this phase. The previous bun-compiled
+          # vibe-windows-x64.exe is intentionally dropped from this job.
 
     runs-on: ${{ matrix.os }}
 
@@ -57,107 +58,25 @@ jobs:
 
       - uses: ./.github/actions/setup-toolchain
 
-      # bug #490: `bun build --compile` bakes the running bun into the binary.
-      # The Nix-store bun links libicucore.A.dylib by /nix/store path, so the
-      # released binary fails dyld resolution on non-Nix (Homebrew) hosts. Build
-      # the binary with an official bun instead. Pin it to the Nix bun version
-      # (derived from the flake.lock-locked nixpkgs bun) so the two never drift.
-      - name: Pin official bun to the Nix bun version
-        if: runner.os != 'Windows'
-        id: bunver
-        shell: bash
-        run: echo "version=$(bun --version)" >> "$GITHUB_OUTPUT"
-      - name: Setup official bun
-        if: runner.os != 'Windows'
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: ${{ steps.bunver.outputs.version }}
-      - name: Resolve official bun path
-        if: runner.os != 'Windows'
-        id: officialbun
-        shell: bash
-        run: |
-          # Fail loudly if setup-bun did not land where expected, rather than
-          # silently falling back to the Nix bun and re-introducing #490.
-          bun_path="$HOME/.bun/bin/bun"
-          if [ ! -x "$bun_path" ]; then
-            echo "::error::official bun not found at $bun_path"
-            exit 1
-          fi
-          echo "path=$bun_path" >> "$GITHUB_OUTPUT"
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
 
-      - uses: ./.github/actions/setup-takumi-guard
-        with:
-          api-key: ${{ secrets.TAKUMI_GUARD_API_KEY }}
-
-      - name: Install dependencies
-        run: pnpm install --ignore-scripts
-
-      - name: Build native module
-        if: runner.os != 'Windows'
-        run: |
-          cd packages/native
-          if [ "${{ runner.os }}" = "macOS" ]; then
-            # macOS: Both x64 and arm64 matrix entries run on macos-latest (arm64).
-            # Cross-compile both architectures so Bun embeds both .node files;
-            # at runtime, N-API selects the one matching process.arch.
-            rustup target add x86_64-apple-darwin aarch64-apple-darwin
-            pnpm exec napi build --platform --release --target x86_64-apple-darwin --js false
-            pnpm exec napi build --platform --release --target aarch64-apple-darwin --js false
-          else
-            # Linux: build for current architecture only
-            pnpm exec napi build --platform --release --js false
-          fi
-
+      # build.rs reads these so the released binary's --version is accurate. The
+      # commit is the released tag's commit; distribution=binary marks it as the
+      # standalone release artifact (matching the former --distribution binary).
       - name: Build release binary
         env:
-          # Non-Windows: bake the official bun (resolved above) as the baseclient
-          # so no /nix/store dependency is embedded (bug #490). Windows leaves this
-          # empty and uses the PATH bun (the official setup-bun from setup-toolchain).
-          VIBE_COMPILE_BUN: ${{ runner.os != 'Windows' && steps.officialbun.outputs.path || '' }}
-        run: bun run scripts/build.ts --target ${{ matrix.target }} --output ${{ matrix.artifact }} --distribution binary
+          VIBE_BUILD_COMMIT: ${{ github.sha }}
+          VIBE_BUILD_DISTRIBUTION: binary
+          VIBE_BUILD_ENV: github-actions
+        run: cargo build --manifest-path rust/Cargo.toml -p vibe --release --target ${{ matrix.target }}
 
-      - name: Verify native module embedding
-        if: runner.os != 'Windows'
-        run: |
-          if ! strings ${{ matrix.artifact }} | grep -q 'vibe-native'; then
-            echo "::error::Native module not found in compiled binary"
-            exit 1
-          fi
-          echo "Native module embedding verified"
-
-      - name: Assert no /nix/store references in release binary
-        if: runner.os != 'Windows'
+      - name: Stage artifact
         shell: bash
-        env:
-          BIN: ${{ matrix.artifact }}
-        run: |
-          # bug #490 regression guard: a /nix/store path in the released binary
-          # (linked dylib or embedded string) breaks launch on non-Nix hosts.
-          fail=0
-          if [ "${{ runner.os }}" = "macOS" ]; then
-            otool -L "$BIN" || true
-            if otool -L "$BIN" | grep -q '/nix/store'; then fail=1; fi
-          else
-            if ldd "$BIN" 2>/dev/null | grep -q '/nix/store'; then fail=1; fi
-          fi
-          if strings "$BIN" | grep -q '/nix/store'; then
-            echo "::error::release binary embeds /nix/store path(s)"
-            strings "$BIN" | grep '/nix/store' | head
-            fail=1
-          fi
-          if [ "$fail" -ne 0 ]; then
-            echo "::error::$BIN depends on /nix/store; breaks on non-Nix hosts (#490 regression)"
-            exit 1
-          fi
-          echo "OK: no /nix/store references"
+        run: cp "rust/target/${{ matrix.target }}/release/vibe" "${{ matrix.artifact }}"
 
-      # bug #490 was a *launch* failure that the static /nix/store guard alone
-      # would not have caught if the breakage took another form (a missing
-      # symbol, a bad embedded path, a corrupt baseclient). Actually run the
-      # binary so any inability to start fails the release.
-      - name: Smoke test release binary (non-Windows)
-        if: runner.os != 'Windows'
+      # Actually launch the binary so any inability to start fails the release.
+      - name: Smoke test release binary
         shell: bash
         env:
           BIN: ${{ matrix.artifact }}
@@ -166,8 +85,8 @@ jobs:
           chmod +x "$BIN"
           # x86_64-apple-darwin is the one entry cross-built on the arm64
           # macos-latest runner; running it needs Rosetta 2. Treat a Rosetta
-          # absence as a skip (it is a runner-capability gap, not a binary
-          # defect); any other launch failure is a real regression.
+          # absence as a skip (runner-capability gap, not a binary defect); any
+          # other launch failure is a real regression.
           if [ "$TARGET" = "x86_64-apple-darwin" ] && [ "$(uname -m)" = "arm64" ]; then
             if ! out=$(./"$BIN" --version 2>&1); then
               echo "::warning::skipping smoke test for $BIN: x86_64 binary did not run on this arm64 runner (Rosetta 2 unavailable)"
@@ -181,21 +100,6 @@ jobs:
           out=$(./"$BIN" --version 2>&1)
           echo "$out"
           echo "OK: binary launches"
-
-      - name: Smoke test release binary (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          BIN: ${{ matrix.artifact }}
-        run: |
-          $out = & ".\$env:BIN" --version 2>&1
-          if ($LASTEXITCODE -ne 0) {
-            Write-Output $out
-            Write-Output "::error::$env:BIN failed to launch (exit $LASTEXITCODE)"
-            exit 1
-          }
-          Write-Output $out
-          Write-Output "OK: binary launches"
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -223,74 +127,28 @@ jobs:
 
       - uses: ./.github/actions/setup-toolchain
 
-      # bug #490: same official-bun baseclient as the build job, so the deb's
-      # rebuilt binary carries no /nix/store dependency.
-      - name: Pin official bun to the Nix bun version
-        id: bunver
-        shell: bash
-        run: echo "version=$(bun --version)" >> "$GITHUB_OUTPUT"
-      - name: Setup official bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: ${{ steps.bunver.outputs.version }}
-      - name: Resolve official bun path
-        id: officialbun
-        shell: bash
-        run: |
-          # Fail loudly if setup-bun did not land where expected, rather than
-          # silently falling back to the Nix bun and re-introducing #490.
-          bun_path="$HOME/.bun/bin/bun"
-          if [ ! -x "$bun_path" ]; then
-            echo "::error::official bun not found at $bun_path"
-            exit 1
-          fi
-          echo "path=$bun_path" >> "$GITHUB_OUTPUT"
-
       - uses: ./.github/actions/setup-takumi-guard
         with:
           api-key: ${{ secrets.TAKUMI_GUARD_API_KEY }}
 
+      # Package the EXACT release binary built by the `build` job — no rebuild.
+      # The Rust binary's metadata is baked at compile time, so there is no
+      # deb-specific recompile (and no bun/baseclient #490 concern anymore); the
+      # same bytes that ship as the release asset go into the .deb.
       - name: Download Linux binary
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ matrix.binary }}
           path: .
 
-      - name: Install dependencies
-        run: pnpm install --ignore-scripts
-
-      - name: Rebuild with deb distribution metadata
-        env:
-          # bug #490: bake the official bun, not the Nix-store bun, into the deb binary.
-          VIBE_COMPILE_BUN: ${{ steps.officialbun.outputs.path }}
-        run: |
-          TARGET="${{ matrix.arch == 'amd64' && 'x86_64-unknown-linux-gnu' || 'aarch64-unknown-linux-gnu' }}"
-          bun run scripts/build.ts --target "$TARGET" --output vibe-deb --distribution deb
-
-      - name: Assert no /nix/store references in deb binary
-        shell: bash
-        run: |
-          # bug #490 regression guard for the Linux/deb binary. This job runs on
-          # an amd64 runner for both arches, so `ldd` cannot resolve the arm64
-          # binary (architecture mismatch) — `strings` grep is the primary check;
-          # ldd is a best-effort extra signal only on the amd64 build.
-          fail=0
-          if ldd vibe-deb 2>/dev/null | grep -q '/nix/store'; then fail=1; fi
-          if strings vibe-deb | grep -q '/nix/store'; then
-            echo "::error::deb binary embeds /nix/store path(s)"
-            strings vibe-deb | grep '/nix/store' | head
-            fail=1
-          fi
-          if [ "$fail" -ne 0 ]; then
-            echo "::error::vibe-deb depends on /nix/store; breaks on non-Nix hosts (#490 regression)"
-            exit 1
-          fi
-          echo "OK: no /nix/store references"
-
       - name: Build .deb package
+        env:
+          BINARY: ${{ matrix.binary }}
+          ARCH: ${{ matrix.arch }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          bun run scripts/build-deb.ts "$VERSION" ${{ matrix.arch }} vibe-deb
+          chmod +x "$BINARY"
+          bun run scripts/build-deb.ts "$VERSION" "$ARCH" "$BINARY"
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -298,8 +156,68 @@ jobs:
           name: vibe_${{ matrix.arch }}.deb
           path: vibe_*.deb
 
+  # Smoke-test the per-platform npm package staging on the real release binaries.
+  # The authoritative publish (publish-npm.yml) re-stages from the GitHub release
+  # assets; this job catches a staging/packaging break during the release run.
+  stage-platform-packages:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - artifact: vibe-linux-x64
+            platform: linux
+            arch: x64
+          - artifact: vibe-linux-arm64
+            platform: linux
+            arch: arm64
+          - artifact: vibe-darwin-x64
+            platform: darwin
+            arch: x64
+          - artifact: vibe-darwin-arm64
+            platform: darwin
+            arch: arm64
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - uses: ./.github/actions/setup-toolchain
+
+      - name: Download binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist-bin
+
+      - name: Generate THIRD-PARTY-LICENSES.md
+        run: bun run scripts/generate-third-party-licenses.ts
+
+      - name: Stage platform package
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+          ARTIFACT: ${{ matrix.artifact }}
+        run: |
+          chmod +x "dist-bin/$ARTIFACT"
+          bun run scripts/stage-platform-package.ts \
+            --platform "$PLATFORM" --arch "$ARCH" --binary "dist-bin/$ARTIFACT"
+
+      - name: Upload staged package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: platform-package-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            packages/vibe-${{ matrix.platform }}-${{ matrix.arch }}/package.json
+            packages/vibe-${{ matrix.platform }}-${{ matrix.arch }}/bin/vibe
+            packages/vibe-${{ matrix.platform }}-${{ matrix.arch }}/THIRD-PARTY-LICENSES.md
+          if-no-files-found: error
+
   release:
-    needs: [build, build-deb]
+    needs: [build, build-deb, stage-platform-packages]
     runs-on: ubuntu-latest
 
     steps:
