@@ -100,7 +100,9 @@ async function writeJsonFile(path: string, data: unknown): Promise<void> {
   // baseDir is a test fixture: prettier is not wired to format an arbitrary temp
   // dir, and the test asserts on the raw written JSON, not its formatting.
   if (baseDir === ".") {
-    await execFileAsync("pnpm", ["exec", "prettier", "--write", path]);
+    // On Windows `pnpm` is `pnpm.cmd`; execFile won't resolve a bare `pnpm`.
+    const pnpmBin = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+    await execFileAsync(pnpmBin, ["exec", "prettier", "--write", path]);
   }
 }
 

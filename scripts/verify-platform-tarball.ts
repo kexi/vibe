@@ -89,7 +89,11 @@ export function findTarballProblems(files: PackEntry[]): string[] {
 async function main(): Promise<void> {
   const dir = parseDir(process.argv.slice(2));
 
-  const { stdout } = await execFileAsync("npm", ["pack", "--dry-run", "--json"], { cwd: dir });
+  // On Windows `npm` is `npm.cmd`; Node's execFile won't resolve a bare `npm`
+  // (uv_spawn ENOENT). Why not `shell: true`: that re-parses the argv through
+  // cmd.exe, an injection surface — naming the .cmd directly keeps argv literal.
+  const npmBin = process.platform === "win32" ? "npm.cmd" : "npm";
+  const { stdout } = await execFileAsync(npmBin, ["pack", "--dry-run", "--json"], { cwd: dir });
   const parsed = JSON.parse(stdout) as PackResult[];
   const result = parsed[0];
   if (!result || !Array.isArray(result.files)) {
