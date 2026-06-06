@@ -95,29 +95,37 @@ const NOHUP_RM_SCRIPT: &str = r#"nohup rm -rf "$1" >/dev/null 2>&1 &"#;
 
 /// Build the argv for a background delete of `path` (exposed for testing the
 /// EXACT argv shape — the `$1` positional, never an interpolated path).
+///
+/// Why `#[cfg]` and not a runtime `if cfg!(windows)`: the Unix branch references
+/// `NOHUP_RM_SCRIPT`, which is itself `#[cfg(not(windows))]`. A `cfg!()` `if`
+/// compiles BOTH arms on every target, so on Windows the dead Unix arm would
+/// fail to resolve the (absent) constant (E0425). Attribute-gating the two impls
+/// removes the non-target arm at compile time instead.
+#[cfg(windows)]
 pub fn background_delete_argv(path: &str) -> Vec<String> {
-    if cfg!(windows) {
-        // `path` is passed as its OWN argv element to `cmd /c rmdir`, not spliced
-        // into a shell command string, so it is never re-parsed by a shell — no
-        // fixed-script `$1`-style wrapper is needed here (unlike the Unix branch).
-        vec![
-            "cmd".into(),
-            "/c".into(),
-            "rmdir".into(),
-            "/s".into(),
-            "/q".into(),
-            path.into(),
-        ]
-    } else {
-        // sh -c '<fixed script>' _ <path>  — `_` is $0, `<path>` is $1.
-        vec![
-            "sh".into(),
-            "-c".into(),
-            NOHUP_RM_SCRIPT.into(),
-            "_".into(),
-            path.into(),
-        ]
-    }
+    // `path` is passed as its OWN argv element to `cmd /c rmdir`, not spliced
+    // into a shell command string, so it is never re-parsed by a shell — no
+    // fixed-script `$1`-style wrapper is needed here (unlike the Unix branch).
+    vec![
+        "cmd".into(),
+        "/c".into(),
+        "rmdir".into(),
+        "/s".into(),
+        "/q".into(),
+        path.into(),
+    ]
+}
+
+#[cfg(not(windows))]
+pub fn background_delete_argv(path: &str) -> Vec<String> {
+    // sh -c '<fixed script>' _ <path>  — `_` is $0, `<path>` is $1.
+    vec![
+        "sh".into(),
+        "-c".into(),
+        NOHUP_RM_SCRIPT.into(),
+        "_".into(),
+        path.into(),
+    ]
 }
 
 /// Spawn the background delete for `path` using the fixed-script argv.
@@ -354,6 +362,23 @@ mod tests {
         assert!(!argv[2].contains("rm -rf /"));
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn background_delete_passes_path_as_own_argv_element_on_windows() {
+        let path = r"C:\Temp\.vibe-trash-1-abcd & del /q /s C:\"; // hostile path
+        let argv = background_delete_argv(path);
+        // `cmd /c rmdir /s /q <path>` — the path is the LAST, separate element so
+        // cmd never re-parses it as part of the command string (no `&` chaining).
+        assert_eq!(argv[0], "cmd");
+        assert_eq!(argv[1], "/c");
+        assert_eq!(argv[2], "rmdir");
+        assert_eq!(argv[3], "/s");
+        assert_eq!(argv[4], "/q");
+        assert_eq!(argv[5], path); // verbatim, not spliced into any fixed arg.
+        // The hostile tail never appears merged into an earlier argv element.
+        assert!(!argv[2].contains("del"));
+    }
+
     #[test]
     fn native_trash_used_when_available() {
         let fx = Fixture::new();
@@ -414,6 +439,13 @@ mod tests {
             assert_eq!(argv[2], r#"nohup rm -rf "$1" >/dev/null 2>&1 &"#);
             // The trash name carries the injected clock + token.
             assert!(argv[4].contains(".vibe-trash-42-deadbeef"));
+        }
+        #[cfg(windows)]
+        {
+            assert_eq!(argv[0], "cmd");
+            assert_eq!(argv[2], "rmdir");
+            // The trash name (last argv element) carries the injected clock + token.
+            assert!(argv[5].contains(".vibe-trash-42-deadbeef"));
         }
         // The original target was moved away.
         assert!(!target.exists());
