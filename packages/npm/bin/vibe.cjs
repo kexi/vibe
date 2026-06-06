@@ -54,6 +54,7 @@ function platformPackageName(platform, arch) {
     "linux-arm64": "@kexi/vibe-linux-arm64",
     "darwin-x64": "@kexi/vibe-darwin-x64",
     "darwin-arm64": "@kexi/vibe-darwin-arm64",
+    "win32-x64": "@kexi/vibe-win32-x64",
   };
   const key = `${platform}-${arch}`;
   return SUPPORTED[key] ?? null;

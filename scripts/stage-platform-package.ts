@@ -4,18 +4,26 @@
  * Stage a Rust release binary into its per-platform npm package.
  *
  * The shipped vibe is a native Rust binary. @kexi/vibe (the npm shim) declares
- * four per-platform `optionalDependencies`; this script copies the built binary
+ * five per-platform `optionalDependencies`; this script copies the built binary
  * for one <platform>-<arch> into that platform package's `bin/vibe` so it can be
  * published (the bin/ dirs are gitignored and staged at build/release time).
+ *
+ * The on-disk name is `bin/vibe` (no extension) on EVERY platform, Windows
+ * included. Why not `bin/vibe.exe` on Windows: the shim resolves the binary via
+ * `require.resolve(".../bin/vibe")`, which never tries a `.exe` suffix — keeping
+ * one name across platforms means the shim's resolution and the tarball verifier
+ * stay branch-free. On Windows the caller passes `--binary <...>/vibe.exe`; the
+ * copy below renames it to `bin/vibe`, and Node's `spawnSync` launches the PE by
+ * its header, not its extension.
  *
  * Usage:
  *   bun run scripts/stage-platform-package.ts --platform <p> --arch <a> [--binary <path>]
  *
  * Options:
- *   --platform   linux | darwin            (Node process.platform values)
+ *   --platform   linux | darwin | win32    (Node process.platform values)
  *   --arch       x64 | arm64               (Node process.arch values)
- *   --binary     path to the built `vibe` binary. Defaults to the host build at
- *                rust/target/release/vibe.
+ *   --binary     path to the built `vibe` binary (or `vibe.exe` on Windows).
+ *                Defaults to the host build at rust/target/release/vibe.
  *
  * On success it prints the staged destination path.
  */
@@ -23,7 +31,7 @@
 import { copyFile, mkdir, chmod, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-const SUPPORTED_PLATFORMS = ["linux", "darwin"] as const;
+const SUPPORTED_PLATFORMS = ["linux", "darwin", "win32"] as const;
 const SUPPORTED_ARCHES = ["x64", "arm64"] as const;
 
 type Platform = (typeof SUPPORTED_PLATFORMS)[number];
@@ -85,7 +93,7 @@ function printUsage(): void {
   console.log(`Usage: bun run scripts/stage-platform-package.ts --platform <p> --arch <a> [--binary <path>]
 
 Options:
-  --platform   linux | darwin
+  --platform   linux | darwin | win32
   --arch       x64 | arm64
   --binary     path to the built vibe binary (default: rust/target/release/vibe)
   --help       show this help

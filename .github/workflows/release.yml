@@ -43,9 +43,9 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact: vibe-darwin-arm64
-          # Windows is deferred: the shipped binary is now Rust and the Windows
-          # native target is not built in this phase. The previous bun-compiled
-          # vibe-windows-x64.exe is intentionally dropped from this job.
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: vibe-win32-x64
 
     runs-on: ${{ matrix.os }}
 
@@ -73,7 +73,18 @@ jobs:
 
       - name: Stage artifact
         shell: bash
-        run: cp "rust/target/${{ matrix.target }}/release/vibe" "${{ matrix.artifact }}"
+        env:
+          TARGET: ${{ matrix.target }}
+          ARTIFACT: ${{ matrix.artifact }}
+        run: |
+          # cargo emits vibe.exe on Windows; copy it to the extensionless
+          # artifact name so the staging/publish flow stays uniform across
+          # platforms (the shim resolves an extensionless bin/vibe everywhere).
+          SRC="rust/target/${TARGET}/release/vibe"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            SRC="${SRC}.exe"
+          fi
+          cp "$SRC" "$ARTIFACT"
 
       # Actually launch the binary so any inability to start fails the release.
       - name: Smoke test release binary
@@ -82,13 +93,22 @@ jobs:
           BIN: ${{ matrix.artifact }}
           TARGET: ${{ matrix.target }}
         run: |
-          chmod +x "$BIN"
+          # The staged artifact is extensionless on every platform. On Windows,
+          # CreateProcess launches a PE by its header, but Git Bash / spawn is
+          # more reliable with a .exe name, so smoke-test a .exe copy there.
+          RUN="$BIN"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp "$BIN" "${BIN}.exe"
+            RUN="${BIN}.exe"
+          else
+            chmod +x "$BIN"
+          fi
           # x86_64-apple-darwin is the one entry cross-built on the arm64
           # macos-latest runner; running it needs Rosetta 2. Treat a Rosetta
           # absence as a skip (runner-capability gap, not a binary defect); any
           # other launch failure is a real regression.
           if [ "$TARGET" = "x86_64-apple-darwin" ] && [ "$(uname -m)" = "arm64" ]; then
-            if ! out=$(./"$BIN" --version 2>&1); then
+            if ! out=$(./"$RUN" --version 2>&1); then
               echo "::warning::skipping smoke test for $BIN: x86_64 binary did not run on this arm64 runner (Rosetta 2 unavailable)"
               echo "$out"
               exit 0
@@ -97,7 +117,7 @@ jobs:
             echo "OK: binary launches (via Rosetta)"
             exit 0
           fi
-          out=$(./"$BIN" --version 2>&1)
+          out=$(./"$RUN" --version 2>&1)
           echo "$out"
           echo "OK: binary launches"
 
@@ -178,6 +198,9 @@ jobs:
           - artifact: vibe-darwin-arm64
             platform: darwin
             arch: arm64
+          - artifact: vibe-win32-x64
+            platform: win32
+            arch: x64
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4

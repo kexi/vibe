@@ -95,6 +95,9 @@ importers:
       '@kexi/vibe-linux-x64':
         specifier: 2.0.0
         version: link:../vibe-linux-x64
+      '@kexi/vibe-win32-x64':
+        specifier: 2.0.0
+        version: link:../vibe-win32-x64
 
   packages/vibe-darwin-arm64: {}
 
@@ -103,6 +106,8 @@ importers:
   packages/vibe-linux-arm64: {}
 
   packages/vibe-linux-x64: {}
+
+  packages/vibe-win32-x64: {}
 
   packages/video:
     dependencies:

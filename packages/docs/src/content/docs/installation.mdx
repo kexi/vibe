@@ -137,10 +137,18 @@ WSL2 users can use the Linux installation methods below based on their distribut
 
 ## Windows
 
-:::caution
-Windows binary distribution is being reworked. The current release no longer ships a `vibe-windows-x64.exe` asset, and there is no `@kexi/vibe-win32-x64` package yet, so installing `@kexi/vibe` via npm on Windows leaves the launcher without a binary and it will exit with a clear error.
+Windows (x64) is supported. Install via npm — the `@kexi/vibe` launcher pulls in the `@kexi/vibe-win32-x64` binary package for your platform:
 
-Until native Windows builds return, run vibe under [WSL2](https://learn.microsoft.com/windows/wsl/) using the [Linux](#linux) instructions above, or [build from source](#manual-build) with the Rust toolchain.
+```bash frame="terminal"
+npm install -g @kexi/vibe
+```
+
+:::note
+Copy-on-Write cloning is not available on Windows; vibe falls back to a standard file copy when creating worktrees. Everything else (commands, flags, the trust model) works the same as on Linux and macOS.
+:::
+
+:::tip
+You can also run vibe under [WSL2](https://learn.microsoft.com/windows/wsl/) with the [Linux](#linux) instructions above — useful if you want Copy-on-Write on a Btrfs volume — or [build from source](#manual-build) with the Rust toolchain.
 :::
 
 ## Manual Build

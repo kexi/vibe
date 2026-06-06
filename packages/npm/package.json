@@ -18,7 +18,8 @@
     "@kexi/vibe-linux-x64": "2.0.0",
     "@kexi/vibe-linux-arm64": "2.0.0",
     "@kexi/vibe-darwin-x64": "2.0.0",
-    "@kexi/vibe-darwin-arm64": "2.0.0"
+    "@kexi/vibe-darwin-arm64": "2.0.0",
+    "@kexi/vibe-win32-x64": "2.0.0"
   },
   "devDependencies": {
     "vitest": "^2.1.0"

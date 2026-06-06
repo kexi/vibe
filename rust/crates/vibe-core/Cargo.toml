@@ -24,22 +24,25 @@ globset.workspace = true
 walkdir.workspace = true
 indicatif.workspace = true
 uuid.workspace = true
-
-[target.'cfg(unix)'.dependencies]
-# localtime_r for broken-down LOCAL time in RealClock (scratch timestamps). Only
-# needed on unix; the dev shell / CI build matrix is macOS + Linux.
-libc = "0.2.169"
 # rustls for the upgrade command's HTTPS check. `default-features = false` drops
 # ureq's default `gzip`. Why not the plain `rustls` feature: it pulls in ureq's
 # `_ring` (rustls/ring) crypto provider. We require aws-lc-rs, so we take
 # `rustls-no-provider` + bundled webpki roots here, and depend on `rustls`
 # directly below with only its `aws-lc-rs` feature, then install that provider as
 # the process default in `http.rs`. `cargo tree -i ring` must stay empty.
+# Why not cfg(unix): `http.rs` (pub mod, un-gated) uses these on every target, so
+# gating them unix-only broke the Windows build. ureq/rustls are cross-platform,
+# so they belong in the plain table; only `libc` stays unix-gated below.
 ureq = { version = "3", default-features = false, features = [
     "rustls-no-provider",
     "rustls-webpki-roots",
 ] }
 rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs"] }
+
+[target.'cfg(unix)'.dependencies]
+# localtime_r for broken-down LOCAL time in RealClock (scratch timestamps). Only
+# needed on unix; clock.rs has a cfg(not(unix)) fallback that uses no libc.
+libc = "0.2.169"
 
 [dev-dependencies]
 tempfile.workspace = true

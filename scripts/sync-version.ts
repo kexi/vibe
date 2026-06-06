@@ -44,6 +44,7 @@ const TARGETS = [
   "packages/vibe-linux-arm64/package.json",
   "packages/vibe-darwin-x64/package.json",
   "packages/vibe-darwin-arm64/package.json",
+  "packages/vibe-win32-x64/package.json",
 ];
 
 // Rust crates whose `[package] version` is hand-pinned to the release version
@@ -65,6 +66,7 @@ const PLATFORM_OPTIONAL_DEPS = [
   "@kexi/vibe-linux-arm64",
   "@kexi/vibe-darwin-x64",
   "@kexi/vibe-darwin-arm64",
+  "@kexi/vibe-win32-x64",
 ];
 
 // The per-platform npm package directories that MUST exist, derived from the

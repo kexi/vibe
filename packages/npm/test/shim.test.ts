@@ -23,10 +23,12 @@ describe("platformPackageName", () => {
     expect(shim.platformPackageName("linux", "arm64")).toBe("@kexi/vibe-linux-arm64");
     expect(shim.platformPackageName("darwin", "x64")).toBe("@kexi/vibe-darwin-x64");
     expect(shim.platformPackageName("darwin", "arm64")).toBe("@kexi/vibe-darwin-arm64");
+    expect(shim.platformPackageName("win32", "x64")).toBe("@kexi/vibe-win32-x64");
   });
 
   it("returns null for unsupported platform/arch pairs", () => {
-    expect(shim.platformPackageName("win32", "x64")).toBeNull();
+    // Windows ARM64 is not built yet — only win32-x64 ships a binary.
+    expect(shim.platformPackageName("win32", "arm64")).toBeNull();
     expect(shim.platformPackageName("linux", "ia32")).toBeNull();
     expect(shim.platformPackageName("freebsd", "arm64")).toBeNull();
   });
@@ -75,10 +77,22 @@ describe("resolveBinary", () => {
     expect(resolve).toHaveBeenCalledWith("@kexi/vibe-linux-x64/bin/vibe", { paths: [dirname] });
   });
 
+  it("resolves the Windows binary as extensionless bin/vibe (not vibe.exe)", () => {
+    // The staged Windows binary is bin/vibe (no .exe), so require.resolve — which
+    // never tries a .exe suffix — must be asked for the extensionless path.
+    const resolved = path.join(path.sep, "proj", "node_modules", "@kexi", "vibe-win32-x64", "bin", "vibe");
+    const resolve = vi.fn().mockReturnValue(resolved);
+
+    const out = shim.resolveBinary({ platform: "win32", arch: "x64", resolve, realpath, dirname });
+
+    expect(out).toBe(resolved);
+    expect(resolve).toHaveBeenCalledWith("@kexi/vibe-win32-x64/bin/vibe", { paths: [dirname] });
+  });
+
   it("throws EUNSUPPORTED for an unsupported platform", () => {
     const resolve = vi.fn();
     try {
-      shim.resolveBinary({ platform: "win32", arch: "x64", resolve, realpath, dirname });
+      shim.resolveBinary({ platform: "win32", arch: "arm64", resolve, realpath, dirname });
       expect.unreachable("should have thrown");
     } catch (err) {
       expect((err as { code: string }).code).toBe("EUNSUPPORTED");
