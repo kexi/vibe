@@ -75,15 +75,6 @@ jobs:
           - os: macos-latest
             target: x86_64-apple-darwin
             name: darwin-x64
-          # G-5: darwin-x64 is cross-built on the arm64 macos-latest runner and
-          # its smoke test is Rosetta-skipped, so it could ship untested. This
-          # leg builds the SAME target NATIVELY on an Intel macos-13 runner and
-          # MUST smoke-test (no skip) — proving the shipped x86_64 binary runs on
-          # real Intel hardware. The cross-build leg above is kept so a
-          # cross-compile-only break is still caught.
-          - os: macos-13
-            target: x86_64-apple-darwin
-            name: darwin-x64-native
           - os: macos-latest
             target: aarch64-apple-darwin
             name: darwin-arm64
@@ -102,21 +93,43 @@ jobs:
       - name: Smoke test (${{ matrix.name }})
         # The `darwin-x64` leg is the ONLY one cross-built on an arm64 runner;
         # running it needs Rosetta 2, which may be absent, so a Rosetta gap is
-        # treated as a skip (runner-capability, not a binary defect). The
-        # `darwin-x64-native` leg builds the same target on an Intel macos-13
-        # runner and runs natively, so it must NOT skip — that is the leg that
-        # actually proves the x86_64 binary works (G-5). Every other target also
-        # runs natively and must launch.
+        # treated as a skip (runner-capability, not a binary defect). The native
+        # Intel run lives in the separate best-effort `darwin-x64-native-smoke`
+        # job below. Every other target runs natively and must launch.
         shell: bash
         run: |
           BIN="rust/target/${{ matrix.target }}/release/vibe"
           if [ "${{ matrix.name }}" = "darwin-x64" ]; then
             if ! "$BIN" --version; then
-              echo "::warning::skipping smoke test: x86_64 binary did not run on this arm64 runner (Rosetta 2 unavailable); darwin-x64-native covers the native run"
+              echo "::warning::skipping smoke test: x86_64 binary did not run on this arm64 runner (Rosetta 2 unavailable); darwin-x64-native-smoke covers the native run"
             fi
           else
             "$BIN" --version
           fi
+
+  # Native Intel-hardware smoke test of the x86_64 binary (G-5). Kept SEPARATE
+  # from build-rust-binaries and OUT of the `build` aggregator's needs: GitHub's
+  # macos-13 Intel runners are scarce and being retired, so they often sit
+  # queued indefinitely — gating the PR on one wastes time. This is best-effort
+  # (continue-on-error) and informational; the required cross-build darwin-x64
+  # leg above still proves the target compiles.
+  darwin-x64-native-smoke:
+    runs-on: macos-13
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: ./.github/actions/setup-toolchain
+      - name: Add Rust target
+        run: rustup target add x86_64-apple-darwin
+      - name: Build binary (darwin-x64-native)
+        run: cargo build --manifest-path rust/Cargo.toml -p vibe --release --target x86_64-apple-darwin
+      - name: Smoke test (darwin-x64-native)
+        run: rust/target/x86_64-apple-darwin/release/vibe --version
 
   build-deb:
     strategy:
