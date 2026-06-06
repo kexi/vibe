@@ -59,8 +59,8 @@ jobs:
   # Compile the shipped Rust binary for every supported target so a
   # target-specific build break is caught on PR. The x86_64-apple-darwin entry
   # cross-compiles on the arm64 macos-latest runner via `rustup target add`;
-  # the others build natively. Windows is intentionally absent (the native
-  # module is not built on Windows; a Windows release is deferred).
+  # the others build natively. The win32-x64 leg builds natively on a Windows
+  # runner (MSVC provides the C toolchain aws-lc-sys/aws-lc-rs needs).
   build-rust-binaries:
     strategy:
       fail-fast: false
@@ -78,6 +78,9 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             name: darwin-arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: win32-x64
     runs-on: ${{ matrix.os }}
     steps:
       - name: Harden Runner
@@ -100,7 +103,11 @@ jobs:
         # launch.
         shell: bash
         run: |
+          # cargo emits vibe.exe on Windows, plain vibe elsewhere.
           BIN="rust/target/${{ matrix.target }}/release/vibe"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            BIN="${BIN}.exe"
+          fi
           if [ "${{ matrix.name }}" = "darwin-x64" ]; then
             if ! "$BIN" --version; then
               echo "::warning::skipping smoke test: x86_64 binary did not run on this arm64 runner (Rosetta 2 unavailable)"
@@ -218,14 +225,14 @@ jobs:
   # package manager's actual on-disk layout (npm hoisted, pnpm .pnpm symlink
   # farm), which is the only place the containment guard (security A-2) and the
   # os/cpu gating are exercised for real. It runs on the host-matching platform
-  # package only: building all four targets per runner is unnecessary, and a
+  # package only: building all five targets per runner is unnecessary, and a
   # foreign-arch binary could not be smoke-run anyway.
   npm-install-matrix:
     needs: build-rust-binaries
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
         # npm (hoisted node_modules) and pnpm (.pnpm symlink farm) cover the two
         # distinct install layouts the shim must resolve against. yarn classic is
         # omitted: it is not a realistic global-install path for vibe (and is
@@ -242,13 +249,19 @@ jobs:
           - os: macos-latest
             pm: pnpm
         include:
-          # Host platform package + node arch for each runner.
+          # Host platform package + node arch for each runner. The win32 leg is
+          # the only proof that the shim's require.resolve(".../bin/vibe") + the
+          # extensionless staged binary actually exec under Node's spawnSync on
+          # Windows.
           - os: ubuntu-latest
             platform: linux
             arch: x64
           - os: macos-latest
             platform: darwin
             arch: arm64
+          - os: windows-latest
+            platform: win32
+            arch: x64
     runs-on: ${{ matrix.os }}
     steps:
       - name: Harden Runner
@@ -273,18 +286,33 @@ jobs:
         run: bun run scripts/generate-third-party-licenses.ts
 
       - name: Stage host platform package
+        shell: bash
         env:
           PLATFORM: ${{ matrix.platform }}
           ARCH: ${{ matrix.arch }}
         run: |
+          # cargo emits vibe.exe on Windows; pass it explicitly so the staging
+          # script writes bin/vibe.exe (the shim resolves/spawns the .exe on win32).
+          BIN="rust/target/release/vibe"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            BIN="${BIN}.exe"
+          fi
           bun run scripts/stage-platform-package.ts \
             --platform "$PLATFORM" --arch "$ARCH" \
-            --binary rust/target/release/vibe
+            --binary "$BIN"
 
       # G-3: the published tarball MUST contain bin/vibe (executable) and
       # THIRD-PARTY-LICENSES.md. Assert it before packing so a bad `files` glob
       # fails here rather than shipping an empty package.
+      #
+      # Skipped on Windows: the assertion is platform-INDEPENDENT (the `files`
+      # glob is the same package.json on every OS, already verified by the
+      # ubuntu/macos legs), and the script's `npm pack` spawn does not work under
+      # Bun on Windows (Bun's execFile cannot launch the npm.cmd shim). The
+      # Windows leg's real purpose — that the shim execs the binary — is covered
+      # by the steps below, which run npm/pnpm through Git Bash, not Bun.
       - name: Assert platform tarball contents (G-3)
+        if: runner.os != 'Windows'
         env:
           PLATFORM: ${{ matrix.platform }}
           ARCH: ${{ matrix.arch }}
@@ -328,9 +356,19 @@ jobs:
             pnpm) pnpm add "$SHIM" "$PLAT" ;;
           esac
           # `vibe --version` writes the banner to stderr (stdout is reserved for
-          # the shell-eval `cd` contract), so capture both streams.
+          # the shell-eval `cd` contract), so capture both streams. Capture the
+          # exit code WITHOUT `set -e` killing us first, so a nonzero exit (e.g.
+          # the shim failing to launch the binary on Windows) still surfaces the
+          # captured stderr in the log instead of dying silently.
+          set +e
           out=$(./node_modules/.bin/vibe --version 2>&1)
-          echo "vibe --version => $out"
+          rc=$?
+          set -e
+          echo "vibe --version (exit $rc) => $out"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::vibe --version exited $rc"
+            exit 1
+          fi
           # Exact-match the version on the `vibe <version>[+commit]` line, so e.g.
           # 1.8.1 does not spuriously match a 1.8.10 binary.
           printed=$(printf '%s\n' "$out" | awk '/^vibe /{print $2; exit}')

@@ -139,7 +139,7 @@ jobs:
       - name: Audit shipped Rust binary (rust/)
         run: cargo audit --file rust/Cargo.lock
 
-  # Publish the four per-platform binary packages (@kexi/vibe-<platform>-<arch>).
+  # Publish the five per-platform binary packages (@kexi/vibe-<platform>-<arch>).
   # Each downloads its binary from the GitHub release assets and stages THAT
   # file (no rebuild), so the published npm bytes equal the release artifact
   # bytes by construction (security B-2); an explicit sha256 compare backs this
@@ -169,6 +169,10 @@ jobs:
             artifact: vibe-darwin-arm64
             platform: darwin
             arch: arm64
+          - package: vibe-win32-x64
+            artifact: vibe-win32-x64
+            platform: win32
+            arch: x64
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
@@ -239,7 +243,9 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: |
           src_sha=$(sha256sum "dist-bin/$ARTIFACT" | cut -d ' ' -f 1)
-          staged="packages/vibe-${PLATFORM}-${ARCH}/bin/vibe"
+          # The Windows package stages bin/vibe.exe; every other platform bin/vibe.
+          binname="vibe"; [ "$PLATFORM" = "win32" ] && binname="vibe.exe"
+          staged="packages/vibe-${PLATFORM}-${ARCH}/bin/${binname}"
           staged_sha=$(sha256sum "$staged" | cut -d ' ' -f 1)
           echo "release artifact: $src_sha"
           echo "staged npm bin : $staged_sha"
@@ -267,7 +273,7 @@ jobs:
         working-directory: packages/vibe-${{ matrix.platform }}-${{ matrix.arch }}
         run: npm publish --provenance --access public
 
-  # Publish @kexi/vibe (the launcher shim). It needs ALL four platform packages
+  # Publish @kexi/vibe (the launcher shim). It needs ALL five platform packages
   # to be published first (security D-1) so a freshly published shim never
   # resolves a not-yet-published optionalDependency. @kexi/vibe depends only on
   # those per-platform binary packages (the Rust binary statically links its own

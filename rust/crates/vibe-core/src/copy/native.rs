@@ -107,6 +107,7 @@ mod fake {
     pub struct FakeNative {
         available: bool,
         supports_dir: bool,
+        trash_available: bool,
         platform: &'static str,
         /// When set, every `clone_file`/`clone_directory` returns this error.
         forced_error: Option<CopyError>,
@@ -121,6 +122,7 @@ mod fake {
             FakeNative {
                 available: true,
                 supports_dir: true,
+                trash_available: true,
                 platform: "darwin",
                 forced_error: None,
                 clone_file_calls: RefCell::new(vec![]),
@@ -134,6 +136,7 @@ mod fake {
             FakeNative {
                 available: true,
                 supports_dir: false,
+                trash_available: true,
                 platform: "linux",
                 forced_error: None,
                 clone_file_calls: RefCell::new(vec![]),
@@ -149,6 +152,7 @@ mod fake {
             FakeNative {
                 available: false,
                 supports_dir: false,
+                trash_available: true,
                 platform: "windows",
                 forced_error: None,
                 clone_file_calls: RefCell::new(vec![]),
@@ -162,6 +166,7 @@ mod fake {
             FakeNative {
                 available: false,
                 supports_dir: false,
+                trash_available: false,
                 platform: "unsupported",
                 forced_error: None,
                 clone_file_calls: RefCell::new(vec![]),
@@ -225,7 +230,11 @@ mod fake {
             self.trash_calls
                 .borrow_mut()
                 .push(path.to_string_lossy().into_owned());
-            Ok(())
+            if self.trash_available {
+                Ok(())
+            } else {
+                Err("system trash unavailable".to_string())
+            }
         }
     }
 }

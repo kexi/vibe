@@ -104,7 +104,10 @@ Configure this in `~/.config/vibe/settings.json`:
 The behavior differs by platform:
 
 - **macOS**: Items are moved to the system Trash via Finder. This allows recovery if needed and ensures reliable cleanup managed by the OS.
-- **Linux/Windows**: Items are moved to the system temp directory (`/tmp` or `%TEMP%`) and deleted in the background using `nohup`. Temp directories are automatically cleaned on system reboot.
+- **Linux**: Items are moved to XDG Trash. This allows recovery from your desktop file manager when available.
+- **Windows**: Items are moved to the Recycle Bin. This allows recovery if needed and keeps cleanup consistent with the OS.
+
+If system trash is unavailable or fails, vibe falls back to moving the worktree into the system temp directory (`/tmp` or `%TEMP%`) and deleting it in the background. Temp directories are automatically cleaned on system reboot.
 
 **Detailed process:**
 

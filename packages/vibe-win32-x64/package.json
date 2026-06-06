@@ -1,12 +1,12 @@
 {
-  "name": "@kexi/vibe-linux-arm64",
+  "name": "@kexi/vibe-win32-x64",
   "version": "2.0.0",
-  "description": "Linux arm64 binary for the vibe CLI",
+  "description": "Windows x64 binary for the vibe CLI",
   "os": [
-    "linux"
+    "win32"
   ],
   "cpu": [
-    "arm64"
+    "x64"
   ],
   "files": [
     "bin/",

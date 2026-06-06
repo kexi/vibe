@@ -96,7 +96,7 @@ vibe start feat/new-feature --base origin/develop --track
 
 - **macOS**: Finderを通じてシステムのゴミ箱に移動（必要に応じて復元可能）
 - **Linux**: XDGゴミ箱に移動（ファイルマネージャーから復元可能）
-- **Windows**: 一時ディレクトリに移動し、バックグラウンドで削除
+- **Windows**: ごみ箱に移動（必要に応じて復元可能）
 
 これにより、worktreeのサイズに関係なく `vibe clean` が即座に完了します。
 
@@ -252,14 +252,20 @@ sudo mv vibe /usr/local/bin/
 
 ### Windows
 
-> [!CAUTION]
-> Windows向けバイナリ配布は再構築中です。現在のリリースには `vibe-windows-x64.exe`
-> アセットが含まれず、`@kexi/vibe-win32-x64` パッケージもまだ存在しません。そのため
-> Windows で npm から `@kexi/vibe` をインストールしてもランチャーが実行するバイナリを
-> 見つけられず、明示的なエラーで終了します。
->
-> ネイティブな Windows ビルドが復活するまでは、[WSL2](https://learn.microsoft.com/ja-jp/windows/wsl/)
-> 上で上記の Linux 手順を使うか、Rust ツールチェーンでソースからビルドしてください
+Windows（x64）に対応しています。npm からインストールすると、`@kexi/vibe`
+ランチャーがプラットフォームに合ったバイナリパッケージ
+`@kexi/vibe-win32-x64` を取り込みます：
+
+```bash
+npm install -g @kexi/vibe
+```
+
+> [!NOTE]
+> Windows ではコピーオンライト（CoW）クローンは利用できず、worktree 作成時は
+> 標準のファイルコピーにフォールバックします。それ以外は Linux / macOS と同じように
+> 動作します。[WSL2](https://learn.microsoft.com/ja-jp/windows/wsl/) 上で上記の
+> Linux 手順を使って実行することもできます（Btrfs ボリュームでコピーオンライトを
+> 使いたい場合に便利です）。または Rust ツールチェーンでソースからビルドしてください
 > （[手動ビルド](#手動ビルド)を参照）。
 
 ### 手動ビルド

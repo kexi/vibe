@@ -96,7 +96,7 @@ vibe start feat/new-feature --base origin/develop --track
 
 - **macOS**: Items are moved to the system Trash via Finder (can be recovered if needed)
 - **Linux**: Items are moved to XDG Trash (recoverable from file manager)
-- **Windows**: Items are moved to a temporary directory and deleted in the background
+- **Windows**: Items are moved to the Recycle Bin (can be recovered if needed)
 
 This approach allows `vibe clean` to complete instantly regardless of worktree size.
 
@@ -252,15 +252,20 @@ sudo mv vibe /usr/local/bin/
 
 ### Windows
 
-> [!CAUTION]
-> Windows binary distribution is being reworked. The current release no longer
-> ships a `vibe-windows-x64.exe` asset, and there is no `@kexi/vibe-win32-x64`
-> package yet, so installing `@kexi/vibe` via npm on Windows leaves the launcher
-> without a binary and it will exit with a clear error.
->
-> Until native Windows builds return, run vibe under
-> [WSL2](https://learn.microsoft.com/windows/wsl/) using the Linux instructions
-> above, or build from source with the Rust toolchain (see [Manual Build](#manual-build)).
+Windows (x64) is supported. Install via npm — the `@kexi/vibe` launcher pulls in
+the `@kexi/vibe-win32-x64` binary package for your platform:
+
+```bash
+npm install -g @kexi/vibe
+```
+
+> [!NOTE]
+> Copy-on-Write cloning is not available on Windows; vibe falls back to a
+> standard file copy when creating worktrees. Everything else works the same as
+> on Linux and macOS. You can also run vibe under
+> [WSL2](https://learn.microsoft.com/windows/wsl/) with the Linux instructions
+> above (useful for Copy-on-Write on a Btrfs volume), or build from source with
+> the Rust toolchain (see [Manual Build](#manual-build)).
 
 ### Manual Build
 

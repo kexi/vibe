@@ -84,17 +84,20 @@ importers:
         version: 2.1.9(@types/node@22.19.7)(@vitest/ui@2.1.9)(terser@5.46.0)
     optionalDependencies:
       '@kexi/vibe-darwin-arm64':
-        specifier: 1.8.1
+        specifier: 2.0.0
         version: link:../vibe-darwin-arm64
       '@kexi/vibe-darwin-x64':
-        specifier: 1.8.1
+        specifier: 2.0.0
         version: link:../vibe-darwin-x64
       '@kexi/vibe-linux-arm64':
-        specifier: 1.8.1
+        specifier: 2.0.0
         version: link:../vibe-linux-arm64
       '@kexi/vibe-linux-x64':
-        specifier: 1.8.1
+        specifier: 2.0.0
         version: link:../vibe-linux-x64
+      '@kexi/vibe-win32-x64':
+        specifier: 2.0.0
+        version: link:../vibe-win32-x64
 
   packages/vibe-darwin-arm64: {}
 
@@ -103,6 +106,8 @@ importers:
   packages/vibe-linux-arm64: {}
 
   packages/vibe-linux-x64: {}
+
+  packages/vibe-win32-x64: {}
 
   packages/video:
     dependencies:

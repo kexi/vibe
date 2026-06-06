@@ -46,6 +46,12 @@ describe("parseArgs", () => {
     expect(args.binary).toContain("vibe");
   });
 
+  it("accepts win32 as a supported platform", () => {
+    const args = parseArgs(["--platform", "win32", "--arch", "x64"]);
+    expect(args.platform).toBe("win32");
+    expect(args.arch).toBe("x64");
+  });
+
   it("rejects an unsupported platform", () => {
     expect(() => parseArgs(["--platform", "windows", "--arch", "x64"])).toThrowError(/--platform/);
   });
@@ -81,6 +87,20 @@ describe("stagePlatformPackage", () => {
     // THIRD-PARTY-LICENSES.md must land in the package root (it is in `files`).
     const license = join(root, "packages", "vibe-darwin-arm64", "THIRD-PARTY-LICENSES.md");
     expect(readFileSync(license, "utf-8")).toBe("# notices");
+  });
+
+  it("stages the Windows binary as bin/vibe.exe (keeps the extension)", async () => {
+    // On Windows the cargo artifact is vibe.exe and the staged name keeps the
+    // .exe so Node can spawn the PE and the shim resolves bin/vibe.exe.
+    const binary = writeBinary("vibe.exe", "WIN-BINARY-BYTES");
+
+    const dest = await stagePlatformPackage(
+      { platform: "win32", arch: "x64", binary },
+      { root },
+    );
+
+    expect(dest).toBe(join(root, "packages", "vibe-win32-x64", "bin", "vibe.exe"));
+    expect(readFileSync(dest, "utf-8")).toBe("WIN-BINARY-BYTES");
   });
 
   it("warns but still stages the binary when THIRD-PARTY-LICENSES.md is absent", async () => {

@@ -35,7 +35,15 @@ pub fn supports_directory() -> bool {
     false
 }
 
+/// Platform name. Windows has no native clone support, but callers still need to
+/// distinguish it for non-clone behavior such as robocopy and Recycle Bin.
+#[cfg(target_os = "windows")]
+pub fn get_platform() -> &'static str {
+    "windows"
+}
+
 /// Platform name — `"unsupported"` since native clone is not available here.
+#[cfg(not(target_os = "windows"))]
 pub fn get_platform() -> &'static str {
     "unsupported"
 }

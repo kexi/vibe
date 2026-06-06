@@ -79,8 +79,17 @@ impl RemoveResult {
     }
 }
 
-/// Display path for the system Trash returned to callers (TS parity).
+/// Display path for the macOS system Trash returned to callers.
 pub const SYSTEM_TRASH_DISPLAY_PATH: &str = "~/.Trash";
+
+fn system_trash_display_path(native: &impl NativeClone) -> &'static str {
+    match native.get_platform() {
+        "darwin" => SYSTEM_TRASH_DISPLAY_PATH,
+        "linux" => "~/.local/share/Trash",
+        "windows" => "Recycle Bin",
+        _ => "system trash",
+    }
+}
 
 /// Whether fast remove is supported on this platform (always true; kept for API
 /// stability, matching the TS).
@@ -95,29 +104,37 @@ const NOHUP_RM_SCRIPT: &str = r#"nohup rm -rf "$1" >/dev/null 2>&1 &"#;
 
 /// Build the argv for a background delete of `path` (exposed for testing the
 /// EXACT argv shape — the `$1` positional, never an interpolated path).
+///
+/// Why `#[cfg]` and not a runtime `if cfg!(windows)`: the Unix branch references
+/// `NOHUP_RM_SCRIPT`, which is itself `#[cfg(not(windows))]`. A `cfg!()` `if`
+/// compiles BOTH arms on every target, so on Windows the dead Unix arm would
+/// fail to resolve the (absent) constant (E0425). Attribute-gating the two impls
+/// removes the non-target arm at compile time instead.
+#[cfg(windows)]
 pub fn background_delete_argv(path: &str) -> Vec<String> {
-    if cfg!(windows) {
-        // `path` is passed as its OWN argv element to `cmd /c rmdir`, not spliced
-        // into a shell command string, so it is never re-parsed by a shell — no
-        // fixed-script `$1`-style wrapper is needed here (unlike the Unix branch).
-        vec![
-            "cmd".into(),
-            "/c".into(),
-            "rmdir".into(),
-            "/s".into(),
-            "/q".into(),
-            path.into(),
-        ]
-    } else {
-        // sh -c '<fixed script>' _ <path>  — `_` is $0, `<path>` is $1.
-        vec![
-            "sh".into(),
-            "-c".into(),
-            NOHUP_RM_SCRIPT.into(),
-            "_".into(),
-            path.into(),
-        ]
-    }
+    // `path` is passed as its OWN argv element to `cmd /c rmdir`, not spliced
+    // into a shell command string, so it is never re-parsed by a shell — no
+    // fixed-script `$1`-style wrapper is needed here (unlike the Unix branch).
+    vec![
+        "cmd".into(),
+        "/c".into(),
+        "rmdir".into(),
+        "/s".into(),
+        "/q".into(),
+        path.into(),
+    ]
+}
+
+#[cfg(not(windows))]
+pub fn background_delete_argv(path: &str) -> Vec<String> {
+    // sh -c '<fixed script>' _ <path>  — `_` is $0, `<path>` is $1.
+    vec![
+        "sh".into(),
+        "-c".into(),
+        NOHUP_RM_SCRIPT.into(),
+        "_".into(),
+        path.into(),
+    ]
 }
 
 /// Spawn the background delete for `path` using the fixed-script argv.
@@ -145,20 +162,20 @@ fn trash_name(clock: &impl Clock, random: &impl RandomSource) -> String {
 
 /// Move `target` to system trash, returning whether it succeeded.
 ///
-/// Tries native trash first (vibe-native); on macOS, if native fails, falls back
-/// to osascript Finder delete. On Linux/other, a native failure returns false so
-/// the caller uses the `/tmp` fallback.
+/// Tries system trash first (vibe-native/trash crate). This is intentionally
+/// independent of native CoW clone availability: Windows has no native clone,
+/// but the trash crate can still move items to the Recycle Bin. On macOS, if
+/// native trash fails, falls back to osascript Finder delete. On other failures,
+/// the caller uses the temp-dir fallback.
 fn move_to_system_trash(
     io: &impl Io,
     native: &impl NativeClone,
     target: &str,
     opts: OutputOptions,
 ) -> bool {
-    if native.is_available() {
-        match native.move_to_trash(Path::new(target)) {
-            Ok(()) => return true,
-            Err(e) => verbose_log(io, &format!("Native trash failed: {e}"), opts),
-        }
+    match native.move_to_trash(Path::new(target)) {
+        Ok(()) => return true,
+        Err(e) => verbose_log(io, &format!("Native trash failed: {e}"), opts),
     }
 
     if native.get_platform() == "darwin" {
@@ -207,7 +224,7 @@ pub fn fast_remove_directory(
 
     // 1. System trash.
     if move_to_system_trash(io, native, target, opts) {
-        return RemoveResult::ok(Some(SYSTEM_TRASH_DISPLAY_PATH.to_string()));
+        return RemoveResult::ok(Some(system_trash_display_path(native).to_string()));
     }
 
     // 2. Rename into the system temp dir + background delete.
@@ -354,6 +371,23 @@ mod tests {
         assert!(!argv[2].contains("rm -rf /"));
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn background_delete_passes_path_as_own_argv_element_on_windows() {
+        let path = r"C:\Temp\.vibe-trash-1-abcd & del /q /s C:\"; // hostile path
+        let argv = background_delete_argv(path);
+        // `cmd /c rmdir /s /q <path>` — the path is the LAST, separate element so
+        // cmd never re-parses it as part of the command string (no `&` chaining).
+        assert_eq!(argv[0], "cmd");
+        assert_eq!(argv[1], "/c");
+        assert_eq!(argv[2], "rmdir");
+        assert_eq!(argv[3], "/s");
+        assert_eq!(argv[4], "/q");
+        assert_eq!(argv[5], path); // verbatim, not spliced into any fixed arg.
+                                   // The hostile tail never appears merged into an earlier argv element.
+        assert!(!argv[2].contains("del"));
+    }
+
     #[test]
     fn native_trash_used_when_available() {
         let fx = Fixture::new();
@@ -374,8 +408,33 @@ mod tests {
             OutputOptions::default(),
         );
         assert!(res.success);
-        assert_eq!(res.trashed_path.as_deref(), Some(SYSTEM_TRASH_DISPLAY_PATH));
+        assert_eq!(res.trashed_path.as_deref(), Some("~/.local/share/Trash"));
         // It went through the native trash, not the temp-rename + spawn path.
+        assert_eq!(native.trash_calls.borrow().len(), 1);
+        assert!(spawner.spawns.borrow().is_empty());
+    }
+
+    #[test]
+    fn windows_uses_recycle_bin_even_without_native_clone() {
+        let fx = Fixture::new();
+        let target = fx.mkdir("wt");
+        let io = FakeIo::new();
+        let native = FakeNative::windows(); // clone unavailable, trash available.
+        let spawner = FakeBackgroundSpawner::new();
+        let clock = FakeClock::new(1000, lt());
+        let random = FakeRandom::fixed("abcd1234");
+
+        let res = fast_remove_directory(
+            &io,
+            &native,
+            &spawner,
+            &clock,
+            &random,
+            target.to_str().unwrap(),
+            OutputOptions::default(),
+        );
+        assert!(res.success);
+        assert_eq!(res.trashed_path.as_deref(), Some("Recycle Bin"));
         assert_eq!(native.trash_calls.borrow().len(), 1);
         assert!(spawner.spawns.borrow().is_empty());
     }
@@ -414,6 +473,13 @@ mod tests {
             assert_eq!(argv[2], r#"nohup rm -rf "$1" >/dev/null 2>&1 &"#);
             // The trash name carries the injected clock + token.
             assert!(argv[4].contains(".vibe-trash-42-deadbeef"));
+        }
+        #[cfg(windows)]
+        {
+            assert_eq!(argv[0], "cmd");
+            assert_eq!(argv[2], "rmdir");
+            // The trash name (last argv element) carries the injected clock + token.
+            assert!(argv[5].contains(".vibe-trash-42-deadbeef"));
         }
         // The original target was moved away.
         assert!(!target.exists());
