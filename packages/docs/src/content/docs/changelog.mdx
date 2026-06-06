@@ -5,6 +5,16 @@ description: Version history and release notes for vibe
 
 All notable changes to vibe are documented here.
 
+## v2.0.0
+
+**Released:** 2026-06-06
+
+### Changed
+
+- vibe is now a standalone Rust binary instead of a Node.js/Bun application. The npm package (`@kexi/vibe`) ships a thin launcher shim that runs the prebuilt binary for your platform, pulled in as a per-platform `optionalDependency`. All commands, flags, output, and the SHA-256 trust model are unchanged — your existing `eval "$(vibe start ...)"` setup and `.vibe.toml` files keep working exactly as before. This is a major version bump to mark the runtime and distribution overhaul, not because of any change to CLI behavior.
+
+---
+
 ## v1.8.1
 
 **Released:** 2026-06-02

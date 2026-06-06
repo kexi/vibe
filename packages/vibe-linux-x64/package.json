@@ -1,6 +1,6 @@
 {
   "name": "@kexi/vibe-linux-x64",
-  "version": "1.8.1",
+  "version": "2.0.0",
   "description": "Linux x64 binary for the vibe CLI",
   "os": [
     "linux"
