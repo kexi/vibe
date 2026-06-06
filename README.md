@@ -96,7 +96,7 @@ vibe start feat/new-feature --base origin/develop --track
 
 - **macOS**: Items are moved to the system Trash via Finder (can be recovered if needed)
 - **Linux**: Items are moved to XDG Trash (recoverable from file manager)
-- **Windows**: Items are moved to a temporary directory and deleted in the background
+- **Windows**: Items are moved to the Recycle Bin (can be recovered if needed)
 
 This approach allows `vibe clean` to complete instantly regardless of worktree size.
 

@@ -69,10 +69,9 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact: vibe-darwin-arm64
-          # Windows is deferred, matching release.yml: the shipped binary is now
-          # Rust and the Windows native target is not built in this phase. Beta
-          # must ship the SAME cargo/Rust binary as stable, so the old
-          # bun-compiled vibe-windows-x64.exe entry is intentionally dropped.
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: vibe-win32-x64
 
     runs-on: ${{ matrix.os }}
 
@@ -107,7 +106,17 @@ jobs:
 
       - name: Stage artifact
         shell: bash
-        run: cp "rust/target/${{ matrix.target }}/release/vibe" "${{ matrix.artifact }}"
+        env:
+          TARGET: ${{ matrix.target }}
+          ARTIFACT: ${{ matrix.artifact }}
+        run: |
+          # cargo emits vibe.exe on Windows; keep the release asset extensionless
+          # for parity with stable release.yml and the npm staging script.
+          SRC="rust/target/${TARGET}/release/vibe"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            SRC="${SRC}.exe"
+          fi
+          cp "$SRC" "$ARTIFACT"
 
       # Launch the binary so an inability to start fails the beta release.
       - name: Smoke test release binary
@@ -116,14 +125,20 @@ jobs:
           BIN: ${{ matrix.artifact }}
           TARGET: ${{ matrix.target }}
         run: |
-          chmod +x "$BIN"
+          RUN="$BIN"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp "$BIN" "${BIN}.exe"
+            RUN="${BIN}.exe"
+          else
+            chmod +x "$BIN"
+          fi
           # x86_64-apple-darwin is cross-built on the arm64 macos-latest runner;
           # running it needs Rosetta 2. Treat a Rosetta absence as a skip
           # (runner-capability gap, not a binary defect); any other launch
           # failure is a real regression.
           if [ "$TARGET" = "x86_64-apple-darwin" ] && [ "$(uname -m)" = "arm64" ]; then
-            if ! out=$(./"$BIN" --version 2>&1); then
-              echo "::warning::skipping smoke test for $BIN: x86_64 binary did not run on this arm64 runner (Rosetta 2 unavailable)"
+            if ! out=$(./"$RUN" --version 2>&1); then
+              echo "::warning::skipping smoke test for $RUN: x86_64 binary did not run on this arm64 runner (Rosetta 2 unavailable)"
               echo "$out"
               exit 0
             fi
@@ -131,7 +146,7 @@ jobs:
             echo "OK: binary launches (via Rosetta)"
             exit 0
           fi
-          out=$(./"$BIN" --version 2>&1)
+          out=$(./"$RUN" --version 2>&1)
           echo "$out"
           echo "OK: binary launches"
 

@@ -79,8 +79,17 @@ impl RemoveResult {
     }
 }
 
-/// Display path for the system Trash returned to callers (TS parity).
+/// Display path for the macOS system Trash returned to callers.
 pub const SYSTEM_TRASH_DISPLAY_PATH: &str = "~/.Trash";
+
+fn system_trash_display_path(native: &impl NativeClone) -> &'static str {
+    match native.get_platform() {
+        "darwin" => SYSTEM_TRASH_DISPLAY_PATH,
+        "linux" => "~/.local/share/Trash",
+        "windows" => "Recycle Bin",
+        _ => "system trash",
+    }
+}
 
 /// Whether fast remove is supported on this platform (always true; kept for API
 /// stability, matching the TS).
@@ -153,20 +162,20 @@ fn trash_name(clock: &impl Clock, random: &impl RandomSource) -> String {
 
 /// Move `target` to system trash, returning whether it succeeded.
 ///
-/// Tries native trash first (vibe-native); on macOS, if native fails, falls back
-/// to osascript Finder delete. On Linux/other, a native failure returns false so
-/// the caller uses the `/tmp` fallback.
+/// Tries system trash first (vibe-native/trash crate). This is intentionally
+/// independent of native CoW clone availability: Windows has no native clone,
+/// but the trash crate can still move items to the Recycle Bin. On macOS, if
+/// native trash fails, falls back to osascript Finder delete. On other failures,
+/// the caller uses the temp-dir fallback.
 fn move_to_system_trash(
     io: &impl Io,
     native: &impl NativeClone,
     target: &str,
     opts: OutputOptions,
 ) -> bool {
-    if native.is_available() {
-        match native.move_to_trash(Path::new(target)) {
-            Ok(()) => return true,
-            Err(e) => verbose_log(io, &format!("Native trash failed: {e}"), opts),
-        }
+    match native.move_to_trash(Path::new(target)) {
+        Ok(()) => return true,
+        Err(e) => verbose_log(io, &format!("Native trash failed: {e}"), opts),
     }
 
     if native.get_platform() == "darwin" {
@@ -215,7 +224,7 @@ pub fn fast_remove_directory(
 
     // 1. System trash.
     if move_to_system_trash(io, native, target, opts) {
-        return RemoveResult::ok(Some(SYSTEM_TRASH_DISPLAY_PATH.to_string()));
+        return RemoveResult::ok(Some(system_trash_display_path(native).to_string()));
     }
 
     // 2. Rename into the system temp dir + background delete.
@@ -399,8 +408,33 @@ mod tests {
             OutputOptions::default(),
         );
         assert!(res.success);
-        assert_eq!(res.trashed_path.as_deref(), Some(SYSTEM_TRASH_DISPLAY_PATH));
+        assert_eq!(res.trashed_path.as_deref(), Some("~/.local/share/Trash"));
         // It went through the native trash, not the temp-rename + spawn path.
+        assert_eq!(native.trash_calls.borrow().len(), 1);
+        assert!(spawner.spawns.borrow().is_empty());
+    }
+
+    #[test]
+    fn windows_uses_recycle_bin_even_without_native_clone() {
+        let fx = Fixture::new();
+        let target = fx.mkdir("wt");
+        let io = FakeIo::new();
+        let native = FakeNative::windows(); // clone unavailable, trash available.
+        let spawner = FakeBackgroundSpawner::new();
+        let clock = FakeClock::new(1000, lt());
+        let random = FakeRandom::fixed("abcd1234");
+
+        let res = fast_remove_directory(
+            &io,
+            &native,
+            &spawner,
+            &clock,
+            &random,
+            target.to_str().unwrap(),
+            OutputOptions::default(),
+        );
+        assert!(res.success);
+        assert_eq!(res.trashed_path.as_deref(), Some("Recycle Bin"));
         assert_eq!(native.trash_calls.borrow().len(), 1);
         assert!(spawner.spawns.borrow().is_empty());
     }
