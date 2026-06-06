@@ -255,6 +255,14 @@ jobs:
         # optionalDependencies resolution fails on the not-yet-published platform
         # packages — adding noise without unique coverage.
         pm: [npm, pnpm]
+        exclude:
+          # `pnpm add` of the local tarballs is reproducibly SIGKILLed (exit 137)
+          # on the macOS runner — a runner/pnpm environment limit, not a shim
+          # bug. pnpm's .pnpm symlink-farm layout is OS-independent and is already
+          # covered by the ubuntu pnpm leg; macOS still runs npm (hoisted) to
+          # cover the OS difference.
+          - os: macos-latest
+            pm: pnpm
         include:
           # Host platform package + node arch for each runner.
           - os: ubuntu-latest
