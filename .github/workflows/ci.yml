@@ -158,11 +158,13 @@ jobs:
           sudo dpkg -i "$DEB"
           installed=$(command -v vibe)
           echo "installed vibe at: $installed"
-          out=$(vibe --version)
+          # `vibe --version` writes the banner to stderr (stdout is reserved for
+          # the shell-eval `cd` contract), so capture both streams.
+          out=$(vibe --version 2>&1)
           echo "vibe --version => $out"
-          # Exact-match the version token (output is `vibe <version>[+commit]`),
-          # so e.g. 1.8.1 does not spuriously match a 1.8.10 binary.
-          printed=$(printf '%s\n' "$out" | awk '{print $2}')
+          # Exact-match the version on the `vibe <version>[+commit]` line, so e.g.
+          # 1.8.1 does not spuriously match a 1.8.10 binary.
+          printed=$(printf '%s\n' "$out" | awk '/^vibe /{print $2; exit}')
           if [ "$printed" != "$VERSION" ] && [ "${printed%%+*}" != "$VERSION" ]; then
             echo "version mismatch: expected $VERSION, got $printed" >&2
             exit 1
@@ -322,11 +324,13 @@ jobs:
             yarn) corepack enable && corepack prepare yarn@1.22.22 --activate
                   yarn add "file:$SHIM" "file:$PLAT" ;;
           esac
-          out=$(./node_modules/.bin/vibe --version)
+          # `vibe --version` writes the banner to stderr (stdout is reserved for
+          # the shell-eval `cd` contract), so capture both streams.
+          out=$(./node_modules/.bin/vibe --version 2>&1)
           echo "vibe --version => $out"
-          # Exact-match the version token (output is `vibe <version>[+commit]`),
-          # so e.g. 1.8.1 does not spuriously match a 1.8.10 binary.
-          printed=$(printf '%s\n' "$out" | awk '{print $2}')
+          # Exact-match the version on the `vibe <version>[+commit]` line, so e.g.
+          # 1.8.1 does not spuriously match a 1.8.10 binary.
+          printed=$(printf '%s\n' "$out" | awk '/^vibe /{print $2; exit}')
           if [ "$printed" != "$VERSION" ] && [ "${printed%%+*}" != "$VERSION" ]; then
             echo "version mismatch: expected $VERSION, got $printed" >&2
             exit 1
