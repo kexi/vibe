@@ -203,12 +203,14 @@ Use the Edit tool to update the `"version"` field in the root `package.json`:
 bun run scripts/sync-version.ts
 ```
 
-Sync targets:
-
-- `packages/npm/package.json`
-- `packages/core/package.json`
-- `packages/native/package.json`
-- `jsr.json`
+The script is the single source of truth for which manifests get synced — do not
+maintain a duplicate list here. As of the Rust rewrite it propagates the root
+version to five npm manifests (`packages/npm/package.json` and the four
+`packages/vibe-{linux,darwin}-{x64,arm64}/package.json`, including `@kexi/vibe`'s
+per-platform `optionalDependency` pins) and three Cargo crates
+(`rust/crates/{vibe,vibe-core,vibe-test-support}/Cargo.toml`). The `vibe-native`
+crate is intentionally excluded — it carries an independent version. Bumping a
+Cargo version also touches `rust/Cargo.lock`, so expect that file in the diff too.
 
 ### 3.4 Verify Sync
 
@@ -276,8 +278,19 @@ Examples of changes to include:
 
 ### 4.1 Stage Changes
 
+Stage the root `package.json`, everything `sync-version.ts` rewrote (the five npm
+manifests, the three Cargo crates, and `rust/Cargo.lock`), and both changelog
+files. Listing the exact set is brittle now that the sync targets live in the
+script; review `git status` first, then stage the release-related files:
+
 ```bash
-git add package.json packages/npm/package.json packages/core/package.json packages/native/package.json jsr.json packages/docs/src/content/docs/changelog.mdx
+git add package.json \
+  packages/npm/package.json \
+  packages/vibe-linux-x64/package.json packages/vibe-linux-arm64/package.json \
+  packages/vibe-darwin-x64/package.json packages/vibe-darwin-arm64/package.json \
+  rust/crates/vibe/Cargo.toml rust/crates/vibe-core/Cargo.toml rust/crates/vibe-test-support/Cargo.toml \
+  rust/Cargo.lock \
+  packages/docs/src/content/docs/changelog.mdx packages/docs/src/content/docs/ja/changelog.mdx
 ```
 
 ### 4.2 Create Commit
@@ -317,7 +330,7 @@ After merging this PR:
 1. Create a PR from `develop` to `main`
 2. Merge the `develop` → `main` PR
 3. Create a GitHub Release with tag `vX.Y.Z`
-4. CI will automatically publish to npm and JSR
+4. CI will automatically build the binaries and publish to npm
 EOF
 )"
 ```
@@ -356,7 +369,7 @@ gh pr create --base main --head develop --title "chore: merge develop into main 
 
 After merging this PR:
 1. Create a GitHub Release with tag `vX.Y.Z`
-2. CI will automatically publish to npm and JSR
+2. CI will automatically build the binaries and publish to npm
 EOF
 )"
 ```
@@ -597,8 +610,9 @@ git push origin --delete release/vX.Y.Z
 After PR merge, the following CI workflows run automatically:
 
 - `release.yml`: Binary build & release asset upload
-- `publish-npm.yml`: npm publish
-- `publish-jsr.yml`: JSR publish
+- `publish-npm.yml`: npm publish (the launcher shim + the four per-platform binary packages)
+
+JSR publishing was removed with the dead TypeScript distribution in Phase 6.
 
 ---
 
