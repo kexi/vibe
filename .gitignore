@@ -26,6 +26,10 @@ Thumbs.db
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 
+# Local agent state
+.agents/
+.codex/
+
 # Environment
 .env
 .env.local

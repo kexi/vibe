@@ -13,9 +13,10 @@ on:
       - ".github/workflows/nix.yml"
   # Also run on PRs so a stale pnpm hash or a native-crate change that breaks
   # the source build is caught before merge, not only on the post-merge push.
+  # Do not use a pull_request paths filter here: branch protection requires the
+  # nix-build check, and a workflow-level skip leaves that required check absent.
   pull_request:
     branches: [main, develop]
-    paths: *nix-paths
 
 jobs:
   # G-8: build the source derivation on BOTH Linux and macOS. The dev only
@@ -36,18 +37,48 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+
+      - name: Detect Nix-relevant changes
+        id: nix_changes
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed_files=$(git diff --name-only \
+            "${{ github.event.pull_request.base.sha }}" \
+            "$GITHUB_SHA")
+
+          if printf '%s\n' "$changed_files" | grep -Eq '^((flake\.nix|flake\.lock|package\.json|\.github/workflows/nix\.yml)$|rust/)'; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip Nix build
+        if: steps.nix_changes.outputs.should_run == 'false'
+        run: echo "No Nix-relevant changes; required check passes without running Nix."
 
       - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+        if: steps.nix_changes.outputs.should_run == 'true'
 
       - uses: DeterminateSystems/magic-nix-cache-action@908b263ff629f4cc17666315b7fd3ec127c6244d # v14
+        if: steps.nix_changes.outputs.should_run == 'true'
 
       - name: Check flake
+        if: steps.nix_changes.outputs.should_run == 'true'
         run: nix flake check
 
       - name: Build from source
+        if: steps.nix_changes.outputs.should_run == 'true'
         run: nix build .#fromSource
 
       - name: Smoke test
+        if: steps.nix_changes.outputs.should_run == 'true'
         run: ./result/bin/vibe --help
 
       # ubuntu-latest is FHS, so `--help` succeeds even if the binary kept a
@@ -56,7 +87,7 @@ jobs:
       # silently. Linux-only: macOS Mach-O binaries have no ELF interpreter and
       # patchelf does not apply.
       - name: Assert Nix-store ELF interpreter
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && steps.nix_changes.outputs.should_run == 'true'
         run: |
           interp=$(nix run nixpkgs#patchelf -- --print-interpreter result/bin/vibe)
           echo "interpreter: $interp"
