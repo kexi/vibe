@@ -48,6 +48,7 @@ pnpm run fmt:check     # Check TS-script formatting (oxfmt)
 pnpm run lint          # Run linter (oxlint) on the TS scripts
 pnpm run check:rust    # Rust: cargo fmt --check + clippy -D warnings + workspace tests
 pnpm run test:npm      # npm launcher-shim + release-script tests
+pnpm run test:e2e      # Build and run E2E tests against the Rust debug binary
 pnpm run check:docs    # Docs package checks
 pnpm run check:video   # Video package typecheck
 
@@ -70,8 +71,9 @@ This runs:
 2. Linter (`pnpm run lint`)
 3. Rust checks (`pnpm run check:rust`)
 4. npm shim / release-script tests (`pnpm run test:npm`)
-5. Docs checks (`pnpm run check:docs`)
-6. Video typecheck (`pnpm run check:video`)
+5. E2E tests (`pnpm run test:e2e`)
+6. Docs checks (`pnpm run check:docs`)
+7. Video typecheck (`pnpm run check:video`)
 
 ## Release Process
 
