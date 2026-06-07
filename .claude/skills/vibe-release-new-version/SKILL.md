@@ -209,16 +209,26 @@ version to five npm manifests (`packages/npm/package.json` and the four
 `packages/vibe-{linux,darwin}-{x64,arm64}/package.json`, including `@kexi/vibe`'s
 per-platform `optionalDependency` pins) and three Cargo crates
 (`rust/crates/{vibe,vibe-core,vibe-test-support}/Cargo.toml`). The `vibe-native`
-crate is intentionally excluded — it carries an independent version. Bumping a
-Cargo version also touches `rust/Cargo.lock`, so expect that file in the diff too.
+crate is intentionally excluded — it carries an independent version. The script
+does not rewrite `rust/Cargo.lock`; refresh it explicitly in the next step.
 
-### 3.4 Verify Sync
+### 3.4 Refresh Cargo.lock
+
+If any Cargo manifest target changed, refresh the lockfile metadata:
+
+```bash
+cargo metadata --manifest-path rust/Cargo.toml --format-version 1 >/dev/null
+```
+
+This updates the workspace package versions recorded in `rust/Cargo.lock`.
+
+### 3.5 Verify Sync
 
 ```bash
 bun run scripts/sync-version.ts --check
 ```
 
-### 3.5 Update Changelog
+### 3.6 Update Changelog
 
 Update the following file:
 
@@ -279,9 +289,9 @@ Examples of changes to include:
 ### 4.1 Stage Changes
 
 Stage the root `package.json`, everything `sync-version.ts` rewrote (the five npm
-manifests, the three Cargo crates, and `rust/Cargo.lock`), and both changelog
-files. Listing the exact set is brittle now that the sync targets live in the
-script; review `git status` first, then stage the release-related files:
+manifests and the three Cargo crates), the lockfile refreshed by Cargo, and both
+changelog files. Listing the exact set is brittle now that the sync targets live
+in the script; review `git status` first, then stage the release-related files:
 
 ```bash
 git add package.json \
