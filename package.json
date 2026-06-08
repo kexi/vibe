@@ -28,11 +28,11 @@
     "get-version": "node -e \"console.log(JSON.parse(require('fs').readFileSync('package.json')).version)\"",
     "install:all": "pnpm install",
     "test:npm": "pnpm -C packages/npm test",
-    "test:e2e": "pnpm -C packages/e2e test",
+    "test:e2e": "cargo build --manifest-path rust/Cargo.toml -p vibe && pnpm -C packages/e2e test",
     "clean": "pnpm -r exec rm -rf node_modules dist",
     "check:docs": "pnpm -C packages/docs lint && pnpm -C packages/docs format && pnpm -C packages/docs check",
     "check:video": "pnpm -C packages/video typecheck",
-    "check:all": "pnpm run fmt:check && pnpm run lint && pnpm run check:rust && pnpm run test:npm && pnpm run check:docs && pnpm run check:video"
+    "check:all": "pnpm run fmt:check && pnpm run lint && pnpm run check:rust && pnpm run test:npm && pnpm run test:e2e && pnpm run check:docs && pnpm run check:video"
   },
   "dependencies": {
     "smol-toml": "^1.6.0"
