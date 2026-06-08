@@ -13,12 +13,25 @@ mod version;
 
 use clap::Parser;
 use cli::{Cli, Command};
+use std::io::Write;
 use vibe_core::commands::Outcome;
 use vibe_core::output::OutputOptions;
 use vibe_core::{format_error_message, Io, RealIo, VibeError};
 
 fn main() {
-    let cli = Cli::parse();
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(error) => {
+            let exit_code = error.exit_code();
+            // The shell wrapper evals stdout, so clap help must use stderr just
+            // like the TypeScript CLI did.
+            let _ = write!(std::io::stderr(), "{error}");
+            if error.kind() == clap::error::ErrorKind::DisplayHelp {
+                eprintln!("{}#readme", version::REPOSITORY);
+            }
+            std::process::exit(exit_code);
+        }
+    };
 
     // Custom version output, matching the TS BUILD_INFO block (stderr, exit 0).
     if cli.version {
@@ -92,6 +105,7 @@ fn dispatch(command: Command, opts: OutputOptions) -> Result<Outcome, VibeError>
         }
         Command::Start(args) => commands::start(
             &args.branch_name.unwrap_or_default(),
+            args.force,
             args.no_hooks,
             args.no_copy,
             args.dry_run,
@@ -131,7 +145,7 @@ fn dispatch(command: Command, opts: OutputOptions) -> Result<Outcome, VibeError>
 fn print_help() {
     use clap::CommandFactory;
     let mut cmd = Cli::command();
-    let _ = cmd.print_help();
+    let _ = cmd.write_help(&mut std::io::stderr());
     eprintln!();
     eprintln!("{}#readme", version::REPOSITORY);
 }

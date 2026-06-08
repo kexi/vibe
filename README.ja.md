@@ -120,6 +120,7 @@ vibe start feat/new-feature --base origin/develop --track
 | `--no-hooks`      | pre-startおよびpost-startフックをスキップ   |
 | `--no-copy`       | ファイルとディレクトリのコピーをスキップ    |
 | `-n`, `--dry-run` | 変更を加えずに実行内容を表示                |
+| `-f`, `--force`   | 確認をスキップ（既存Worktreeへ移動、または競合Worktreeを上書き） |
 
 #### Cleanオプション
 

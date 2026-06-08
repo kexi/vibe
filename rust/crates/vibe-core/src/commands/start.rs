@@ -50,6 +50,9 @@ pub struct StartFlags {
     /// is a leading-dash base value allowed.
     pub base_from_equals: bool,
     pub track: bool,
+    /// Skip confirmation prompts: navigate to an already-used branch, and
+    /// overwrite a different-branch worktree at the target path.
+    pub force: bool,
     /// Claude-Code WorktreeCreate hook mode (stdin name → stdout path).
     pub worktree_hook: bool,
 }
@@ -134,8 +137,7 @@ where
                 "Branch is in use but worktree path is unknown".to_string(),
             ));
         };
-        if let Some(outcome) =
-            handle_existing_branch_worktree(deps, branch_name, &existing, flags.dry_run)?
+        if let Some(outcome) = handle_existing_branch_worktree(deps, branch_name, &existing, flags)?
         {
             return Ok(outcome);
         }
@@ -296,7 +298,7 @@ fn handle_existing_branch_worktree<I, G, R, S, P, Sr>(
     deps: &StartDeps<I, G, R, S, P, Sr>,
     branch_name: &str,
     existing: &str,
-    dry_run: bool,
+    flags: &StartFlags,
 ) -> Result<Option<Outcome>>
 where
     I: Io,
@@ -306,13 +308,17 @@ where
     P: Prompt,
     Sr: StdinReader,
 {
-    if dry_run {
+    if flags.dry_run {
         log_dry_run(
             deps.io,
             &format!("Branch '{branch_name}' is already used in worktree '{existing}'"),
         );
         log_dry_run(deps.io, &format!("Would navigate to: {existing}"));
         return Ok(Some(Outcome::none()));
+    }
+
+    if flags.force {
+        return Ok(Some(Outcome::cd(existing.to_string())));
     }
 
     let navigate = deps.prompt.confirm(&format!(
@@ -421,6 +427,11 @@ where
         );
         log_dry_run(deps.io, "Would prompt to Overwrite/Reuse/Cancel");
         return Ok(ConflictDecision::Done(Outcome::none()));
+    }
+
+    if flags.force {
+        remove_worktree(deps.git, worktree_path, true)?;
+        return Ok(ConflictDecision::Continue);
     }
 
     let choice = deps.prompt.select(

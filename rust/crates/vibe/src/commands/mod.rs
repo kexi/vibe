@@ -191,6 +191,7 @@ fn with_start_deps<T>(
 #[allow(clippy::too_many_arguments)]
 pub fn start(
     branch_name: &str,
+    force: bool,
     no_hooks: bool,
     no_copy: bool,
     dry_run: bool,
@@ -210,6 +211,7 @@ pub fn start(
         base,
         base_from_equals,
         track,
+        force,
         worktree_hook,
     };
     with_start_deps(opts, |deps| start_command(deps, branch_name, &flags, opts))
@@ -232,6 +234,7 @@ pub fn scratch(
         base,
         base_from_equals,
         track,
+        force: false,
         worktree_hook: false,
     };
     let clock = RealClock;

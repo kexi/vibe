@@ -120,6 +120,7 @@ This approach allows `vibe clean` to complete instantly regardless of worktree s
 | `--no-hooks`      | Skip pre-start and post-start hooks                |
 | `--no-copy`       | Skip copying files and directories                 |
 | `-n`, `--dry-run` | Show what would be executed without making changes |
+| `-f`, `--force`   | Skip prompts: navigate to existing branch worktree or overwrite conflicting worktree |
 
 #### Clean Options
 

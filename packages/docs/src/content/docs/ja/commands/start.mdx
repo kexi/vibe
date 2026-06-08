@@ -25,6 +25,7 @@ vibe start <branch> [options]
 | `--no-hooks`                  | pre-startとpost-startフックをスキップ     | <Badge text="v0.5.0+" />  |
 | `--no-copy`                   | ファイル・ディレクトリのコピーをスキップ  | <Badge text="v0.5.0+" />  |
 | `-n`, `--dry-run`             | 実行せずに操作内容をプレビュー            | <Badge text="v0.8.0+" />  |
+| `-f`, `--force`               | 確認プロンプトをスキップ                  |                           |
 | `-V`, `--verbose`             | 詳細な出力を表示                          | <Badge text="v0.8.0+" />  |
 | `-q`, `--quiet`               | 不要な出力を抑制                          | <Badge text="v0.8.0+" />  |
 | `--claude-code-worktree-hook` | Claude Code WorktreeCreateフックモード    | <Badge text="v0.23.0+" /> |
@@ -89,6 +90,8 @@ $ vibe start feat/new-feature
 - **上書き**: 削除して再作成
 - **再利用**: 既存ディレクトリをそのまま使用
 - **キャンセル**: 操作を中止
+
+`--force`を指定すると、これらの確認プロンプトをスキップします。ブランチが他のWorktreeで既に使用されている場合は、そのWorktreeへ移動します。対象ディレクトリが異なるブランチのWorktreeの場合は、上書きして指定されたWorktreeを作成します。
 
 ### Worktreeの配置場所
 
