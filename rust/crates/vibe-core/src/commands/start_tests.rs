@@ -145,6 +145,16 @@ impl Prompt for ScriptPrompt {
     }
 }
 
+struct PanicPrompt;
+impl Prompt for PanicPrompt {
+    fn confirm(&self, message: &str) -> bool {
+        panic!("confirm prompt should not run: {message}");
+    }
+    fn select(&self, message: &str, _choices: &[String]) -> Result<usize> {
+        panic!("select prompt should not run: {message}");
+    }
+}
+
 struct Fakes {
     hooks: FakeHookRunner,
     exec: FakeCopyExecutor,
@@ -251,6 +261,38 @@ fn existing_branch_worktree_cancels_on_decline() {
         start_command(&d, "feat", &StartFlags::default(), OutputOptions::default()).unwrap();
     assert_eq!(outcome, Outcome::none());
     assert!(io.stderr_text().contains("Cancelled"));
+}
+
+#[test]
+fn existing_branch_force_navigates_without_prompt() {
+    let (_fx, io) = io_with_home();
+    let git = MockGit::new("/repo", &two_worktrees("/repo", "/wt/feat", "feat"));
+    let (r, s, p, sin, fk) = (
+        NoResolver,
+        NoScript,
+        PanicPrompt,
+        FakeStdin::none(),
+        Fakes::new(),
+    );
+    let d = StartDeps {
+        io: &io,
+        git: &git,
+        resolver: &r,
+        script_runner: &s,
+        prompt: &p,
+        stdin: &sin,
+        hook_runner: &fk.hooks,
+        executor: &fk.exec,
+        tracker: &fk.tracker,
+        version: V,
+    };
+    let flags = StartFlags {
+        force: true,
+        ..Default::default()
+    };
+    let outcome = start_command(&d, "feat", &flags, OutputOptions::default()).unwrap();
+    assert_eq!(outcome, Outcome::cd("/wt/feat"));
+    assert!(!git.calls_contain(&["worktree", "add"]));
 }
 
 #[test]
@@ -494,6 +536,39 @@ fn different_branch_overwrite_removes_and_creates() {
         start_command(&d, "feat", &StartFlags::default(), OutputOptions::default()).unwrap();
     assert_eq!(outcome, Outcome::cd("/home/u/repo-feat"));
     // Removed the old worktree (force, with `--`) then created the new one.
+    assert!(git.calls_contain(&["worktree", "remove", "--force", "--", "/home/u/repo-feat"]));
+    assert!(git.calls_contain(&["worktree", "add", "-b", "feat", "--", "/home/u/repo-feat"]));
+}
+
+#[test]
+fn different_branch_force_overwrites_without_prompt() {
+    let (_fx, io) = io_with_home();
+    let git = conflicting_git();
+    let (r, s, p, sin, fk) = (
+        NoResolver,
+        NoScript,
+        PanicPrompt,
+        FakeStdin::none(),
+        Fakes::new(),
+    );
+    let d = StartDeps {
+        io: &io,
+        git: &git,
+        resolver: &r,
+        script_runner: &s,
+        prompt: &p,
+        stdin: &sin,
+        hook_runner: &fk.hooks,
+        executor: &fk.exec,
+        tracker: &fk.tracker,
+        version: V,
+    };
+    let flags = StartFlags {
+        force: true,
+        ..Default::default()
+    };
+    let outcome = start_command(&d, "feat", &flags, OutputOptions::default()).unwrap();
+    assert_eq!(outcome, Outcome::cd("/home/u/repo-feat"));
     assert!(git.calls_contain(&["worktree", "remove", "--force", "--", "/home/u/repo-feat"]));
     assert!(git.calls_contain(&["worktree", "add", "-b", "feat", "--", "/home/u/repo-feat"]));
 }

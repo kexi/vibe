@@ -99,6 +99,43 @@ fn run_vibe_stdin(
     child.wait_with_output().expect("wait vibe")
 }
 
+#[test]
+fn help_writes_to_stderr_not_stdout() {
+    let home = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+
+    let out = run_vibe(tmp.path(), home.path(), &["--help"]);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert!(out.status.success(), "help should exit 0: {stderr:?}");
+    assert!(
+        stdout.is_empty(),
+        "help must not be eval'd from stdout: {stdout:?}"
+    );
+    assert!(stderr.contains("Usage: vibe"), "help missing from stderr");
+}
+
+#[test]
+fn bare_invocation_help_writes_to_stderr_not_stdout() {
+    let home = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+
+    let out = run_vibe(tmp.path(), home.path(), &[]);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert!(
+        out.status.success(),
+        "bare invocation should exit 0: {stderr:?}"
+    );
+    assert!(
+        stdout.is_empty(),
+        "bare help must not be eval'd from stdout: {stdout:?}"
+    );
+    assert!(stderr.contains("Usage: vibe"), "help missing from stderr");
+}
+
 /// A single main worktree at `<root>/main` (no secondary). Returns the
 /// canonicalized main path. Used by create-path cases (start / scratch / jump).
 fn setup_main_repo(root: &Path) -> PathBuf {

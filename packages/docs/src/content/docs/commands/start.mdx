@@ -25,6 +25,7 @@ vibe start <branch> [options]
 | `--no-hooks`                  | Skip pre-start and post-start hooks       | <Badge text="v0.5.0+" />  |
 | `--no-copy`                   | Skip file and directory copying           | <Badge text="v0.5.0+" />  |
 | `-n`, `--dry-run`             | Preview operations without executing      | <Badge text="v0.8.0+" />  |
+| `-f`, `--force`               | Skip confirmation prompts                 |                           |
 | `-V`, `--verbose`             | Show detailed output                      | <Badge text="v0.8.0+" />  |
 | `-q`, `--quiet`               | Suppress non-essential output             | <Badge text="v0.8.0+" />  |
 | `--claude-code-worktree-hook` | Claude Code WorktreeCreate hook mode      | <Badge text="v0.23.0+" /> |
@@ -89,6 +90,8 @@ You can choose from:
 - **Overwrite**: Delete and recreate the worktree
 - **Reuse**: Use the existing directory as-is
 - **Cancel**: Abort the operation
+
+With `--force`, vibe skips these prompts. If the branch is already used by another worktree, vibe navigates to that worktree. If the target directory is a worktree for a different branch, vibe overwrites it and creates the requested worktree.
 
 ### Worktree Location
 

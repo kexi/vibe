@@ -79,13 +79,6 @@ pub struct StartArgs {
     #[arg(short = 'n', long = "dry-run")]
     pub dry_run: bool,
     /// Skip confirmation prompts.
-    //
-    // The TS `vibe start` accepts `--force/-f`: `parseArgsOptions` is a single
-    // flat `node:util parseArgs` table shared by every subcommand, so
-    // `vibe start --force` parses without error there, and `completion-spec.ts`
-    // declares `--force/-f` for `start`. We mirror that surface here (it is
-    // wired into start's behavior in Phase 4); for now it just needs to exist so
-    // clap and the completion spec agree with the TS reality.
     #[arg(short = 'f', long)]
     pub force: bool,
     /// Base branch/commit for the new branch.
