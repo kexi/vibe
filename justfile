@@ -18,7 +18,7 @@ default:
 
 # --- Aggregate check ---
 
-# All checks required before opening a PR (fmt:check + lint + check:rust + test:npm + check:docs + check:video).
+# All checks required before opening a PR (fmt:check + lint + check:rust + test:npm + test:e2e + check:docs + check:video).
 check:
     pnpm run check:all
 
@@ -66,7 +66,7 @@ lint-fix:
 test-npm:
     pnpm run test:npm
 
-# E2E tests — drive the built binary; needs a prior `just build` (not part of `just check`).
+# E2E tests — build and drive the Rust debug binary.
 test-e2e:
     pnpm run test:e2e
 

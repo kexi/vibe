@@ -87,8 +87,9 @@ Code should follow SOLID principles:
 - Format check (TS scripts): `pnpm run fmt:check`
 - Rust checks (fmt + clippy + tests): `pnpm run check:rust`
 - npm shim / release-script tests: `pnpm run test:npm`
+- E2E tests: `pnpm run test:e2e`
 - Run all checks: `pnpm run check:all`
-  (fmt:check, lint, check:rust, test:npm, check:docs, check:video)
+  (fmt:check, lint, check:rust, test:npm, test:e2e, check:docs, check:video)
 - All checks must pass before committing
 
 ## Documentation
