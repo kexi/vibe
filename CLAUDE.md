@@ -10,9 +10,7 @@ alongside each — both work.
 
 ```bash
 # Run ALL checks (REQUIRED before creating PR):
-# fmt:check + lint (oxfmt/oxlint on scripts) + check:rust + test:npm + check:docs + check:video
-# NOTE: check:all does NOT run test:e2e (it needs a built binary); CI's e2e-test
-# job gates that. Run `just test-e2e` manually when touching command behavior.
+# fmt:check + lint (oxfmt/oxlint on scripts) + check:rust + test:npm + test:e2e + check:docs + check:video
 just check                   # = pnpm run check:all
 
 # Rust (the shipped binary) — fmt + clippy + workspace tests
@@ -27,7 +25,7 @@ just run -- <command>        # = cargo run --manifest-path rust/Cargo.toml -p vi
 # npm launcher-shim tests (shim resolution + the surviving release scripts)
 just test-npm                # = pnpm run test:npm
 
-# E2E tests (drive the built binary through node-pty)
+# E2E tests (build and drive the Rust debug binary through node-pty)
 just test-e2e                # = pnpm run test:e2e
 
 # Checks for docs / video packages only
