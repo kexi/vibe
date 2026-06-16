@@ -21,6 +21,10 @@ All notable changes to vibe are documented here.
 
 - Deno / JSR distribution (`deno install jsr:@kexi/vibe`) is no longer published. Install via npm, Homebrew, the `.deb` package, or a prebuilt binary instead.
 
+### Fixed
+
+- `vibe start --force` now honors the flag. Previously it was parsed but ignored; it now skips the confirmation prompts — navigating to an existing branch's worktree, or overwriting a conflicting worktree for a different branch.
+
 ---
 
 ## v1.8.1
