@@ -53,12 +53,6 @@ If tests fail, analyze the failures and suggest fixes.
 pnpm run check:docs
 ```
 
-### 6. Video Check
-
-```bash
-pnpm run check:video
-```
-
 ---
 
 ## Summary
@@ -75,7 +69,6 @@ After all checks complete, provide a summary:
 | Type Check      | ...    |
 | Tests           | ...    |
 | Docs            | ...    |
-| Video           | ...    |
 ```
 
 If all checks pass, confirm the project is ready for PR.

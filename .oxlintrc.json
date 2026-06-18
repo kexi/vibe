@@ -53,7 +53,6 @@
   "ignorePatterns": [
     "**/node_modules/**",
     "**/dist/**",
-    "packages/video/**",
     "packages/npm/**",
     "packages/e2e/**",
     "benchmarks/**"

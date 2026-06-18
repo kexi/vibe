@@ -50,7 +50,6 @@ pnpm run check:rust    # Rust: cargo fmt --check + clippy -D warnings + workspac
 pnpm run test:npm      # npm launcher-shim + release-script tests
 pnpm run test:e2e      # Build and run E2E tests against the Rust debug binary
 pnpm run check:docs    # Docs package checks
-pnpm run check:video   # Video package typecheck
 
 # Auto-fix formatting
 pnpm run fmt           # TS scripts (oxfmt)
@@ -73,7 +72,6 @@ This runs:
 4. npm shim / release-script tests (`pnpm run test:npm`)
 5. E2E tests (`pnpm run test:e2e`)
 6. Docs checks (`pnpm run check:docs`)
-7. Video typecheck (`pnpm run check:video`)
 
 ## Release Process
 

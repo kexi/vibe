@@ -2,7 +2,11 @@ import type { APIRoute, GetStaticPaths } from "astro";
 import { getCollection } from "astro:content";
 import satori from "satori";
 import { Resvg } from "@resvg/resvg-js";
-import type { ReactNode } from "react";
+
+// Derive the element type from satori's own signature instead of importing
+// ReactNode from "react": docs has no React runtime, and a direct "react" type
+// import would force an @types/react devDependency solely to type this one cast.
+type SatoriElement = Parameters<typeof satori>[0];
 
 const GOOGLE_FONTS_API_URL =
   "https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@700&display=swap";
@@ -159,7 +163,7 @@ export const GET: APIRoute<Props> = async ({ props }) => {
             },
           ],
         },
-      } as ReactNode,
+      } as SatoriElement,
       {
         width: 1200,
         height: 630,

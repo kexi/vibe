@@ -45,7 +45,6 @@ package-lock.json
 
 # Build output
 dist/
-packages/video/out/
 
 # Rust workspace build artifacts
 rust/target/
