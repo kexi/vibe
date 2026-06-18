@@ -10,7 +10,7 @@ alongside each — both work.
 
 ```bash
 # Run ALL checks (REQUIRED before creating PR):
-# fmt:check + lint (oxfmt/oxlint on scripts) + check:rust + test:npm + test:e2e + check:docs + check:video
+# fmt:check + lint (oxfmt/oxlint on scripts) + check:rust + test:npm + test:e2e + check:docs
 just check                   # = pnpm run check:all
 
 # Rust (the shipped binary) — fmt + clippy + workspace tests
@@ -28,9 +28,8 @@ just test-npm                # = pnpm run test:npm
 # E2E tests (build and drive the Rust debug binary through node-pty)
 just test-e2e                # = pnpm run test:e2e
 
-# Checks for docs / video packages only
+# Checks for docs package only
 just check-docs              # = pnpm run check:docs
-just check-video             # = pnpm run check:video
 ```
 
 ## Architecture

@@ -9,7 +9,6 @@
     "**/node_modules/**",
     "**/dist/**",
     "packages/docs/**",
-    "packages/video/**",
     "packages/npm/**",
     "packages/e2e/**",
     "**/*.json",

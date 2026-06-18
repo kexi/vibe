@@ -36,8 +36,7 @@ packages/
 ├── native/    # Rust N-API bindings (@kexi/vibe-native) — CoW clone, trash operations
 ├── npm/       # npm distribution wrapper
 ├── docs/      # Documentation (Astro)
-├── e2e/       # End-to-end tests (PTY-based CLI spawning)
-└── video/     # Video generation
+└── e2e/       # End-to-end tests (PTY-based CLI spawning)
 ```
 
 - Package manager: pnpm workspaces

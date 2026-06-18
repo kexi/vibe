@@ -18,7 +18,7 @@ default:
 
 # --- Aggregate check ---
 
-# All checks required before opening a PR (fmt:check + lint + check:rust + test:npm + test:e2e + check:docs + check:video).
+# All checks required before opening a PR (fmt:check + lint + check:rust + test:npm + test:e2e + check:docs).
 check:
     pnpm run check:all
 
@@ -41,10 +41,6 @@ check-rust:
 # Docs package checks only (lint + format + check).
 check-docs:
     pnpm run check:docs
-
-# Video package typecheck only.
-check-video:
-    pnpm run check:video
 
 # --- Format / lint (TS/JS via oxfmt/oxlint) ---
 
@@ -78,13 +74,7 @@ install:
 clean:
     pnpm run clean
 
-# --- Docs / video dev servers (per-package) ---
+# --- Docs dev server (per-package) ---
 
 docs-dev:
     pnpm -C packages/docs dev
-
-video:
-    pnpm -C packages/video start
-
-video-render:
-    pnpm -C packages/video render

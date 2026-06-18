@@ -88,7 +88,7 @@ Filter the JSON output to only report vulnerabilities for packages identified ab
 | Package Scope                                | Report Threshold   |
 | -------------------------------------------- | ------------------ |
 | Published (`packages/npm`, `core`, `native`) | MODERATE and above |
-| Private (`packages/docs`, `e2e`, `video`)    | HIGH and above     |
+| Private (`packages/docs`, `e2e`)             | HIGH and above     |
 | devDependencies                              | CRITICAL only      |
 
 Only report vulnerabilities for **changed dependencies** — pre-existing advisories are out of scope for PR review.
@@ -119,7 +119,6 @@ This reveals whether the flagged package is:
 | `packages/native` | Yes (npm)    | High       | Production deps must be fully compatible; native binding licenses matter |
 | `packages/docs`   | No (private) | Low        | Not distributed; informational only                                      |
 | `packages/e2e`    | No (private) | Low        | Test infrastructure; not distributed                                     |
-| `packages/video`  | No (private) | Low        | Demo content; not distributed                                            |
 
 ### Step 6: Check for External API Usage
 
@@ -147,7 +146,7 @@ If new external APIs are detected, remind the team to verify:
 | **Manual dependency addition** | `pnpm add <package>` in any workspace package                                          |
 | **Lock file changes**          | `pnpm-lock.yaml` diff shows new or changed packages                                    |
 | **New imports**                | Code now imports from a previously unused dependency                                   |
-| **Package visibility change**  | A private package becoming public (e.g., publishing `packages/video`)                  |
+| **Package visibility change**  | A private package becoming public (e.g., publishing `packages/docs`)                   |
 | **License audit request**      | Periodic full audit of all dependencies                                                |
 
 ---
