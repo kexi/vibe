@@ -11,8 +11,8 @@ on:
       - "rust/**"
       - "package.json"
       - ".github/workflows/nix.yml"
-  # Also run on PRs so a stale pnpm hash or a native-crate change that breaks
-  # the source build is caught before merge, not only on the post-merge push.
+  # Also run on PRs so a Rust-workspace change that breaks the source build is
+  # caught before merge, not only on the post-merge push.
   # Do not use a pull_request paths filter here: branch protection requires the
   # nix-build check, and a workflow-level skip leaves that required check absent.
   pull_request:

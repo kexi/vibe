@@ -24,7 +24,6 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.6",
-    "@types/react": "^18.3.18",
     "oxlint": "^1.67.0",
     "prettier": "^3.7.4",
     "prettier-plugin-astro": "^0.14.1",
