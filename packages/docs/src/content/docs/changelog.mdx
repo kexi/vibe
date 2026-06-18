@@ -7,7 +7,7 @@ All notable changes to vibe are documented here.
 
 ## v2.0.0
 
-**Released:** 2026-06-06
+**Released:** 2026-06-19
 
 ### Added
 
@@ -24,6 +24,9 @@ All notable changes to vibe are documented here.
 ### Fixed
 
 - `vibe start --force` now honors the flag. Previously it was parsed but ignored; it now skips the confirmation prompts — navigating to an existing branch's worktree, or overwriting a conflicting worktree for a different branch.
+- `vibe start --reuse` (and `vibe scratch --reuse`) now honors the flag. Previously it was parsed but ignored; it now auto-selects "reuse the existing worktree" when the target path conflicts with a different branch (the opposite of `--force`). Passing both `--force` and `--reuse` together is rejected as contradictory.
+- `vibe scratch` now generates correctly-dated branch names on Windows. Previously the timestamp fell back to a broken date (always year 1970) on the Windows binary; it now produces a valid `scratch/YYYYMMDD-HHMMSS` name.
+- Hardened the worktree path emitted on stdout against newline injection, matching the existing protection on `cd` output, so a path containing a newline can no longer inject a second shell command.
 
 ---
 
