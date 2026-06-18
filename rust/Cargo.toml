@@ -1,0 +1,45 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/vibe",
+    "crates/vibe-core",
+    "crates/vibe-native",
+    "crates/vibe-test-support",
+]
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/kexi/vibe"
+
+[workspace.dependencies]
+vibe-core = { path = "crates/vibe-core" }
+vibe-native = { path = "crates/vibe-native" }
+vibe-test-support = { path = "crates/vibe-test-support" }
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+# Copy subsystem (Phase 4): glob expansion + filesystem walk for copy patterns,
+# progress UI rendered to stderr, and v4 UUIDs for unique trash directory names.
+globset = "0.4"
+walkdir = "2.5"
+indicatif = "0.17"
+uuid = { version = "1", features = ["v4"] }
+# `preserve_order` keeps JSON object keys in insertion order (struct-field /
+# input order) instead of sorting them alphabetically. This matches the TS
+# `JSON.stringify` on-disk shape (`$schema, version, skipHashCheck, ...,
+# permissions`) for settings.json and preserves a user's hand-edited key order in
+# the `extra`/round-tripped fields; without it serde_json's Map is a BTreeMap and
+# silently re-sorts keys, diverging from the shipping TS CLI's file format.
+serde_json = { version = "1", features = ["preserve_order"] }
+toml = "0.8"
+sha2 = "0.10"
+thiserror = "2.0"
+anyhow = "1"
+tempfile = "3.15"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
+opt-level = "z"
+panic = "abort"

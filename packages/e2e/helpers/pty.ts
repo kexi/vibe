@@ -1,4 +1,5 @@
 import * as pty from "node-pty";
+import { existsSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
@@ -134,7 +135,7 @@ export class VibeCommandRunner {
 
 /**
  * Get the path to the vibe binary for testing
- * Defaults to the VIBE_BINARY_PATH environment variable or '<repo-root>/vibe-e2e'
+ * Defaults to the VIBE_BINARY_PATH environment variable or the Cargo debug binary.
  */
 export function getVibePath(): string {
   if (process.env.VIBE_BINARY_PATH) {
@@ -144,5 +145,14 @@ export function getVibePath(): string {
   // Get repo root by going up from packages/e2e/helpers directory
   const currentDir = dirname(fileURLToPath(import.meta.url));
   const repoRoot = join(currentDir, "..", "..", "..");
-  return join(repoRoot, "vibe-e2e");
+  const binaryName = process.platform === "win32" ? "vibe.exe" : "vibe";
+  const binaryPath = join(repoRoot, "rust", "target", "debug", binaryName);
+
+  if (!existsSync(binaryPath)) {
+    throw new Error(
+      `E2E binary not found at ${binaryPath}. Run pnpm run test:e2e from the repository root, or set VIBE_BINARY_PATH.`,
+    );
+  }
+
+  return binaryPath;
 }

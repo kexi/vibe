@@ -23,7 +23,7 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     ```
 
     :::note
-    npmパッケージにはmacOS (APFS)とLinux (Btrfs/XFS)で最適化されたCopy-on-Writeファイルクローニング用のオプショナルなネイティブバインディング（`@kexi/vibe-native`）が含まれています。利用可能な場合は自動的に使用されます。
+    `@kexi/vibe` は薄いランチャーです。インストール時に `optionalDependencies` 経由でホストに合うプラットフォーム別パッケージ（`@kexi/vibe-<platform>-<arch>`）を取得し、それに含まれる Rust バイナリを実行します。Copy-on-Write ファイルクローニング（macOS APFS、Linux Btrfs/XFS）はその Rust バイナリに組み込まれています。
     :::
 
   </TabItem>
@@ -37,7 +37,7 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     ```
 
     :::note
-    Bun 1.2.0以降が必要です。npmパッケージにはmacOS (APFS)とLinux (Btrfs/XFS)で最適化されたCopy-on-Writeファイルクローニング用のオプショナルなネイティブバインディング（`@kexi/vibe-native`）が含まれています。利用可能な場合は自動的に使用されます。
+    Bun 1.2.0以降が必要です。`@kexi/vibe` は薄いランチャーです。インストール時に `optionalDependencies` 経由でホストに合うプラットフォーム別パッケージ（`@kexi/vibe-<platform>-<arch>`）を取得し、それに含まれる Rust バイナリを実行します。Copy-on-Write ファイルクローニング（macOS APFS、Linux Btrfs/XFS）はその Rust バイナリに組み込まれています。
     :::
 
   </TabItem>
@@ -137,24 +137,29 @@ WSL2ユーザーは、使用しているディストリビューションに応�
 
 ## Windows
 
-```powershell frame="terminal"
-# ダウンロード
-Invoke-WebRequest -Uri "https://github.com/kexi/vibe/releases/latest/download/vibe-windows-x64.exe" -OutFile "$env:LOCALAPPDATA\vibe.exe"
+Windows（x64）に対応しています。npm からインストールすると、`@kexi/vibe` ランチャーがプラットフォームに合ったバイナリパッケージ `@kexi/vibe-win32-x64` を取り込みます：
 
-# PATHに追加（初回のみ）
-$path = [Environment]::GetEnvironmentVariable("Path", "User")
-[Environment]::SetEnvironmentVariable("Path", "$path;$env:LOCALAPPDATA", "User")
+```bash frame="terminal"
+npm install -g @kexi/vibe
 ```
+
+:::note
+Windows ではコピーオンライト（CoW）クローンは利用できず、worktree 作成時は標準のファイルコピーにフォールバックします。それ以外（コマンド・フラグ・信頼モデル）は Linux / macOS とまったく同じように動作します。
+:::
+
+:::tip
+[WSL2](https://learn.microsoft.com/ja-jp/windows/wsl/) 上で上記の [Linux](#linux) 手順を使って実行することもできます（Btrfs ボリュームでコピーオンライトを使いたい場合に便利です）。または Rust ツールチェーンで[ソースからビルド](#手動ビルド)してください。
+:::
 
 ## 手動ビルド
 
-Bunがインストールされている場合、ソースからビルドできます：
+[Rust ツールチェーン](https://rustup.rs/)がインストールされていれば、ソースからバイナリをビルドできます：
 
 ```bash frame="terminal"
 git clone https://github.com/kexi/vibe.git
 cd vibe
-pnpm install
-pnpm run build:compile
+cargo build --manifest-path rust/Cargo.toml -p vibe --release
+# バイナリは rust/target/release/vibe に出力されます
 ```
 
 ## 次のステップ

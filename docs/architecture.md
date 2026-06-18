@@ -2,6 +2,8 @@
 
 # Architecture Overview
 
+> **Historical note:** The TypeScript runtime abstraction (Deno/Node.js) and the `@kexi/vibe-native` N-API module described here were removed in Phase 6 of the Rust port. vibe is now a single Rust binary; the worktree logic lives in `rust/crates/vibe-core` and the native CoW implementation in `rust/crates/vibe-native` (statically linked). This document is retained as design history.
+
 This document describes the architecture of the Vibe CLI tool.
 
 ## Runtime Abstraction Layer
@@ -170,10 +172,10 @@ vibe() { eval "$(command vibe "$@")"; }
 
 This defines a shell function that wraps the `vibe` command and evaluates its output when appropriate.
 
-For developers working on Vibe itself, source the `.vibedev` file instead:
+For developers working on Vibe itself, run the binary directly from the Cargo workspace:
 
 ```bash
-source .vibedev
+cargo run --manifest-path rust/Cargo.toml -p vibe -- <command>
 ```
 
 ### Similar Tools Using This Pattern

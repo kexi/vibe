@@ -29,9 +29,9 @@ develop ─┴──●──●──●──●─────┴────
 | ------- | ------------- | -------------------------------------- |
 | macOS   | x64, ARM64    | Homebrew available                     |
 | Linux   | x64, ARM64    | .deb package available (Ubuntu/Debian) |
-| Windows | x64           | PowerShell installation                |
+| Windows | x64           | Native npm package available           |
 
-WSL2 is supported via Linux binaries.
+WSL2 is also supported via Linux binaries.
 
 ### Filesystem (Copy-on-Write Optimization)
 
@@ -52,9 +52,11 @@ WSL2 is supported via Linux binaries.
 
 ## Development Environment
 
-- Runtime: Bun (setup with `nix develop`)
-- Run: `bun run main.ts`
-- Compile: `bun build --compile --minify --outfile vibe main.ts`
+- Toolchain: provided by `nix develop` (Rust via rustup, plus pnpm/node/bun for
+  the docs/e2e packages and the TS release scripts)
+- Run: `cargo run --manifest-path rust/Cargo.toml -p vibe -- <command>`
+- Build (release): `pnpm run build:rust`
+  (`cargo build --manifest-path rust/Cargo.toml -p vibe --release`)
 
 ## CLI Guidelines
 
@@ -81,11 +83,13 @@ Code should follow SOLID principles:
 
 ## Testing
 
-- Lint check: `pnpm run lint`
-- Format check: `pnpm run format:check`
-- Type check: `pnpm run typecheck`
-- Run tests: `pnpm run test`
-- Run all checks: `pnpm run check:core` (runs format:check, lint, typecheck, and test)
+- Lint check (TS scripts): `pnpm run lint`
+- Format check (TS scripts): `pnpm run fmt:check`
+- Rust checks (fmt + clippy + tests): `pnpm run check:rust`
+- npm shim / release-script tests: `pnpm run test:npm`
+- E2E tests: `pnpm run test:e2e`
+- Run all checks: `pnpm run check:all`
+  (fmt:check, lint, check:rust, test:npm, test:e2e, check:docs)
 - All checks must pass before committing
 
 ## Documentation
@@ -98,7 +102,7 @@ Code should follow SOLID principles:
 - Title format: `<type>: <description>`
   - type: feat, fix, docs, refactor, test, chore
 - PR title and description must be written in English
-- Must pass `pnpm run lint` and `pnpm run format:check`
+- Must pass `pnpm run lint` and `pnpm run fmt:check`
 - Add or update tests for changed code
 
 ## Release

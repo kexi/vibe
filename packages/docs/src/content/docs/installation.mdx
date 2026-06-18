@@ -23,7 +23,7 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     ```
 
     :::note
-    The npm package includes optional native bindings (`@kexi/vibe-native`) for optimized Copy-on-Write file cloning on macOS (APFS) and Linux (Btrfs/XFS). These are automatically used when available.
+    `@kexi/vibe` is a thin launcher. On install, npm pulls in the matching per-platform package (`@kexi/vibe-<platform>-<arch>`) via `optionalDependencies` and runs the Rust binary it ships. Copy-on-Write file cloning (macOS APFS, Linux Btrfs/XFS) is built into that binary.
     :::
 
   </TabItem>
@@ -37,7 +37,7 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
     ```
 
     :::note
-    Requires Bun 1.2.0 or later. The npm package includes optional native bindings (`@kexi/vibe-native`) for optimized Copy-on-Write file cloning on macOS (APFS) and Linux (Btrfs/XFS). These are automatically used when available.
+    Requires Bun 1.2.0 or later. `@kexi/vibe` is a thin launcher: it pulls in the matching per-platform package (`@kexi/vibe-<platform>-<arch>`) via `optionalDependencies` and runs the Rust binary it ships. Copy-on-Write file cloning (macOS APFS, Linux Btrfs/XFS) is built into that binary.
     :::
 
   </TabItem>
@@ -137,24 +137,29 @@ WSL2 users can use the Linux installation methods below based on their distribut
 
 ## Windows
 
-```powershell frame="terminal"
-# Download
-Invoke-WebRequest -Uri "https://github.com/kexi/vibe/releases/latest/download/vibe-windows-x64.exe" -OutFile "$env:LOCALAPPDATA\vibe.exe"
+Windows (x64) is supported. Install via npm — the `@kexi/vibe` launcher pulls in the `@kexi/vibe-win32-x64` binary package for your platform:
 
-# Add to PATH (first time only)
-$path = [Environment]::GetEnvironmentVariable("Path", "User")
-[Environment]::SetEnvironmentVariable("Path", "$path;$env:LOCALAPPDATA", "User")
+```bash frame="terminal"
+npm install -g @kexi/vibe
 ```
+
+:::note
+Copy-on-Write cloning is not available on Windows; vibe falls back to a standard file copy when creating worktrees. Everything else (commands, flags, the trust model) works the same as on Linux and macOS.
+:::
+
+:::tip
+You can also run vibe under [WSL2](https://learn.microsoft.com/windows/wsl/) with the [Linux](#linux) instructions above — useful if you want Copy-on-Write on a Btrfs volume — or [build from source](#manual-build) with the Rust toolchain.
+:::
 
 ## Manual Build
 
-If you have Bun installed, you can build from source:
+With the [Rust toolchain](https://rustup.rs/) installed, build the binary from source:
 
 ```bash frame="terminal"
 git clone https://github.com/kexi/vibe.git
 cd vibe
-pnpm install
-pnpm run build:compile
+cargo build --manifest-path rust/Cargo.toml -p vibe --release
+# Binary is written to rust/target/release/vibe
 ```
 
 ## Next Steps

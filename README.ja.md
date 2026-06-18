@@ -96,7 +96,7 @@ vibe start feat/new-feature --base origin/develop --track
 
 - **macOS**: Finderを通じてシステムのゴミ箱に移動（必要に応じて復元可能）
 - **Linux**: XDGゴミ箱に移動（ファイルマネージャーから復元可能）
-- **Windows**: 一時ディレクトリに移動し、バックグラウンドで削除
+- **Windows**: ごみ箱に移動（必要に応じて復元可能）
 
 これにより、worktreeのサイズに関係なく `vibe clean` が即座に完了します。
 
@@ -120,6 +120,7 @@ vibe start feat/new-feature --base origin/develop --track
 | `--no-hooks`      | pre-startおよびpost-startフックをスキップ   |
 | `--no-copy`       | ファイルとディレクトリのコピーをスキップ    |
 | `-n`, `--dry-run` | 変更を加えずに実行内容を表示                |
+| `-f`, `--force`   | 確認をスキップ（既存Worktreeへ移動、または競合Worktreeを上書き） |
 
 #### Cleanオプション
 
@@ -163,7 +164,7 @@ npm install -g @kexi/vibe
 npx @kexi/vibe start feat/my-feature
 ```
 
-> 注意: npmパッケージにはmacOS (APFS)とLinux (Btrfs/XFS)で最適化されたCopy-on-Writeファイルクローニング用のオプショナルなネイティブバインディング（`@kexi/vibe-native`）が含まれています。利用可能な場合は自動的に使用されます。
+> 注意: npmパッケージは、お使いのプラットフォーム向けのネイティブ`vibe`バイナリ（`@kexi/vibe-darwin-arm64`などのプラットフォーム別`optionalDependency`として自動的にインストールされます）を起動する薄いランチャーです。macOS (APFS)とLinux (Btrfs/XFS)で最適化されたCopy-on-Writeファイルクローニングは、そのバイナリに直接組み込まれています。
 
 ### Bun (1.2.0+)
 
@@ -175,19 +176,7 @@ bun add -g @kexi/vibe
 bunx @kexi/vibe start feat/my-feature
 ```
 
-> 注意: BunはNode.jsと同じnpmパッケージを使用します。Copy-on-Writeファイルクローニング用のネイティブバインディングは利用可能な場合に自動的に使用されます。
-
-### Deno (2.0+)
-
-```bash
-# JSR経由でインストール
-deno install -A --global jsr:@kexi/vibe
-
-# または直接実行
-deno run -A jsr:@kexi/vibe start feat/my-feature
-```
-
-> 注意: JSR配布にはDeno 2.0+が必要です。
+> 注意: BunはNode.jsと同じnpmパッケージを使用します — お使いのプラットフォーム向けのネイティブ`vibe`バイナリを起動します。
 
 ### mise
 
@@ -262,21 +251,29 @@ chmod +x vibe
 sudo mv vibe /usr/local/bin/
 ```
 
-### Windows (PowerShell)
+### Windows
 
-```powershell
-# ダウンロード
-Invoke-WebRequest -Uri "https://github.com/kexi/vibe/releases/latest/download/vibe-windows-x64.exe" -OutFile "$env:LOCALAPPDATA\vibe.exe"
+Windows（x64）に対応しています。npm からインストールすると、`@kexi/vibe`
+ランチャーがプラットフォームに合ったバイナリパッケージ
+`@kexi/vibe-win32-x64` を取り込みます：
 
-# PATHに追加（初回のみ）
-$path = [Environment]::GetEnvironmentVariable("Path", "User")
-[Environment]::SetEnvironmentVariable("Path", "$path;$env:LOCALAPPDATA", "User")
+```bash
+npm install -g @kexi/vibe
 ```
+
+> [!NOTE]
+> Windows ではコピーオンライト（CoW）クローンは利用できず、worktree 作成時は
+> 標準のファイルコピーにフォールバックします。それ以外は Linux / macOS と同じように
+> 動作します。[WSL2](https://learn.microsoft.com/ja-jp/windows/wsl/) 上で上記の
+> Linux 手順を使って実行することもできます（Btrfs ボリュームでコピーオンライトを
+> 使いたい場合に便利です）。または Rust ツールチェーンでソースからビルドしてください
+> （[手動ビルド](#手動ビルド)を参照）。
 
 ### 手動ビルド
 
 ```bash
-bun build --compile --minify --outfile vibe main.ts
+cargo build --manifest-path rust/Cargo.toml -p vibe --release
+# バイナリの出力先: rust/target/release/vibe
 ```
 
 ## セットアップ
@@ -420,7 +417,7 @@ Vibeはシステムに応じて最適なコピー戦略を自動選択します:
 
 - **ファイルコピー**: 単一ファイルの最高パフォーマンスのため、常にネイティブの`copyFile()`を使用
 - **ディレクトリコピー**: 利用可能な最速の方法を自動使用:
-  - APFSを使用したmacOS: `@kexi/vibe-native`経由でネイティブの`clonefile()`システムコールを使用し、即座にCoWクローニング。ネイティブモジュールが利用できない場合は`cp -cR`にフォールバック
+  - APFSを使用したmacOS: ネイティブの`clonefile()`システムコール（バイナリに組み込み済み）を使用し、即座にCoWクローニング。利用できない場合は`cp -cR`にフォールバック
   - Btrfs/XFSを使用したLinux: CoWクローニングに`cp --reflink=auto`を使用
   - CoWが利用できない場合はrsyncまたは標準コピーにフォールバック
 
@@ -609,8 +606,8 @@ Vibeはフック実行中にタスクの状態を表示するリアルタイム�
 
 Vibe は CLI ツールのセキュリティベストプラクティスに従っています：
 
-- **シェルインジェクション防止**: すべてのシェル出力は `escapeShellPath()` でエスケープされ、細工されたディレクトリ名によるコマンドインジェクションを防止
-- **シェル文字列実行の排除**: `exec`/`execSync` の代わりに Node.js の `spawn` を使用し、シェル解釈を回避
+- **シェルインジェクション防止**: シェルラッパーが `eval` する `cd` 行はシングルクォートでエスケープされ（`rust/crates/vibe-core/src/shell.rs`）、細工されたディレクトリ名によるコマンドインジェクションを防止
+- **シェル文字列実行の排除**: サブプロセスはシェル文字列ではなく `std::process::Command` に引数配列を渡して起動するため、引数がシェルで解釈されることはない
 - **設定ファイルの信頼メカニズム**: `.vibe.toml` と `.vibe.local.toml` の SHA-256 ハッシュ検証
 - **パスバリデーション**: ユーザー入力のパスはすべて使用前に検証
 

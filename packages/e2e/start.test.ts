@@ -201,6 +201,41 @@ describe("start command", () => {
     }
   });
 
+  test("--force overwrites conflicting worktree without prompting", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+    const parentDir = dirname(repoPath);
+    const repoName = basename(repoPath);
+    const worktreePath = `${parentDir}/${repoName}-feat-force`;
+
+    execFileSync("git", ["worktree", "add", "-b", "other", worktreePath], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
+    try {
+      await runner.spawn(["start", "feat/force", "--force"]);
+      await runner.waitForExit();
+
+      const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
+      assertOutputContains(output, "cd");
+      expect(output).not.toContain("Overwrite");
+
+      await assertDirectoryExists(worktreePath);
+      const branch = execFileSync("git", ["branch", "--show-current"], {
+        cwd: worktreePath,
+        encoding: "utf-8",
+      }).trim();
+      expect(branch).toBe("feat/force");
+    } finally {
+      runner.dispose();
+    }
+  });
+
   test("Error when branch name is missing", async () => {
     const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;

@@ -2,6 +2,8 @@
 
 # Clean Strategies
 
+> **歴史的な注記:** ここで説明している TypeScript 実装（`packages/core` の `fast-remove.ts` など）は、Rust 移植の Phase 6 で削除されました。vibe は現在単一の Rust バイナリであり、clean のロジックは `rust/crates/vibe-core`（ネイティブのゴミ箱サポートは `rust/crates/vibe-native`）にあります。このドキュメントは設計の歴史として残しています。
+
 vibe は `vibe clean` コマンドにおいて、「Trash Strategy（ゴミ箱戦略）」と呼ばれる高速削除戦略を使用し、即座に応答を返すことでユーザー体験を向上させています。
 
 ## Trash Strategy とは？
@@ -16,10 +18,10 @@ Trash Strategy は、ディレクトリを即座に削除するのではなく�
 
 ## Strategy 概要
 
-| Strategy     | 実装方式                    | macOS        | Linux            | Windows             |
-| ------------ | --------------------------- | ------------ | ---------------- | ------------------- |
-| **Trash**    | ネイティブゴミ箱 + fallback | Finder Trash | XDG Trash / /tmp | %TEMP% + background |
-| **Standard** | git worktree remove         | サポート     | サポート         | サポート            |
+| Strategy     | 実装方式                    | macOS        | Linux            | Windows              |
+| ------------ | --------------------------- | ------------ | ---------------- | -------------------- |
+| **Trash**    | ネイティブゴミ箱 + fallback | Finder Trash | XDG Trash / /tmp | ごみ箱 / %TEMP%      |
+| **Standard** | git worktree remove         | サポート     | サポート         | サポート             |
 
 ### ネイティブゴミ箱サポート
 
@@ -27,7 +29,7 @@ vibe は [trash crate](https://lib.rs/crates/trash) (`@kexi/vibe-native` 経由)
 
 - **macOS**: Finder Trash（従来と同じ）
 - **Linux**: XDG Trash (`~/.local/share/Trash`) [FreeDesktop.org 仕様](https://specifications.freedesktop.org/trash-spec/trashspec-latest.html)準拠
-- **Windows**: ごみ箱（現在ビルド対象外）
+- **Windows**: ごみ箱
 
 XDG Trash に移動されたファイルは、デスクトップ環境のゴミ箱フォルダ（GNOME Files、Dolphin、Nautilus など）に表示され、復元可能です。
 
@@ -57,7 +59,8 @@ XDG Trash に移動されたファイルは、デスクトップ環境のゴミ�
 
 ### Windows
 
-1. **主要**: `%TEMP%` ディレクトリへ移動 + `cmd /c start /b rd /s /q` によるバックグラウンド削除
+1. **主要**: Rust の `trash` crate 経由でごみ箱に移動
+2. **フォールバック**: `%TEMP%` ディレクトリへ移動 + `cmd /c rmdir /s /q` によるバックグラウンド削除
 
 ## Strategy 詳細
 

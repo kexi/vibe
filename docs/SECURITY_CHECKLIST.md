@@ -14,19 +14,19 @@ A comprehensive security checklist for the vibe CLI tool. Each category includes
 ## 2. Path Traversal
 
 - **Risk**: Accessing files outside intended directories via `../` sequences
-- **Mitigation**: `validatePath()` ensures paths stay within expected boundaries
+- **Mitigation**: `validate_path` (`rust/crates/vibe-core/src/copy/types.rs`) plus canonicalize + containment checks in `repo_info.rs` keep paths within expected boundaries
 - **Enforcement**: Code review + runtime validation
 
 ## 3. Symlink Attacks
 
 - **Risk**: Following symlinks to access/modify unintended files
-- **Mitigation**: `realPath()` resolution + boundary checks
+- **Mitigation**: `std::fs::canonicalize` resolution + containment checks (both sides canonicalized); glob expansion rejects symlink entries
 - **Enforcement**: Runtime validation before file operations
 
 ## 4. TOCTOU (Time-of-Check-to-Time-of-Use) Races
 
 - **Risk**: File state changes between security check and usage
-- **Mitigation**: `verifyTrustAndRead()` performs atomic check-and-read operations
+- **Mitigation**: `verify_trust_and_read` (`rust/crates/vibe-core/src/settings_io.rs`) reads the file once and hashes that exact content (no re-read)
 - **Enforcement**: Architectural pattern in trust verification
 
 ## 5. Environment Variable Injection
@@ -79,7 +79,7 @@ A gitleaks hit means the secret is already in the working tree or git history an
 ## 10. Shell Output Injection
 
 - **Risk**: Paths containing special characters (e.g., single quotes) causing shell injection when `eval`'d
-- **Mitigation**: `escapeShellPath()` escapes single quotes in all `cd` output
+- **Mitigation**: `shell_escape()` (`rust/crates/vibe-core/src/shell.rs`) escapes single quotes in all `cd` output
 - **Enforcement**: Custom security check script detects unescaped `cd` patterns
 
 ## 11. Configuration File Poisoning
@@ -99,16 +99,16 @@ A gitleaks hit means the secret is already in the working tree or git history an
 - **Risk**: Executing dynamically constructed code enabling arbitrary code execution
 - **Mitigation**: No `eval()` or `new Function()` in production code
 - **Enforcement**: ESLint `security/detect-eval-with-expression` + custom security check script
-- **Exception**: `.vibedev` uses `eval` for development convenience (documented with warning)
+- **Note**: The shell wrapper itself `eval`s vibe's `cd` output by design; that output is single-quote escaped (see "Shell Output Injection" above)
 
 ---
 
 ## Automated Enforcement
 
-| Tool                   | Scope            | When                      |
-| ---------------------- | ---------------- | ------------------------- |
-| ESLint security plugin | Static analysis  | `pnpm run lint`           |
-| Custom security script | Pattern matching | `pnpm run security:check` |
-| Claude Code hook       | Edit-time check  | PostToolUse (Write/Edit)  |
-| CI security-check job  | PR gate          | Every push/PR             |
+| Tool                   | Scope            | When                                                     |
+| ---------------------- | ---------------- | -------------------------------------------------------- |
+| ESLint security plugin | Static analysis  | `pnpm run lint`                                          |
+| Custom security script | Pattern matching | `pnpm run security:check`                                |
+| Claude Code hook       | Edit-time check  | PostToolUse (Write/Edit)                                 |
+| CI security-check job  | PR gate          | Every push/PR                                            |
 | gitleaks               | Secret scanning  | `pre-commit` (staged) + CI `gitleaks` job (full history) |

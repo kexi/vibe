@@ -96,7 +96,7 @@ vibe start feat/new-feature --base origin/develop --track
 
 - **macOS**: Items are moved to the system Trash via Finder (can be recovered if needed)
 - **Linux**: Items are moved to XDG Trash (recoverable from file manager)
-- **Windows**: Items are moved to a temporary directory and deleted in the background
+- **Windows**: Items are moved to the Recycle Bin (can be recovered if needed)
 
 This approach allows `vibe clean` to complete instantly regardless of worktree size.
 
@@ -120,6 +120,7 @@ This approach allows `vibe clean` to complete instantly regardless of worktree s
 | `--no-hooks`      | Skip pre-start and post-start hooks                |
 | `--no-copy`       | Skip copying files and directories                 |
 | `-n`, `--dry-run` | Show what would be executed without making changes |
+| `-f`, `--force`   | Skip prompts: navigate to existing branch worktree or overwrite conflicting worktree |
 
 #### Clean Options
 
@@ -163,7 +164,7 @@ npm install -g @kexi/vibe
 npx @kexi/vibe start feat/my-feature
 ```
 
-> Note: The npm package includes optional native bindings (`@kexi/vibe-native`) for optimized Copy-on-Write file cloning on macOS (APFS) and Linux (Btrfs/XFS). These are automatically used when available.
+> Note: The npm package is a thin launcher that runs the native `vibe` binary for your platform (installed automatically as a per-platform `optionalDependency`, e.g. `@kexi/vibe-darwin-arm64`). Optimized Copy-on-Write file cloning on macOS (APFS) and Linux (Btrfs/XFS) is built directly into that binary.
 
 ### Bun (1.2.0+)
 
@@ -175,19 +176,7 @@ bun add -g @kexi/vibe
 bunx @kexi/vibe start feat/my-feature
 ```
 
-> Note: Bun uses the same npm package as Node.js. Native bindings for Copy-on-Write file cloning are automatically used when available.
-
-### Deno (2.0+)
-
-```bash
-# Install via JSR
-deno install -A --global jsr:@kexi/vibe
-
-# Or run directly
-deno run -A jsr:@kexi/vibe start feat/my-feature
-```
-
-> Note: Deno 2.0+ is required for JSR distribution.
+> Note: Bun uses the same npm package as Node.js — it launches the native `vibe` binary for your platform.
 
 ### mise
 
@@ -262,21 +251,28 @@ chmod +x vibe
 sudo mv vibe /usr/local/bin/
 ```
 
-### Windows (PowerShell)
+### Windows
 
-```powershell
-# Download
-Invoke-WebRequest -Uri "https://github.com/kexi/vibe/releases/latest/download/vibe-windows-x64.exe" -OutFile "$env:LOCALAPPDATA\vibe.exe"
+Windows (x64) is supported. Install via npm — the `@kexi/vibe` launcher pulls in
+the `@kexi/vibe-win32-x64` binary package for your platform:
 
-# Add to PATH (first time only)
-$path = [Environment]::GetEnvironmentVariable("Path", "User")
-[Environment]::SetEnvironmentVariable("Path", "$path;$env:LOCALAPPDATA", "User")
+```bash
+npm install -g @kexi/vibe
 ```
+
+> [!NOTE]
+> Copy-on-Write cloning is not available on Windows; vibe falls back to a
+> standard file copy when creating worktrees. Everything else works the same as
+> on Linux and macOS. You can also run vibe under
+> [WSL2](https://learn.microsoft.com/windows/wsl/) with the Linux instructions
+> above (useful for Copy-on-Write on a Btrfs volume), or build from source with
+> the Rust toolchain (see [Manual Build](#manual-build)).
 
 ### Manual Build
 
 ```bash
-bun build --compile --minify --outfile vibe main.ts
+cargo build --manifest-path rust/Cargo.toml -p vibe --release
+# binary at: rust/target/release/vibe
 ```
 
 ## Setup
@@ -420,7 +416,7 @@ Vibe automatically selects the best copy strategy based on your system:
 
 - **File copy**: Always uses native `copyFile()` for best single-file performance
 - **Directory copy**: Automatically uses the fastest available method:
-  - On macOS with APFS: Uses native `clonefile()` syscall via `@kexi/vibe-native` for instant CoW cloning. Falls back to `cp -cR` if native module is unavailable
+  - On macOS with APFS: Uses the native `clonefile()` syscall (built into the binary) for instant CoW cloning. Falls back to `cp -cR` if unavailable
   - On Linux with Btrfs/XFS: Uses `cp --reflink=auto` for CoW cloning
   - Falls back to rsync or standard copy if CoW is unavailable
 
@@ -610,8 +606,8 @@ The following environment variables are available in all hook commands:
 
 Vibe follows security best practices for CLI tools:
 
-- **Shell injection prevention**: All shell output is escaped via `escapeShellPath()` to prevent command injection through crafted directory names
-- **No shell string execution**: Uses Node.js `spawn` instead of `exec`/`execSync` to avoid shell interpretation
+- **Shell injection prevention**: The `cd` lines printed for the shell wrapper to `eval` are single-quote escaped (`rust/crates/vibe-core/src/shell.rs`) to prevent command injection through crafted directory names
+- **No shell string execution**: Subprocesses are spawned via `std::process::Command` with argument arrays, never shell strings, so there is no shell interpretation of arguments
 - **Configuration trust mechanism**: SHA-256 hash verification for `.vibe.toml` and `.vibe.local.toml` files
 - **Path validation**: All user-supplied paths are validated before use
 

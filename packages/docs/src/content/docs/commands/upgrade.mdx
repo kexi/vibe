@@ -43,7 +43,7 @@ vibe upgrade --quiet
 
 ### Version Check
 
-The command fetches the latest version from the JSR registry and compares it with your current version:
+The command fetches the latest version from the npm registry and compares it with your current version:
 
 ```
 $ vibe upgrade
@@ -64,13 +64,11 @@ vibe automatically detects how it was installed and shows the appropriate upgrad
 
 | Method   | Upgrade Command                            |
 | -------- | ------------------------------------------ |
+| npm      | `npm install -g @kexi/vibe@latest`         |
 | Homebrew | `brew upgrade kexi/tap/vibe`               |
-| mise     | `mise upgrade vibe`                        |
-| npm      | `npm install -g @kexi/vibe`                |
-| Bun      | `bun add -g @kexi/vibe`                    |
 | Deb      | `sudo apt update && sudo apt upgrade vibe` |
 | Binary   | Shows GitHub releases download link        |
-| Dev      | `bun run build:compile`                    |
+| Dev      | `pnpm run build:rust`                      |
 
 ### Up-to-date
 

@@ -1,4 +1,8 @@
+> 🇯🇵 [日本語版](./copy-strategies.ja.md)
+
 # Copy Strategies
+
+> **Historical note:** The TypeScript implementation (Deno APIs / `packages/core`) described here was removed in Phase 6 of the Rust port. vibe is now a single Rust binary and the copy logic lives in `rust/crates/vibe-core` (with native CoW in `rust/crates/vibe-native`). This document is retained as design history.
 
 vibe leverages Copy-on-Write (CoW) for directory copying to achieve fast and disk-efficient operations.
 

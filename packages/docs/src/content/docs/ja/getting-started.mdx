@@ -69,12 +69,11 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
 
   </TabItem>
   <TabItem label="Windows">
-    ```powershell frame="terminal"
-    Invoke-WebRequest -Uri "https://github.com/kexi/vibe/releases/latest/download/vibe-windows-x64.exe" -OutFile "$env:LOCALAPPDATA\vibe.exe"
-    # PATHに追加（初回のみ）
-    $path = [Environment]::GetEnvironmentVariable("Path", "User")
-    [Environment]::SetEnvironmentVariable("Path", "$path;$env:LOCALAPPDATA", "User")
+    ```bash frame="terminal"
+    npm install -g @kexi/vibe
     ```
+
+    Windows x64 は `@kexi/vibe-win32-x64` バイナリパッケージ経由でサポートされています。WSL2 ユーザーは上記の Linux 手順も利用できます。
 
   </TabItem>
 </Tabs>

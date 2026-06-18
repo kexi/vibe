@@ -2,6 +2,8 @@
 
 # Multi-Runtime Support
 
+> **歴史的な注記:** ここで説明している TypeScript 実装は、Rust 移植の Phase 6 で削除されました。vibe は現在単一の Rust バイナリであり、worktree のロジックは `rust/crates/vibe-core` にあります。このドキュメントは設計の歴史として残しています。
+
 vibe は、Deno、Node.js、Bun を含む複数の JavaScript/TypeScript ランタイムで CLI を実行できるランタイム抽象化レイヤーを提供します。
 
 ## ランタイム抽象化レイヤーとは？
