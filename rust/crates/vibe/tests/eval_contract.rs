@@ -117,6 +117,32 @@ fn help_writes_to_stderr_not_stdout() {
 }
 
 #[test]
+fn start_force_and_reuse_together_is_an_argument_error() {
+    let home = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+
+    // The guard fires in dispatch before any git work, so no repo is needed.
+    let out = run_vibe(
+        tmp.path(),
+        home.path(),
+        &["start", "feat", "--force", "--reuse"],
+    );
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert!(
+        !out.status.success(),
+        "contradictory flags must not exit 0: {stderr:?}"
+    );
+    // Nothing must reach the eval'd stdout on an error.
+    assert!(stdout.is_empty(), "error must not write stdout: {stdout:?}");
+    assert!(
+        stderr.contains("--force and --reuse cannot be used together"),
+        "missing mutual-exclusion message: {stderr:?}"
+    );
+}
+
+#[test]
 fn bare_invocation_help_writes_to_stderr_not_stdout() {
     let home = tempfile::tempdir().unwrap();
     let tmp = tempfile::tempdir().unwrap();

@@ -78,22 +78,14 @@ fn local_time_now() -> LocalTime {
 
 #[cfg(not(unix))]
 fn local_time_now() -> LocalTime {
-    // Non-unix fallback: UTC from SystemTime (the dev/CI matrix is unix, so this
-    // path is only a compile safety net, not a parity-critical branch).
+    // Non-unix fallback (the shipped Windows binary has no `localtime_r`): a
+    // CORRECT civil date from epoch seconds, in UTC rather than local time. The
+    // earlier `secs / 86_400` day count produced bogus dates like 1970-1-20620.
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let days = secs / 86_400;
-    let rem = secs % 86_400;
-    LocalTime {
-        year: 1970,
-        month: 1,
-        day: (days + 1) as u32,
-        hour: (rem / 3600) as u32,
-        minute: ((rem % 3600) / 60) as u32,
-        second: (rem % 60) as u32,
-    }
+    crate::timestamp::local_time_from_epoch_secs(secs)
 }
 
 /// Production [`RandomSource`] using a v4 UUID's first 8 hex chars.

@@ -53,6 +53,11 @@ pub struct StartFlags {
     /// Skip confirmation prompts: navigate to an already-used branch, and
     /// overwrite a different-branch worktree at the target path.
     pub force: bool,
+    /// On a different-branch conflict at the target path, auto-select Reuse (use
+    /// the existing worktree) instead of prompting — the opposite of `force`,
+    /// which auto-selects Overwrite. `force` and `reuse` are mutually exclusive
+    /// (rejected at the dispatch layer).
+    pub reuse: bool,
     /// Claude-Code WorktreeCreate hook mode (stdin name → stdout path).
     pub worktree_hook: bool,
 }
@@ -434,6 +439,11 @@ where
         return Ok(ConflictDecision::Continue);
     }
 
+    if flags.reuse {
+        // --reuse auto-selects the Reuse choice (the --force opposite): no prompt.
+        return reuse_existing_worktree(deps, config, repo_root, worktree_path, flags);
+    }
+
     let choice = deps.prompt.select(
         &format!("Directory '{worktree_path}' already exists (branch: {existing_branch}):"),
         &[
@@ -449,29 +459,46 @@ where
             remove_worktree(deps.git, worktree_path, true)?;
             Ok(ConflictDecision::Continue)
         }
-        1 => {
-            // Reuse: skip creation, run hooks/config, cd.
-            run_config_and_hooks(
-                deps,
-                config,
-                repo_root,
-                worktree_path,
-                &ConfigAndHooks {
-                    skip_hooks: flags.no_hooks,
-                    skip_copy: flags.no_copy,
-                    dry_run: false,
-                },
-            )?;
-            Ok(ConflictDecision::Done(Outcome::cd(
-                worktree_path.to_string(),
-            )))
-        }
+        1 => reuse_existing_worktree(deps, config, repo_root, worktree_path, flags),
         _ => {
             // Cancel.
             log(deps.io, "Cancelled", OutputOptions::new(false, false));
             Ok(ConflictDecision::Done(Outcome::none()))
         }
     }
+}
+
+/// Reuse the existing worktree at a conflicting path: skip creation, run
+/// hooks/config, then cd. Shared by the interactive "Reuse" choice and `--reuse`.
+fn reuse_existing_worktree<I, G, R, S, P, Sr>(
+    deps: &StartDeps<I, G, R, S, P, Sr>,
+    config: Option<&VibeConfig>,
+    repo_root: &str,
+    worktree_path: &str,
+    flags: &StartFlags,
+) -> Result<ConflictDecision>
+where
+    I: Io,
+    G: GitRunner,
+    R: RepoResolver,
+    S: ScriptRunner,
+    P: Prompt,
+    Sr: StdinReader,
+{
+    run_config_and_hooks(
+        deps,
+        config,
+        repo_root,
+        worktree_path,
+        &ConfigAndHooks {
+            skip_hooks: flags.no_hooks,
+            skip_copy: flags.no_copy,
+            dry_run: false,
+        },
+    )?;
+    Ok(ConflictDecision::Done(Outcome::cd(
+        worktree_path.to_string(),
+    )))
 }
 
 /// Run config-driven hooks + copy: pre_start (in repo_root) → copy files + dirs →
@@ -733,7 +760,7 @@ where
         if flags.dry_run {
             return Ok(Outcome::none());
         }
-        return Ok(Outcome::stdout(existing));
+        return Outcome::stdout_path(existing);
     }
 
     let base_ref = flags
@@ -787,7 +814,7 @@ where
         if flags.dry_run {
             return Ok(Outcome::none());
         }
-        return Ok(Outcome::stdout(worktree_path));
+        return Outcome::stdout_path(worktree_path);
     }
 
     if conflict.has_conflict {
@@ -851,7 +878,7 @@ where
     }
 
     // The hook protocol wants the PATH on stdout, NOT a cd.
-    Ok(Outcome::stdout(worktree_path))
+    Outcome::stdout_path(worktree_path)
 }
 
 #[cfg(test)]

@@ -103,18 +103,30 @@ fn dispatch(command: Command, opts: OutputOptions) -> Result<Outcome, VibeError>
                 opts,
             )
         }
-        Command::Start(args) => commands::start(
-            &args.branch_name.unwrap_or_default(),
-            args.force,
-            args.no_hooks,
-            args.no_copy,
-            args.dry_run,
-            args.base,
-            args.track,
-            args.worktree_hook,
-            opts,
-        ),
+        Command::Start(args) => {
+            // Mutually exclusive: --force auto-selects Overwrite, --reuse
+            // auto-selects Reuse; together they are contradictory.
+            let has_mutually_exclusive = args.force && args.reuse;
+            if has_mutually_exclusive {
+                return Err(VibeError::Argument(
+                    "--force and --reuse cannot be used together".to_string(),
+                ));
+            }
+            commands::start(
+                &args.branch_name.unwrap_or_default(),
+                args.force,
+                args.reuse,
+                args.no_hooks,
+                args.no_copy,
+                args.dry_run,
+                args.base,
+                args.track,
+                args.worktree_hook,
+                opts,
+            )
+        }
         Command::Scratch(args) => commands::scratch(
+            args.reuse,
             args.no_hooks,
             args.no_copy,
             args.dry_run,

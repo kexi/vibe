@@ -192,6 +192,7 @@ fn with_start_deps<T>(
 pub fn start(
     branch_name: &str,
     force: bool,
+    reuse: bool,
     no_hooks: bool,
     no_copy: bool,
     dry_run: bool,
@@ -212,6 +213,7 @@ pub fn start(
         base_from_equals,
         track,
         force,
+        reuse,
         worktree_hook,
     };
     with_start_deps(opts, |deps| start_command(deps, branch_name, &flags, opts))
@@ -219,6 +221,7 @@ pub fn start(
 
 /// `vibe scratch [flags]`.
 pub fn scratch(
+    reuse: bool,
     no_hooks: bool,
     no_copy: bool,
     dry_run: bool,
@@ -235,6 +238,9 @@ pub fn scratch(
         base_from_equals,
         track,
         force: false,
+        // Scratch names are timestamped so a target conflict is unlikely, but
+        // pass `reuse` through for parity (the TS forwarded it into startCommand).
+        reuse,
         worktree_hook: false,
     };
     let clock = RealClock;

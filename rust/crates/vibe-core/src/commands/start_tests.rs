@@ -574,6 +574,41 @@ fn different_branch_force_overwrites_without_prompt() {
 }
 
 #[test]
+fn different_branch_reuse_flag_reuses_without_prompt() {
+    let (_fx, io) = io_with_home();
+    let git = conflicting_git();
+    // PanicPrompt asserts the flag path NEVER prompts (the --force counterpart).
+    let (r, s, p, sin, fk) = (
+        NoResolver,
+        NoScript,
+        PanicPrompt,
+        FakeStdin::none(),
+        Fakes::new(),
+    );
+    let d = StartDeps {
+        io: &io,
+        git: &git,
+        resolver: &r,
+        script_runner: &s,
+        prompt: &p,
+        stdin: &sin,
+        hook_runner: &fk.hooks,
+        executor: &fk.exec,
+        tracker: &fk.tracker,
+        version: V,
+    };
+    let flags = StartFlags {
+        reuse: true,
+        ..Default::default()
+    };
+    let outcome = start_command(&d, "feat", &flags, OutputOptions::default()).unwrap();
+    assert_eq!(outcome, Outcome::cd("/home/u/repo-feat"));
+    // Reuse: no remove, no add — the existing worktree is kept as-is.
+    assert!(!git.calls_contain(&["worktree", "remove"]));
+    assert!(!git.calls_contain(&["worktree", "add"]));
+}
+
+#[test]
 fn different_branch_reuse_runs_hooks_and_cds_without_creating() {
     let (_fx, io) = io_with_home();
     let git = conflicting_git();
