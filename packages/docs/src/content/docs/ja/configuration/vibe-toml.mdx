@@ -116,6 +116,21 @@ vibeはシステムに応じて最適なコピー戦略を自動選択します�
 
 フック設定の詳細は[フック](/ja/configuration/hooks/)を参照してください。
 
+## サブモジュール設定
+
+Worktree作成後、`pre_start`フックの実行前にgitサブモジュールを自動初期化します：
+
+```toml
+[submodules]
+auto_init = true
+```
+
+- **デフォルト**: `false`
+- 新しいWorktree内で`git submodule update --init --recursive`を実行します
+- `--no-hooks`ではサブモジュール初期化はスキップされません
+- `.gitmodules`がないリポジトリでは、gitにより成功したno-opとして扱われます
+- サブモジュール更新に失敗すると`vibe start`は中断され、作成済みWorktreeは調査用に残ります
+
 ## Worktree設定 <Badge text="v0.6.0+" />
 
 外部スクリプトを使用してWorktreeディレクトリパスをカスタマイズできます。
@@ -175,6 +190,9 @@ post_start = [
 ]
 pre_clean = ["git stash"]
 post_clean = ["echo 'クリーンアップ完了'"]
+
+[submodules]
+auto_init = true
 
 [worktree]
 path_script = "~/.config/vibe/worktree-path.sh"
