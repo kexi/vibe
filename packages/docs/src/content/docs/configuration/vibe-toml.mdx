@@ -116,21 +116,6 @@ vibe automatically selects the best copy strategy based on your system:
 
 See [Hooks](/configuration/hooks/) for details on configuring pre/post hooks.
 
-## Submodules Configuration
-
-Initialize git submodules automatically after the worktree is created and before `pre_start` hooks run:
-
-```toml
-[submodules]
-auto_init = true
-```
-
-- **Default**: `false`
-- Runs `git submodule update --init --recursive` in the new worktree
-- `--no-hooks` does not skip submodule initialization
-- Repositories without `.gitmodules` are treated as a successful no-op by git
-- Submodule update failures abort `vibe start` and leave the created worktree available for inspection
-
 ## Worktree Configuration <Badge text="v0.6.0+" />
 
 Customize the worktree directory path using an external script.
@@ -190,9 +175,6 @@ post_start = [
 ]
 pre_clean = ["git stash"]
 post_clean = ["echo 'Cleanup complete'"]
-
-[submodules]
-auto_init = true
 
 [worktree]
 path_script = "~/.config/vibe/worktree-path.sh"

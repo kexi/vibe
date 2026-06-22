@@ -3,8 +3,7 @@
 //! Ported from `packages/core/src/commands/start.ts`. The validation cascade,
 //! existing-branch navigate, same-branch idempotent re-entry, different-branch
 //! Overwrite/Reuse/Cancel select, worktree creation, and the
-//! submodule init → pre_start → copy → post_start config-and-hooks sequence
-//! mirror the TS. The
+//! pre_start → copy → post_start config-and-hooks sequence mirror the TS. The
 //! Claude-Code `--claude-code-worktree-hook` mode reads a name from stdin and
 //! outputs the worktree PATH to stdout (not a `cd`), with non-fatal post-setup.
 //!
@@ -502,8 +501,8 @@ where
     )))
 }
 
-/// Run config-driven operations: submodule init → pre_start (in repo_root) →
-/// copy files + dirs → post_start (in worktree_path).
+/// Run config-driven hooks + copy: pre_start (in repo_root) → copy files + dirs →
+/// post_start (in worktree_path).
 fn run_config_and_hooks<I, G, R, S, P, Sr>(
     deps: &StartDeps<I, G, R, S, P, Sr>,
     config: Option<&VibeConfig>,
@@ -530,8 +529,6 @@ where
     if has_ops {
         deps.tracker.start();
     }
-
-    init_submodules(deps, config, worktree_path, options.dry_run)?;
 
     // pre_start hooks (in repo_root).
     if !options.skip_hooks {
@@ -613,7 +610,6 @@ where
 
 /// Whether config has any hook/copy operation (drives starting the tracker).
 fn config_has_operations(config: &VibeConfig, options: &ConfigAndHooks) -> bool {
-    let has_submodule_init = submodules_auto_init_enabled(config);
     let hooks_count = if options.skip_hooks {
         0
     } else {
@@ -638,65 +634,7 @@ fn config_has_operations(config: &VibeConfig, options: &ConfigAndHooks) -> bool 
             })
             .unwrap_or(0)
     };
-    has_submodule_init || hooks_count + copy_count > 0
-}
-
-fn submodules_auto_init_enabled(config: &VibeConfig) -> bool {
-    config
-        .submodules
-        .as_ref()
-        .and_then(|s| s.auto_init)
-        .unwrap_or(false)
-}
-
-fn init_submodules<I, G, R, S, P, Sr>(
-    deps: &StartDeps<I, G, R, S, P, Sr>,
-    config: &VibeConfig,
-    worktree_path: &str,
-    dry_run: bool,
-) -> Result<()>
-where
-    I: Io,
-    G: GitRunner,
-    R: RepoResolver,
-    S: ScriptRunner,
-    P: Prompt,
-    Sr: StdinReader,
-{
-    if !submodules_auto_init_enabled(config) {
-        return Ok(());
-    }
-
-    let command = format!("git -C {worktree_path} submodule update --init --recursive");
-    if dry_run {
-        log_dry_run(deps.io, &format!("Would run: {command}"));
-        return Ok(());
-    }
-
-    let phase = deps.tracker.add_phase("Initializing submodules");
-    let task = deps
-        .tracker
-        .add_task(phase, "git submodule update --init --recursive");
-    deps.tracker.start_task(task);
-    let result = deps.git.run(&[
-        "-C",
-        worktree_path,
-        "submodule",
-        "update",
-        "--init",
-        "--recursive",
-    ]);
-
-    match result {
-        Ok(_) => {
-            deps.tracker.complete_task(task);
-            Ok(())
-        }
-        Err(err) => {
-            deps.tracker.fail_task(task, &err.to_string());
-            Err(err)
-        }
-    }
+    hooks_count + copy_count > 0
 }
 
 /// Run a lifecycle hook list with a phase/tasks on the tracker.
