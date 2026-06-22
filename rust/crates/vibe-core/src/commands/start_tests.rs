@@ -23,6 +23,7 @@ struct MockGit {
     local_branches: Vec<String>,
     remote_branches: Vec<String>,
     existing_revisions: Vec<String>,
+    fail_prefix: Option<Vec<String>>,
     pub calls: RefCell<Vec<Vec<String>>>,
 }
 
@@ -34,6 +35,7 @@ impl MockGit {
             local_branches: vec![],
             remote_branches: vec![],
             existing_revisions: vec![],
+            fail_prefix: None,
             calls: RefCell::new(vec![]),
         }
     }
@@ -41,11 +43,26 @@ impl MockGit {
         self.existing_revisions.push(r.to_string());
         self
     }
+    fn failing_on(mut self, prefix: &[&str]) -> Self {
+        self.fail_prefix = Some(prefix.iter().map(|s| s.to_string()).collect());
+        self
+    }
     fn calls_contain(&self, prefix: &[&str]) -> bool {
         self.calls
             .borrow()
             .iter()
             .any(|c| c.len() >= prefix.len() && c[..prefix.len()] == *prefix)
+    }
+    fn submodule_update_calls(&self) -> usize {
+        self.calls
+            .borrow()
+            .iter()
+            .filter(|c| {
+                c.iter().any(|arg| arg == "submodule")
+                    && c.iter().any(|arg| arg == "update")
+                    && c.iter().any(|arg| arg == "--init")
+            })
+            .count()
     }
 }
 
@@ -55,8 +72,43 @@ impl GitRunner for MockGit {
             .borrow_mut()
             .push(args.iter().map(|s| s.to_string()).collect());
 
+        if let Some(prefix) = &self.fail_prefix {
+            let is_matching_prefix = args.len() >= prefix.len()
+                && args
+                    .iter()
+                    .take(prefix.len())
+                    .zip(prefix.iter())
+                    .all(|(actual, expected)| actual == expected);
+            if is_matching_prefix {
+                return Err(VibeError::GitOperation {
+                    command: args.join(" "),
+                    message: "failed: submodule update".into(),
+                });
+            }
+        }
+
         if args.contains(&"--show-toplevel") {
             return Ok(self.repo_root.clone());
+        }
+        if args.contains(&"config") && args.contains(&"--file") && args.contains(&".gitmodules") {
+            let gitmodules = std::path::Path::new(&self.repo_root).join(".gitmodules");
+            let content =
+                std::fs::read_to_string(&gitmodules).map_err(|e| VibeError::GitOperation {
+                    command: args.join(" "),
+                    message: format!("failed: {e}"),
+                })?;
+            let paths = parse_gitmodules_paths_for_test(&content);
+            if paths.is_empty() {
+                return Err(VibeError::GitOperation {
+                    command: args.join(" "),
+                    message: "failed: no submodule paths".into(),
+                });
+            }
+            return Ok(paths
+                .into_iter()
+                .map(|path| format!("submodule.test.path {path}"))
+                .collect::<Vec<_>>()
+                .join("\n"));
         }
         if args.contains(&"list") && args.contains(&"worktree") {
             return Ok(self.worktree_list.clone());
@@ -95,6 +147,15 @@ impl GitRunner for MockGit {
         // worktree add / remove succeed.
         Ok(String::new())
     }
+}
+
+fn parse_gitmodules_paths_for_test(content: &str) -> Vec<String> {
+    content
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("path"))
+        .filter_map(|line| line.trim_start().strip_prefix('='))
+        .map(|path| path.trim().trim_matches('"').to_string())
+        .collect()
 }
 
 /// Resolver returning no repo info (config load → none).
@@ -700,6 +761,12 @@ fn different_branch_cancel_emits_no_cd() {
 /// Build a trusted-config fixture + resolver, returning (fixture, io, resolver,
 /// repo_root). The config has a pre_start, a copy file, and a post_start hook.
 fn trusted_config_repo() -> (Fixture, FakeIo, TrustResolver, String) {
+    trusted_config_repo_with_content(
+        "[hooks]\npre_start = [\"echo pre\"]\npost_start = [\"echo post\"]\n[copy]\nfiles = [\".env\"]\n",
+    )
+}
+
+fn trusted_config_repo_with_content(content: &str) -> (Fixture, FakeIo, TrustResolver, String) {
     use crate::hash::hash_content;
     use crate::settings::{AllowEntry, RepoId, VibeSettings};
     use crate::settings_io::save_user_settings;
@@ -707,7 +774,6 @@ fn trusted_config_repo() -> (Fixture, FakeIo, TrustResolver, String) {
 
     let fx = Fixture::new();
     let repo = fx.mkdir("repo");
-    let content = "[hooks]\npre_start = [\"echo pre\"]\npost_start = [\"echo post\"]\n[copy]\nfiles = [\".env\"]\n";
     fx.write("repo/.vibe.toml", content);
     fx.write("repo/.env", "SECRET=1");
 
@@ -740,6 +806,120 @@ fn trusted_config_repo() -> (Fixture, FakeIo, TrustResolver, String) {
         TrustResolver { repos },
         repo.to_string_lossy().into_owned(),
     )
+}
+
+fn trusted_repo_with_submodule_config() -> (Fixture, FakeIo, TrustResolver, String) {
+    use crate::hash::hash_content;
+    use crate::settings::{AllowEntry, RepoId, VibeSettings};
+    use crate::settings_io::save_user_settings;
+    use std::collections::HashMap;
+
+    let fx = Fixture::new();
+    let repo_raw = fx.mkdir("repo");
+    let submodule_origin_raw = fx.mkdir("repo/libs/foo");
+    let worktree_raw = fx.mkdir("repo-feat");
+    let _ = fx.mkdir("repo-feat/libs/foo");
+
+    let parent = "[submodules]\nconfigs = [\"libs/foo\"]\n[hooks]\npre_start = [\"echo parent\"]\n";
+    let origin_submodule = "[hooks]\npre_start = [\"echo origin-sub-pre\"]\n";
+    let worktree_submodule = "[hooks]\npre_start = [\"echo sub-pre\"]\npost_start = [\"echo sub-post\"]\n[copy]\nfiles = [\".env\"]\n";
+    fx.write("repo/.vibe.toml", parent);
+    fx.write(
+        "repo/.gitmodules",
+        "[submodule \"libs/foo\"]\n\tpath = libs/foo\n\turl = https://example.com/foo.git\n",
+    );
+    fx.write("repo/libs/foo/.vibe.toml", origin_submodule);
+    fx.write("repo-feat/libs/foo/.vibe.toml", worktree_submodule);
+    fx.write("repo-feat/libs/foo/.env", "SUB=1");
+
+    let repo = repo_raw.canonicalize().unwrap();
+    let submodule_origin = submodule_origin_raw.canonicalize().unwrap();
+    let worktree = worktree_raw.canonicalize().unwrap();
+    let submodule_worktree = worktree.join("libs/foo").canonicalize().unwrap();
+
+    let io = FakeIo::new().with_env("HOME", fx.path().to_str().unwrap());
+    let mut settings = VibeSettings::default_settings();
+    for (root, file, content) in [
+        (&repo, ".vibe.toml", parent),
+        (&submodule_origin, ".vibe.toml", origin_submodule),
+        (&submodule_worktree, ".vibe.toml", worktree_submodule),
+    ] {
+        settings.permissions.allow.push(AllowEntry {
+            repo_id: RepoId {
+                remote_url: None,
+                repo_root: Some(root.to_string_lossy().into_owned()),
+            },
+            relative_path: file.into(),
+            hashes: vec![hash_content(content.as_bytes())],
+            skip_hash_check: None,
+        });
+    }
+    save_user_settings(&io, &settings, V).unwrap();
+
+    let mut repos = HashMap::new();
+    for (root, file) in [
+        (&repo, ".vibe.toml"),
+        (&submodule_origin, ".vibe.toml"),
+        (&submodule_worktree, ".vibe.toml"),
+    ] {
+        repos.insert(
+            root.join(file).to_string_lossy().into_owned(),
+            RepoInfo {
+                remote_url: None,
+                repo_root: root.to_string_lossy().into_owned(),
+                relative_path: file.into(),
+            },
+        );
+    }
+    (
+        fx,
+        io,
+        TrustResolver { repos },
+        repo.to_string_lossy().into_owned(),
+    )
+}
+
+fn start_with_config(
+    content: &str,
+    fail_prefix: Option<&[&str]>,
+    flags: &StartFlags,
+) -> (
+    Fixture,
+    FakeIo,
+    TrustResolver,
+    String,
+    MockGit,
+    Fakes,
+    Result<Outcome>,
+) {
+    let (fx, io, resolver, repo_root) = trusted_config_repo_with_content(content);
+    let mut git = MockGit::new(
+        &repo_root,
+        &format!("worktree {repo_root}\nbranch refs/heads/main\n\n"),
+    );
+    if let Some(prefix) = fail_prefix {
+        git = git.failing_on(prefix);
+    }
+    let s = NoScript;
+    let p = ScriptPrompt::confirming(true);
+    let sin = FakeStdin::none();
+    let fk = Fakes::new();
+    let result = {
+        let d = StartDeps {
+            io: &io,
+            git: &git,
+            resolver: &resolver,
+            script_runner: &s,
+            prompt: &p,
+            stdin: &sin,
+            hook_runner: &fk.hooks,
+            executor: &fk.exec,
+            tracker: &fk.tracker,
+            version: V,
+        };
+        start_command(&d, "feat", flags, OutputOptions::default())
+    };
+    (fx, io, resolver, repo_root, git, fk, result)
 }
 
 struct TrustResolver {
@@ -828,6 +1008,220 @@ fn no_hooks_and_no_copy_skip_operations() {
     start_command(&d, "feat", &flags, OutputOptions::default()).unwrap();
     assert!(fk.hooks.calls.borrow().is_empty());
     assert!(fk.exec.file_copies.lock().unwrap().is_empty());
+}
+
+#[test]
+fn submodule_configs_run_before_parent_pre_start_with_submodule_roots() {
+    let (fx, io, resolver, repo_root) = trusted_repo_with_submodule_config();
+    let _ = &fx;
+    let git = MockGit::new(
+        &repo_root,
+        &format!("worktree {repo_root}\nbranch refs/heads/main\n\n"),
+    );
+    let s = NoScript;
+    let p = ScriptPrompt::confirming(true);
+    let sin = FakeStdin::none();
+    let fk = Fakes::new();
+    let d = StartDeps {
+        io: &io,
+        git: &git,
+        resolver: &resolver,
+        script_runner: &s,
+        prompt: &p,
+        stdin: &sin,
+        hook_runner: &fk.hooks,
+        executor: &fk.exec,
+        tracker: &fk.tracker,
+        version: V,
+    };
+    start_command(&d, "feat", &StartFlags::default(), OutputOptions::default()).unwrap();
+
+    assert!(git.calls_contain(&[
+        "-C",
+        &format!("{}-feat", repo_root),
+        "submodule",
+        "update",
+        "--init",
+        "--",
+        "libs/foo"
+    ]));
+
+    let hooks = fk.hooks.calls.borrow();
+    assert_eq!(hooks[0].0, "echo sub-pre");
+    assert!(hooks[0].1.ends_with("repo-feat/libs/foo"));
+    assert_eq!(hooks[1].0, "echo sub-post");
+    assert!(hooks[1].1.ends_with("repo-feat/libs/foo"));
+    assert_eq!(hooks[2].0, "echo parent");
+    assert_eq!(hooks[2].1, repo_root);
+
+    let file_copies = fk.exec.file_copies.lock().unwrap();
+    assert_eq!(file_copies.len(), 1);
+    assert!(file_copies[0].0.ends_with("repo/libs/foo/.env"));
+    assert!(file_copies[0].1.ends_with("repo-feat/libs/foo/.env"));
+}
+
+#[test]
+fn submodule_configs_are_skipped_when_omitted() {
+    let content = "[hooks]\npre_start = [\"echo pre\"]\n";
+    let (_fx, _io, _resolver, _repo_root, git, _fk, result) =
+        start_with_config(content, None, &StartFlags::default());
+    result.unwrap();
+    assert_eq!(git.submodule_update_calls(), 0);
+}
+
+#[test]
+fn submodule_configs_respect_no_hooks_and_no_copy() {
+    let (fx, io, resolver, repo_root) = trusted_repo_with_submodule_config();
+    let _ = &fx;
+    let git = MockGit::new(
+        &repo_root,
+        &format!("worktree {repo_root}\nbranch refs/heads/main\n\n"),
+    );
+    let s = NoScript;
+    let p = ScriptPrompt::confirming(true);
+    let sin = FakeStdin::none();
+    let fk = Fakes::new();
+    let d = StartDeps {
+        io: &io,
+        git: &git,
+        resolver: &resolver,
+        script_runner: &s,
+        prompt: &p,
+        stdin: &sin,
+        hook_runner: &fk.hooks,
+        executor: &fk.exec,
+        tracker: &fk.tracker,
+        version: V,
+    };
+    let flags = StartFlags {
+        no_hooks: true,
+        no_copy: true,
+        ..Default::default()
+    };
+    start_command(&d, "feat", &flags, OutputOptions::default()).unwrap();
+
+    assert_eq!(git.submodule_update_calls(), 1);
+    assert!(fk.hooks.calls.borrow().is_empty());
+    assert!(fk.exec.file_copies.lock().unwrap().is_empty());
+}
+
+#[test]
+fn submodule_configs_dry_run_logs_without_running_git() {
+    let (fx, io, resolver, repo_root) = trusted_repo_with_submodule_config();
+    let _ = &fx;
+    std::fs::remove_dir_all(format!("{repo_root}-feat")).unwrap();
+    let git = MockGit::new(
+        &repo_root,
+        &format!("worktree {repo_root}\nbranch refs/heads/main\n\n"),
+    );
+    let s = NoScript;
+    let p = ScriptPrompt::confirming(true);
+    let sin = FakeStdin::none();
+    let fk = Fakes::new();
+    let d = StartDeps {
+        io: &io,
+        git: &git,
+        resolver: &resolver,
+        script_runner: &s,
+        prompt: &p,
+        stdin: &sin,
+        hook_runner: &fk.hooks,
+        executor: &fk.exec,
+        tracker: &fk.tracker,
+        version: V,
+    };
+    let flags = StartFlags {
+        dry_run: true,
+        ..Default::default()
+    };
+    start_command(&d, "feat", &flags, OutputOptions::default()).unwrap();
+
+    assert_eq!(git.submodule_update_calls(), 0);
+    assert!(io.stderr_text().contains("Would run: git -C"));
+    assert!(io
+        .stderr_text()
+        .contains("submodule update --init -- libs/foo"));
+}
+
+#[test]
+fn submodule_config_update_failure_aborts_remaining_operations() {
+    let (fx, io, resolver, repo_root) = trusted_repo_with_submodule_config();
+    let _ = &fx;
+    let git = MockGit::new(
+        &repo_root,
+        &format!("worktree {repo_root}\nbranch refs/heads/main\n\n"),
+    )
+    .failing_on(&["-C", &format!("{}-feat", repo_root), "submodule"]);
+    let s = NoScript;
+    let p = ScriptPrompt::confirming(true);
+    let sin = FakeStdin::none();
+    let fk = Fakes::new();
+    let d = StartDeps {
+        io: &io,
+        git: &git,
+        resolver: &resolver,
+        script_runner: &s,
+        prompt: &p,
+        stdin: &sin,
+        hook_runner: &fk.hooks,
+        executor: &fk.exec,
+        tracker: &fk.tracker,
+        version: V,
+    };
+    let result = start_command(&d, "feat", &StartFlags::default(), OutputOptions::default());
+
+    assert!(result.is_err());
+    assert!(fk.hooks.calls.borrow().is_empty());
+    assert!(fk.exec.file_copies.lock().unwrap().is_empty());
+}
+
+#[test]
+fn submodule_config_invalid_path_is_rejected_before_git_update() {
+    let content = "[submodules]\nconfigs = [\"../foo\"]\n";
+    let (_fx, _io, _resolver, _repo_root, git, _fk, result) =
+        start_with_config(content, None, &StartFlags::default());
+
+    let err = result.unwrap_err();
+    assert!(err
+        .to_string()
+        .contains("must be a parent-repo-relative submodule path"));
+    assert_eq!(git.submodule_update_calls(), 0);
+}
+
+#[test]
+fn submodule_config_requires_its_own_trust() {
+    let (fx, io, mut resolver, repo_root) = trusted_repo_with_submodule_config();
+    let _ = &fx;
+    resolver
+        .repos
+        .retain(|path, _| !path.ends_with("repo-feat/libs/foo/.vibe.toml"));
+    let git = MockGit::new(
+        &repo_root,
+        &format!("worktree {repo_root}\nbranch refs/heads/main\n\n"),
+    );
+    let s = NoScript;
+    let p = ScriptPrompt::confirming(true);
+    let sin = FakeStdin::none();
+    let fk = Fakes::new();
+    let d = StartDeps {
+        io: &io,
+        git: &git,
+        resolver: &resolver,
+        script_runner: &s,
+        prompt: &p,
+        stdin: &sin,
+        hook_runner: &fk.hooks,
+        executor: &fk.exec,
+        tracker: &fk.tracker,
+        version: V,
+    };
+    let err =
+        start_command(&d, "feat", &StartFlags::default(), OutputOptions::default()).unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains(".vibe.toml file is not trusted or has been modified"));
+    assert!(fk.hooks.calls.borrow().is_empty());
 }
 
 // --- claude-code worktree hook mode: stdout path ---
