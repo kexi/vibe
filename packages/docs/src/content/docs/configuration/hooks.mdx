@@ -9,12 +9,12 @@ Hooks allow you to run commands automatically during the worktree lifecycle.
 
 ## Available Hooks
 
-| Hook         | When                     | Working Directory |
-| ------------ | ------------------------ | ----------------- |
-| `pre_start`  | Before worktree creation | Origin repository |
-| `post_start` | After worktree creation  | New worktree      |
-| `pre_clean`  | Before worktree removal  | Current worktree  |
-| `post_clean` | After worktree removal   | Main repository   |
+| Hook         | When                    | Working Directory |
+| ------------ | ----------------------- | ----------------- |
+| `pre_start`  | After worktree creation | Origin repository |
+| `post_start` | After worktree creation | New worktree      |
+| `pre_clean`  | Before worktree removal | Current worktree  |
+| `post_clean` | After worktree removal  | Main repository   |
 
 ## Configuration
 
@@ -78,10 +78,11 @@ Progress display auto-disables in non-TTY environments (e.g., CI/CD), and hook o
 
 For `vibe start`:
 
-1. `pre_start` hooks run in origin repository
-2. Worktree is created
-3. Files/directories are copied
-4. `post_start` hooks run in new worktree
+1. Worktree is created
+2. Submodules are initialized when `[submodules] auto_init = true`
+3. `pre_start` hooks run in origin repository
+4. Files/directories are copied
+5. `post_start` hooks run in new worktree
 
 For `vibe clean`:
 
@@ -138,15 +139,17 @@ pre_clean = ["docker-compose down"]
 
 ### Git Submodules
 
+Prefer first-class submodule initialization when recursive defaults are enough:
+
 ```toml
-[hooks]
-post_start = [
-  "git submodule update --init --recursive || true"
-]
+[submodules]
+auto_init = true
 ```
 
-:::tip
-`|| true` prevents the hook from failing when submodule initialization encounters network issues. Remove it if you want strict error handling.
+This runs `git submodule update --init --recursive` in the new worktree before `pre_start` hooks. Failures abort `vibe start` so authentication and network errors are visible.
+
+:::note
+Use a hook instead when you need custom submodule behavior, such as non-recursive updates, filtered updates, or intentionally ignoring failures.
 :::
 
 ## Skipping Hooks
@@ -199,11 +202,12 @@ When Claude Code creates a worktree (via natural language, `isolation: "worktree
 **WorktreeCreate:**
 
 1. Reads worktree name from stdin (Claude Code hook protocol)
-2. Runs `pre_start` hooks in the origin repository
-3. Creates the git worktree
-4. Copies files/directories using CoW
-5. Runs `post_start` hooks in the new worktree (e.g., `pnpm install`)
-6. Outputs the worktree path to stdout for Claude Code
+2. Creates the git worktree
+3. Initializes submodules when `[submodules] auto_init = true`
+4. Runs `pre_start` hooks in the origin repository
+5. Copies files/directories using CoW
+6. Runs `post_start` hooks in the new worktree (e.g., `pnpm install`)
+7. Outputs the worktree path to stdout for Claude Code
 
 **WorktreeRemove:**
 
