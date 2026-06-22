@@ -22,7 +22,7 @@
     "@kexi/vibe-win32-x64": "2.0.0"
   },
   "devDependencies": {
-    "vitest": "^2.1.0"
+    "vitest": "^3.2.6"
   },
   "engines": {
     "node": ">=18.0.0"
