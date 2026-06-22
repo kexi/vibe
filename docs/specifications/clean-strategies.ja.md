@@ -25,7 +25,7 @@ Trash Strategy は、ディレクトリを即座に削除するのではなく�
 
 ### ネイティブゴミ箱サポート
 
-vibe は [trash crate](https://lib.rs/crates/trash) (`@kexi/vibe-native` 経由) を使用してクロスプラットフォームのゴミ箱機能を提供します：
+vibe は Rust バイナリから [trash crate](https://lib.rs/crates/trash) を使用してクロスプラットフォームのゴミ箱機能を提供します：
 
 - **macOS**: Finder Trash（従来と同じ）
 - **Linux**: XDG Trash (`~/.local/share/Trash`) [FreeDesktop.org 仕様](https://specifications.freedesktop.org/trash-spec/trashspec-latest.html)準拠
@@ -37,15 +37,15 @@ XDG Trash に移動されたファイルは、デスクトップ環境のゴミ�
 
 ### macOS
 
-1. **主要 (Node.js)**: ネイティブモジュール (`@kexi/vibe-native`) 経由で Finder Trash に移動
+1. **主要 (Rust)**: `trash` crate 経由で Finder Trash に移動
    - 内部的に Rust の `trash` crate を使用
    - Finder のゴミ箱フォルダに表示される
-2. **フォールバック (Deno)**: AppleScript (`osascript`) 経由で Finder Trash に移動
+2. **フォールバック (Rust/macOS)**: AppleScript (`osascript`) 経由で Finder Trash に移動
 3. **フォールバック**: 両方とも失敗した場合（例：SSH セッション）、/tmp + バックグラウンド削除にフォールバック
 
 ### Linux
 
-1. **主要 (Node.js)**: ネイティブモジュール (`@kexi/vibe-native`) 経由で XDG Trash に移動
+1. **主要 (Rust)**: `trash` crate 経由で XDG Trash に移動
    - [XDG Trash 仕様](https://specifications.freedesktop.org/trash-spec/trashspec-latest.html)を実装した Rust の `trash` crate を使用
    - ファイルは `~/.local/share/Trash/files/` に移動
    - メタデータは `~/.local/share/Trash/info/` に保存
@@ -148,7 +148,7 @@ packages/
     │       ├── isFastRemoveSupported()
     │       ├── generateTrashName()
     │       ├── moveToSystemTrash()
-    │       ├── moveToMacOSTrashViaAppleScript()
+    │       ├── move_to_macos_trash_via_osascript()
     │       ├── spawnBackgroundDelete()
     │       ├── fastRemoveDirectory()
     │       └── cleanupStaleTrash()
@@ -163,7 +163,7 @@ packages/
 | `isFastRemoveSupported()`          | プラットフォームサポートの確認                        |
 | `generateTrashName()`              | 一意のゴミ箱ディレクトリ名を生成                      |
 | `moveToSystemTrash()`              | ネイティブゴミ箱 + プラットフォーム固有フォールバック |
-| `moveToMacOSTrashViaAppleScript()` | Deno macOS フォールバック                             |
+| `move_to_macos_trash_via_osascript()` | Rust macOS フォールバック                             |
 | `spawnBackgroundDelete()`          | デタッチされたバックグラウンド削除                    |
 | `fastRemoveDirectory()`            | メインの高速削除関数                                  |
 | `cleanupStaleTrash()`              | 残存ゴミ箱ディレクトリのクリーンアップ                |

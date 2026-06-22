@@ -25,7 +25,7 @@ Trash Strategy moves directories to a temporary location instead of deleting the
 
 ### Native Trash Support
 
-vibe uses the [trash crate](https://lib.rs/crates/trash) (via `@kexi/vibe-native`) for cross-platform trash support:
+vibe uses the [trash crate](https://lib.rs/crates/trash) through the Rust binary for cross-platform trash support:
 
 - **macOS**: Finder Trash (same as before)
 - **Linux**: XDG Trash (`~/.local/share/Trash`) following [FreeDesktop.org specification](https://specifications.freedesktop.org/trash-spec/trashspec-latest.html)
@@ -37,15 +37,15 @@ Files moved to XDG Trash appear in your desktop environment's trash folder (GNOM
 
 ### macOS
 
-1. **Primary (Node.js)**: Move to Finder Trash via native module (`@kexi/vibe-native`)
+1. **Primary (Rust)**: Move to Finder Trash via the `trash` crate
    - Uses the Rust `trash` crate internally
    - Appears in Finder's Trash folder
-2. **Fallback (Deno)**: Move to Finder Trash via AppleScript (`osascript`)
+2. **Fallback (Rust/macOS)**: Move to Finder Trash via AppleScript (`osascript`)
 3. **Fallback**: If both fail (e.g., SSH session), falls back to /tmp + background deletion
 
 ### Linux
 
-1. **Primary (Node.js)**: Move to XDG Trash via native module (`@kexi/vibe-native`)
+1. **Primary (Rust)**: Move to XDG Trash via the `trash` crate
    - Uses the Rust `trash` crate implementing [XDG Trash specification](https://specifications.freedesktop.org/trash-spec/trashspec-latest.html)
    - Files moved to `~/.local/share/Trash/files/`
    - Metadata stored in `~/.local/share/Trash/info/`
@@ -148,7 +148,7 @@ packages/
     │       ├── isFastRemoveSupported()
     │       ├── generateTrashName()
     │       ├── moveToSystemTrash()        # Native trash + platform fallback
-    │       ├── moveToMacOSTrashViaAppleScript()  # Deno macOS fallback
+    │       ├── move_to_macos_trash_via_osascript()  # Rust macOS fallback
     │       ├── spawnBackgroundDelete()
     │       ├── fastRemoveDirectory()
     │       └── cleanupStaleTrash()

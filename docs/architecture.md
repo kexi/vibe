@@ -8,7 +8,7 @@ This document describes the architecture of the Vibe CLI tool.
 
 ## Runtime Abstraction Layer
 
-Vibe supports multiple JavaScript runtimes (Deno and Node.js) through a runtime abstraction layer.
+In the TypeScript-era implementation, Vibe supported multiple JavaScript runtimes (Deno and Node.js) through a runtime abstraction layer. The current implementation is a single Rust binary and does not support Deno.
 
 ```mermaid
 flowchart TD
@@ -98,8 +98,8 @@ flowchart TD
 
 | Method                  | Platform                | Description                                 |
 | ----------------------- | ----------------------- | ------------------------------------------- |
-| Native Trash            | Node.js (all platforms) | Uses @kexi/vibe-native with trash crate     |
-| AppleScript             | Deno on macOS           | Fallback using Finder via osascript         |
+| Native Trash            | Rust binary             | Uses the trash crate                        |
+| AppleScript             | Rust binary on macOS    | Fallback using Finder via osascript         |
 | /tmp + Background       | Linux (no desktop)      | Moves to /tmp and deletes in background     |
 | Parent Dir + Background | Cross-device            | Same filesystem fallback for network mounts |
 
