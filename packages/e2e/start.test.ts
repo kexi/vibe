@@ -1,5 +1,5 @@
 import { execFileSync } from "child_process";
-import { existsSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { basename, dirname, join } from "path";
 import { afterEach, describe, expect, test } from "vitest";
 import { getVibePath, VibeCommandRunner } from "./helpers/pty.js";
@@ -10,6 +10,66 @@ import {
   assertOutputContains,
   waitForCondition,
 } from "./helpers/assertions.js";
+
+function git(args: string[], cwd: string, homePath: string): string {
+  return execFileSync("git", args, {
+    cwd,
+    encoding: "utf-8",
+    env: {
+      ...process.env,
+      HOME: homePath,
+    },
+    stdio: "pipe",
+  });
+}
+
+async function trustConfig(vibePath: string, cwd: string, homePath: string): Promise<void> {
+  const trustRunner = new VibeCommandRunner(vibePath, cwd, homePath);
+  try {
+    await trustRunner.spawn(["trust"]);
+    await trustRunner.waitForExit();
+    const trustOutput = trustRunner.getOutput();
+    assertExitCode(trustRunner.getExitCode(), 0, trustOutput);
+  } finally {
+    trustRunner.dispose();
+  }
+}
+
+function createSubmoduleSource(
+  homePath: string,
+  name: string,
+  markerFile: string,
+): string {
+  const sourcePath = join(homePath, `${name}-source`);
+  mkdirSync(sourcePath, { recursive: true });
+  git(["init"], sourcePath, homePath);
+  git(["config", "user.email", "test@example.com"], sourcePath, homePath);
+  git(["config", "user.name", "Test User"], sourcePath, homePath);
+  git(["remote", "add", "origin", sourcePath], sourcePath, homePath);
+  writeFileSync(join(sourcePath, "README.md"), `# ${name}\n`);
+  writeFileSync(
+    join(sourcePath, ".vibe.toml"),
+    `[hooks]\npost_start = ["touch ${markerFile}"]\n`,
+  );
+  git(["add", "README.md", ".vibe.toml"], sourcePath, homePath);
+  git(["commit", "-m", `Add ${name} config`], sourcePath, homePath);
+  git(["branch", "-M", "main"], sourcePath, homePath);
+  return sourcePath;
+}
+
+function addSubmodule(
+  repoPath: string,
+  homePath: string,
+  sourcePath: string,
+  submodulePath: string,
+): void {
+  git(["config", "--global", "protocol.file.allow", "always"], repoPath, homePath);
+  git(
+    ["-c", "protocol.file.allow=always", "submodule", "add", sourcePath, submodulePath],
+    repoPath,
+    homePath,
+  );
+}
 
 describe("start command", () => {
   let cleanup: (() => Promise<void>) | null = null;
@@ -456,6 +516,88 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.hook-ran"]
 
       expect(existsSync(hookMarker)).toBe(false);
       expect(existsSync(copiedFile)).toBe(false);
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test("runs .vibe.toml from one initialized submodule", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+    const fooSource = createSubmoduleSource(homePath, "foo", ".foo-submodule-hook-ran");
+    addSubmodule(repoPath, homePath, fooSource, "libs/foo");
+
+    writeFileSync(join(repoPath, ".vibe.toml"), '[submodules]\nconfigs = ["libs/foo"]\n');
+    git(["add", ".vibe.toml", ".gitmodules", "libs/foo"], repoPath, homePath);
+    git(["commit", "-m", "Add one submodule config"], repoPath, homePath);
+
+    await trustConfig(vibePath, repoPath, homePath);
+    await trustConfig(vibePath, fooSource, homePath);
+
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
+    try {
+      await runner.spawn(["start", "feat/one-submodule"]);
+      await runner.waitForExit();
+
+      const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
+
+      const parentDir = dirname(repoPath);
+      const repoName = basename(repoPath);
+      const worktreePath = `${parentDir}/${repoName}-feat-one-submodule`;
+      const submoduleWorktreePath = join(worktreePath, "libs/foo");
+
+      await assertDirectoryExists(submoduleWorktreePath);
+      expect(existsSync(join(submoduleWorktreePath, ".vibe.toml"))).toBe(true);
+      expect(existsSync(join(submoduleWorktreePath, ".foo-submodule-hook-ran"))).toBe(true);
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test("runs .vibe.toml from multiple initialized submodules", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+    const fooSource = createSubmoduleSource(homePath, "foo", ".foo-submodule-hook-ran");
+    const barSource = createSubmoduleSource(homePath, "bar", ".bar-submodule-hook-ran");
+    addSubmodule(repoPath, homePath, fooSource, "libs/foo");
+    addSubmodule(repoPath, homePath, barSource, "vendor/bar");
+
+    writeFileSync(
+      join(repoPath, ".vibe.toml"),
+      '[submodules]\nconfigs = ["libs/foo", "vendor/bar"]\n',
+    );
+    git(["add", ".vibe.toml", ".gitmodules", "libs/foo", "vendor/bar"], repoPath, homePath);
+    git(["commit", "-m", "Add multiple submodule configs"], repoPath, homePath);
+
+    await trustConfig(vibePath, repoPath, homePath);
+    await trustConfig(vibePath, fooSource, homePath);
+    await trustConfig(vibePath, barSource, homePath);
+
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
+    try {
+      await runner.spawn(["start", "feat/multiple-submodules"]);
+      await runner.waitForExit();
+
+      const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
+
+      const parentDir = dirname(repoPath);
+      const repoName = basename(repoPath);
+      const worktreePath = `${parentDir}/${repoName}-feat-multiple-submodules`;
+      const fooWorktreePath = join(worktreePath, "libs/foo");
+      const barWorktreePath = join(worktreePath, "vendor/bar");
+
+      await assertDirectoryExists(fooWorktreePath);
+      await assertDirectoryExists(barWorktreePath);
+      expect(existsSync(join(fooWorktreePath, ".vibe.toml"))).toBe(true);
+      expect(existsSync(join(barWorktreePath, ".vibe.toml"))).toBe(true);
+      expect(existsSync(join(fooWorktreePath, ".foo-submodule-hook-ran"))).toBe(true);
+      expect(existsSync(join(barWorktreePath, ".bar-submodule-hook-ran"))).toBe(true);
     } finally {
       runner.dispose();
     }
