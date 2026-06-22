@@ -698,19 +698,24 @@ where
 
     for path in &paths {
         let roots = resolve_submodule_roots(repo_root, worktree_path, path, options.dry_run)?;
+        let config_root = if options.dry_run {
+            &roots.origin
+        } else {
+            &roots.worktree
+        };
         let Some(submodule_config) =
-            load_vibe_config(deps.io, deps.resolver, deps.version, &roots.origin)?
+            load_vibe_config(deps.io, deps.resolver, deps.version, config_root)?
         else {
             return Err(VibeError::Configuration(format!(
                 "Submodule '{path}' is listed in [submodules] configs, but {}/{} does not exist",
-                roots.origin, VIBE_TOML
+                config_root, VIBE_TOML
             )));
         };
 
         run_config_body(
             deps,
             &submodule_config,
-            &roots.origin,
+            config_root,
             &roots.worktree,
             options,
         )?;

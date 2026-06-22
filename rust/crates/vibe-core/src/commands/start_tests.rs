@@ -821,24 +821,28 @@ fn trusted_repo_with_submodule_config() -> (Fixture, FakeIo, TrustResolver, Stri
     let _ = fx.mkdir("repo-feat/libs/foo");
 
     let parent = "[submodules]\nconfigs = [\"libs/foo\"]\n[hooks]\npre_start = [\"echo parent\"]\n";
-    let submodule = "[hooks]\npre_start = [\"echo sub-pre\"]\npost_start = [\"echo sub-post\"]\n[copy]\nfiles = [\".env\"]\n";
+    let origin_submodule = "[hooks]\npre_start = [\"echo origin-sub-pre\"]\n";
+    let worktree_submodule = "[hooks]\npre_start = [\"echo sub-pre\"]\npost_start = [\"echo sub-post\"]\n[copy]\nfiles = [\".env\"]\n";
     fx.write("repo/.vibe.toml", parent);
     fx.write(
         "repo/.gitmodules",
         "[submodule \"libs/foo\"]\n\tpath = libs/foo\n\turl = https://example.com/foo.git\n",
     );
-    fx.write("repo/libs/foo/.vibe.toml", submodule);
-    fx.write("repo/libs/foo/.env", "SUB=1");
+    fx.write("repo/libs/foo/.vibe.toml", origin_submodule);
+    fx.write("repo-feat/libs/foo/.vibe.toml", worktree_submodule);
+    fx.write("repo-feat/libs/foo/.env", "SUB=1");
 
     let repo = repo_raw.canonicalize().unwrap();
     let submodule_origin = submodule_origin_raw.canonicalize().unwrap();
     let worktree = worktree_raw.canonicalize().unwrap();
+    let submodule_worktree = worktree.join("libs/foo").canonicalize().unwrap();
 
     let io = FakeIo::new().with_env("HOME", fx.path().to_str().unwrap());
     let mut settings = VibeSettings::default_settings();
     for (root, file, content) in [
         (&repo, ".vibe.toml", parent),
-        (&submodule_origin, ".vibe.toml", submodule),
+        (&submodule_origin, ".vibe.toml", origin_submodule),
+        (&submodule_worktree, ".vibe.toml", worktree_submodule),
     ] {
         settings.permissions.allow.push(AllowEntry {
             repo_id: RepoId {
@@ -853,7 +857,11 @@ fn trusted_repo_with_submodule_config() -> (Fixture, FakeIo, TrustResolver, Stri
     save_user_settings(&io, &settings, V).unwrap();
 
     let mut repos = HashMap::new();
-    for (root, file) in [(&repo, ".vibe.toml"), (&submodule_origin, ".vibe.toml")] {
+    for (root, file) in [
+        (&repo, ".vibe.toml"),
+        (&submodule_origin, ".vibe.toml"),
+        (&submodule_worktree, ".vibe.toml"),
+    ] {
         repos.insert(
             root.join(file).to_string_lossy().into_owned(),
             RepoInfo {
@@ -863,7 +871,6 @@ fn trusted_repo_with_submodule_config() -> (Fixture, FakeIo, TrustResolver, Stri
             },
         );
     }
-    let _ = worktree;
     (
         fx,
         io,
@@ -1041,7 +1048,7 @@ fn submodule_configs_run_before_parent_pre_start_with_submodule_roots() {
 
     let hooks = fk.hooks.calls.borrow();
     assert_eq!(hooks[0].0, "echo sub-pre");
-    assert!(hooks[0].1.ends_with("repo/libs/foo"));
+    assert!(hooks[0].1.ends_with("repo-feat/libs/foo"));
     assert_eq!(hooks[1].0, "echo sub-post");
     assert!(hooks[1].1.ends_with("repo-feat/libs/foo"));
     assert_eq!(hooks[2].0, "echo parent");
@@ -1049,7 +1056,7 @@ fn submodule_configs_run_before_parent_pre_start_with_submodule_roots() {
 
     let file_copies = fk.exec.file_copies.lock().unwrap();
     assert_eq!(file_copies.len(), 1);
-    assert!(file_copies[0].0.ends_with("repo/libs/foo/.env"));
+    assert!(file_copies[0].0.ends_with("repo-feat/libs/foo/.env"));
     assert!(file_copies[0].1.ends_with("repo-feat/libs/foo/.env"));
 }
 
@@ -1187,7 +1194,7 @@ fn submodule_config_requires_its_own_trust() {
     let _ = &fx;
     resolver
         .repos
-        .retain(|path, _| !path.ends_with("repo/libs/foo/.vibe.toml"));
+        .retain(|path, _| !path.ends_with("repo-feat/libs/foo/.vibe.toml"));
     let git = MockGit::new(
         &repo_root,
         &format!("worktree {repo_root}\nbranch refs/heads/main\n\n"),
