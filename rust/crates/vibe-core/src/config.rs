@@ -22,8 +22,6 @@ pub struct VibeConfig {
     pub worktree: Option<WorktreeConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub clean: Option<CleanConfig>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub submodules: Option<SubmodulesConfig>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -87,13 +85,6 @@ pub struct WorktreeConfig {
 pub struct CleanConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delete_branch: Option<bool>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SubmodulesConfig {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub auto_init: Option<bool>,
 }
 
 /// Parse a `VibeConfig` from TOML text, validating it like the Zod schema.
@@ -229,16 +220,6 @@ pub fn merge_configs(base: &VibeConfig, local: &VibeConfig) -> VibeConfig {
             .and_then(|c| c.delete_branch)
             .or_else(|| base.clean.as_ref().and_then(|c| c.delete_branch));
         merged.clean = Some(CleanConfig { delete_branch });
-    }
-
-    // submodules: present if either side has it; auto_init local > base.
-    if base.submodules.is_some() || local.submodules.is_some() {
-        let auto_init = local
-            .submodules
-            .as_ref()
-            .and_then(|s| s.auto_init)
-            .or_else(|| base.submodules.as_ref().and_then(|s| s.auto_init));
-        merged.submodules = Some(SubmodulesConfig { auto_init });
     }
 
     merged
@@ -467,47 +448,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn submodules_local_auto_init_wins() {
-        let base = VibeConfig {
-            submodules: Some(SubmodulesConfig {
-                auto_init: Some(false),
-            }),
-            ..Default::default()
-        };
-        let local = VibeConfig {
-            submodules: Some(SubmodulesConfig {
-                auto_init: Some(true),
-            }),
-            ..Default::default()
-        };
-        assert_eq!(
-            merge_configs(&base, &local).submodules.unwrap().auto_init,
-            Some(true)
-        );
-    }
-
-    #[test]
-    fn submodules_base_auto_init_survives_with_unrelated_local() {
-        let base = VibeConfig {
-            submodules: Some(SubmodulesConfig {
-                auto_init: Some(true),
-            }),
-            ..Default::default()
-        };
-        let local = VibeConfig {
-            copy: Some(CopyConfig {
-                files: Some(vec!["x".into()]),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        assert_eq!(
-            merge_configs(&base, &local).submodules.unwrap().auto_init,
-            Some(true)
-        );
-    }
-
     // --- parse_vibe_config ---
 
     #[test]
@@ -534,24 +474,14 @@ path_script = "p.sh"
 
 [clean]
 delete_branch = true
-
-[submodules]
-auto_init = true
 "#;
         let cfg = parse_vibe_config(toml, "/p/.vibe.toml").unwrap();
         assert_eq!(cfg.copy.as_ref().unwrap().concurrency, Some(8));
         assert_eq!(cfg.clean.as_ref().unwrap().delete_branch, Some(true));
-        assert_eq!(cfg.submodules.as_ref().unwrap().auto_init, Some(true));
         assert_eq!(
             cfg.worktree.as_ref().unwrap().path_script.as_deref(),
             Some("p.sh")
         );
-    }
-
-    #[test]
-    fn parses_submodules_auto_init_true() {
-        let cfg = parse_vibe_config("[submodules]\nauto_init = true\n", "/p/.vibe.toml").unwrap();
-        assert_eq!(cfg.submodules.unwrap().auto_init, Some(true));
     }
 
     #[test]
@@ -564,13 +494,6 @@ auto_init = true
     #[test]
     fn rejects_unknown_nested_property() {
         let toml = "[copy]\nbogus = 1\n";
-        let err = parse_vibe_config(toml, "/path/.vibe.toml").unwrap_err();
-        assert!(err.to_string().contains("/path/.vibe.toml"));
-    }
-
-    #[test]
-    fn rejects_unknown_submodules_field() {
-        let toml = "[submodules]\nbogus = 1\n";
         let err = parse_vibe_config(toml, "/path/.vibe.toml").unwrap_err();
         assert!(err.to_string().contains("/path/.vibe.toml"));
     }

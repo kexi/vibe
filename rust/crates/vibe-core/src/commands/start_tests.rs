@@ -7,7 +7,7 @@ use crate::error::VibeError;
 use crate::git::RepoInfo;
 use crate::hooks::FakeHookRunner;
 use crate::io::FakeIo;
-use crate::progress::{RecordingTracker, TrackerEvent};
+use crate::progress::RecordingTracker;
 use crate::stdin::FakeStdin;
 use crate::worktree_path::ScriptOutput;
 use std::cell::RefCell;
@@ -23,7 +23,6 @@ struct MockGit {
     local_branches: Vec<String>,
     remote_branches: Vec<String>,
     existing_revisions: Vec<String>,
-    fail_prefix: Option<Vec<String>>,
     pub calls: RefCell<Vec<Vec<String>>>,
 }
 
@@ -35,16 +34,11 @@ impl MockGit {
             local_branches: vec![],
             remote_branches: vec![],
             existing_revisions: vec![],
-            fail_prefix: None,
             calls: RefCell::new(vec![]),
         }
     }
     fn with_revision(mut self, r: &str) -> Self {
         self.existing_revisions.push(r.to_string());
-        self
-    }
-    fn failing_on(mut self, prefix: &[&str]) -> Self {
-        self.fail_prefix = Some(prefix.iter().map(|s| s.to_string()).collect());
         self
     }
     fn calls_contain(&self, prefix: &[&str]) -> bool {
@@ -53,18 +47,6 @@ impl MockGit {
             .iter()
             .any(|c| c.len() >= prefix.len() && c[..prefix.len()] == *prefix)
     }
-    fn submodule_update_calls(&self) -> usize {
-        self.calls
-            .borrow()
-            .iter()
-            .filter(|c| {
-                c.iter().any(|arg| arg == "submodule")
-                    && c.iter().any(|arg| arg == "update")
-                    && c.iter().any(|arg| arg == "--init")
-                    && c.iter().any(|arg| arg == "--recursive")
-            })
-            .count()
-    }
 }
 
 impl GitRunner for MockGit {
@@ -72,21 +54,6 @@ impl GitRunner for MockGit {
         self.calls
             .borrow_mut()
             .push(args.iter().map(|s| s.to_string()).collect());
-
-        if let Some(prefix) = &self.fail_prefix {
-            let is_matching_prefix = args.len() >= prefix.len()
-                && args
-                    .iter()
-                    .take(prefix.len())
-                    .zip(prefix.iter())
-                    .all(|(actual, expected)| actual == expected);
-            if is_matching_prefix {
-                return Err(VibeError::GitOperation {
-                    command: args.join(" "),
-                    message: "failed: submodule update".into(),
-                });
-            }
-        }
 
         if args.contains(&"--show-toplevel") {
             return Ok(self.repo_root.clone());
@@ -733,12 +700,6 @@ fn different_branch_cancel_emits_no_cd() {
 /// Build a trusted-config fixture + resolver, returning (fixture, io, resolver,
 /// repo_root). The config has a pre_start, a copy file, and a post_start hook.
 fn trusted_config_repo() -> (Fixture, FakeIo, TrustResolver, String) {
-    trusted_config_repo_with_content(
-        "[hooks]\npre_start = [\"echo pre\"]\npost_start = [\"echo post\"]\n[copy]\nfiles = [\".env\"]\n",
-    )
-}
-
-fn trusted_config_repo_with_content(content: &str) -> (Fixture, FakeIo, TrustResolver, String) {
     use crate::hash::hash_content;
     use crate::settings::{AllowEntry, RepoId, VibeSettings};
     use crate::settings_io::save_user_settings;
@@ -746,6 +707,7 @@ fn trusted_config_repo_with_content(content: &str) -> (Fixture, FakeIo, TrustRes
 
     let fx = Fixture::new();
     let repo = fx.mkdir("repo");
+    let content = "[hooks]\npre_start = [\"echo pre\"]\npost_start = [\"echo post\"]\n[copy]\nfiles = [\".env\"]\n";
     fx.write("repo/.vibe.toml", content);
     fx.write("repo/.env", "SECRET=1");
 
@@ -778,49 +740,6 @@ fn trusted_config_repo_with_content(content: &str) -> (Fixture, FakeIo, TrustRes
         TrustResolver { repos },
         repo.to_string_lossy().into_owned(),
     )
-}
-
-fn start_with_config(
-    content: &str,
-    fail_prefix: Option<&[&str]>,
-    flags: &StartFlags,
-) -> (
-    Fixture,
-    FakeIo,
-    TrustResolver,
-    String,
-    MockGit,
-    Fakes,
-    Result<Outcome>,
-) {
-    let (fx, io, resolver, repo_root) = trusted_config_repo_with_content(content);
-    let mut git = MockGit::new(
-        &repo_root,
-        &format!("worktree {repo_root}\nbranch refs/heads/main\n\n"),
-    );
-    if let Some(prefix) = fail_prefix {
-        git = git.failing_on(prefix);
-    }
-    let s = NoScript;
-    let p = ScriptPrompt::confirming(true);
-    let sin = FakeStdin::none();
-    let fk = Fakes::new();
-    let result = {
-        let d = StartDeps {
-            io: &io,
-            git: &git,
-            resolver: &resolver,
-            script_runner: &s,
-            prompt: &p,
-            stdin: &sin,
-            hook_runner: &fk.hooks,
-            executor: &fk.exec,
-            tracker: &fk.tracker,
-            version: V,
-        };
-        start_command(&d, "feat", flags, OutputOptions::default())
-    };
-    (fx, io, resolver, repo_root, git, fk, result)
 }
 
 struct TrustResolver {
@@ -907,90 +826,6 @@ fn no_hooks_and_no_copy_skip_operations() {
         ..Default::default()
     };
     start_command(&d, "feat", &flags, OutputOptions::default()).unwrap();
-    assert!(fk.hooks.calls.borrow().is_empty());
-    assert!(fk.exec.file_copies.lock().unwrap().is_empty());
-}
-
-#[test]
-fn submodules_auto_init_runs_before_pre_start() {
-    let content = "[submodules]\nauto_init = true\n[hooks]\npre_start = [\"echo pre\"]\n";
-    let (_fx, _io, _resolver, repo_root, git, fk, result) =
-        start_with_config(content, None, &StartFlags::default());
-    result.unwrap();
-
-    assert!(git.calls_contain(&[
-        "-C",
-        &format!("{}-feat", repo_root),
-        "submodule",
-        "update",
-        "--init",
-        "--recursive"
-    ]));
-    let events = fk.tracker.events();
-    let submodule_phase = events.iter().position(
-        |event| matches!(event, TrackerEvent::Phase(label) if label == "Initializing submodules"),
-    );
-    let pre_start_phase = events.iter().position(
-        |event| matches!(event, TrackerEvent::Phase(label) if label == "Pre-start hooks"),
-    );
-    assert!(submodule_phase.is_some());
-    assert!(pre_start_phase.is_some());
-    assert!(submodule_phase < pre_start_phase);
-}
-
-#[test]
-fn submodules_auto_init_false_and_omitted_do_not_run() {
-    for content in [
-        "[submodules]\nauto_init = false\n",
-        "[hooks]\npre_start = [\"echo pre\"]\n",
-    ] {
-        let (_fx, _io, _resolver, _repo_root, git, _fk, result) =
-            start_with_config(content, None, &StartFlags::default());
-        result.unwrap();
-        assert_eq!(git.submodule_update_calls(), 0);
-    }
-}
-
-#[test]
-fn submodules_auto_init_runs_with_no_hooks() {
-    let content = "[submodules]\nauto_init = true\n[hooks]\npre_start = [\"echo pre\"]\npost_start = [\"echo post\"]\n";
-    let flags = StartFlags {
-        no_hooks: true,
-        ..Default::default()
-    };
-    let (_fx, _io, _resolver, _repo_root, git, fk, result) =
-        start_with_config(content, None, &flags);
-    result.unwrap();
-
-    assert_eq!(git.submodule_update_calls(), 1);
-    assert!(fk.hooks.calls.borrow().is_empty());
-}
-
-#[test]
-fn submodules_auto_init_dry_run_logs_without_running_git() {
-    let content = "[submodules]\nauto_init = true\n";
-    let flags = StartFlags {
-        dry_run: true,
-        ..Default::default()
-    };
-    let (_fx, io, _resolver, _repo_root, git, _fk, result) =
-        start_with_config(content, None, &flags);
-    result.unwrap();
-
-    assert_eq!(git.submodule_update_calls(), 0);
-    assert!(io.stderr_text().contains("Would run: git -C"));
-    assert!(io
-        .stderr_text()
-        .contains("submodule update --init --recursive"));
-}
-
-#[test]
-fn submodules_auto_init_failure_aborts_remaining_operations() {
-    let content = "[submodules]\nauto_init = true\n[hooks]\npre_start = [\"echo pre\"]\npost_start = [\"echo post\"]\n[copy]\nfiles = [\".env\"]\n";
-    let (_fx, _io, _resolver, _repo_root, _git, fk, result) =
-        start_with_config(content, Some(&["-C"]), &StartFlags::default());
-
-    assert!(result.is_err());
     assert!(fk.hooks.calls.borrow().is_empty());
     assert!(fk.exec.file_copies.lock().unwrap().is_empty());
 }
