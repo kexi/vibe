@@ -535,7 +535,7 @@ where
 
     run_submodule_configs(deps, config, repo_root, worktree_path, options)?;
 
-    run_config_body(deps, config, repo_root, worktree_path, options)?;
+    run_config_body(deps, config, repo_root, worktree_path, repo_root, options)?;
 
     if has_ops {
         deps.tracker.finish();
@@ -552,6 +552,7 @@ fn run_config_body<I, G, R, S, P, Sr>(
     config: &VibeConfig,
     repo_root: &str,
     worktree_path: &str,
+    copy_source_root: &str,
     options: &ConfigAndHooks,
 ) -> Result<()>
 where
@@ -587,7 +588,7 @@ where
                 .as_ref()
                 .and_then(|c| c.files.as_deref())
                 .unwrap_or(&[]),
-            repo_root,
+            copy_source_root,
             worktree_path,
             options.dry_run,
         );
@@ -606,7 +607,7 @@ where
                 &deps.executor,
                 &deps.tracker,
                 dirs,
-                repo_root,
+                copy_source_root,
                 worktree_path,
                 options.dry_run,
                 concurrency,
@@ -717,6 +718,7 @@ where
             &submodule_config,
             config_root,
             &roots.worktree,
+            &roots.origin,
             options,
         )?;
     }

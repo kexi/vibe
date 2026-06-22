@@ -1056,7 +1056,7 @@ fn submodule_configs_run_before_parent_pre_start_with_submodule_roots() {
 
     let file_copies = fk.exec.file_copies.lock().unwrap();
     assert_eq!(file_copies.len(), 1);
-    assert!(file_copies[0].0.ends_with("repo-feat/libs/foo/.env"));
+    assert!(file_copies[0].0.ends_with("repo/libs/foo/.env"));
     assert!(file_copies[0].1.ends_with("repo-feat/libs/foo/.env"));
 }
 

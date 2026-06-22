@@ -1,5 +1,5 @@
 import { execFileSync } from "child_process";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { basename, dirname, join } from "path";
 import { afterEach, describe, expect, test } from "vitest";
 import { getVibePath, VibeCommandRunner } from "./helpers/pty.js";
@@ -49,7 +49,7 @@ function createSubmoduleSource(
   writeFileSync(join(sourcePath, "README.md"), `# ${name}\n`);
   writeFileSync(
     join(sourcePath, ".vibe.toml"),
-    `[hooks]\npost_start = ["touch ${markerFile}"]\n`,
+    `[hooks]\npost_start = ["touch ${markerFile}"]\n[copy]\nfiles = [".env"]\n`,
   );
   git(["add", "README.md", ".vibe.toml"], sourcePath, homePath);
   git(["commit", "-m", `Add ${name} config`], sourcePath, homePath);
@@ -528,6 +528,7 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.hook-ran"]
     const vibePath = getVibePath();
     const fooSource = createSubmoduleSource(homePath, "foo", ".foo-submodule-hook-ran");
     addSubmodule(repoPath, homePath, fooSource, "libs/foo");
+    writeFileSync(join(repoPath, "libs/foo/.env"), "FOO_FROM_ORIGIN=1\n");
 
     writeFileSync(join(repoPath, ".vibe.toml"), '[submodules]\nconfigs = ["libs/foo"]\n');
     git(["add", ".vibe.toml", ".gitmodules", "libs/foo"], repoPath, homePath);
@@ -551,6 +552,9 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.hook-ran"]
 
       await assertDirectoryExists(submoduleWorktreePath);
       expect(existsSync(join(submoduleWorktreePath, ".vibe.toml"))).toBe(true);
+      expect(readFileSync(join(submoduleWorktreePath, ".env"), "utf-8")).toBe(
+        "FOO_FROM_ORIGIN=1\n",
+      );
       expect(existsSync(join(submoduleWorktreePath, ".foo-submodule-hook-ran"))).toBe(true);
     } finally {
       runner.dispose();
@@ -566,6 +570,8 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.hook-ran"]
     const barSource = createSubmoduleSource(homePath, "bar", ".bar-submodule-hook-ran");
     addSubmodule(repoPath, homePath, fooSource, "libs/foo");
     addSubmodule(repoPath, homePath, barSource, "vendor/bar");
+    writeFileSync(join(repoPath, "libs/foo/.env"), "FOO_FROM_ORIGIN=1\n");
+    writeFileSync(join(repoPath, "vendor/bar/.env"), "BAR_FROM_ORIGIN=1\n");
 
     writeFileSync(
       join(repoPath, ".vibe.toml"),
@@ -596,6 +602,12 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.hook-ran"]
       await assertDirectoryExists(barWorktreePath);
       expect(existsSync(join(fooWorktreePath, ".vibe.toml"))).toBe(true);
       expect(existsSync(join(barWorktreePath, ".vibe.toml"))).toBe(true);
+      expect(readFileSync(join(fooWorktreePath, ".env"), "utf-8")).toBe(
+        "FOO_FROM_ORIGIN=1\n",
+      );
+      expect(readFileSync(join(barWorktreePath, ".env"), "utf-8")).toBe(
+        "BAR_FROM_ORIGIN=1\n",
+      );
       expect(existsSync(join(fooWorktreePath, ".foo-submodule-hook-ran"))).toBe(true);
       expect(existsSync(join(barWorktreePath, ".bar-submodule-hook-ran"))).toBe(true);
     } finally {
