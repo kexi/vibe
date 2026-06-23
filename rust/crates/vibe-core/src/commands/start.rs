@@ -227,7 +227,7 @@ where
             &format!("Running: {}", get_create_worktree_command(&create_opts)),
             opts,
         );
-        create_worktree(deps.git, &create_opts)?;
+        run_create_worktree_with_progress(deps, branch_name, &create_opts)?;
     }
 
     run_config_and_hooks(
@@ -251,6 +251,40 @@ where
     }
 
     Ok(Outcome::cd(worktree_path))
+}
+
+fn run_create_worktree_with_progress<I, G, R, S, P, Sr>(
+    deps: &StartDeps<I, G, R, S, P, Sr>,
+    branch_name: &str,
+    create_opts: &CreateWorktreeOptions<'_>,
+) -> Result<()>
+where
+    I: Io,
+    G: GitRunner,
+    R: RepoResolver,
+    S: ScriptRunner,
+    P: Prompt,
+    Sr: StdinReader,
+{
+    deps.tracker.start();
+    let phase = deps
+        .tracker
+        .add_phase(&format!("Setting up worktree {branch_name}"));
+    let task = deps.tracker.add_task(phase, "Create worktree");
+    deps.tracker.start_task(task);
+
+    match create_worktree(deps.git, create_opts) {
+        Ok(()) => {}
+        Err(err) => {
+            deps.tracker.fail_task(task, &err.to_string());
+            deps.tracker.finish();
+            return Err(err);
+        }
+    }
+
+    deps.tracker.complete_task(task);
+    deps.tracker.finish();
+    Ok(())
 }
 
 /// Outcome of resolving the `--base` flag, self-describing so the caller cannot

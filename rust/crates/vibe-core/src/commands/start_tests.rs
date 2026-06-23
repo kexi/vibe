@@ -7,7 +7,7 @@ use crate::error::VibeError;
 use crate::git::RepoInfo;
 use crate::hooks::FakeHookRunner;
 use crate::io::FakeIo;
-use crate::progress::RecordingTracker;
+use crate::progress::{RecordingTracker, TrackerEvent};
 use crate::stdin::FakeStdin;
 use crate::worktree_path::ScriptOutput;
 use std::cell::RefCell;
@@ -243,6 +243,35 @@ fn existing_branch_worktree_navigates_on_confirm() {
     assert_eq!(outcome, Outcome::cd("/wt/feat"));
     // No worktree created.
     assert!(!git.calls_contain(&["worktree", "add"]));
+}
+
+#[test]
+fn new_worktree_creation_is_tracked_even_without_config_operations() {
+    let (_fx, io) = io_with_home();
+    let git = MockGit::new("/repo", "worktree /repo\nbranch refs/heads/main\n\n");
+    let (r, s, p, sin, fk) = (
+        NoResolver,
+        NoScript,
+        ScriptPrompt::confirming(true),
+        FakeStdin::none(),
+        Fakes::new(),
+    );
+    let d = deps(&io, &git, &r, &s, &p, &sin, &fk);
+    let outcome =
+        start_command(&d, "feat", &StartFlags::default(), OutputOptions::default()).unwrap();
+
+    assert!(outcome.cd_path.is_some());
+    assert!(git.calls_contain(&["worktree", "add"]));
+
+    let events = fk.tracker.events();
+    let create_task = events.iter().any(|event| match event {
+        TrackerEvent::Task(label) => label == "Create worktree",
+        _ => false,
+    });
+    assert!(create_task, "create task should be tracked: {events:?}");
+    assert!(events.contains(&TrackerEvent::Started));
+    assert!(events.contains(&TrackerEvent::Finished));
+    assert!(events.contains(&TrackerEvent::Phase("Setting up worktree feat".into())));
 }
 
 #[test]

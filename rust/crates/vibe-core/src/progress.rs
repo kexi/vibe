@@ -79,7 +79,14 @@ impl ProgressTracker for NullTracker {
 /// Live progress tracker backed by `indicatif`, drawing to STDERR only.
 pub struct IndicatifTracker {
     multi: indicatif::MultiProgress,
-    bars: std::sync::Mutex<Vec<indicatif::ProgressBar>>,
+    bars: std::sync::Mutex<Vec<BarNode>>,
+}
+
+struct BarNode {
+    bar: indicatif::ProgressBar,
+    prefix: String,
+    label: String,
+    done: bool,
 }
 
 impl Default for IndicatifTracker {
@@ -99,48 +106,73 @@ impl IndicatifTracker {
         }
     }
 
-    fn push_bar(&self, label: &str) -> NodeId {
+    fn push_bar(&self, label: &str, prefix: &str) -> NodeId {
         let bar = self.multi.add(indicatif::ProgressBar::new_spinner());
+        let style = indicatif::ProgressStyle::with_template("{prefix}{spinner} {msg}")
+            .expect("static progress template must be valid")
+            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]);
+        bar.set_style(style);
+        bar.set_prefix(prefix.to_string());
         bar.set_message(label.to_string());
         let mut bars = self.bars.lock().expect("progress mutex poisoned");
         let id = NodeId(bars.len());
-        bars.push(bar);
+        bars.push(BarNode {
+            bar,
+            prefix: prefix.to_string(),
+            label: label.to_string(),
+            done: false,
+        });
         id
     }
 
-    fn with_bar(&self, id: NodeId, f: impl FnOnce(&indicatif::ProgressBar)) {
-        let bars = self.bars.lock().expect("progress mutex poisoned");
-        if let Some(bar) = bars.get(id.0) {
-            f(bar);
+    fn with_bar(&self, id: NodeId, f: impl FnOnce(&mut BarNode)) {
+        let mut bars = self.bars.lock().expect("progress mutex poisoned");
+        if let Some(node) = bars.get_mut(id.0) {
+            f(node);
         }
     }
 }
 
 impl ProgressTracker for IndicatifTracker {
     fn add_phase(&self, label: &str) -> NodeId {
-        self.push_bar(label)
+        self.push_bar(label, "┗ ")
     }
     fn add_task(&self, _phase: NodeId, label: &str) -> NodeId {
-        self.push_bar(label)
+        self.push_bar(label, "   ┗ ")
     }
     fn start_task(&self, id: NodeId) {
-        self.with_bar(id, |b| {
-            b.enable_steady_tick(std::time::Duration::from_millis(80))
+        self.with_bar(id, |node| {
+            node.bar
+                .enable_steady_tick(std::time::Duration::from_millis(80))
         });
     }
     fn complete_task(&self, id: NodeId) {
-        self.with_bar(id, |b| b.finish());
+        self.with_bar(id, |node| {
+            node.done = true;
+            node.bar.set_prefix("");
+            node.bar
+                .finish_with_message(format!("{}☒ {}", node.prefix, node.label));
+        });
     }
     fn fail_task(&self, id: NodeId, err: &str) {
         let msg = format!("failed: {err}");
-        self.with_bar(id, |b| b.abandon_with_message(msg));
+        self.with_bar(id, |node| {
+            node.done = true;
+            node.bar.set_prefix("");
+            node.bar
+                .abandon_with_message(format!("{}☒ {} ({msg})", node.prefix, node.label));
+        });
     }
     fn start(&self) {}
     fn finish(&self) {
-        let bars = self.bars.lock().expect("progress mutex poisoned");
-        for bar in bars.iter() {
-            if !bar.is_finished() {
-                bar.finish_and_clear();
+        let mut bars = self.bars.lock().expect("progress mutex poisoned");
+        for node in bars.iter_mut() {
+            let is_unfinished = !node.done;
+            if is_unfinished {
+                node.done = true;
+                node.bar.set_prefix("");
+                node.bar
+                    .finish_with_message(format!("{}☒ {}", node.prefix, node.label));
             }
         }
     }
