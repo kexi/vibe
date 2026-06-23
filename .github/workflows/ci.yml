@@ -31,16 +31,30 @@ jobs:
       - name: Run linter
         run: bun run lint
 
-  # Run the Rust checks on both Linux and macOS. macOS coverage matters because
-  # vibe-native's clonefile path and other cfg(target_os = "macos") code is only
-  # compiled (and its tests only run) on a macOS runner — a Linux-only job left
-  # that native code unverified.
-  rust:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+  rust-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup-toolchain
+      - name: Check formatting
+        working-directory: rust
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy --manifest-path rust/Cargo.toml --workspace --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --manifest-path rust/Cargo.toml --workspace
+
+  # macOS coverage matters because vibe-native's clonefile path and other
+  # cfg(target_os = "macos") code is only compiled (and its tests only run) on a
+  # macOS runner. It is kept for release-bound validation (main PRs and pushes)
+  # but skipped on develop PRs to keep the common review loop fast.
+  rust-macos:
+    if: github.event_name == 'push' || github.base_ref == 'main'
+    runs-on: macos-latest
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
@@ -57,11 +71,13 @@ jobs:
         run: cargo test --manifest-path rust/Cargo.toml --workspace
 
   # Compile the shipped Rust binary for every supported target so a
-  # target-specific build break is caught on PR. The x86_64-apple-darwin entry
-  # cross-compiles on the arm64 macos-latest runner via `rustup target add`;
-  # the others build natively. The win32-x64 leg builds natively on a Windows
-  # runner (MSVC provides the C toolchain aws-lc-sys/aws-lc-rs needs).
+  # target-specific build break is caught before release. The
+  # x86_64-apple-darwin entry cross-compiles on the arm64 macos-latest runner
+  # via `rustup target add`; the others build natively. The win32-x64 leg builds
+  # natively on a Windows runner (MSVC provides the C toolchain
+  # aws-lc-sys/aws-lc-rs needs).
   build-rust-binaries:
+    if: github.event_name == 'push' || github.base_ref == 'main'
     strategy:
       fail-fast: false
       matrix:
@@ -117,6 +133,7 @@ jobs:
           fi
 
   build-deb:
+    if: github.event_name == 'push' || github.base_ref == 'main'
     strategy:
       matrix:
         include:
@@ -169,6 +186,7 @@ jobs:
           fi
 
   e2e-test:
+    if: github.event_name == 'push' || github.base_ref == 'main'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -228,6 +246,7 @@ jobs:
   # package only: building all five targets per runner is unnecessary, and a
   # foreign-arch binary could not be smoke-run anyway.
   npm-install-matrix:
+    if: github.event_name == 'push' || github.base_ref == 'main'
     needs: build-rust-binaries
     strategy:
       fail-fast: false
@@ -417,19 +436,49 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Detect docs-relevant changes
+        id: docs_changes
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ] || [ "${{ github.base_ref }}" = "main" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed_files=$(git diff --name-only \
+            "${{ github.event.pull_request.base.sha }}" \
+            "$GITHUB_SHA")
+
+          if printf '%s\n' "$changed_files" | grep -Eq '^(packages/docs/|\.github/workflows/ci\.yml$|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$)'; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Skip docs checks
+        if: steps.docs_changes.outputs.should_run == 'false'
+        run: echo "No docs-relevant changes; required check passes without running docs checks."
       - uses: ./.github/actions/setup-toolchain
+        if: steps.docs_changes.outputs.should_run == 'true'
       - uses: ./.github/actions/setup-takumi-guard
+        if: steps.docs_changes.outputs.should_run == 'true'
         with:
           api-key: ${{ secrets.TAKUMI_GUARD_API_KEY }}
       - name: Install dependencies
+        if: steps.docs_changes.outputs.should_run == 'true'
         run: pnpm install --filter docs --frozen-lockfile --ignore-scripts
       - name: Lint
+        if: steps.docs_changes.outputs.should_run == 'true'
         run: pnpm -C packages/docs lint
       - name: Format check
+        if: steps.docs_changes.outputs.should_run == 'true'
         run: pnpm -C packages/docs format
       - name: Type check
+        if: steps.docs_changes.outputs.should_run == 'true'
         run: pnpm -C packages/docs check
       - name: Build
+        if: steps.docs_changes.outputs.should_run == 'true'
         run: pnpm -C packages/docs build
 
   pinact-verify:
@@ -487,7 +536,8 @@ jobs:
     needs:
       [
         lint,
-        rust,
+        rust-linux,
+        rust-macos,
         build-rust-binaries,
         build-deb,
         e2e-test,
@@ -496,10 +546,66 @@ jobs:
         pinact-verify,
         gitleaks,
       ]
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
-      - run: echo "All builds completed successfully"
+      - name: Check required job results
+        shell: bash
+        env:
+          LINT: ${{ needs.lint.result }}
+          RUST_LINUX: ${{ needs.rust-linux.result }}
+          RUST_MACOS: ${{ needs.rust-macos.result }}
+          BUILD_RUST_BINARIES: ${{ needs.build-rust-binaries.result }}
+          BUILD_DEB: ${{ needs.build-deb.result }}
+          E2E_TEST: ${{ needs.e2e-test.result }}
+          NPM_INSTALL_MATRIX: ${{ needs.npm-install-matrix.result }}
+          DOCS: ${{ needs.docs.result }}
+          PINACT_VERIFY: ${{ needs.pinact-verify.result }}
+          GITLEAKS: ${{ needs.gitleaks.result }}
+          LIGHT_DEVELOP_PR: ${{ github.event_name == 'pull_request' && github.base_ref == 'develop' }}
+        run: |
+          set -euo pipefail
+
+          failed=0
+          full_only_jobs=" RUST_MACOS BUILD_RUST_BINARIES BUILD_DEB E2E_TEST NPM_INSTALL_MATRIX "
+          for job in \
+            LINT \
+            RUST_LINUX \
+            RUST_MACOS \
+            BUILD_RUST_BINARIES \
+            BUILD_DEB \
+            E2E_TEST \
+            NPM_INSTALL_MATRIX \
+            DOCS \
+            PINACT_VERIFY \
+            GITLEAKS
+          do
+            result="${!job}"
+            case "$result" in
+              success)
+                echo "$job: $result"
+                ;;
+              skipped)
+                if [ "$LIGHT_DEVELOP_PR" = "true" ] && [[ "$full_only_jobs" == *" $job "* ]]; then
+                  echo "$job: $result"
+                else
+                  echo "::error::$job was skipped unexpectedly"
+                  failed=1
+                fi
+                ;;
+              *)
+                echo "::error::$job finished with result: $result"
+                failed=1
+                ;;
+            esac
+          done
+
+          if [ "$failed" -ne 0 ]; then
+            exit 1
+          fi
+
+          echo "All required builds completed successfully"
