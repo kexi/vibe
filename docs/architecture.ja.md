@@ -8,7 +8,7 @@
 
 ## ランタイム抽象化レイヤー
 
-Vibe はランタイム抽象化レイヤーを通じて、複数の JavaScript ランタイム（Deno と Node.js）をサポートしています。
+TypeScript 時代の実装では、Vibe はランタイム抽象化レイヤーを通じて、複数の JavaScript ランタイム（Deno と Node.js）をサポートしていました。現在の実装は単一の Rust バイナリであり、Deno はサポートしていません。
 
 ```mermaid
 flowchart TD
@@ -76,7 +76,7 @@ Vibe はゴミ箱サポート付きの高速ディレクトリ削除を提供し
 
 ```mermaid
 flowchart TD
-    A[fastRemoveDirectory] --> B{Native Trash Available?}
+    A[fast_remove_directory] --> B{Native Trash Available?}
     B -->|Yes| C[Native Trash Module]
     B -->|No| D{macOS?}
 
@@ -98,8 +98,8 @@ flowchart TD
 
 | 方法                    | プラットフォーム              | 説明                                                       |
 | ----------------------- | ----------------------------- | ---------------------------------------------------------- |
-| Native Trash            | Node.js（全プラットフォーム） | trash crate を使用した @kexi/vibe-native                   |
-| AppleScript             | Deno on macOS                 | osascript 経由の Finder フォールバック                     |
+| Native Trash            | Rust バイナリ                | trash crate を使用                                          |
+| AppleScript             | macOS の Rust バイナリ        | osascript 経由の Finder フォールバック                     |
 | /tmp + Background       | Linux（デスクトップなし）     | /tmp に移動後、バックグラウンドで削除                      |
 | Parent Dir + Background | クロスデバイス                | ネットワークマウント用の同一ファイルシステムフォールバック |
 

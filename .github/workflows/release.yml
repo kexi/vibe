@@ -54,7 +54,7 @@ jobs:
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - uses: ./.github/actions/setup-toolchain
 
@@ -144,7 +144,7 @@ jobs:
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - uses: ./.github/actions/setup-toolchain
 
@@ -207,7 +207,7 @@ jobs:
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - uses: ./.github/actions/setup-toolchain
 
@@ -255,7 +255,7 @@ jobs:
           merge-multiple: true
 
       - name: Create Release
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
           files: artifacts/*
           generate_release_notes: true
@@ -294,7 +294,7 @@ jobs:
             echo "template=vibe.rb" >> $GITHUB_OUTPUT
           fi
 
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           path: vibe-source
 
@@ -380,104 +380,3 @@ jobs:
 
           git commit -m "Update ${FORMULA_NAME} to $VERSION"
           git push --quiet https://x-access-token:${GH_TOKEN}@github.com/kexi/homebrew-tap.git HEAD:main
-
-  update-nix:
-    if: github.event.action == 'released'
-    needs: release
-    runs-on: ubuntu-latest
-    concurrency:
-      group: update-nix
-      cancel-in-progress: false
-
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          ref: develop
-          # PAT (not GITHUB_TOKEN) so gh pr create is not blocked by the
-          # repo-level "Allow GitHub Actions to create pull requests" setting.
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-
-      - name: Download artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          path: artifacts
-          merge-multiple: true
-
-      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
-
-      - name: Calculate SRI hashes
-        id: hashes
-        run: |
-          for file in darwin-arm64 darwin-x64 linux-arm64 linux-x64; do
-            raw=$(sha256sum "artifacts/vibe-${file}" | cut -d ' ' -f 1)
-            sri=$(nix hash convert --hash-algo sha256 --to sri "$raw")
-
-            # Validate SRI hash format
-            if ! echo "$sri" | grep -qE '^sha256-[A-Za-z0-9+/=]{43,44}$'; then
-              echo "Error: Invalid SRI hash format for vibe-${file}: $sri"
-              exit 1
-            fi
-
-            key=$(echo "$file" | tr '-' '_')
-            echo "${key}=${sri}" >> "$GITHUB_OUTPUT"
-          done
-
-      - name: Update flake.nix binary hashes
-        id: version
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-
-          # Validate version format (bash built-in to prevent newline bypass)
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
-            echo "Error: Invalid version format: $VERSION"
-            exit 1
-          fi
-          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
-
-          # flake.nix derives `version` from package.json, so there is no version
-          # line to bump here. Only the prebuilt-binary SRI hashes need updating,
-          # and they are unknowable until the release assets exist (post-tag) —
-          # that is why this job runs after release rather than in the release PR.
-          # Anchor each replace on its artifact name so the pnpm/native version
-          # pins are never touched (a blanket s/version = ".*"/ once clobbered all
-          # three and broke the source build).
-          sed -i '/vibe-linux-x64/,/};/s|hash = ".*"|hash = "${{ steps.hashes.outputs.linux_x64 }}"|' flake.nix
-          sed -i '/vibe-linux-arm64/,/};/s|hash = ".*"|hash = "${{ steps.hashes.outputs.linux_arm64 }}"|' flake.nix
-          sed -i '/vibe-darwin-x64/,/};/s|hash = ".*"|hash = "${{ steps.hashes.outputs.darwin_x64 }}"|' flake.nix
-          sed -i '/vibe-darwin-arm64/,/};/s|hash = ".*"|hash = "${{ steps.hashes.outputs.darwin_arm64 }}"|' flake.nix
-
-      - name: Update flake.lock
-        run: nix flake lock --update-input nixpkgs --update-input flake-utils
-
-      - name: Verify build
-        run: nix build && ./result/bin/vibe --help
-
-      - name: Open PR and merge
-        env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        run: |
-          VERSION="${{ steps.version.outputs.value }}"
-          # Suffix with run_id and run_attempt so re-runs and concurrent releases
-          # never collide on an existing remote branch.
-          BRANCH="chore/update-nix-flake-${VERSION}-${{ github.run_id }}-${{ github.run_attempt }}"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$BRANCH"
-          git add flake.nix flake.lock
-          git commit -m "chore: update Nix flake to ${VERSION}"
-          git push --quiet origin "$BRANCH"
-
-          gh pr create \
-            --base develop \
-            --head "$BRANCH" \
-            --title "chore: update Nix flake to ${VERSION}" \
-            --body "Automated update of \`flake.nix\` and \`flake.lock\` for v${VERSION}."
-
-          # --admin bypasses develop's branch-protection policy, which otherwise
-          # rejects this bot merge ("base branch policy prohibits the merge").
-          gh pr merge "$BRANCH" --merge --admin --delete-branch

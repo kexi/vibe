@@ -138,6 +138,39 @@ See [AGENTS.md](./AGENTS.md) for detailed branching workflow.
    gh release create vX.X.X --generate-notes
    ```
 
+5. **Update Nix binary hashes, if needed:**
+
+   The default Nix package builds from source. The prebuilt binary fast path
+   (`#binary`) needs `flake.nix` hashes that match the final GitHub Release
+   assets, so update those hashes only after the release workflow uploads the
+   assets.
+
+   ```fish
+   set -l version X.X.X
+   mkdir -p artifacts
+   gh release download "v$version" --pattern 'vibe-*' --dir artifacts
+
+   for file in darwin-arm64 darwin-x64 linux-arm64 linux-x64
+     set -l sri (nix hash file --type sha256 --sri "artifacts/vibe-$file")
+     printf "%s %s\n" "$file" "$sri"
+   end
+   ```
+
+   Copy the SRI hashes into the matching `platforms.*.hash` entries in
+   `flake.nix`, then verify and open a PR against `develop`:
+
+   ```fish
+   nix build .#binary; and ./result/bin/vibe --help
+   git checkout -b chore/update-nix-binary-hashes-vX.X.X
+   git add flake.nix
+   git commit -m "chore: update Nix binary hashes for X.X.X"
+   git push -u origin chore/update-nix-binary-hashes-vX.X.X
+   gh pr create --base develop --title "chore: update Nix binary hashes for X.X.X" --body "Updates flake.nix binary hashes for vX.X.X release assets."
+   ```
+
+   Do not update `flake.lock` as part of the release. Update `nixpkgs` and
+   `flake-utils` in a separate maintenance PR when needed.
+
 ### Automated Release Tasks
 
 When a release is created, GitHub Actions automatically:
