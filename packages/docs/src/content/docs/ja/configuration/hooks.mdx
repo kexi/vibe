@@ -11,7 +11,7 @@ sidebar:
 
 | フック       | 実行タイミング | 作業ディレクトリ |
 | ------------ | -------------- | ---------------- |
-| `pre_start`  | Worktree作成前 | 元リポジトリ     |
+| `pre_start`  | Worktree作成後 | 元リポジトリ     |
 | `post_start` | Worktree作成後 | 新しいWorktree   |
 | `pre_clean`  | Worktree削除前 | 現在のWorktree   |
 | `post_clean` | Worktree削除後 | メインリポジトリ |
@@ -78,10 +78,12 @@ vibeはフック実行中にリアルタイム進捗ツリーを表示します�
 
 `vibe start`の場合：
 
-1. `pre_start`フックが元リポジトリで実行
-2. Worktreeが作成される
-3. ファイル/ディレクトリがコピーされる
-4. `post_start`フックが新しいWorktreeで実行
+1. Worktreeが作成される
+2. `[submodules] configs = [...]`の場合、指定されたサブモジュールが初期化される
+3. 各サブモジュールの信頼済み`pre_start`、copyルール、`post_start`がサブモジュールルート基準で実行される
+4. 親の`pre_start`フックが元リポジトリで実行
+5. 親のファイル/ディレクトリがコピーされる
+6. 親の`post_start`フックが新しいWorktreeで実行
 
 `vibe clean`の場合：
 
@@ -138,15 +140,17 @@ pre_clean = ["docker-compose down"]
 
 ### Gitサブモジュール
 
+直接サブモジュールに独自のsetupファイルやフックがある場合は、ファーストクラスのサブモジュール設定を使用してください：
+
 ```toml
-[hooks]
-post_start = [
-  "git submodule update --init --recursive || true"
-]
+[submodules]
+configs = ["libs/foo"]
 ```
 
-:::tip
-`|| true`を付けることで、ネットワークエラー等でサブモジュールの初期化に失敗してもフック全体が失敗しません。厳密なエラーハンドリングが必要な場合は除去してください。
+これは新しいWorktree内で`git submodule update --init -- libs/foo`を実行し、その後`libs/foo/.vibe.toml`を通常のtrust store経由で読み込みます。サブモジュールのcopyルールとフックは`libs/foo`基準で解決され、親リポジトリの`pre_start`フックより前に実行されます。
+
+:::note
+再帰更新、フィルタ付き更新、失敗を意図的に無視する場合など、カスタムのサブモジュール動作が必要な場合はフックを使用してください。
 :::
 
 ## フックのスキップ
@@ -199,11 +203,12 @@ Claude CodeがWorktreeを作成する場合（自然言語、`isolation: "worktr
 **WorktreeCreate:**
 
 1. stdinからWorktree名を読み取り（Claude Codeフックプロトコル）
-2. 元リポジトリで`pre_start`フックを実行
-3. git Worktreeを作成
-4. CoWを使用してファイル/ディレクトリをコピー
-5. 新しいWorktreeで`post_start`フックを実行（例：`pnpm install`）
-6. Claude Code向けにWorktreeパスをstdoutに出力
+2. git Worktreeを作成
+3. `[submodules] configs = [...]`の場合、指定されたサブモジュールを初期化し、信頼済みsetupを実行
+4. 元リポジトリで親の`pre_start`フックを実行
+5. CoWを使用して親のファイル/ディレクトリをコピー
+6. 新しいWorktreeで親の`post_start`フックを実行（例：`pnpm install`）
+7. Claude Code向けにWorktreeパスをstdoutに出力
 
 **WorktreeRemove:**
 

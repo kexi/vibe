@@ -116,6 +116,24 @@ vibe automatically selects the best copy strategy based on your system:
 
 See [Hooks](/configuration/hooks/) for details on configuring pre/post hooks.
 
+## Submodules Configuration
+
+Load trusted `.vibe.toml` files from selected direct submodules after the worktree is created and before the parent repository's `pre_start` hooks run:
+
+```toml
+[submodules]
+configs = ["libs/foo", "vendor/bar"]
+```
+
+- **Default**: `[]`
+- Each entry must exactly match a direct submodule path in `.gitmodules`
+- Runs `git submodule update --init -- <paths>` in the new worktree
+- Loads each submodule's `.vibe.toml` / `.vibe.local.toml` with that submodule's own trust entry
+- Runs the submodule config's hooks and copy rules with paths resolved from the submodule root
+- `--no-hooks` skips submodule hooks, but does not skip submodule initialization
+- `--no-copy` skips submodule copy rules
+- Submodule update, trust, path validation, or setup failures abort `vibe start` and leave the created worktree available for inspection
+
 ## Worktree Configuration <Badge text="v0.6.0+" />
 
 Customize the worktree directory path using an external script.
@@ -175,6 +193,9 @@ post_start = [
 ]
 pre_clean = ["git stash"]
 post_clean = ["echo 'Cleanup complete'"]
+
+[submodules]
+configs = ["libs/foo"]
 
 [worktree]
 path_script = "~/.config/vibe/worktree-path.sh"
