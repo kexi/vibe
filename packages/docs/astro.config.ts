@@ -78,22 +78,22 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         {
           label: "Configuration",
           translations: { ja: "設定" },
-          autogenerate: { directory: "configuration" },
+          items: [{ autogenerate: { directory: "configuration" } }],
         },
         {
           label: "Commands",
           translations: { ja: "コマンド" },
-          autogenerate: { directory: "commands" },
+          items: [{ autogenerate: { directory: "commands" } }],
         },
         {
           label: "Recipes",
           translations: { ja: "レシピ集" },
-          autogenerate: { directory: "recipes" },
+          items: [{ autogenerate: { directory: "recipes" } }],
         },
         {
           label: "Security",
           translations: { ja: "セキュリティ" },
-          autogenerate: { directory: "security" },
+          items: [{ autogenerate: { directory: "security" } }],
         },
         {
           slug: "changelog",
