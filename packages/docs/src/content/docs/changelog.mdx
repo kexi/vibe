@@ -5,6 +5,20 @@ description: Version history and release notes for vibe
 
 All notable changes to vibe are documented here.
 
+## v2.1.0
+
+**Released:** 2026-06-23
+
+### Added
+
+- `.vibe.toml` files inside git submodules are now loaded end-to-end. Trusted submodule configs are read, configs are picked up from inside worktrees (not just the origin checkout), and submodule directories are copied from the correct source so submodule contents are present at the worktree path. If your repository uses submodules, their `.vibe.toml` files now contribute to the merged configuration as you would expect.
+
+### Fixed
+
+- The progress tree is now shown again during worktree creation. The interactive progress display had regressed and stayed hidden until the operation finished; it now streams as the worktree is created.
+
+---
+
 ## v2.0.0
 
 **Released:** 2026-06-19
