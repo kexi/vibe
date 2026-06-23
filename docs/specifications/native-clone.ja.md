@@ -4,11 +4,11 @@
 
 > **歴史的な注記:** ここで説明している TypeScript ランタイムの分岐は、Rust 移植の Phase 6 で削除されました。vibe は現在単一の Rust バイナリであり、ネイティブの CoW 実装は `rust/crates/vibe-native`（`rust/crates/vibe-core` に静的リンク）にあります。このドキュメントは設計の歴史として残しています。
 
-このドキュメントでは、vibeがネイティブのCopy-on-Write（CoW）操作にRustを使用する理由と、DenoとNode.jsランタイム間での実装の違いについて説明します。
+この履歴ドキュメントでは、TypeScript 時代の実装がネイティブの Copy-on-Write（CoW）操作に Rust を使用していた理由と、Deno と Node.js ランタイム間での実装の違いについて説明します。
 
 ## なぜRustなのか？
 
-vibeは`@kexi/vibe-native`パッケージで[napi-rs](https://napi.rs/)を介したRustを使用しています。これは、JavaScriptランタイムの標準APIでは利用できないOSレベルのCoW APIを呼び出すためです。
+TypeScript 時代の実装では、JavaScript ランタイムの標準 API では利用できない OS レベルの CoW API を呼び出すため、`@kexi/vibe-native` パッケージで [napi-rs](https://napi.rs/) を介した Rust を使用していました。
 
 ### 代替案との比較
 
@@ -26,7 +26,7 @@ Rustを選択した理由：
 
 ## アーキテクチャ概要
 
-Deno 2.x以降、両ランタイムはネイティブCoW操作に同じ`@kexi/vibe-native` N-APIモジュールを使用しています。この統一により、メンテナンスが簡素化され、ランタイム間で一貫した動作が保証されます。
+TypeScript 時代の実装では、Deno 2.x と Node.js がネイティブ CoW 操作に同じ `@kexi/vibe-native` N-API モジュールを使用していました。現在の実装では Deno はサポートしておらず、Rust crate を直接使用しています。
 
 ```mermaid
 flowchart TD
@@ -89,7 +89,7 @@ pub fn clone_sync(src: String, dest: String) -> Result<()> {
 - 一般的なプラットフォーム向けのプリビルドバイナリ（macOS x64/arm64、Linux x64/arm64）
 - DenoとNode.js間で一貫した動作
 
-**要件:**
+**当時の要件:**
 
 - Deno 2.x または Node.js 18+
 - プリビルドバイナリ、またはコンパイル用のRustツールチェーン
