@@ -22,6 +22,8 @@ pub struct VibeConfig {
     pub worktree: Option<WorktreeConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub clean: Option<CleanConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub submodules: Option<SubmodulesConfig>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -85,6 +87,13 @@ pub struct WorktreeConfig {
 pub struct CleanConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delete_branch: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SubmodulesConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub configs: Option<Vec<String>>,
 }
 
 /// Parse a `VibeConfig` from TOML text, validating it like the Zod schema.
@@ -220,6 +229,16 @@ pub fn merge_configs(base: &VibeConfig, local: &VibeConfig) -> VibeConfig {
             .and_then(|c| c.delete_branch)
             .or_else(|| base.clean.as_ref().and_then(|c| c.delete_branch));
         merged.clean = Some(CleanConfig { delete_branch });
+    }
+
+    // submodules: present if either side has it; configs local > base.
+    if base.submodules.is_some() || local.submodules.is_some() {
+        let configs = local
+            .submodules
+            .as_ref()
+            .and_then(|s| s.configs.clone())
+            .or_else(|| base.submodules.as_ref().and_then(|s| s.configs.clone()));
+        merged.submodules = Some(SubmodulesConfig { configs });
     }
 
     merged
@@ -448,6 +467,47 @@ mod tests {
         );
     }
 
+    #[test]
+    fn submodules_local_configs_win() {
+        let base = VibeConfig {
+            submodules: Some(SubmodulesConfig {
+                configs: Some(vec!["libs/base".into()]),
+            }),
+            ..Default::default()
+        };
+        let local = VibeConfig {
+            submodules: Some(SubmodulesConfig {
+                configs: Some(vec!["libs/local".into()]),
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            merge_configs(&base, &local).submodules.unwrap().configs,
+            Some(vec!["libs/local".into()])
+        );
+    }
+
+    #[test]
+    fn submodules_base_configs_survive_with_unrelated_local() {
+        let base = VibeConfig {
+            submodules: Some(SubmodulesConfig {
+                configs: Some(vec!["libs/base".into()]),
+            }),
+            ..Default::default()
+        };
+        let local = VibeConfig {
+            copy: Some(CopyConfig {
+                files: Some(vec!["x".into()]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            merge_configs(&base, &local).submodules.unwrap().configs,
+            Some(vec!["libs/base".into()])
+        );
+    }
+
     // --- parse_vibe_config ---
 
     #[test]
@@ -474,13 +534,30 @@ path_script = "p.sh"
 
 [clean]
 delete_branch = true
+
+[submodules]
+configs = ["libs/foo"]
 "#;
         let cfg = parse_vibe_config(toml, "/p/.vibe.toml").unwrap();
         assert_eq!(cfg.copy.as_ref().unwrap().concurrency, Some(8));
         assert_eq!(cfg.clean.as_ref().unwrap().delete_branch, Some(true));
         assert_eq!(
+            cfg.submodules.as_ref().unwrap().configs,
+            Some(vec!["libs/foo".into()])
+        );
+        assert_eq!(
             cfg.worktree.as_ref().unwrap().path_script.as_deref(),
             Some("p.sh")
+        );
+    }
+
+    #[test]
+    fn parses_submodules_configs() {
+        let cfg =
+            parse_vibe_config("[submodules]\nconfigs = [\"libs/foo\"]\n", "/p/.vibe.toml").unwrap();
+        assert_eq!(
+            cfg.submodules.unwrap().configs,
+            Some(vec!["libs/foo".into()])
         );
     }
 
@@ -494,6 +571,13 @@ delete_branch = true
     #[test]
     fn rejects_unknown_nested_property() {
         let toml = "[copy]\nbogus = 1\n";
+        let err = parse_vibe_config(toml, "/path/.vibe.toml").unwrap_err();
+        assert!(err.to_string().contains("/path/.vibe.toml"));
+    }
+
+    #[test]
+    fn rejects_unknown_submodules_field() {
+        let toml = "[submodules]\nbogus = 1\n";
         let err = parse_vibe_config(toml, "/path/.vibe.toml").unwrap_err();
         assert!(err.to_string().contains("/path/.vibe.toml"));
     }

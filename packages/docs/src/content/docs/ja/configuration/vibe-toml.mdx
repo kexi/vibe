@@ -116,6 +116,24 @@ vibeはシステムに応じて最適なコピー戦略を自動選択します�
 
 フック設定の詳細は[フック](/ja/configuration/hooks/)を参照してください。
 
+## サブモジュール設定
+
+Worktree作成後、親リポジトリの`pre_start`フックの実行前に、指定した直接サブモジュールの信頼済み`.vibe.toml`を読み込みます：
+
+```toml
+[submodules]
+configs = ["libs/foo", "vendor/bar"]
+```
+
+- **デフォルト**: `[]`
+- 各エントリは`.gitmodules`内の直接サブモジュールpathと完全一致する必要があります
+- 新しいWorktree内で`git submodule update --init -- <paths>`を実行します
+- 各サブモジュールの`.vibe.toml` / `.vibe.local.toml`は、そのサブモジュール自身のtrust entryで読み込まれます
+- サブモジュール設定内のフックとcopyルールは、サブモジュールルート基準で実行されます
+- `--no-hooks`はサブモジュールのフックをスキップしますが、サブモジュール初期化はスキップしません
+- `--no-copy`はサブモジュールのcopyルールをスキップします
+- サブモジュール更新、trust、path検証、setupのいずれかに失敗すると`vibe start`は中断され、作成済みWorktreeは調査用に残ります
+
 ## Worktree設定 <Badge text="v0.6.0+" />
 
 外部スクリプトを使用してWorktreeディレクトリパスをカスタマイズできます。
@@ -175,6 +193,9 @@ post_start = [
 ]
 pre_clean = ["git stash"]
 post_clean = ["echo 'クリーンアップ完了'"]
+
+[submodules]
+configs = ["libs/foo"]
 
 [worktree]
 path_script = "~/.config/vibe/worktree-path.sh"

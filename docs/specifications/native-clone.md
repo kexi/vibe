@@ -4,11 +4,11 @@
 
 > **Historical note:** The TypeScript runtime split described here was removed in Phase 6 of the Rust port. vibe is now a single Rust binary and the native CoW implementation lives in `rust/crates/vibe-native` (statically linked into `rust/crates/vibe-core`). This document is retained as design history.
 
-This document explains why vibe uses Rust for native Copy-on-Write (CoW) operations and how the implementation differs between Deno and Node.js runtimes.
+This historical document explains why the TypeScript-era implementation used Rust for native Copy-on-Write (CoW) operations and how that implementation differed between Deno and Node.js runtimes.
 
 ## Why Rust?
 
-vibe uses Rust (via [napi-rs](https://napi.rs/)) for the `@kexi/vibe-native` package to call OS-level CoW APIs that are not available through JavaScript runtimes' standard APIs.
+The TypeScript-era implementation used Rust (via [napi-rs](https://napi.rs/)) for the `@kexi/vibe-native` package to call OS-level CoW APIs that were not available through JavaScript runtimes' standard APIs.
 
 ### Comparison with Alternatives
 
@@ -26,7 +26,7 @@ Rust was chosen because:
 
 ## Architecture Overview
 
-As of Deno 2.x, both runtimes use the same `@kexi/vibe-native` N-API module for native CoW operations. This unification simplifies maintenance and ensures consistent behavior across runtimes.
+In the TypeScript-era implementation, Deno 2.x and Node.js used the same `@kexi/vibe-native` N-API module for native CoW operations. The current implementation no longer supports Deno and uses the Rust crates directly.
 
 ```mermaid
 flowchart TD
@@ -89,7 +89,7 @@ pub fn clone_sync(src: String, dest: String) -> Result<()> {
 - Prebuilt binaries for common platforms (macOS x64/arm64, Linux x64/arm64)
 - Consistent behavior across Deno and Node.js
 
-**Requirements:**
+**Historical requirements:**
 
 - Deno 2.x or Node.js 18+
 - Prebuilt binaries or Rust toolchain for compilation

@@ -3,7 +3,8 @@
 //! Ported from `packages/core/src/commands/start.ts`. The validation cascade,
 //! existing-branch navigate, same-branch idempotent re-entry, different-branch
 //! Overwrite/Reuse/Cancel select, worktree creation, and the
-//! pre_start → copy → post_start config-and-hooks sequence mirror the TS. The
+//! submodule init → pre_start → copy → post_start config-and-hooks sequence
+//! mirror the TS. The
 //! Claude-Code `--claude-code-worktree-hook` mode reads a name from stdin and
 //! outputs the worktree PATH to stdout (not a `cd`), with non-fatal post-setup.
 //!
@@ -17,7 +18,7 @@
 
 use crate::commands::Outcome;
 use crate::config::VibeConfig;
-use crate::config_loader::load_vibe_config;
+use crate::config_loader::{load_vibe_config, VIBE_TOML};
 use crate::copy::strategies::CopyExecutor;
 use crate::copy_runner::{copy_directories, copy_files, resolve_copy_concurrency};
 use crate::error::{Result, VibeError};
@@ -37,6 +38,8 @@ use crate::worktree_path::{resolve_worktree_path, ScriptRunner, WorktreePathCont
 use crate::worktree_validator::{
     check_worktree_conflict, validate_branch_for_worktree, ConflictType,
 };
+use std::collections::HashSet;
+use std::path::{Component, Path, PathBuf};
 
 /// Flags controlling a `start` run (mirrors the TS `StartOptions`).
 #[derive(Debug, Clone, Default)]
@@ -227,7 +230,7 @@ where
             &format!("Running: {}", get_create_worktree_command(&create_opts)),
             opts,
         );
-        create_worktree(deps.git, &create_opts)?;
+        run_create_worktree_with_progress(deps, branch_name, &create_opts)?;
     }
 
     run_config_and_hooks(
@@ -251,6 +254,40 @@ where
     }
 
     Ok(Outcome::cd(worktree_path))
+}
+
+fn run_create_worktree_with_progress<I, G, R, S, P, Sr>(
+    deps: &StartDeps<I, G, R, S, P, Sr>,
+    branch_name: &str,
+    create_opts: &CreateWorktreeOptions<'_>,
+) -> Result<()>
+where
+    I: Io,
+    G: GitRunner,
+    R: RepoResolver,
+    S: ScriptRunner,
+    P: Prompt,
+    Sr: StdinReader,
+{
+    deps.tracker.start();
+    let phase = deps
+        .tracker
+        .add_phase(&format!("Setting up worktree {branch_name}"));
+    let task = deps.tracker.add_task(phase, "Create worktree");
+    deps.tracker.start_task(task);
+
+    match create_worktree(deps.git, create_opts) {
+        Ok(()) => {}
+        Err(err) => {
+            deps.tracker.fail_task(task, &err.to_string());
+            deps.tracker.finish();
+            return Err(err);
+        }
+    }
+
+    deps.tracker.complete_task(task);
+    deps.tracker.finish();
+    Ok(())
 }
 
 /// Outcome of resolving the `--base` flag, self-describing so the caller cannot
@@ -501,8 +538,8 @@ where
     )))
 }
 
-/// Run config-driven hooks + copy: pre_start (in repo_root) → copy files + dirs →
-/// post_start (in worktree_path).
+/// Run config-driven operations: listed submodule configs → pre_start (in
+/// repo_root) → copy files + dirs → post_start (in worktree_path).
 fn run_config_and_hooks<I, G, R, S, P, Sr>(
     deps: &StartDeps<I, G, R, S, P, Sr>,
     config: Option<&VibeConfig>,
@@ -530,6 +567,36 @@ where
         deps.tracker.start();
     }
 
+    run_submodule_configs(deps, config, repo_root, worktree_path, options)?;
+
+    run_config_body(deps, config, repo_root, worktree_path, repo_root, options)?;
+
+    if has_ops {
+        deps.tracker.finish();
+    }
+
+    Ok(())
+}
+
+/// Run hooks/copy for one already-loaded config. Submodule configs use this
+/// helper directly so their own `[submodules]` section is intentionally not
+/// followed recursively.
+fn run_config_body<I, G, R, S, P, Sr>(
+    deps: &StartDeps<I, G, R, S, P, Sr>,
+    config: &VibeConfig,
+    repo_root: &str,
+    worktree_path: &str,
+    copy_source_root: &str,
+    options: &ConfigAndHooks,
+) -> Result<()>
+where
+    I: Io,
+    G: GitRunner,
+    R: RepoResolver,
+    S: ScriptRunner,
+    P: Prompt,
+    Sr: StdinReader,
+{
     // pre_start hooks (in repo_root).
     if !options.skip_hooks {
         run_lifecycle_hooks(
@@ -555,7 +622,7 @@ where
                 .as_ref()
                 .and_then(|c| c.files.as_deref())
                 .unwrap_or(&[]),
-            repo_root,
+            copy_source_root,
             worktree_path,
             options.dry_run,
         );
@@ -574,7 +641,7 @@ where
                 &deps.executor,
                 &deps.tracker,
                 dirs,
-                repo_root,
+                copy_source_root,
                 worktree_path,
                 options.dry_run,
                 concurrency,
@@ -601,15 +668,13 @@ where
         )?;
     }
 
-    if has_ops {
-        deps.tracker.finish();
-    }
-
     Ok(())
 }
 
 /// Whether config has any hook/copy operation (drives starting the tracker).
 fn config_has_operations(config: &VibeConfig, options: &ConfigAndHooks) -> bool {
+    let has_submodule_configs =
+        submodule_config_paths(config).is_some_and(|paths| !paths.is_empty());
     let hooks_count = if options.skip_hooks {
         0
     } else {
@@ -634,7 +699,289 @@ fn config_has_operations(config: &VibeConfig, options: &ConfigAndHooks) -> bool 
             })
             .unwrap_or(0)
     };
-    hooks_count + copy_count > 0
+    has_submodule_configs || hooks_count + copy_count > 0
+}
+
+fn submodule_config_paths(config: &VibeConfig) -> Option<&[String]> {
+    config
+        .submodules
+        .as_ref()
+        .and_then(|s| s.configs.as_deref())
+}
+
+fn run_submodule_configs<I, G, R, S, P, Sr>(
+    deps: &StartDeps<I, G, R, S, P, Sr>,
+    config: &VibeConfig,
+    repo_root: &str,
+    worktree_path: &str,
+    options: &ConfigAndHooks,
+) -> Result<()>
+where
+    I: Io,
+    G: GitRunner,
+    R: RepoResolver,
+    S: ScriptRunner,
+    P: Prompt,
+    Sr: StdinReader,
+{
+    let Some(paths) = submodule_config_paths(config).filter(|paths| !paths.is_empty()) else {
+        return Ok(());
+    };
+
+    let paths = validate_submodule_config_paths(deps, repo_root, paths)?;
+    init_submodules(deps, worktree_path, &paths, options.dry_run)?;
+
+    for path in &paths {
+        let roots = resolve_submodule_roots(repo_root, worktree_path, path, options.dry_run)?;
+        let config_root = if options.dry_run {
+            &roots.origin
+        } else {
+            &roots.worktree
+        };
+        let Some(submodule_config) =
+            load_vibe_config(deps.io, deps.resolver, deps.version, config_root)?
+        else {
+            return Err(VibeError::Configuration(format!(
+                "Submodule '{path}' is listed in [submodules] configs, but {}/{} does not exist",
+                config_root, VIBE_TOML
+            )));
+        };
+
+        run_config_body(
+            deps,
+            &submodule_config,
+            config_root,
+            &roots.worktree,
+            &roots.origin,
+            options,
+        )?;
+    }
+
+    Ok(())
+}
+
+fn init_submodules<I, G, R, S, P, Sr>(
+    deps: &StartDeps<I, G, R, S, P, Sr>,
+    worktree_path: &str,
+    paths: &[String],
+    dry_run: bool,
+) -> Result<()>
+where
+    I: Io,
+    G: GitRunner,
+    R: RepoResolver,
+    S: ScriptRunner,
+    P: Prompt,
+    Sr: StdinReader,
+{
+    let joined_paths = paths.join(" ");
+    let command = format!("git -C {worktree_path} submodule update --init -- {joined_paths}");
+
+    if dry_run {
+        log_dry_run(deps.io, &format!("Would run: {command}"));
+        return Ok(());
+    }
+
+    let phase = deps.tracker.add_phase("Initializing submodules");
+    let task = deps.tracker.add_task(
+        phase,
+        &format!("git submodule update --init -- {joined_paths}"),
+    );
+    deps.tracker.start_task(task);
+    let mut args = vec!["-C", worktree_path, "submodule", "update", "--init", "--"];
+    args.extend(paths.iter().map(String::as_str));
+    let result = deps.git.run(&args);
+
+    match result {
+        Ok(_) => {
+            deps.tracker.complete_task(task);
+            Ok(())
+        }
+        Err(err) => {
+            deps.tracker.fail_task(task, &err.to_string());
+            Err(err)
+        }
+    }
+}
+
+fn validate_submodule_config_paths<I, G, R, S, P, Sr>(
+    deps: &StartDeps<I, G, R, S, P, Sr>,
+    repo_root: &str,
+    paths: &[String],
+) -> Result<Vec<String>>
+where
+    I: Io,
+    G: GitRunner,
+    R: RepoResolver,
+    S: ScriptRunner,
+    P: Prompt,
+    Sr: StdinReader,
+{
+    let mut seen = HashSet::new();
+    let mut validated = Vec::new();
+
+    for path in paths {
+        validate_submodule_config_path(path)?;
+    }
+
+    let direct_submodules = direct_submodule_paths(deps, repo_root)?;
+    for path in paths {
+        let is_direct_submodule = direct_submodules.contains(path);
+        if !is_direct_submodule {
+            return Err(VibeError::Configuration(format!(
+                "[submodules] configs entry '{path}' must exactly match a direct path in .gitmodules"
+            )));
+        }
+        let is_new = seen.insert(path.clone());
+        if is_new {
+            validated.push(path.clone());
+        }
+    }
+
+    Ok(validated)
+}
+
+fn validate_submodule_config_path(path: &str) -> Result<()> {
+    let has_surrounding_whitespace = path.trim() != path;
+    if path.is_empty() || has_surrounding_whitespace {
+        return Err(invalid_submodule_config_path(path));
+    }
+    let has_control_chars = path.chars().any(char::is_control);
+    let has_glob_chars = path
+        .chars()
+        .any(|c| matches!(c, '*' | '?' | '[' | ']' | '{' | '}'));
+    if has_control_chars || has_glob_chars {
+        return Err(invalid_submodule_config_path(path));
+    }
+
+    let candidate = Path::new(path);
+    if candidate.is_absolute() {
+        return Err(invalid_submodule_config_path(path));
+    }
+
+    let mut has_component = false;
+    for component in candidate.components() {
+        match component {
+            Component::Normal(_) => has_component = true,
+            Component::CurDir
+            | Component::ParentDir
+            | Component::RootDir
+            | Component::Prefix(_) => {
+                return Err(invalid_submodule_config_path(path));
+            }
+        }
+    }
+
+    if !has_component {
+        return Err(invalid_submodule_config_path(path));
+    }
+
+    Ok(())
+}
+
+fn invalid_submodule_config_path(path: &str) -> VibeError {
+    VibeError::Configuration(format!(
+        "[submodules] configs entry '{path}' must be a parent-repo-relative submodule path without absolute paths, traversal, glob characters, or control characters"
+    ))
+}
+
+fn direct_submodule_paths<I, G, R, S, P, Sr>(
+    deps: &StartDeps<I, G, R, S, P, Sr>,
+    repo_root: &str,
+) -> Result<HashSet<String>>
+where
+    I: Io,
+    G: GitRunner,
+    R: RepoResolver,
+    S: ScriptRunner,
+    P: Prompt,
+    Sr: StdinReader,
+{
+    let gitmodules = Path::new(repo_root).join(".gitmodules");
+    if !gitmodules.exists() {
+        return Err(VibeError::Configuration(
+            "[submodules] configs requires a .gitmodules file".to_string(),
+        ));
+    }
+
+    let output = deps.git.run(&[
+        "-C",
+        repo_root,
+        "config",
+        "--file",
+        ".gitmodules",
+        "--get-regexp",
+        r"^submodule\..*\.path$",
+    ])?;
+
+    let mut paths = HashSet::new();
+    for line in output.lines() {
+        let Some((_, path)) = line.split_once(' ') else {
+            continue;
+        };
+        paths.insert(path.trim().to_string());
+    }
+    Ok(paths)
+}
+
+struct SubmoduleRoots {
+    origin: String,
+    worktree: String,
+}
+
+fn resolve_submodule_roots(
+    repo_root: &str,
+    worktree_path: &str,
+    submodule_path: &str,
+    dry_run: bool,
+) -> Result<SubmoduleRoots> {
+    let origin_parent = canonicalize_existing(Path::new(repo_root), "repository root")?;
+    let origin = canonicalize_existing(
+        &PathBuf::from(repo_root).join(submodule_path),
+        "origin submodule",
+    )?;
+    ensure_child_path(&origin_parent, &origin, submodule_path, "origin submodule")?;
+
+    let worktree = if dry_run {
+        PathBuf::from(worktree_path).join(submodule_path)
+    } else {
+        let worktree_parent = canonicalize_existing(Path::new(worktree_path), "worktree root")?;
+        let worktree = canonicalize_existing(
+            &PathBuf::from(worktree_path).join(submodule_path),
+            "worktree submodule",
+        )?;
+        ensure_child_path(
+            &worktree_parent,
+            &worktree,
+            submodule_path,
+            "worktree submodule",
+        )?;
+        worktree
+    };
+
+    Ok(SubmoduleRoots {
+        origin: origin.to_string_lossy().into_owned(),
+        worktree: worktree.to_string_lossy().into_owned(),
+    })
+}
+
+fn canonicalize_existing(path: &Path, label: &str) -> Result<PathBuf> {
+    path.canonicalize().map_err(|e| {
+        VibeError::Configuration(format!(
+            "Failed to resolve {label} path '{}': {e}",
+            path.display()
+        ))
+    })
+}
+
+fn ensure_child_path(parent: &Path, child: &Path, submodule_path: &str, label: &str) -> Result<()> {
+    if child.starts_with(parent) {
+        return Ok(());
+    }
+
+    Err(VibeError::Configuration(format!(
+        "Resolved {label} path for '{submodule_path}' escapes its parent repository"
+    )))
 }
 
 /// Run a lifecycle hook list with a phase/tasks on the tracker.

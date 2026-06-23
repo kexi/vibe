@@ -25,7 +25,7 @@ Trash Strategy moves directories to a temporary location instead of deleting the
 
 ### Native Trash Support
 
-vibe uses the [trash crate](https://lib.rs/crates/trash) (via `@kexi/vibe-native`) for cross-platform trash support:
+vibe uses the [trash crate](https://lib.rs/crates/trash) through the Rust binary for cross-platform trash support:
 
 - **macOS**: Finder Trash (same as before)
 - **Linux**: XDG Trash (`~/.local/share/Trash`) following [FreeDesktop.org specification](https://specifications.freedesktop.org/trash-spec/trashspec-latest.html)
@@ -37,15 +37,15 @@ Files moved to XDG Trash appear in your desktop environment's trash folder (GNOM
 
 ### macOS
 
-1. **Primary (Node.js)**: Move to Finder Trash via native module (`@kexi/vibe-native`)
+1. **Primary (Rust)**: Move to Finder Trash via the `trash` crate
    - Uses the Rust `trash` crate internally
    - Appears in Finder's Trash folder
-2. **Fallback (Deno)**: Move to Finder Trash via AppleScript (`osascript`)
+2. **Fallback (Rust/macOS)**: Move to Finder Trash via AppleScript (`osascript`)
 3. **Fallback**: If both fail (e.g., SSH session), falls back to /tmp + background deletion
 
 ### Linux
 
-1. **Primary (Node.js)**: Move to XDG Trash via native module (`@kexi/vibe-native`)
+1. **Primary (Rust)**: Move to XDG Trash via the `trash` crate
    - Uses the Rust `trash` crate implementing [XDG Trash specification](https://specifications.freedesktop.org/trash-spec/trashspec-latest.html)
    - Files moved to `~/.local/share/Trash/files/`
    - Metadata stored in `~/.local/share/Trash/info/`
@@ -82,20 +82,20 @@ Example: `.vibe-trash-1705123456789-a1b2c3d4`
 
 **Cleanup mechanism:**
 
-The `cleanupStaleTrash()` function scans for and removes any leftover `.vibe-trash-*` directories from:
+The `cleanup_stale_trash()` function scans for and removes any leftover `.vibe-trash-*` directories from:
 
 - The parent directory of the removed worktree
 - The system temp directory
 
 This cleanup runs automatically after each clean operation.
 
-**Implementation file:** `packages/core/src/utils/fast-remove.ts`
+**Implementation file:** `rust/crates/vibe-core/src/fast_remove.rs`
 
 ### Standard Strategy
 
 Uses the standard `git worktree remove` command. This is used as a fallback when the Trash Strategy fails or is disabled.
 
-**Implementation file:** `packages/core/src/commands/clean.ts`
+**Implementation file:** `rust/crates/vibe-core/src/commands/clean.rs`
 
 ## Configuration
 
@@ -133,46 +133,60 @@ post_clean = ["echo 'Cleanup complete'"]
 ## File Structure
 
 ```
-packages/
-├── native/
-│   ├── Cargo.toml        # Rust dependencies (includes trash crate)
-│   ├── src/lib.rs        # Native module (moveToTrash, moveToTrashAsync)
-│   └── index.d.ts        # TypeScript type definitions
-└── core/src/
-    ├── native/
-    │   └── index.ts      # NativeTrashAdapter interface
-    ├── runtime/node/
-    │   └── native.ts     # NodeNativeTrash implementation
-    ├── utils/
-    │   └── fast-remove.ts    # Trash Strategy implementation
-    │       ├── isFastRemoveSupported()
-    │       ├── generateTrashName()
-    │       ├── moveToSystemTrash()        # Native trash + platform fallback
-    │       ├── moveToMacOSTrashViaAppleScript()  # Deno macOS fallback
-    │       ├── spawnBackgroundDelete()
-    │       ├── fastRemoveDirectory()
-    │       └── cleanupStaleTrash()
+rust/crates/
+├── vibe-native/
+│   └── src/lib.rs        # Cross-platform trash binding via the trash crate
+└── vibe-core/src/
+    ├── fast_remove.rs    # Trash Strategy implementation
+    │   ├── is_fast_remove_supported()
+    │   ├── trash_name()
+    │   ├── move_to_system_trash()        # Native trash + platform fallback
+    │   ├── move_to_macos_trash_via_osascript()
+    │   ├── spawn_background_delete()
+    │   ├── fast_remove_directory()
+    │   └── cleanup_stale_trash()
     └── commands/
-        └── clean.ts          # Clean command implementation
+        └── clean.rs      # Clean command implementation
 ```
+
+**Function Reference:**
+
+| Function                              | Description                               |
+| ------------------------------------- | ----------------------------------------- |
+| `is_fast_remove_supported()`          | Checks fast-remove support                |
+| `trash_name()`                        | Generates a unique trash directory name   |
+| `move_to_system_trash()`              | Native trash + platform-specific fallback |
+| `move_to_macos_trash_via_osascript()` | Rust macOS Finder Trash fallback          |
+| `spawn_background_delete()`           | Detached background deletion              |
+| `fast_remove_directory()`             | Main fast-remove function                 |
+| `cleanup_stale_trash()`               | Cleanup for leftover trash directories    |
 
 ## Strategy Selection Mechanism
 
 The clean command automatically selects the appropriate strategy based on user settings:
 
-```typescript
-// From packages/core/src/commands/clean.ts
-const settings = await loadUserSettings(ctx);
-const useFastRemove = settings.clean?.fast_remove ?? true; // Default: true
+```rust
+// From rust/crates/vibe-core/src/commands/clean.rs
+let should_fast = use_fast_remove && is_fast_remove_supported();
 
-if (useFastRemove && isFastRemoveSupported()) {
-  // Try Trash Strategy
-  const result = await fastRemoveDirectory(worktreePath, ctx);
-  if (result.success) {
-    // Success - perform git worktree cleanup
-    return;
-  }
-  // Fall through to Standard Strategy
+if should_fast {
+    let result = fast_remove_directory(
+        deps.io,
+        &deps.native,
+        &deps.spawner,
+        &deps.clock,
+        &deps.random,
+        worktree_path,
+        opts,
+    );
+
+    if result.success {
+        // Recreate the empty worktree marker and let Git unregister it.
+        cleanup_stale_trash(deps.io, &deps.spawner, &parent);
+        return Ok(());
+    }
+
+    // Fall through to Standard Strategy.
 }
 
 // Standard Strategy: git worktree remove
