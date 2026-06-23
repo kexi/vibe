@@ -32,6 +32,7 @@ jobs:
         run: bun run lint
 
   rust-linux:
+    if: github.event_name == 'push' || github.base_ref == 'main'
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
@@ -50,10 +51,9 @@ jobs:
 
   # macOS coverage matters because vibe-native's clonefile path and other
   # cfg(target_os = "macos") code is only compiled (and its tests only run) on a
-  # macOS runner. It is kept for release-bound validation (main PRs and pushes)
-  # but skipped on develop PRs to keep the common review loop fast.
+  # macOS runner. Keep it in the lightweight develop PR gate because macOS is the
+  # primary user platform; Linux still runs in the full validation path.
   rust-macos:
-    if: github.event_name == 'push' || github.base_ref == 'main'
     runs-on: macos-latest
     steps:
       - name: Harden Runner
@@ -571,7 +571,7 @@ jobs:
           set -euo pipefail
 
           failed=0
-          full_only_jobs=" RUST_MACOS BUILD_RUST_BINARIES BUILD_DEB E2E_TEST NPM_INSTALL_MATRIX "
+          full_only_jobs=" RUST_LINUX BUILD_RUST_BINARIES BUILD_DEB E2E_TEST NPM_INSTALL_MATRIX "
           for job in \
             LINT \
             RUST_LINUX \
