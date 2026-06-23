@@ -76,7 +76,7 @@ Vibe provides fast directory removal with trash support.
 
 ```mermaid
 flowchart TD
-    A[fastRemoveDirectory] --> B{Native Trash Available?}
+    A[fast_remove_directory] --> B{Native Trash Available?}
     B -->|Yes| C[Native Trash Module]
     B -->|No| D{macOS?}
 

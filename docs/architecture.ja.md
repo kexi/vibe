@@ -76,7 +76,7 @@ Vibe はゴミ箱サポート付きの高速ディレクトリ削除を提供し
 
 ```mermaid
 flowchart TD
-    A[fastRemoveDirectory] --> B{Native Trash Available?}
+    A[fast_remove_directory] --> B{Native Trash Available?}
     B -->|Yes| C[Native Trash Module]
     B -->|No| D{macOS?}
 

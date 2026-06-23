@@ -82,20 +82,20 @@ Trash Strategy は、対象ディレクトリを一時的な場所に rename し
 
 **クリーンアップ機構:**
 
-`cleanupStaleTrash()` 関数は、残存する `.vibe-trash-*` ディレクトリをスキャンして削除します：
+`cleanup_stale_trash()` 関数は、残存する `.vibe-trash-*` ディレクトリをスキャンして削除します：
 
 - 削除された worktree の親ディレクトリ
 - システムの temp ディレクトリ
 
 このクリーンアップは各 clean 操作後に自動的に実行されます。
 
-**実装ファイル:** `packages/core/src/utils/fast-remove.ts`
+**実装ファイル:** `rust/crates/vibe-core/src/fast_remove.rs`
 
 ### Standard Strategy
 
 標準の `git worktree remove` コマンドを使用します。Trash Strategy が失敗した場合や無効化されている場合のフォールバックとして使用されます。
 
-**実装ファイル:** `packages/core/src/commands/clean.ts`
+**実装ファイル:** `rust/crates/vibe-core/src/commands/clean.rs`
 
 ## 設定
 
@@ -133,58 +133,60 @@ post_clean = ["echo 'Cleanup complete'"]
 ## ファイル構造
 
 ```
-packages/
-├── native/
-│   ├── Cargo.toml        # Rust 依存関係（trash crate を含む）
-│   ├── src/lib.rs        # ネイティブモジュール（moveToTrash, moveToTrashAsync）
-│   └── index.d.ts        # TypeScript 型定義
-└── core/src/
-    ├── native/
-    │   └── index.ts      # NativeTrashAdapter インターフェース
-    ├── runtime/node/
-    │   └── native.ts     # NodeNativeTrash 実装
-    ├── utils/
-    │   └── fast-remove.ts    # Trash Strategy 実装
-    │       ├── isFastRemoveSupported()
-    │       ├── generateTrashName()
-    │       ├── moveToSystemTrash()
-    │       ├── move_to_macos_trash_via_osascript()
-    │       ├── spawnBackgroundDelete()
-    │       ├── fastRemoveDirectory()
-    │       └── cleanupStaleTrash()
+rust/crates/
+├── vibe-native/
+│   └── src/lib.rs        # trash crate 経由のクロスプラットフォームゴミ箱連携
+└── vibe-core/src/
+    ├── fast_remove.rs    # Trash Strategy 実装
+    │   ├── is_fast_remove_supported()
+    │   ├── trash_name()
+    │   ├── move_to_system_trash()
+    │   ├── move_to_macos_trash_via_osascript()
+    │   ├── spawn_background_delete()
+    │   ├── fast_remove_directory()
+    │   └── cleanup_stale_trash()
     └── commands/
-        └── clean.ts          # Clean command 実装
+        └── clean.rs      # Clean command 実装
 ```
 
 **関数の説明:**
 
-| 関数                               | 説明                                                  |
-| ---------------------------------- | ----------------------------------------------------- |
-| `isFastRemoveSupported()`          | プラットフォームサポートの確認                        |
-| `generateTrashName()`              | 一意のゴミ箱ディレクトリ名を生成                      |
-| `moveToSystemTrash()`              | ネイティブゴミ箱 + プラットフォーム固有フォールバック |
-| `move_to_macos_trash_via_osascript()` | Rust macOS フォールバック                             |
-| `spawnBackgroundDelete()`          | デタッチされたバックグラウンド削除                    |
-| `fastRemoveDirectory()`            | メインの高速削除関数                                  |
-| `cleanupStaleTrash()`              | 残存ゴミ箱ディレクトリのクリーンアップ                |
+| 関数                                    | 説明                                                  |
+| --------------------------------------- | ----------------------------------------------------- |
+| `is_fast_remove_supported()`            | 高速削除サポートの確認                                |
+| `trash_name()`                          | 一意のゴミ箱ディレクトリ名を生成                      |
+| `move_to_system_trash()`                | ネイティブゴミ箱 + プラットフォーム固有フォールバック |
+| `move_to_macos_trash_via_osascript()`   | Rust macOS Finder Trash フォールバック                |
+| `spawn_background_delete()`             | デタッチされたバックグラウンド削除                    |
+| `fast_remove_directory()`               | メインの高速削除関数                                  |
+| `cleanup_stale_trash()`                 | 残存ゴミ箱ディレクトリのクリーンアップ                |
 
 ## Strategy 選択機構
 
 clean コマンドはユーザー設定に基づいて適切な strategy を自動選択します：
 
-```typescript
-// packages/core/src/commands/clean.ts より
-const settings = await loadUserSettings(ctx);
-const useFastRemove = settings.clean?.fast_remove ?? true; // デフォルト: true
+```rust
+// rust/crates/vibe-core/src/commands/clean.rs より
+let should_fast = use_fast_remove && is_fast_remove_supported();
 
-if (useFastRemove && isFastRemoveSupported()) {
-  // Trash Strategy を試行
-  const result = await fastRemoveDirectory(worktreePath, ctx);
-  if (result.success) {
-    // 成功 - git worktree クリーンアップを実行
-    return;
-  }
-  // Standard Strategy にフォールスルー
+if should_fast {
+    let result = fast_remove_directory(
+        deps.io,
+        &deps.native,
+        &deps.spawner,
+        &deps.clock,
+        &deps.random,
+        worktree_path,
+        opts,
+    );
+
+    if result.success {
+        // 空の worktree marker を再作成し、Git に登録解除させる。
+        cleanup_stale_trash(deps.io, &deps.spawner, &parent);
+        return Ok(());
+    }
+
+    // Standard Strategy にフォールスルー
 }
 
 // Standard Strategy: git worktree remove
