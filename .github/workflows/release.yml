@@ -257,7 +257,15 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
-          files: artifacts/*
+          # Why not `artifacts/*`: download-artifact with `merge-multiple: true`
+          # flattens the five `platform-package-*` artifacts into the same dir,
+          # leaking their `package.json` / `THIRD-PARTY-LICENSES.md` into the
+          # GitHub Release. publish-npm.yml regenerates those locally per-matrix
+          # and only pulls the named binary via `gh release download --pattern`,
+          # so restricting uploads to the binaries and .debs is safe.
+          files: |
+            artifacts/vibe-*-*
+            artifacts/vibe_*.deb
           generate_release_notes: true
 
   update-homebrew:
