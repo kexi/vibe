@@ -271,13 +271,12 @@ jobs:
       - name: Publish @kexi/${{ matrix.package }}
         if: steps.guard.outputs.skip != 'true'
         working-directory: packages/vibe-${{ matrix.platform }}-${{ matrix.arch }}
-        # NODE_AUTH_TOKEN authenticates the publish. OIDC trusted publishing
-        # cannot CREATE a brand-new package (it 404s on the initial PUT), so the
-        # per-platform packages need a token for their first publish; once they
-        # exist with a configured trusted publisher, OIDC takes over and this
-        # token is unused. Provenance still attaches via id-token: write.
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # Auth is OIDC trusted publishing (configured on npmjs.com per package
+        # for this repo + publish-npm.yml), granted via id-token: write. No
+        # NODE_AUTH_TOKEN on purpose: an env token takes precedence over OIDC,
+        # so a stale secret would break the publish. Caveat: OIDC cannot CREATE
+        # a brand-new package (it 404s on the initial PUT) — any future new
+        # package needs a one-off token for its first publish only.
         run: npm publish --provenance --access public
 
   # Publish @kexi/vibe (the launcher shim). It needs ALL five platform packages
@@ -337,8 +336,6 @@ jobs:
       - name: Publish @kexi/vibe
         if: steps.guard.outputs.skip != 'true'
         working-directory: packages/npm
-        # See the platform publish step: NODE_AUTH_TOKEN covers the first publish
-        # of a not-yet-existing package, which OIDC alone cannot create.
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # See the platform publish step: auth is OIDC trusted publishing;
+        # deliberately no NODE_AUTH_TOKEN.
         run: npm publish --provenance --access public
