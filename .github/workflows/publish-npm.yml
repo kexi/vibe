@@ -134,7 +134,10 @@ jobs:
       - uses: ./.github/actions/setup-toolchain
 
       - name: Install cargo-audit
-        run: cargo install cargo-audit
+        # Pinned + --locked: an unpinned install resolves fresh dependency
+        # versions at publish time, which broke when kstring 2.0.4 started
+        # requiring a newer rustc than rust-toolchain.toml pins.
+        run: cargo install cargo-audit@0.22.2 --locked
 
       - name: Audit shipped Rust binary (rust/)
         run: cargo audit --file rust/Cargo.lock
