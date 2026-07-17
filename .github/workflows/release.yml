@@ -386,5 +386,14 @@ jobs:
             git add "Formula/${VERSIONED_FORMULA}"
           fi
 
+          # Skip the commit when the formula is already up to date: on a re-run
+          # of a succeeded release the regenerated formula is byte-identical
+          # (builds are reproducible), and a bare `git commit` would exit 1 and
+          # fail the whole run, closing publish-npm's workflow_run success gate.
+          if git diff --cached --quiet; then
+            echo "Formula already up to date for $VERSION; nothing to commit."
+            exit 0
+          fi
+
           git commit -m "Update ${FORMULA_NAME} to $VERSION"
           git push --quiet https://x-access-token:${GH_TOKEN}@github.com/kexi/homebrew-tap.git HEAD:main
