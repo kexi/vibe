@@ -8,12 +8,19 @@
 #   exact 8-space `specifier:` indent so the literal replace can never touch an
 #   unrelated dependency pinned to the same version. If the pnpm lockfile format
 #   ever changes, no-arg `bmp` validation fails loudly rather than mis-replacing.
+# - The Cargo patterns match the single `[package]` version line in each crate
+#   today. bmp replaces the pattern anywhere in the file, so a future dependency
+#   pinned to a FULL X.Y.Z triple equal to the release version would also be
+#   rewritten — keep Cargo dep pins to 1-2 components (e.g. "3", "0.23") or
+#   tighten these patterns if a triple-pinned dep is ever added.
 #
 # Security rationale for the `bmp` pnpm script (package.json has no comments):
-# the deno permission scope excludes .git/.github; no --allow-run (bmp -c is never
-# used; the release skill commits itself); no --allow-net (module fetch is
-# out-of-band); --frozen requires the committed deno.lock so a release can never
-# fetch an unpinned transitive dep.
+# the deno --allow-read/--allow-write scope is exactly the target files listed
+# below (so e.g. vibe-native's exclusion is sandbox-enforced, and .git/.github
+# are unreachable); no --allow-run (bmp -c is never used; the release skill
+# commits itself); no --allow-net (module fetch is out-of-band); --frozen
+# requires the committed deno.lock so a release can never fetch an unpinned
+# transitive dep. Keep the flag list in sync with the `files:` map below.
 version: 2.1.1
 
 files:

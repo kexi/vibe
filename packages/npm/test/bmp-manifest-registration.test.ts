@@ -86,10 +86,13 @@ describe("packages/npm optionalDependencies", () => {
 });
 
 describe("unregistered platform dir guard", () => {
-  it("has no packages/vibe-*-(x64|arm64) dir missing from PLATFORMS or .bmp.yml", () => {
+  it("has no packages/vibe-<os>-<arch> dir missing from PLATFORMS or .bmp.yml", () => {
     const entries = readdirSync(join(REPO_ROOT, "packages"), { withFileTypes: true });
+    // Deliberately broad (any <os>-<arch> pair, not just x64/arm64): a future
+    // platform dir like vibe-linux-riscv64 must be caught here, not slip past
+    // an arch allowlist — that is the exact hole this guard closes.
     const platformDirs = entries
-      .filter((e) => e.isDirectory() && /^vibe-.*-(x64|arm64)$/.test(e.name))
+      .filter((e) => e.isDirectory() && /^vibe-[a-z0-9]+-[a-z0-9]+$/.test(e.name))
       .map((e) => e.name);
 
     for (const name of platformDirs) {
@@ -134,6 +137,16 @@ describe("version coherence (drift visible in PR CI)", () => {
     );
     for (const p of PLATFORMS) {
       expect(npm.optionalDependencies[`@kexi/${p}`]).toBe(version);
+    }
+
+    // The five pnpm-lock.yaml importer specifiers — the drift class that broke
+    // the v2.1.0/v2.1.1 releases. Assert the committed VALUE (real newline +
+    // 8-space indent, matching the lockfile bytes), not just the pattern
+    // registration above, so lockfile drift fails here with a clear message
+    // instead of only via a frozen-install error at release time.
+    const lock = readRepoFile("pnpm-lock.yaml");
+    for (const p of PLATFORMS) {
+      expect(lock).toContain(`'@kexi/${p}':\n        specifier: ${version}`);
     }
   });
 });

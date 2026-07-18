@@ -216,7 +216,7 @@ intentionally NOT a target — it carries an independent version.
 **Explicit / non-adjacent version:** bmp has no "set X.Y.Z" command. Chain bumps
 to reach a non-adjacent target (e.g. two `-- -m` to go 2.1.1 → 2.3.0). As a last
 resort, hand-edit the `version:` line in `.bmp.yml` plus each target's version
-occurrence, then validate with `pnpm run bmp` (see Step 3.5).
+occurrence, then validate with `pnpm run bmp` (see Step 3.4).
 
 **First-run note:** `pnpm run bmp` uses `--frozen` against the committed
 `deno.lock` (maintained via `deno.json`). If `deno.lock` does not yet exist
@@ -227,7 +227,7 @@ root to create it and commit it BEFORE the first release.
 clean-working-tree precondition guarantees `git checkout .` loses no other work,
 so on any bmp error or validation failure run `git checkout .` and abort.
 
-### 3.4 Refresh Cargo.lock
+### 3.3 Refresh Cargo.lock
 
 A release bump always changes the Cargo manifest targets, so refresh the lockfile
 metadata:
@@ -238,7 +238,7 @@ cargo metadata --manifest-path rust/Cargo.toml --format-version 1 >/dev/null
 
 This updates the workspace package versions recorded in `rust/Cargo.lock`.
 
-### 3.5 Verify Sync
+### 3.4 Verify Sync
 
 ```bash
 pnpm run bmp
@@ -247,7 +247,7 @@ pnpm run bmp
 No-arg `bmp` validates: it substitutes `.bmp.yml`'s version into every configured
 pattern and exits 1 on any drift or missing target file.
 
-### 3.6 Update Changelog
+### 3.5 Update Changelog
 
 Update the following file:
 
@@ -324,6 +324,10 @@ git add .bmp.yml \
   pnpm-lock.yaml \
   packages/docs/src/content/docs/changelog.mdx packages/docs/src/content/docs/ja/changelog.mdx
 ```
+
+**First bmp adoption only:** if this release created `deno.lock` for the first
+time (see the first-run note in Step 3.2), also `git add deno.json deno.lock` —
+CI's `pnpm run bmp` runs with `--frozen` and fails without the committed lock.
 
 ### 4.2 Create Commit
 

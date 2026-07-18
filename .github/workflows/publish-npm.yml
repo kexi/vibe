@@ -135,6 +135,14 @@ jobs:
         # that bypassed PR CI still cannot publish with a specifier/version mismatch.
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      - name: Run manifest registration guards (packages/npm tests)
+        # The bmp-manifest-registration vitest guards catch what bmp cannot: an
+        # unregistered packages/vibe-* platform dir, an optionalDependency set
+        # mismatch, or version drift between .bmp.yml and the committed manifests
+        # and lockfile. sync-version.ts --check used to run these structural
+        # checks at release time; keep them on the release gate, not only PR CI.
+        run: pnpm run test:npm
+
       - name: Verify THIRD-PARTY-LICENSES.md is up to date
         run: bun run scripts/generate-third-party-licenses.ts --check
 
