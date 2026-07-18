@@ -36,7 +36,7 @@ runs:
         # We export just these tools (not the whole shell PATH) so the system
         # C toolchain stays in front for node-gyp (node-pty) and rustup linking.
         nix develop --command bash -c '
-          for t in node bun pnpm ruby rustup pinact git; do
+          for t in node bun pnpm ruby rustup pinact git deno; do
             dirname "$(command -v "$t")"
           done' | sort -u >> "$GITHUB_PATH"
         echo "SHARP_IGNORE_GLOBAL_LIBVIPS=1" >> "$GITHUB_ENV"

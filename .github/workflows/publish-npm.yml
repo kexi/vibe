@@ -111,8 +111,29 @@ jobs:
 
           echo "package.json version validation passed: $PKG_VERSION"
 
-      - name: Verify all versions are in sync (package.json, Cargo.toml, platform pkgs)
-        run: bun run scripts/sync-version.ts --check
+      - name: Verify .bmp.yml version matches tag
+        env:
+          TAG_VERSION: ${{ needs.resolve-release.outputs.version }}
+        run: |
+          BMP_VERSION=$(grep -E '^version:' .bmp.yml | head -1 | sed -E 's/^version:[[:space:]]*//')
+          if [ "$TAG_VERSION" != "$BMP_VERSION" ]; then
+            echo "::error::.bmp.yml version ($BMP_VERSION) does not match release tag version ($TAG_VERSION)"
+            exit 1
+          fi
+          echo ".bmp.yml version validation passed: $BMP_VERSION"
+
+      - name: Verify all versions are in sync (bmp validation over every manifest)
+        # No-arg bmp substitutes .bmp.yml's version into every configured pattern and
+        # fails (exit 1) if any file is missing it — including the pnpm-lock.yaml
+        # importer specifiers that sync-version.ts never covered (the v2.1.0/v2.1.1
+        # frozen-lockfile release breakage). --frozen (in the pnpm script) pins bmp's
+        # transitive JSR deps via the committed deno.lock.
+        run: pnpm run bmp
+
+      - name: Verify lockfile is installable (frozen)
+        # Defense in depth for the bmp-maintained lockfile edits: a release commit
+        # that bypassed PR CI still cannot publish with a specifier/version mismatch.
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Verify THIRD-PARTY-LICENSES.md is up to date
         run: bun run scripts/generate-third-party-licenses.ts --check

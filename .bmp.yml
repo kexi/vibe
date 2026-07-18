@@ -1,0 +1,41 @@
+# Single source of truth for the release version across every manifest.
+# Bump with: pnpm run bmp -- -p|-m|-j   (see .claude/skills/vibe-release-new-version)
+# Validate (drift gate, also run by CI publish-npm verify-versions): pnpm run bmp
+# Notes:
+# - The vibe-native crate is intentionally absent: it carries an independent version.
+# - rust/Cargo.lock is NOT a target; it is refreshed with `cargo metadata` after a bump.
+# - The pnpm-lock.yaml patterns are anchored to the unique package-name line plus the
+#   exact 8-space `specifier:` indent so the literal replace can never touch an
+#   unrelated dependency pinned to the same version. If the pnpm lockfile format
+#   ever changes, no-arg `bmp` validation fails loudly rather than mis-replacing.
+#
+# Security rationale for the `bmp` pnpm script (package.json has no comments):
+# the deno permission scope excludes .git/.github; no --allow-run (bmp -c is never
+# used; the release skill commits itself); no --allow-net (module fetch is
+# out-of-band); --frozen requires the committed deno.lock so a release can never
+# fetch an unpinned transitive dep.
+version: 2.1.1
+
+files:
+  package.json: '"version": "%.%.%"'
+  packages/npm/package.json:
+    - '"version": "%.%.%"'
+    - '"@kexi/vibe-linux-x64": "%.%.%"'
+    - '"@kexi/vibe-linux-arm64": "%.%.%"'
+    - '"@kexi/vibe-darwin-x64": "%.%.%"'
+    - '"@kexi/vibe-darwin-arm64": "%.%.%"'
+    - '"@kexi/vibe-win32-x64": "%.%.%"'
+  packages/vibe-linux-x64/package.json: '"version": "%.%.%"'
+  packages/vibe-linux-arm64/package.json: '"version": "%.%.%"'
+  packages/vibe-darwin-x64/package.json: '"version": "%.%.%"'
+  packages/vibe-darwin-arm64/package.json: '"version": "%.%.%"'
+  packages/vibe-win32-x64/package.json: '"version": "%.%.%"'
+  rust/crates/vibe/Cargo.toml: 'version = "%.%.%"'
+  rust/crates/vibe-core/Cargo.toml: 'version = "%.%.%"'
+  rust/crates/vibe-test-support/Cargo.toml: 'version = "%.%.%"'
+  pnpm-lock.yaml:
+    - "'@kexi/vibe-linux-x64':\n        specifier: %.%.%"
+    - "'@kexi/vibe-linux-arm64':\n        specifier: %.%.%"
+    - "'@kexi/vibe-darwin-x64':\n        specifier: %.%.%"
+    - "'@kexi/vibe-darwin-arm64':\n        specifier: %.%.%"
+    - "'@kexi/vibe-win32-x64':\n        specifier: %.%.%"

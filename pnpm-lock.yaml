@@ -7,10 +7,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      smol-toml:
-        specifier: ^1.6.0
-        version: 1.6.0
     devDependencies:
       '@oxlint/plugins':
         specifier: ^1.67.0

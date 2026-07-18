@@ -150,6 +150,7 @@
             pnpm_10
             ruby_3_4
             rustup
+            deno # runs jsr:@kt3k/bmp for release version bumping (#541)
             pinact
             lefthook
             git

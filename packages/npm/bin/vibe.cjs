@@ -27,8 +27,10 @@
  *   ("^1.8.1"). This guarantees the launcher only ever resolves the binary
  *   built and published from THIS exact release — a range would let a later
  *   (possibly compromised or unvetted) platform-package version be substituted
- *   under a user who only audited @kexi/vibe. scripts/sync-version.ts keeps
- *   these pins equal to the root version; do not relax them to ranges.
+ *   under a user who only audited @kexi/vibe. bmp (.bmp.yml) keeps these exact
+ *   pins equal to the release version, and
+ *   packages/npm/test/bmp-manifest-registration.test.ts asserts they stay
+ *   registered; do not relax them to ranges.
  *
  *   (no-fallback) When the platform package cannot be resolved (resolveBinary
  *   throws ENORESOLVE), this shim ERRORS OUT and tells the user to reinstall.

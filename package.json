@@ -26,15 +26,13 @@
     "build:rust": "cargo build --manifest-path rust/Cargo.toml -p vibe --release",
     "check:rust": "pnpm run fmt:rust:check && pnpm run lint:rust && pnpm run test:rust",
     "get-version": "node -e \"console.log(JSON.parse(require('fs').readFileSync('package.json')).version)\"",
+    "bmp": "deno run --frozen --allow-env=NO_COLOR,TERM,CI --allow-read=.bmp.yml,package.json,packages,rust/crates,pnpm-lock.yaml --allow-write=.bmp.yml,package.json,packages,rust/crates,pnpm-lock.yaml jsr:@kt3k/bmp@0.3.3",
     "install:all": "pnpm install",
     "test:npm": "pnpm -C packages/npm test",
     "test:e2e": "cargo build --manifest-path rust/Cargo.toml -p vibe && pnpm -C packages/e2e test",
     "clean": "pnpm -r exec rm -rf node_modules dist",
     "check:docs": "pnpm -C packages/docs lint && pnpm -C packages/docs format && pnpm -C packages/docs check",
     "check:all": "pnpm run fmt:check && pnpm run lint && pnpm run check:rust && pnpm run test:npm && pnpm run test:e2e && pnpm run check:docs"
-  },
-  "dependencies": {
-    "smol-toml": "^1.6.0"
   },
   "devDependencies": {
     "@oxlint/plugins": "^1.67.0",
