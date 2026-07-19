@@ -189,32 +189,48 @@ git tag -l "v<resolvedVersion>"
 git checkout -b release/vX.Y.Z
 ```
 
-### 3.2 Update package.json
+### 3.2 Bump the version (bmp)
 
-Use the Edit tool to update the `"version"` field in the root `package.json`:
-
-```json
-"version": "X.Y.Z"
-```
-
-### 3.3 Sync Versions
+`.bmp.yml` is the single source of truth for the release version. Bump it with
+[kt3k/bmp](https://jsr.io/@kt3k/bmp) via the `bmp` pnpm script — **primary path**:
 
 ```bash
-bun run scripts/sync-version.ts
+pnpm run bmp -- -p   # patch
+pnpm run bmp -- -m   # minor
+pnpm run bmp -- -j   # major
 ```
 
-The script is the single source of truth for which manifests get synced — do not
-maintain a duplicate list here. As of the Rust rewrite it propagates the root
-version to five npm manifests (`packages/npm/package.json` and the four
-`packages/vibe-{linux,darwin}-{x64,arm64}/package.json`, including `@kexi/vibe`'s
-per-platform `optionalDependency` pins) and three Cargo crates
-(`rust/crates/{vibe,vibe-core,vibe-test-support}/Cargo.toml`). The `vibe-native`
-crate is intentionally excluded — it carries an independent version. The script
-does not rewrite `rust/Cargo.lock`; refresh it explicitly in the next step.
+(Prereleases: add `--preid <label>`; finalize a prerelease with `-r`.)
 
-### 3.4 Refresh Cargo.lock
+A single bump rewrites, from the one `version:` in `.bmp.yml`, every registered
+manifest: the root `package.json`, `packages/npm/package.json`, the five
+per-platform `packages/vibe-{linux,darwin,win32}-*/package.json`, `@kexi/vibe`'s
+five `optionalDependency` pins, the three Cargo crates
+(`rust/crates/{vibe,vibe-core,vibe-test-support}/Cargo.toml`), AND — critically —
+the five `pnpm-lock.yaml` importer `specifier:` lines. The lockfile edit is a
+literal replace with no dependency re-resolution, so `pnpm install
+--frozen-lockfile` stays valid; this fixes the v2.1.0/v2.1.1 releases that broke
+because the manual lockfile edit was missed. The `vibe-native` crate is
+intentionally NOT a target — it carries an independent version.
 
-If any Cargo manifest target changed, refresh the lockfile metadata:
+**Explicit / non-adjacent version:** bmp has no "set X.Y.Z" command. Chain bumps
+to reach a non-adjacent target (e.g. two `-- -m` to go 2.1.1 → 2.3.0). As a last
+resort, hand-edit the `version:` line in `.bmp.yml` plus each target's version
+occurrence, then validate with `pnpm run bmp` (see Step 3.4).
+
+**First-run note:** `pnpm run bmp` uses `--frozen` against the committed
+`deno.lock` (maintained via `deno.json`). If `deno.lock` does not yet exist
+(initial adoption of bmp), run `deno cache jsr:@kt3k/bmp@0.3.3` once at the repo
+root to create it and commit it BEFORE the first release.
+
+**Failure recovery:** bmp's multi-file rewrite is not atomic. The Step 1.1
+clean-working-tree precondition guarantees `git checkout .` loses no other work,
+so on any bmp error or validation failure run `git checkout .` and abort.
+
+### 3.3 Refresh Cargo.lock
+
+A release bump always changes the Cargo manifest targets, so refresh the lockfile
+metadata:
 
 ```bash
 cargo metadata --manifest-path rust/Cargo.toml --format-version 1 >/dev/null
@@ -222,13 +238,16 @@ cargo metadata --manifest-path rust/Cargo.toml --format-version 1 >/dev/null
 
 This updates the workspace package versions recorded in `rust/Cargo.lock`.
 
-### 3.5 Verify Sync
+### 3.4 Verify Sync
 
 ```bash
-bun run scripts/sync-version.ts --check
+pnpm run bmp
 ```
 
-### 3.6 Update Changelog
+No-arg `bmp` validates: it substitutes `.bmp.yml`'s version into every configured
+pattern and exits 1 on any drift or missing target file.
+
+### 3.5 Update Changelog
 
 Update the following file:
 
@@ -288,20 +307,27 @@ Examples of changes to include:
 
 ### 4.1 Stage Changes
 
-Stage the root `package.json`, everything `sync-version.ts` rewrote (the five npm
-manifests and the three Cargo crates), the lockfile refreshed by Cargo, and both
-changelog files. Listing the exact set is brittle now that the sync targets live
-in the script; review `git status` first, then stage the release-related files:
+Stage `.bmp.yml` (the SSoT), everything `bmp` rewrote (the five npm manifests,
+the three Cargo crates, and `pnpm-lock.yaml`), the `rust/Cargo.lock` refreshed by
+Cargo, and both changelog files. Review `git status` first, then stage the
+release-related files:
 
 ```bash
-git add package.json \
+git add .bmp.yml \
+  package.json \
   packages/npm/package.json \
   packages/vibe-linux-x64/package.json packages/vibe-linux-arm64/package.json \
   packages/vibe-darwin-x64/package.json packages/vibe-darwin-arm64/package.json \
+  packages/vibe-win32-x64/package.json \
   rust/crates/vibe/Cargo.toml rust/crates/vibe-core/Cargo.toml rust/crates/vibe-test-support/Cargo.toml \
   rust/Cargo.lock \
+  pnpm-lock.yaml \
   packages/docs/src/content/docs/changelog.mdx packages/docs/src/content/docs/ja/changelog.mdx
 ```
+
+**First bmp adoption only:** if this release created `deno.lock` for the first
+time (see the first-run note in Step 3.2), also `git add deno.json deno.lock` —
+CI's `pnpm run bmp` runs with `--frozen` and fails without the committed lock.
 
 ### 4.2 Create Commit
 
