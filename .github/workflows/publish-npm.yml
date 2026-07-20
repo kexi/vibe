@@ -31,8 +31,9 @@ jobs:
   # used to name the release — and then verified against the release itself:
   #   - the triggering Release run must have succeeded (job-level `if` below),
   #   - the Release run must have been dispatched on main,
-  #   - the release must exist and be published (a dry_run leaves none — the
-  #     resulting failure here is expected and harmless),
+  #   - the release must exist and be published — "Release succeeded but no
+  #     release exists" is reachable only via dry_run (which deletes its
+  #     draft), so that case is a benign skip (proceed=false), not a failure,
   #   - the release must NOT be a prerelease (beta releases are excluded), and
   #   - the release's target commit must equal the commit that was built
   #     (release.yml passes --target "$GITHUB_SHA").
@@ -46,6 +47,7 @@ jobs:
       tag: ${{ steps.meta.outputs.tag }}
       version: ${{ steps.meta.outputs.version }}
       head_sha: ${{ github.event.workflow_run.head_sha }}
+      proceed: ${{ steps.meta.outputs.proceed }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
@@ -75,12 +77,19 @@ jobs:
           fi
           TAG="v${VERSION}"
 
+          # "Release run succeeded but no release exists for the tag" is
+          # reachable only through dry_run (it deletes its draft; every other
+          # success path leaves a published release, and create failures never
+          # pass the conclusion == success gate). Skip instead of failing so
+          # rehearsals do not produce red runs indistinguishable from a real
+          # publish breakage.
           if ! INFO=$(gh release view "$TAG" \
               --repo "${GITHUB_REPOSITORY}" \
               --json isDraft,isPrerelease,targetCommitish \
               --jq '[.isDraft, .isPrerelease, .targetCommitish] | @tsv' 2>/dev/null); then
-            echo "::error::release $TAG not found. A dry_run Release run leaves no release; this failure is expected then."
-            exit 1
+            echo "::notice::release $TAG not found — dry_run rehearsal; skipping npm publish."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           read -r IS_DRAFT IS_PRERELEASE TARGET <<<"$INFO"
 
@@ -101,11 +110,15 @@ jobs:
 
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
           echo "Resolved stable release: tag=$TAG version=$VERSION sha=$HEAD_SHA"
 
   # Verify all versions are in sync before any build/publish
   verify-versions:
     needs: resolve-release
+    # Skipping here propagates through `needs` to every downstream job, so a
+    # dry_run rehearsal ends the whole workflow green with nothing published.
+    if: needs.resolve-release.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner

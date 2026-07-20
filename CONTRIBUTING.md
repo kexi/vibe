@@ -135,9 +135,12 @@ See [AGENTS.md](./AGENTS.md) for detailed branching workflow.
    # Rehearse without publishing (builds, verifies a draft, deletes it):
    #   gh workflow run release.yml --ref main -f dry_run=true
 
-   # Watch it finish, then confirm the release is published
-   sleep 5
-   gh run watch "$(gh run list --workflow=release.yml --limit 1 --json databaseId --jq '.[0].databaseId')" --exit-status
+   # Watch it finish, then confirm the release is published. Wait for the
+   # fresh (not yet completed) run so a stale earlier run is never watched.
+   until RUN_ID=$(gh run list --workflow=release.yml --limit 1 \
+     --json databaseId,status --jq '.[0] | select(.status != "completed") | .databaseId') \
+     && [ -n "$RUN_ID" ]; do sleep 3; done
+   gh run watch "$RUN_ID" --exit-status
    gh release view vX.X.X
    ```
 
