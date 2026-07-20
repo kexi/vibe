@@ -50,10 +50,12 @@ jobs:
           fi
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      - uses: ./.github/actions/setup-toolchain
+
       - name: Resolve version from package.json
         id: version
         run: |
-          VERSION=$(node -p "require('./package.json').version")
+          VERSION=$(bun run scripts/get-version.ts)
           if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "::error::Invalid stable version: $VERSION (prerelease suffixes belong to beta-release.yml)"
             exit 1

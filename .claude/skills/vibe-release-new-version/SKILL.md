@@ -525,12 +525,18 @@ gh workflow run release.yml --ref main -F notes=@/tmp/release-notes.md
 **Note:** Replace the notes content above with the release notes generated in Step 7.2.
 
 Watch the run until it finishes, then confirm the release is published. Wait
-for the fresh (not yet completed) run so a stale earlier run is never watched:
+(max ~3 minutes) for the fresh (not yet completed) run so a stale earlier run
+is never watched:
 
 ```bash
+tries=0
 until RUN_ID=$(gh run list --workflow=release.yml --limit 1 \
   --json databaseId,status --jq '.[0] | select(.status != "completed") | .databaseId') \
-  && [ -n "$RUN_ID" ]; do sleep 3; done
+  && [ -n "$RUN_ID" ]; do
+  tries=$((tries + 1))
+  [ "$tries" -lt 60 ] || { echo "error: no new release.yml run appeared" >&2; exit 1; }
+  sleep 3
+done
 gh run watch "$RUN_ID" --exit-status
 gh release view vX.Y.Z --json tagName,isDraft,isPrerelease
 ```
@@ -539,7 +545,10 @@ The workflow reads the version from `package.json` on main (no version
 argument). It refuses to run off main, on a non-stable version, or when the
 tag already exists without a release. Re-running a failed run is safe: an
 already-published release short-circuits, and npm publish (publish-npm.yml)
-re-fires with its own idempotency guards.
+re-fires with its own idempotency guards. To heal a post-publish mirror
+failure (e.g. update-homebrew), use **"Re-run failed jobs"** — a full "Re-run
+all jobs" skips the whole pipeline once the release is published (green run,
+tap unchanged).
 
 ### 7.4 Generate Twitter Post Text
 

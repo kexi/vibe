@@ -135,11 +135,17 @@ See [AGENTS.md](./AGENTS.md) for detailed branching workflow.
    # Rehearse without publishing (builds, verifies a draft, deletes it):
    #   gh workflow run release.yml --ref main -f dry_run=true
 
-   # Watch it finish, then confirm the release is published. Wait for the
-   # fresh (not yet completed) run so a stale earlier run is never watched.
+   # Watch it finish, then confirm the release is published. Wait (max ~3 min)
+   # for the fresh (not yet completed) run so a stale earlier run is never
+   # watched.
+   tries=0
    until RUN_ID=$(gh run list --workflow=release.yml --limit 1 \
      --json databaseId,status --jq '.[0] | select(.status != "completed") | .databaseId') \
-     && [ -n "$RUN_ID" ]; do sleep 3; done
+     && [ -n "$RUN_ID" ]; do
+     tries=$((tries + 1))
+     [ "$tries" -lt 60 ] || { echo "error: no new release.yml run appeared" >&2; exit 1; }
+     sleep 3
+   done
    gh run watch "$RUN_ID" --exit-status
    gh release view vX.X.X
    ```
@@ -147,7 +153,9 @@ See [AGENTS.md](./AGENTS.md) for detailed branching workflow.
    The workflow reads the version from `package.json` on main. npm publishing
    (`publish-npm.yml`) follows automatically once the Release workflow
    succeeds; a re-run of either workflow is safe (idempotency guards skip
-   what is already published).
+   what is already published). To heal a post-publish mirror failure (e.g.
+   update-homebrew), use "Re-run failed jobs" — a full "Re-run all jobs"
+   skips the whole pipeline once the release is published.
 
 4. **Update Nix binary hashes, if needed:**
 

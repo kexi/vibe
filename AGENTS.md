@@ -113,6 +113,8 @@ Code should follow SOLID principles:
   Releases-safe order)
 - Steps:
   1. `gh workflow run release.yml --ref main`
-  2. Watch the run: `gh run watch --exit-status` (version comes from
+  2. Watch the run: resolve the fresh run id first, then
+     `gh run watch <run-id> --exit-status` (see CONTRIBUTING.md "Releasing a
+     New Version" step 3 for the polling snippet; version comes from
      `package.json` on main)
   3. npm publish (`publish-npm.yml`) follows automatically via `workflow_run`
