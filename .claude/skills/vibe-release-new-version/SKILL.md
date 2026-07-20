@@ -1,5 +1,5 @@
 ---
-description: Release a new version of vibe (version bump, sync, PR creation)
+description: Release a new version of vibe (version bump, sync, PR creation, Release workflow dispatch)
 argument-hint: "[patch|minor|major|X.Y.Z]"
 allowed-tools: Bash(git *), Bash(gh *), Bash(pnpm *), Bash(bun *), Read, Edit, AskUserQuestion
 context: fork
@@ -421,7 +421,7 @@ Display the PR URL and inform the user:
 
 ---
 
-## Step 7: Create Release (after develop → main PR merge)
+## Step 7: Run the Release Workflow (after develop → main PR merge)
 
 After the PR is merged, execute the following:
 
