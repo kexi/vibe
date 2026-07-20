@@ -1,5 +1,5 @@
 ---
-description: Release a new version of vibe (version bump, sync, PR creation)
+description: Release a new version of vibe (version bump, sync, PR creation, Release workflow dispatch)
 argument-hint: "[patch|minor|major|X.Y.Z]"
 allowed-tools: Bash(git *), Bash(gh *), Bash(pnpm *), Bash(bun *), Read, Edit, AskUserQuestion
 context: fork
@@ -365,8 +365,8 @@ gh pr create --base develop --title "chore: release vX.Y.Z" --body "$(cat <<'EOF
 After merging this PR:
 1. Create a PR from `develop` to `main`
 2. Merge the `develop` → `main` PR
-3. Create a GitHub Release with tag `vX.Y.Z`
-4. CI will automatically build the binaries and publish to npm
+3. Run the Release workflow (`gh workflow run release.yml --ref main`)
+4. The workflow builds the binaries, publishes the GitHub Release (tag `vX.Y.Z`), and npm publish follows automatically
 EOF
 )"
 ```
@@ -404,8 +404,8 @@ gh pr create --base main --head develop --title "chore: merge develop into main 
 ---
 
 After merging this PR:
-1. Create a GitHub Release with tag `vX.Y.Z`
-2. CI will automatically build the binaries and publish to npm
+1. Run the Release workflow (`gh workflow run release.yml --ref main`)
+2. The workflow builds the binaries, publishes the GitHub Release (tag `vX.Y.Z`), and npm publish follows automatically
 EOF
 )"
 ```
@@ -421,7 +421,7 @@ Display the PR URL and inform the user:
 
 ---
 
-## Step 7: Create Release (after develop → main PR merge)
+## Step 7: Run the Release Workflow (after develop → main PR merge)
 
 After the PR is merged, execute the following:
 
@@ -483,12 +483,18 @@ vibe is a super fast Git worktree management tool with Copy-on-Write optimizatio
 - [ ] Release link
 - [ ] Website link
 
-### 7.3 Create GitHub Release
+### 7.3 Run the Release Workflow
 
-Create a release using the generated release notes:
+**Do NOT run `gh release create` by hand.** The Release workflow builds the
+binaries first and only then creates and publishes the GitHub Release with
+every asset attached — the order Immutable Releases requires (a published
+release's tag and assets are frozen, so assets can never be added afterwards).
+
+Save the release notes generated in Step 7.2 to a file, then dispatch the
+workflow on main:
 
 ```bash
-gh release create vX.Y.Z --title "vX.Y.Z" --notes "$(cat <<'EOF'
+cat > /tmp/release-notes.md <<'EOF'
 ## What's Changed
 
 ### Features
@@ -512,10 +518,37 @@ vibe is a super fast Git worktree management tool with Copy-on-Write optimizatio
 - [Release vX.Y.Z](https://github.com/kexi/vibe/releases/tag/vX.Y.Z)
 - [Website](https://vibe.kexi.dev)
 EOF
-)" --target main
+
+gh workflow run release.yml --ref main -F notes=@/tmp/release-notes.md
 ```
 
-**Note:** Replace the `--notes` content above with the release notes generated in Step 7.2.
+**Note:** Replace the notes content above with the release notes generated in Step 7.2.
+
+Watch the run until it finishes, then confirm the release is published. Wait
+(max ~3 minutes) for the fresh (not yet completed) run so a stale earlier run
+is never watched:
+
+```bash
+tries=0
+until RUN_ID=$(gh run list --workflow=release.yml --limit 1 \
+  --json databaseId,status --jq '.[0] | select(.status != "completed") | .databaseId') \
+  && [ -n "$RUN_ID" ]; do
+  tries=$((tries + 1))
+  [ "$tries" -lt 60 ] || { echo "error: no new release.yml run appeared" >&2; exit 1; }
+  sleep 3
+done
+gh run watch "$RUN_ID" --exit-status
+gh release view vX.Y.Z --json tagName,isDraft,isPrerelease
+```
+
+The workflow reads the version from `package.json` on main (no version
+argument). It refuses to run off main, on a non-stable version, or when the
+tag already exists without a release. Re-running a failed run is safe: an
+already-published release short-circuits, and npm publish (publish-npm.yml)
+re-fires with its own idempotency guards. To heal a post-publish mirror
+failure (e.g. update-homebrew), use **"Re-run failed jobs"** — a full "Re-run
+all jobs" skips the whole pipeline once the release is published (green run,
+tap unchanged).
 
 ### 7.4 Generate Twitter Post Text
 
@@ -639,14 +672,22 @@ git push origin --delete release/vX.Y.Z
 | Version format     | Semantic versioning compliant | **Abort**      |
 | Tag duplicate      | Tag does not already exist    | **Abort**      |
 
+The tag-duplicate and version-format checks are re-enforced by the Release
+workflow's `prepare` job, so a stale local check cannot slip through.
+
 ---
 
 ## Automated CI
 
-After PR merge, the following CI workflows run automatically:
+Releasing is workflow-first (Immutable Releases-safe): a GitHub Release is
+never a trigger, it is the *output* of the Release workflow.
 
-- `release.yml`: Binary build & release asset upload
-- `publish-npm.yml`: npm publish (the launcher shim + the four per-platform binary packages)
+- `release.yml` (dispatched via Step 7.3): builds the binaries and `.deb`s,
+  then creates and publishes the GitHub Release with all assets attached in
+  one `gh release create` call (the tag is burned only after every asset
+  uploaded)
+- `publish-npm.yml` (fires automatically via `workflow_run` after `release.yml`
+  succeeds): npm publish (the launcher shim + the per-platform binary packages)
 
 JSR publishing was removed with the dead TypeScript distribution in Phase 6.
 

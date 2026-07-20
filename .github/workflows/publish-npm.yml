@@ -1,15 +1,19 @@
 name: Publish to npm
 
-# Runs AFTER the Release workflow succeeds, not on the `release` event itself.
+# Runs AFTER the Release workflow succeeds, not on the `release` event.
 #
-# Why workflow_run (security/correctness C-1): publish-platform-packages and
-# publish-cli `gh release download` the GitHub Release assets. The Release
-# workflow BUILDS those assets and is triggered by the same `release` event, so
-# firing both on `on: release` raced — the download ran while the assets were
-# still being built and failed with "asset not found". Gating on
-# `workflow_run: completed` (success) guarantees the assets exist before we
-# fetch them. The `workflows: ["Release"]` filter must match release.yml's
-# top-level `name:` ("Release").
+# Why workflow_run (security/correctness C-1): the Release workflow is
+# dispatched on main, builds the binaries, and creates + publishes the GitHub
+# Release itself with every asset attached. It does so with GITHUB_TOKEN, and
+# events raised by GITHUB_TOKEN never trigger other workflows — so an
+# `on: release` trigger here would simply never fire. Gating on
+# `workflow_run: completed` (success) is the only link that works, and it also
+# guarantees the release and its assets exist before we `gh release download`
+# them. The `workflows: ["Release"]` filter must match release.yml's top-level
+# `name:` ("Release").
+#
+# npm OIDC trusted publishing is registered against THIS file name
+# (publish-npm.yml); do not rename or merge this workflow.
 on:
   workflow_run:
     workflows: ["Release"]
@@ -20,79 +24,114 @@ permissions:
   id-token: write # Required for npm provenance
 
 jobs:
-  # Establish the release tag/version and enforce the publish gate. workflow_run
-  # does NOT set GITHUB_REF_NAME to the tag (it points at the default branch),
-  # so the tag is taken from the triggering run's head_branch (the tag a release
-  # build runs on). We also re-assert the stable-release semantics the old
-  # `on: release: types: [released]` trigger gave for free:
+  # Establish the release tag/version and enforce the publish gate. The Release
+  # workflow is dispatched on main, so workflow_run.head_branch is "main" (not
+  # the tag) and head_sha is the exact commit the release was built from. The
+  # tag is derived from that commit's package.json — the same source release.yml
+  # used to name the release — and then verified against the release itself:
   #   - the triggering Release run must have succeeded (job-level `if` below),
+  #   - the Release run must have been dispatched on main,
+  #   - the release must exist and be published — "Release succeeded but no
+  #     release exists" is reachable only via dry_run (which deletes its
+  #     draft), so that case is a benign skip (proceed=false), not a failure,
   #   - the release must NOT be a prerelease (beta releases are excluded), and
-  #   - the release must target the main branch.
+  #   - the release's target commit must equal the commit that was built
+  #     (release.yml passes --target "$GITHUB_SHA").
   # All downstream jobs consume `resolve-release.outputs.{tag,version}` instead
-  # of GITHUB_REF_NAME.
+  # of GITHUB_REF_NAME, and check out `head_sha` so they validate the released
+  # commit even if main has moved on since.
   resolve-release:
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
       version: ${{ steps.meta.outputs.version }}
+      head_sha: ${{ github.event.workflow_run.head_sha }}
+      proceed: ${{ steps.meta.outputs.proceed }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: ./.github/actions/setup-toolchain
 
       - name: Resolve release tag and enforce stable-release gate
         id: meta
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # For a Release run triggered by the `release` event, head_branch is
-          # the release tag (e.g. "v1.8.1").
-          TAG: ${{ github.event.workflow_run.head_branch }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          if [ -z "$TAG" ]; then
-            echo "::error::could not determine release tag from workflow_run.head_branch"
-            exit 1
-          fi
-          # Validate tag format (vX.Y.Z[-prerelease]) so it cannot inject shell.
-          if ! echo "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
-            echo "::error::unexpected tag format: $TAG"
+          if [ "$HEAD_BRANCH" != "main" ]; then
+            echo "::error::the Release run was not dispatched on main (got: $HEAD_BRANCH)"
             exit 1
           fi
 
-          # Read the release's prerelease flag and target branch from the API.
-          # isPrerelease distinguishes stable `released` from beta `prereleased`,
-          # which workflow_run alone cannot tell us.
-          read -r IS_PRERELEASE TARGET < <(gh release view "$TAG" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --json isPrerelease,targetCommitish \
-            --jq '[.isPrerelease, .targetCommitish] | @tsv')
+          VERSION=$(bun run scripts/get-version.ts)
+          # Validate the version (and thus the tag) so it cannot inject shell.
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::unexpected stable version in package.json: $VERSION"
+            exit 1
+          fi
+          TAG="v${VERSION}"
 
+          # "Release run succeeded but no release exists for the tag" is
+          # reachable only through dry_run (it deletes its draft; every other
+          # success path leaves a published release, and create failures never
+          # pass the conclusion == success gate). Skip instead of failing so
+          # rehearsals do not produce red runs indistinguishable from a real
+          # publish breakage.
+          if ! INFO=$(gh release view "$TAG" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --json isDraft,isPrerelease,targetCommitish \
+              --jq '[.isDraft, .isPrerelease, .targetCommitish] | @tsv' 2>/dev/null); then
+            echo "::notice::release $TAG not found — dry_run rehearsal; skipping npm publish."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          read -r IS_DRAFT IS_PRERELEASE TARGET <<<"$INFO"
+
+          if [ "$IS_DRAFT" != "false" ]; then
+            echo "::error::release $TAG is still a draft; nothing to publish."
+            exit 1
+          fi
           if [ "$IS_PRERELEASE" = "true" ]; then
-            echo "Release $TAG is a prerelease (beta); skipping npm publish."
             echo "::error::publish-npm only runs for stable releases (not prereleases)."
             exit 1
           fi
-          if [ "$TARGET" != "main" ]; then
-            echo "::error::Releases must target the main branch (got: $TARGET)."
+          # release.yml creates the release with --target "$GITHUB_SHA", so this
+          # proves the tag points at exactly the commit the Release run built.
+          if [ "$TARGET" != "$HEAD_SHA" ]; then
+            echo "::error::release target ($TARGET) is not the commit the Release run built ($HEAD_SHA)."
             exit 1
           fi
 
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
-          echo "Resolved stable release: tag=$TAG version=${TAG#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
+          echo "Resolved stable release: tag=$TAG version=$VERSION sha=$HEAD_SHA"
 
   # Verify all versions are in sync before any build/publish
   verify-versions:
     needs: resolve-release
+    # Skipping here propagates through `needs` to every downstream job, so a
+    # dry_run rehearsal ends the whole workflow green with nothing published.
+    if: needs.resolve-release.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
+      # Pin to the released commit: a commit landing on main between the
+      # Release run and this workflow must not shift what gets validated.
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ needs.resolve-release.outputs.head_sha }}
 
       - uses: ./.github/actions/setup-toolchain
 
@@ -151,7 +190,7 @@ jobs:
   # packages distribute (pulls in aws-lc-rs / rustls / etc). The old napi crate
   # under packages/native was removed in Phase 6, so it is no longer audited.
   security-audit:
-    needs: verify-versions
+    needs: [resolve-release, verify-versions]
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
@@ -159,6 +198,8 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ needs.resolve-release.outputs.head_sha }}
 
       - uses: ./.github/actions/setup-toolchain
 
@@ -211,6 +252,8 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ needs.resolve-release.outputs.head_sha }}
 
       - uses: ./.github/actions/setup-toolchain
 
@@ -328,6 +371,8 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ needs.resolve-release.outputs.head_sha }}
 
       - uses: ./.github/actions/setup-toolchain
 

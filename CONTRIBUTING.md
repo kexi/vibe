@@ -118,27 +118,46 @@ See [AGENTS.md](./AGENTS.md) for detailed branching workflow.
 
    After the PR is merged:
 
-3. **Create and push the tag:**
+3. **Run the Release workflow:**
+
+   Do **not** create the tag or the GitHub release by hand. The Release
+   workflow builds the binaries first and only then creates and publishes the
+   GitHub Release with every asset attached — the tag is created at publish
+   time, pointing at the exact commit that was built. This is the order
+   Immutable Releases requires (a published release's tag and assets are
+   frozen, so nothing can be added afterwards).
 
    ```bash
-   # Checkout main and pull the merged changes
-   git checkout main
-   git pull origin main
+   gh workflow run release.yml --ref main
 
-   # Create and push the tag
-   git tag vX.X.X
-   git push origin vX.X.X
+   # Optionally pass hand-written release notes (empty = auto-generated):
+   #   gh workflow run release.yml --ref main -F notes=@notes.md
+   # Rehearse without publishing (builds, verifies a draft, deletes it):
+   #   gh workflow run release.yml --ref main -f dry_run=true
 
-   # Return to develop
-   git checkout develop
+   # Watch it finish, then confirm the release is published. Wait (max ~3 min)
+   # for the fresh (not yet completed) run so a stale earlier run is never
+   # watched.
+   tries=0
+   until RUN_ID=$(gh run list --workflow=release.yml --limit 1 \
+     --json databaseId,status --jq '.[0] | select(.status != "completed") | .databaseId') \
+     && [ -n "$RUN_ID" ]; do
+     tries=$((tries + 1))
+     [ "$tries" -lt 60 ] || { echo "error: no new release.yml run appeared" >&2; exit 1; }
+     sleep 3
+   done
+   gh run watch "$RUN_ID" --exit-status
+   gh release view vX.X.X
    ```
 
-4. **Create the GitHub release:**
-   ```bash
-   gh release create vX.X.X --generate-notes
-   ```
+   The workflow reads the version from `package.json` on main. npm publishing
+   (`publish-npm.yml`) follows automatically once the Release workflow
+   succeeds; a re-run of either workflow is safe (idempotency guards skip
+   what is already published). To heal a post-publish mirror failure (e.g.
+   update-homebrew), use "Re-run failed jobs" — a full "Re-run all jobs"
+   skips the whole pipeline once the release is published.
 
-5. **Update Nix binary hashes, if needed:**
+4. **Update Nix binary hashes, if needed:**
 
    The default Nix package builds from source. The prebuilt binary fast path
    (`#binary`) needs `flake.nix` hashes that match the final GitHub Release
@@ -173,11 +192,13 @@ See [AGENTS.md](./AGENTS.md) for detailed branching workflow.
 
 ### Automated Release Tasks
 
-When a release is created, GitHub Actions automatically:
+When the Release workflow is dispatched, GitHub Actions automatically:
 
-1. Builds binaries for each platform
-2. Uploads binaries to the release
+1. Builds binaries for each platform (plus `.deb` packages)
+2. Creates and publishes the GitHub Release with all assets attached
+   (the tag is created at publish time)
 3. Updates the homebrew-tap formula
+4. Publishes the npm packages (`publish-npm.yml`, via `workflow_run`)
 
 ### Required Secrets
 
@@ -206,10 +227,11 @@ gh secret set HOMEBREW_TAP_TOKEN
 ### Creating a Release
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
-gh release create v0.1.0 --generate-notes
+gh workflow run release.yml --ref main
 ```
+
+Never `git tag` or `gh release create` by hand — the workflow creates the tag
+when it publishes the release (see "Releasing a New Version" above).
 
 ## CLI Guidelines
 
