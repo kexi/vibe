@@ -291,5 +291,15 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/vibe-beta.rb
+
+          # Skip the commit when the formula is already up to date: on a
+          # re-run of the same run the regenerated formula is byte-identical
+          # (builds are reproducible and the version pins github.run_number),
+          # and a bare `git commit` would exit 1 and fail the job.
+          if git diff --cached --quiet; then
+            echo "Formula already up to date for $VERSION; nothing to commit."
+            exit 0
+          fi
+
           git commit -m "Update vibe-beta to $VERSION"
           git push --quiet https://x-access-token:${GH_TOKEN}@github.com/kexi/homebrew-tap.git HEAD:main
