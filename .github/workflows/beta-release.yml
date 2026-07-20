@@ -43,8 +43,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          if gh release view "v${VERSION}" > /dev/null 2>&1; then
-            echo "Release v${VERSION} already exists, skipping"
+          # `gh release view` falls back to searching drafts, so only a
+          # published release counts as done; a draft leftover from a failed
+          # attempt is deleted and recreated by the release job.
+          if [ "$(gh release view "v${VERSION}" --json isDraft --jq .isDraft 2>/dev/null)" = "false" ]; then
+            echo "Release v${VERSION} already published, skipping"
             echo "should_release=false" >> $GITHUB_OUTPUT
           else
             echo "should_release=true" >> $GITHUB_OUTPUT
@@ -173,14 +176,46 @@ jobs:
       - name: Create prerelease
         env:
           GH_TOKEN: ${{ github.token }}
+          # No checkout in this job, so gh has no git remote to resolve the
+          # repository from (gh ignores GITHUB_REPOSITORY): GH_REPO is required.
+          GH_REPO: ${{ github.repository }}
         run: |
           VERSION="${{ needs.prepare.outputs.version }}"
-          gh release create "v${VERSION}" \
-            --repo "${{ github.repository }}" \
-            --title "v${VERSION}" \
+          TAG="v${VERSION}"
+
+          # Drop leftover drafts from failed attempts. Several drafts can share
+          # one tag_name and `gh release delete` removes only the first match,
+          # so delete by id. Drafts hold no tag, so this never burns one.
+          for id in $(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+              --jq ".[] | select(.draft and .tag_name == \"$TAG\") | .id"); do
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/${id}"
+            echo "Deleted leftover draft release id=${id}"
+          done
+
+          ASSETS=(artifacts/*)
+          if [ "${#ASSETS[@]}" -ne 5 ]; then
+            echo "::error::Expected 5 release assets, found ${#ASSETS[@]}: ${ASSETS[*]}"
+            exit 1
+          fi
+
+          # gh uploads the assets to an internal draft and publishes only once
+          # every upload succeeds, so the tag is burned with all assets present
+          # — the order Immutable Releases requires. --target pins the tag to
+          # the commit this run built; without it the tag would point at the
+          # default branch HEAD instead of the dispatched develop commit.
+          gh release create "$TAG" \
+            --target "$GITHUB_SHA" \
+            --title "$TAG" \
             --notes "Beta release from develop branch (run #${{ github.run_number }})" \
             --prerelease \
-            artifacts/*
+            "${ASSETS[@]}"
+
+          COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
+          if [ "$COUNT" -ne 5 ]; then
+            echo "::error::Published release has $COUNT assets, expected 5"
+            exit 1
+          fi
+          echo "Published $TAG with $COUNT assets."
 
   update-homebrew:
     needs: [prepare, release]
