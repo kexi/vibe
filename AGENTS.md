@@ -107,9 +107,12 @@ Code should follow SOLID principles:
 
 ## Release
 
-- After merging to `main`, create and publish a release on GitHub to trigger
-  GitHub Actions build
+- After merging to `main`, dispatch the Release workflow; do NOT create a tag
+  or a GitHub Release by hand (the workflow builds the binaries first, then
+  creates and publishes the release with all assets — the Immutable
+  Releases-safe order)
 - Steps:
-  1. GitHub → Releases → Draft a new release
-  2. Create a tag (e.g., `v0.1.0`)
-  3. Write release notes and click "Publish release"
+  1. `gh workflow run release.yml --ref main`
+  2. Watch the run: `gh run watch --exit-status` (version comes from
+     `package.json` on main)
+  3. npm publish (`publish-npm.yml`) follows automatically via `workflow_run`

@@ -1,32 +1,94 @@
 name: Release
 
+# Releasing is workflow-first: dispatching this workflow on main builds the
+# binaries and creates the GitHub Release with every asset in one
+# `gh release create` call. gh uploads assets to an internal draft and only
+# publishes once every upload succeeds, so the tag is burned only after all
+# artifacts exist — the order Immutable Releases requires. A GitHub Release is
+# therefore never a trigger here: the old `on: release` flow attached assets to
+# an already-published release, which Immutable Releases forbids.
 on:
-  release:
-    types: [released, prereleased]
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: "Release notes (markdown). Empty = auto-generated notes"
+        required: false
+        type: string
+      dry_run:
+        description: "Build and verify a draft release, then delete it (no publish)"
+        required: false
+        type: boolean
+        default: false
+
+# Serialize releases so one run's draft never races another run's publish
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 permissions:
   contents: write
 
 jobs:
-  verify-branch:
+  prepare:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      should_release: ${{ steps.state.outputs.should_release }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
-      - name: Verify release targets main branch
-        if: github.event.action == 'released'
+      # Fail (not skip) off-main dispatches: a skipped run still completes as
+      # success, which would needlessly wake publish-npm's workflow_run gate.
+      - name: Verify dispatch is on main
         run: |
-          if [ "${{ github.event.release.target_commitish }}" != "main" ]; then
-            echo "::error::Stable releases must target the main branch."
-            echo "  Target branch: ${{ github.event.release.target_commitish }}"
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Stable releases must be dispatched on main (got: $GITHUB_REF)"
             exit 1
           fi
-          echo "Release targets main branch"
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Resolve version from package.json
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Invalid stable version: $VERSION (prerelease suffixes belong to beta-release.yml)"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Determine release state
+        id: state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          # `gh release view` falls back to searching drafts, so distinguish
+          # none / draft / published via isDraft instead of exit status alone.
+          STATE=none
+          if IS_DRAFT=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [ "$IS_DRAFT" = "true" ]; then STATE=draft; else STATE=published; fi
+          fi
+          if [ "$STATE" = "published" ]; then
+            echo "Release $TAG already published; skipping build (re-run recovery path)."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # A pre-existing tag would make the published release point at a
+          # commit this run did not build; leftover drafts are handled later.
+          if [ "$STATE" = "none" ] && [ -n "$(git ls-remote --tags origin "refs/tags/$TAG")" ]; then
+            echo "::error::Tag $TAG exists without a published release; delete the tag or bump the version."
+            exit 1
+          fi
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
 
   build:
-    needs: verify-branch
+    needs: prepare
+    if: needs.prepare.outputs.should_release == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -129,7 +191,7 @@ jobs:
           path: ${{ matrix.artifact }}
 
   build-deb:
-    needs: build
+    needs: [prepare, build]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -166,8 +228,8 @@ jobs:
         env:
           BINARY: ${{ matrix.binary }}
           ARCH: ${{ matrix.arch }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
           chmod +x "$BINARY"
           bun run scripts/build-deb.ts "$VERSION" "$ARCH" "$BINARY"
 
@@ -241,7 +303,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: [build, build-deb, stage-platform-packages]
+    needs: [prepare, build, build-deb, stage-platform-packages]
     runs-on: ubuntu-latest
 
     steps:
@@ -254,22 +316,89 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Create Release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
-        with:
+      - name: Create and publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          NOTES: ${{ inputs.notes }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          # Re-check on re-runs: prepare's verdict may predate a publish that
+          # succeeded in the meantime.
+          if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null)" = "false" ]; then
+            echo "Release $TAG already published; nothing to do."
+            exit 0
+          fi
+
+          # Drop leftover drafts from failed attempts. Several drafts can share
+          # one tag_name and `gh release delete` removes only the first match,
+          # so delete by id. Drafts hold no tag, so this never burns one.
+          for id in $(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+              --jq ".[] | select(.draft and .tag_name == \"$TAG\") | .id"); do
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/${id}"
+            echo "Deleted leftover draft release id=${id}"
+          done
+
           # Why not `artifacts/*`: download-artifact with `merge-multiple: true`
           # flattens the five `platform-package-*` artifacts into the same dir,
           # leaking their `package.json` / `THIRD-PARTY-LICENSES.md` into the
           # GitHub Release. publish-npm.yml regenerates those locally per-matrix
           # and only pulls the named binary via `gh release download --pattern`,
           # so restricting uploads to the binaries and .debs is safe.
-          files: |
-            artifacts/vibe-*-*
-            artifacts/vibe_*.deb
-          generate_release_notes: true
+          ASSETS=(artifacts/vibe-*-* artifacts/vibe_*.deb)
+          if [ "${#ASSETS[@]}" -ne 7 ]; then
+            echo "::error::Expected 7 release assets (5 binaries + 2 .deb), found ${#ASSETS[@]}: ${ASSETS[*]}"
+            exit 1
+          fi
+
+          if [ -n "$NOTES" ]; then
+            printf '%s\n' "$NOTES" > notes.md
+            NOTES_ARGS=(--notes-file notes.md)
+          else
+            # Anchor auto-notes to the previous stable so a beta prerelease in
+            # between does not shrink the changelog range.
+            PREV=$(gh release list --exclude-pre-releases --limit 1 \
+              --json tagName --jq '.[0].tagName')
+            NOTES_ARGS=(--generate-notes)
+            [ -n "$PREV" ] && NOTES_ARGS+=(--notes-start-tag "$PREV")
+          fi
+
+          if [ "$DRY_RUN" = "true" ]; then
+            # Exercise the full upload path against an explicit draft, then
+            # delete it. The follow-up publish-npm run will fail on "release
+            # not found" — expected and harmless; workflow_run events cannot
+            # see this run's dispatch inputs, so it cannot be told to skip.
+            gh release create "$TAG" --draft --target "$GITHUB_SHA" \
+              --title "$TAG" "${NOTES_ARGS[@]}" "${ASSETS[@]}"
+            COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
+            if [ "$COUNT" -ne 7 ]; then
+              echo "::error::Draft release has $COUNT assets, expected 7"
+              exit 1
+            fi
+            gh release delete "$TAG" --yes
+            echo "Dry run OK: draft carried all 7 assets and was deleted."
+            exit 0
+          fi
+
+          # gh uploads the assets to an internal draft and publishes only once
+          # every upload succeeds, so the tag is created (at --target) with all
+          # assets already present — the order Immutable Releases requires. A
+          # failed upload leaves a draft behind; the cleanup above removes it
+          # on the next attempt.
+          gh release create "$TAG" --target "$GITHUB_SHA" --latest \
+            --title "$TAG" "${NOTES_ARGS[@]}" "${ASSETS[@]}"
+
+          COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
+          if [ "$COUNT" -ne 7 ]; then
+            echo "::error::Published release has $COUNT assets, expected 7"
+            exit 1
+          fi
+          echo "Published $TAG with $COUNT assets."
 
   update-homebrew:
-    needs: release
+    needs: [prepare, release]
+    # dry_run publishes nothing, so there is no release to mirror to the tap.
+    if: inputs.dry_run != true
     runs-on: ubuntu-latest
 
     steps:
@@ -291,17 +420,6 @@ jobs:
           echo "linux_arm64=$(sha256sum artifacts/vibe-linux-arm64 | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
           echo "linux_x64=$(sha256sum artifacts/vibe-linux-x64 | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
 
-      - name: Determine Formula to update
-        id: formula
-        run: |
-          if [ "${{ github.event.release.prerelease }}" = "true" ]; then
-            echo "name=vibe-beta" >> $GITHUB_OUTPUT
-            echo "template=vibe-beta.rb" >> $GITHUB_OUTPUT
-          else
-            echo "name=vibe" >> $GITHUB_OUTPUT
-            echo "template=vibe.rb" >> $GITHUB_OUTPUT
-          fi
-
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           path: vibe-source
@@ -309,13 +427,15 @@ jobs:
       - name: Update Homebrew formula
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          FORMULA_NAME="${{ steps.formula.outputs.name }}"
-          FORMULA_TEMPLATE="${{ steps.formula.outputs.template }}"
+          # This job only mirrors stable releases; the beta channel formula
+          # (vibe-beta.rb) is owned by beta-release.yml.
+          FORMULA_NAME="vibe"
+          FORMULA_TEMPLATE="vibe.rb"
 
           # Validate version format
-          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "Error: Invalid version format: $VERSION"
             exit 1
           fi
@@ -356,35 +476,32 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add "Formula/${FORMULA_TEMPLATE}"
 
-          # Generate versioned formula for stable releases only
-          # Beta versions are handled by beta-release.yml
-          IS_PRERELEASE="${{ github.event.release.prerelease }}"
-          if [ "$IS_PRERELEASE" != "true" ]; then
-            # Compute Homebrew class_s-compatible class name via Ruby
-            CLASSNAME=$(ruby -e "
-              v = '${VERSION}'.capitalize
-              v = v.gsub(/[-_.\s]([a-zA-Z0-9])/) { Regexp.last_match(1).upcase }
-              puts v
-            ")
-            VERSIONED_FORMULA="vibe@${VERSION}.rb"
+          # Versioned formula (vibe@X.Y.Z.rb) so older stable versions stay
+          # installable side by side.
+          # Compute Homebrew class_s-compatible class name via Ruby
+          CLASSNAME=$(ruby -e "
+            v = '${VERSION}'.capitalize
+            v = v.gsub(/[-_.\s]([a-zA-Z0-9])/) { Regexp.last_match(1).upcase }
+            puts v
+          ")
+          VERSIONED_FORMULA="vibe@${VERSION}.rb"
 
-            cp "../vibe-source/Formula/vibe-versioned.rb" "Formula/${VERSIONED_FORMULA}"
-            sed -i "s/CLASSNAME_PLACEHOLDER/$CLASSNAME/g" "Formula/${VERSIONED_FORMULA}"
-            sed -i "s/VERSION_PLACEHOLDER/$VERSION/g" "Formula/${VERSIONED_FORMULA}"
-            sed -i "s/SHA256_DARWIN_ARM64/${{ steps.sha256.outputs.darwin_arm64 }}/g" "Formula/${VERSIONED_FORMULA}"
-            sed -i "s/SHA256_DARWIN_X64/${{ steps.sha256.outputs.darwin_x64 }}/g" "Formula/${VERSIONED_FORMULA}"
-            sed -i "s/SHA256_LINUX_ARM64/${{ steps.sha256.outputs.linux_arm64 }}/g" "Formula/${VERSIONED_FORMULA}"
-            sed -i "s/SHA256_LINUX_X64/${{ steps.sha256.outputs.linux_x64 }}/g" "Formula/${VERSIONED_FORMULA}"
+          cp "../vibe-source/Formula/vibe-versioned.rb" "Formula/${VERSIONED_FORMULA}"
+          sed -i "s/CLASSNAME_PLACEHOLDER/$CLASSNAME/g" "Formula/${VERSIONED_FORMULA}"
+          sed -i "s/VERSION_PLACEHOLDER/$VERSION/g" "Formula/${VERSIONED_FORMULA}"
+          sed -i "s/SHA256_DARWIN_ARM64/${{ steps.sha256.outputs.darwin_arm64 }}/g" "Formula/${VERSIONED_FORMULA}"
+          sed -i "s/SHA256_DARWIN_X64/${{ steps.sha256.outputs.darwin_x64 }}/g" "Formula/${VERSIONED_FORMULA}"
+          sed -i "s/SHA256_LINUX_ARM64/${{ steps.sha256.outputs.linux_arm64 }}/g" "Formula/${VERSIONED_FORMULA}"
+          sed -i "s/SHA256_LINUX_X64/${{ steps.sha256.outputs.linux_x64 }}/g" "Formula/${VERSIONED_FORMULA}"
 
-            # Verify all placeholders were replaced
-            if grep -q "PLACEHOLDER" "Formula/${VERSIONED_FORMULA}"; then
-              echo "Error: Placeholders were not replaced correctly in versioned formula"
-              grep "PLACEHOLDER" "Formula/${VERSIONED_FORMULA}"
-              exit 1
-            fi
-
-            git add "Formula/${VERSIONED_FORMULA}"
+          # Verify all placeholders were replaced
+          if grep -q "PLACEHOLDER" "Formula/${VERSIONED_FORMULA}"; then
+            echo "Error: Placeholders were not replaced correctly in versioned formula"
+            grep "PLACEHOLDER" "Formula/${VERSIONED_FORMULA}"
+            exit 1
           fi
+
+          git add "Formula/${VERSIONED_FORMULA}"
 
           # Skip the commit when the formula is already up to date: on a re-run
           # of a succeeded release the regenerated formula is byte-identical
