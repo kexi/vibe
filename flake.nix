@@ -3,10 +3,9 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs }:
     let
       # Single source of truth: read the release version from package.json at
       # eval time instead of hardcoding it here. A literal duplicate drifts out
@@ -40,106 +39,118 @@
           hash = "sha256-A5CNtmIejiCsbLZd5zPeNilt2mmIErOj/Qyr5ypVghg=";
         };
       };
-    in
-    flake-utils.lib.eachSystem (builtins.attrNames platforms) (system:
-      let
+
+      systems = builtins.attrNames platforms;
+
+      # The system list is fixed (the keys of `platforms`), so plain
+      # lib.genAttrs covers what flake-utils' eachSystem did without the extra
+      # flake input.
+      eachSystem = f: nixpkgs.lib.genAttrs systems (system: f {
+        inherit system;
         pkgs = nixpkgs.legacyPackages.${system};
-        platformInfo = platforms.${system};
-        isLinux = pkgs.lib.hasSuffix "-linux" system;
-
-        # ---- Source build (compile the Rust binary from source) ----
-
-        # The shipped vibe is a native Rust binary. The source build compiles the
-        # `vibe` crate (which statically links its own `vibe-native` crate) with
-        # rustPlatform.buildRustPackage, replacing the former pnpm + bun-compile +
-        # N-API-embed pipeline. The commit comes from the flake's own revision
-        # (git is unavailable in the pure sandbox), preserving the
-        # `<version>+<commit>` provenance the build.rs would otherwise read from
-        # git.
-        commitRev = self.shortRev or self.dirtyShortRev or "";
-
-        vibe-source = pkgs.rustPlatform.buildRustPackage {
-          pname = "vibe";
-          inherit version;
-          src = ./rust;
-          cargoLock.lockFile = ./rust/Cargo.lock;
-
-          cargoBuildFlags = [ "-p" "vibe" ];
-
-          # build.rs reads these (cargo:rustc-env) so the binary's --version is
-          # accurate and reproducible without calling git / a wall clock.
-          VIBE_BUILD_COMMIT = commitRev;
-          VIBE_BUILD_DISTRIBUTION = "nix";
-          VIBE_BUILD_ENV = "nix";
-
-          # The Rust workspace tests run in the dedicated CI `rust` job (which
-          # builds the macOS native code too); skip them here to keep the Nix
-          # build focused on producing the binary.
-          doCheck = false;
+      });
+    in
+    {
+      packages = eachSystem ({ system, pkgs }:
+        let
+          platformInfo = platforms.${system};
+          isLinux = pkgs.lib.hasSuffix "-linux" system;
 
           # aws-lc-rs (via rustls) links libgcc_s at runtime on Linux;
-          # buildRustPackage applies autoPatchelfHook there, and this provides the
-          # shared object it needs.
-          buildInputs = pkgs.lib.optionals isLinux [
+          # autoPatchelfHook (applied by buildRustPackage automatically, and
+          # explicitly for the prebuilt binary) needs this shared object for
+          # both packages.
+          linuxRuntimeLibs = pkgs.lib.optionals isLinux [
             pkgs.stdenv.cc.cc.lib
           ];
 
-          meta = with pkgs.lib; {
-            description = "Git worktree helper CLI";
+          commonMeta = with pkgs.lib; {
             homepage = "https://github.com/kexi/vibe";
             license = licenses.asl20;
-            platforms = builtins.attrNames platforms;
+            platforms = systems;
             mainProgram = "vibe";
           };
-        };
-      in
-      {
-        # Default to the source build: it is reproducible and avoids the
-        # per-release SHA-256 churn the prebuilt binary needs. `fromSource` is
-        # kept as an explicit alias for clarity and CI.
-        packages.default = vibe-source;
-        packages.fromSource = vibe-source;
 
-        # Prebuilt release binary (fast path; skips compiling). Requires the
-        # per-platform hashes above to be bumped on every release, so it is no
-        # longer the default.
-        packages.binary = pkgs.stdenv.mkDerivation {
-          pname = "vibe";
-          inherit version;
+          # ---- Source build (compile the Rust binary from source) ----
 
-          src = pkgs.fetchurl {
-            url = "https://github.com/kexi/vibe/releases/download/v${version}/${platformInfo.artifact}";
-            hash = platformInfo.hash;
+          # The shipped vibe is a native Rust binary. The source build compiles
+          # the `vibe` crate (which statically links its own `vibe-native`
+          # crate) with rustPlatform.buildRustPackage, replacing the former
+          # pnpm + bun-compile + N-API-embed pipeline. The commit comes from the
+          # flake's own revision (git is unavailable in the pure sandbox),
+          # preserving the `<version>+<commit>` provenance the build.rs would
+          # otherwise read from git.
+          commitRev = self.shortRev or self.dirtyShortRev or "";
+
+          vibe-source = pkgs.rustPlatform.buildRustPackage {
+            pname = "vibe";
+            inherit version;
+            src = ./rust;
+            cargoLock.lockFile = ./rust/Cargo.lock;
+
+            cargoBuildFlags = [ "-p" "vibe" ];
+
+            # build.rs reads these (cargo:rustc-env) so the binary's --version
+            # is accurate and reproducible without calling git / a wall clock.
+            VIBE_BUILD_COMMIT = commitRev;
+            VIBE_BUILD_DISTRIBUTION = "nix";
+            VIBE_BUILD_ENV = "nix";
+
+            # The Rust workspace tests run in the dedicated CI `rust` job (which
+            # builds the macOS native code too); skip them here to keep the Nix
+            # build focused on producing the binary.
+            doCheck = false;
+
+            buildInputs = linuxRuntimeLibs;
+
+            meta = commonMeta // {
+              description = "Git worktree helper CLI";
+            };
           };
+        in
+        {
+          # Default to the source build: it is reproducible and avoids the
+          # per-release SHA-256 churn the prebuilt binary needs. `fromSource` is
+          # kept as an explicit alias for clarity and CI.
+          default = vibe-source;
+          fromSource = vibe-source;
 
-          dontUnpack = true;
+          # Prebuilt release binary (fast path; skips compiling). Requires the
+          # per-platform hashes above to be bumped on every release, so it is no
+          # longer the default.
+          binary = pkgs.stdenv.mkDerivation {
+            pname = "vibe";
+            inherit version;
 
-          nativeBuildInputs = pkgs.lib.optionals isLinux [
-            pkgs.autoPatchelfHook
-          ];
+            src = pkgs.fetchurl {
+              url = "https://github.com/kexi/vibe/releases/download/v${version}/${platformInfo.artifact}";
+              hash = platformInfo.hash;
+            };
 
-          buildInputs = pkgs.lib.optionals isLinux [
-            pkgs.stdenv.cc.cc.lib
-          ];
+            dontUnpack = true;
 
-          installPhase = ''
-            install -Dm755 $src $out/bin/vibe
-          '';
+            nativeBuildInputs = pkgs.lib.optionals isLinux [
+              pkgs.autoPatchelfHook
+            ];
 
-          meta = with pkgs.lib; {
-            description = "Git worktree helper CLI (prebuilt release binary)";
-            homepage = "https://github.com/kexi/vibe";
-            license = licenses.asl20;
-            platforms = builtins.attrNames platforms;
-            mainProgram = "vibe";
+            buildInputs = linuxRuntimeLibs;
+
+            installPhase = ''
+              install -Dm755 $src $out/bin/vibe
+            '';
+
+            meta = commonMeta // {
+              description = "Git worktree helper CLI (prebuilt release binary)";
+            };
           };
-        };
+        });
 
-        # mkShellNoCC (not mkShell) so the shell does not put a Nix C toolchain
-        # (gcc/clang + binutils) on PATH. node-gyp (node-pty) and rustup link
-        # against the system toolchain; a Nix `ld` here shadows it and fails to
-        # find the system crti.o.
-        devShells.default = pkgs.mkShellNoCC {
+      # mkShellNoCC (not mkShell) so the shell does not put a Nix C toolchain
+      # (gcc/clang + binutils) on PATH. node-gyp (node-pty) and rustup link
+      # against the system toolchain; a Nix `ld` here shadows it and fails to
+      # find the system crti.o.
+      devShells = eachSystem ({ pkgs, ... }: {
+        default = pkgs.mkShellNoCC {
           # Toolchain that replaces the former .mise.toml. Versions are pinned
           # by flake.lock; node/pnpm follow the lockfile's major (pnpm_10), while
           # Rust is managed by rustup (see rust-toolchain.toml) because the native
@@ -167,8 +178,8 @@
             lefthook install >/dev/null 2>&1 || true
           '';
         };
-      }
-    ) // {
+      });
+
       overlays.default = final: prev: {
         vibe = self.packages.${final.system}.default;
       };
