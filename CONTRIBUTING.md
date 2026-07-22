@@ -187,8 +187,8 @@ See [AGENTS.md](./AGENTS.md) for detailed branching workflow.
    gh pr create --base develop --title "chore: update Nix binary hashes for X.X.X" --body "Updates flake.nix binary hashes for vX.X.X release assets."
    ```
 
-   Do not update `flake.lock` as part of the release. Update `nixpkgs` and
-   `flake-utils` in a separate maintenance PR when needed.
+   Do not update `flake.lock` as part of the release. Update `nixpkgs` in a
+   separate maintenance PR when needed.
 
 ### Automated Release Tasks
 
