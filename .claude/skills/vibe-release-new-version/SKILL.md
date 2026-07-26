@@ -195,12 +195,22 @@ git checkout -b release/vX.Y.Z
 [kt3k/bmp](https://jsr.io/@kt3k/bmp) via the `bmp` pnpm script — **primary path**:
 
 ```bash
-pnpm run bmp -- -p   # patch
-pnpm run bmp -- -m   # minor
-pnpm run bmp -- -j   # major
+pnpm run bmp -p   # patch
+pnpm run bmp -m   # minor
+pnpm run bmp -j   # major
 ```
 
 (Prereleases: add `--preid <label>`; finalize a prerelease with `-r`.)
+
+**After the bump, restore `.bmp.yml`'s formatting.** bmp re-serializes its own
+config on every bump, stripping all comments and normalizing YAML styles, which
+`packages/npm/test/bmp-manifest-registration.test.ts` rejects. Restore the file
+and re-apply only the version line:
+
+```bash
+git checkout HEAD -- .bmp.yml
+# then edit the single `version:` line to the new version
+```
 
 A single bump rewrites, from the one `version:` in `.bmp.yml`, every registered
 manifest: the root `package.json`, `packages/npm/package.json`, the five
@@ -214,7 +224,7 @@ because the manual lockfile edit was missed. The `vibe-native` crate is
 intentionally NOT a target — it carries an independent version.
 
 **Explicit / non-adjacent version:** bmp has no "set X.Y.Z" command. Chain bumps
-to reach a non-adjacent target (e.g. two `-- -m` to go 2.1.1 → 2.3.0). As a last
+to reach a non-adjacent target (e.g. two `-m` to go 2.1.1 → 2.3.0). As a last
 resort, hand-edit the `version:` line in `.bmp.yml` plus each target's version
 occurrence, then validate with `pnpm run bmp` (see Step 3.4).
 
