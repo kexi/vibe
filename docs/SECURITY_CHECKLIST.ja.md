@@ -81,6 +81,7 @@ gitleaks のヒットは、シークレットが既にワーキングツリー�
 - **リスク**: 特殊文字（シングルクォートなど）を含むパスが `eval` 時にシェルインジェクションを引き起こす
 - **対策**: `shell_escape()`（`rust/crates/vibe-core/src/shell.rs`）による全 `cd` 出力でのシングルクォートエスケープ
 - **適用**: カスタムセキュリティチェックスクリプトがエスケープなしの `cd` パターンを検出
+- **参照**: プロトコルの完全な仕様: [specifications/eval-contract.ja.md](specifications/eval-contract.ja.md)
 
 ## 11. 設定ファイルポイズニング
 
@@ -99,7 +100,7 @@ gitleaks のヒットは、シークレットが既にワーキングツリー�
 - **リスク**: 動的に構築されたコードの実行による任意コード実行
 - **対策**: プロダクションコードでの `eval()` や `new Function()` の禁止
 - **適用**: ESLint `security/detect-eval-with-expression` + カスタムセキュリティチェックスクリプト
-- **注記**: シェルラッパー自体は設計上 vibe の `cd` 出力を `eval` するが、その出力はシングルクォートでエスケープされている（上記「シェル出力インジェクション」を参照）
+- **注記**: シェルラッパー自体は設計上 vibe の `cd` 出力を `eval` するが、その出力はシングルクォートでエスケープされている（上記「シェル出力インジェクション」を参照）。プロトコルの完全な仕様: [specifications/eval-contract.ja.md](specifications/eval-contract.ja.md)
 
 ---
 

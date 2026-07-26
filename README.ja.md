@@ -313,10 +313,22 @@ end
 <summary>Nushell (~/.config/nushell/config.nu)</summary>
 
 ```nu
-def --env vibe [...args] {
-    ^vibe ...$args | lines | each { |line| nu -c $line }
+def --env --wrapped vibe [...args] {
+    let out = (^vibe --eval-dialect nu ...$args)
+    for line in ($out | lines) {
+        if ($line | str starts-with "__VIBE_CD__") {
+            cd ($line | str replace "__VIBE_CD__" "")
+        } else {
+            print $line
+        }
+    }
 }
 ```
+
+vibe 2.2.0 以降と nushell 0.83 以降が必要です。以前に貼り付けた `nu -c` を使うスニペットは
+置き換えてください。あれは実際にはディレクトリを変更できておらず、フラグを伴うコマンドも
+拒否していました。`--wrapped`（フラグを `...args` に通すため）と `for`（nushell は `each` の
+クロージャ内での環境変更を破棄するため）の両方を残してください。
 
 </details>
 
@@ -324,8 +336,12 @@ def --env vibe [...args] {
 <summary>PowerShell ($PROFILE)</summary>
 
 ```powershell
-function vibe { Invoke-Expression (& vibe.exe $args) }
+function vibe { $out = & vibe.exe --eval-dialect powershell @args; if ($out) { Invoke-Expression ($out -join "`n") } }
 ```
+
+vibe 2.2.0 以降が必要です。以前に貼り付けた `Invoke-Expression (& vibe.exe $args)` の
+スニペットは置き換えてください。あれはシングルクォートを含むパスを正しく扱えず、
+vibe が何も出力しないときにエラーを送出していました。
 
 </details>
 
@@ -606,7 +622,7 @@ Vibeはフック実行中にタスクの状態を表示するリアルタイム�
 
 Vibe は CLI ツールのセキュリティベストプラクティスに従っています：
 
-- **シェルインジェクション防止**: シェルラッパーが `eval` する `cd` 行はシングルクォートでエスケープされ（`rust/crates/vibe-core/src/shell.rs`）、細工されたディレクトリ名によるコマンドインジェクションを防止
+- **シェルインジェクション防止**: シェルラッパーが `eval` する `cd` 行はシングルクォートでエスケープされ（`rust/crates/vibe-core/src/shell.rs`）、細工されたディレクトリ名によるコマンドインジェクションを防止。プロトコルの全体像は [The stdout Eval Contract](docs/specifications/eval-contract.ja.md) を参照
 - **シェル文字列実行の排除**: サブプロセスはシェル文字列ではなく `std::process::Command` に引数配列を渡して起動するため、引数がシェルで解釈されることはない
 - **設定ファイルの信頼メカニズム**: `.vibe.toml` と `.vibe.local.toml` の SHA-256 ハッシュ検証
 - **パスバリデーション**: ユーザー入力のパスはすべて使用前に検証

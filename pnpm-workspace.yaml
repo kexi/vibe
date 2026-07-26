@@ -23,3 +23,10 @@ strictDepBuilds: true
 # Fail the install if a package transitions to a less-trusted state
 # (e.g. signed -> unsigned, public -> private) between resolutions.
 trustPolicy: no-downgrade
+trustPolicyExclude:
+  # 6.x backport published without provenance after the 7.x line gained it;
+  # already pinned in pnpm-lock.yaml, so excluding this exact version adds no
+  # new exposure. Not excluded unversioned so future versions stay checked.
+  - undici-types@6.21.0
+  - chokidar@4.0.3
+  - vite@6.4.1

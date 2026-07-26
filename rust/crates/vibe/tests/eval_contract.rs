@@ -296,6 +296,11 @@ fn jump_partial_matched_line_is_stderr_only() {
 
 /// Case 3: a worktree path containing a single quote `'`.
 /// The emitted `cd` is single-quote-escaped (`'\''`), byte-exact.
+///
+/// This is ALSO the default-dialect regression witness: no `--eval-dialect` flag
+/// is passed, so it pins the exact bytes an already-installed (pre-dialect)
+/// bash/zsh/fish wrapper receives. The dialect cases below must never change
+/// these bytes.
 #[test]
 fn jump_escapes_single_quote_in_path() {
     if !git_available() {
@@ -341,11 +346,11 @@ fn shell_setup_wrappers_are_byte_exact_on_stdout() {
         ("fish", "function vibe; eval (command vibe $argv); end\n"),
         (
             "nushell",
-            "def --env vibe [...args] { ^vibe ...$args | lines | each { |line| nu -c $line } }\n",
+            "def --env --wrapped vibe [...args] { let out = (^vibe --eval-dialect nu ...$args); for line in ($out | lines) { if ($line | str starts-with \"__VIBE_CD__\") { cd ($line | str replace \"__VIBE_CD__\" \"\") } else { print $line } } }\n",
         ),
         (
             "powershell",
-            "function vibe { Invoke-Expression (& vibe.exe $args) }\n",
+            "function vibe { $out = & vibe.exe --eval-dialect powershell @args; if ($out) { Invoke-Expression ($out -join \"`n\") } }\n",
         ),
     ];
 
@@ -778,5 +783,158 @@ fn jump_create_path_runs_real_start_and_cds() {
     assert!(
         !stdout.contains("No worktree found"),
         "prompt text leaked to stdout: {stdout:?}"
+    );
+}
+
+// --- `--eval-dialect` (nushell / powershell stdout dialects) ---
+//
+// The hidden global `--eval-dialect` flag is what the NEW nushell/powershell
+// wrappers pass; it changes ONLY how a `cd` outcome is rendered on stdout.
+// These cases drive the real binary so the flag is proven end-to-end (argv →
+// clap → dispatch → the single `write_outcome` call), with the flag placed
+// BEFORE the subcommand exactly as the generated wrappers place it.
+//
+// Every case uses a worktree directory containing a literal `'`, because that
+// is the character where the three dialects diverge: POSIX backslash-escapes it
+// (`'\''`), PowerShell doubles it (`''`), and nushell must not quote it at all.
+
+/// `--eval-dialect nu jump <branch>` → STDOUT is EXACTLY
+/// `__VIBE_CD__<raw path>\n`: the sentinel plus the path VERBATIM (no quoting,
+/// no escaping), because the nushell wrapper strips the prefix and hands the
+/// remainder to `cd` as data that nu never parses as source.
+#[test]
+fn jump_nu_dialect_emits_sentinel_and_raw_path() {
+    if !git_available() {
+        eprintln!("skipping: git unavailable");
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let (main_path, secondary_path) = setup_worktrees(tmp.path(), "it's-a-wt", "quoted");
+
+    let out = run_vibe(
+        &main_path,
+        home.path(),
+        &["--eval-dialect", "nu", "jump", "quoted"],
+    );
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert!(out.status.success(), "nu-dialect jump failed: {stderr:?}");
+
+    let raw = secondary_path.display().to_string();
+    assert!(
+        raw.contains('\''),
+        "fixture path must contain a quote: {raw}"
+    );
+    assert_eq!(
+        stdout,
+        format!("__VIBE_CD__{raw}\n"),
+        "nu dialect must emit the sentinel followed by the raw, unescaped path"
+    );
+    // Explicitly NOT the POSIX form: no `cd '`, no `'\''` escape.
+    assert!(
+        !stdout.contains("cd '") && !stdout.contains("'\\''"),
+        "nu dialect must not emit POSIX quoting: {stdout:?}"
+    );
+}
+
+/// `--eval-dialect powershell jump <branch>` → STDOUT is EXACTLY
+/// `Set-Location -LiteralPath '<path with '' doubled>'\n`.
+#[test]
+fn jump_powershell_dialect_emits_set_location_with_doubled_quote() {
+    if !git_available() {
+        eprintln!("skipping: git unavailable");
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let (main_path, secondary_path) = setup_worktrees(tmp.path(), "it's-a-wt", "quoted");
+
+    let out = run_vibe(
+        &main_path,
+        home.path(),
+        &["--eval-dialect", "powershell", "jump", "quoted"],
+    );
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert!(
+        out.status.success(),
+        "powershell-dialect jump failed: {stderr:?}"
+    );
+
+    let raw = secondary_path.display().to_string();
+    assert!(
+        raw.contains('\''),
+        "fixture path must contain a quote: {raw}"
+    );
+    let doubled = raw.replace('\'', "''");
+    assert_eq!(
+        stdout,
+        format!("Set-Location -LiteralPath '{doubled}'\n"),
+        "powershell dialect must double the quote inside a literal path"
+    );
+    // PowerShell has no backslash escape inside '...'; the POSIX form must not leak.
+    assert!(
+        !stdout.contains("'\\''"),
+        "POSIX escape leaked into the powershell dialect: {stdout:?}"
+    );
+}
+
+/// The dialect affects the `cd` rendering ONLY. A non-`cd` outcome (here
+/// `shell-setup`, whose payload is verbatim `Outcome::stdout` text) is emitted
+/// byte-identically no matter which dialect the wrapper asked for — otherwise
+/// the nushell wrapper could not re-emit its own definition.
+#[test]
+fn shell_setup_wrapper_is_unchanged_by_the_nu_dialect() {
+    let home = tempfile::tempdir().unwrap();
+    let expected = "def --env --wrapped vibe [...args] { let out = (^vibe --eval-dialect nu ...$args); for line in ($out | lines) { if ($line | str starts-with \"__VIBE_CD__\") { cd ($line | str replace \"__VIBE_CD__\" \"\") } else { print $line } } }\n";
+
+    let out = run_vibe(
+        home.path(),
+        home.path(),
+        &["--eval-dialect", "nu", "shell-setup", "--shell", "nushell"],
+    );
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert!(out.status.success(), "shell-setup failed: {stderr:?}");
+    assert_eq!(
+        stdout, expected,
+        "the nu dialect must not alter verbatim stdout payloads"
+    );
+    assert!(stderr.is_empty(), "shell-setup wrote to stderr: {stderr:?}");
+}
+
+/// An unknown `--eval-dialect` value is a clap parse error: exit code 2, the
+/// message on STDERR, and — the load-bearing half — STDOUT stays EMPTY. A parse
+/// error must never put bytes on the eval channel, since the wrapper would
+/// execute them.
+#[test]
+fn bogus_eval_dialect_exits_two_with_empty_stdout() {
+    let home = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+
+    let out = run_vibe(
+        tmp.path(),
+        home.path(),
+        &["--eval-dialect", "bogus", "jump", "x"],
+    );
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "clap parse errors must exit 2; stderr={stderr:?}"
+    );
+    assert!(
+        stdout.is_empty(),
+        "parse error must keep the eval channel empty: {stdout:?}"
+    );
+    assert!(
+        !stderr.is_empty(),
+        "parse error must explain itself on stderr"
     );
 }

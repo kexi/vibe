@@ -7,7 +7,8 @@
 //! the TS CLI uses `-V` for verbose and prints a custom multi-line version
 //! block, which we handle ourselves.
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use vibe_core::shell::EvalDialect;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -29,8 +30,36 @@ pub struct Cli {
     #[arg(short = 'q', long = "quiet", global = true)]
     pub quiet: bool,
 
+    /// Internal: stdout dialect requested by the shell wrapper.
+    #[arg(long = "eval-dialect", global = true, hide = true, value_enum)]
+    pub eval_dialect: Option<EvalDialectArg>,
+
     #[command(subcommand)]
     pub command: Option<Command>,
+}
+
+/// clap mirror of [`EvalDialect`].
+///
+/// Why not derive `ValueEnum` on `vibe_core::shell::EvalDialect` directly:
+/// vibe-core has no clap dependency and must stay CLI-framework free, so the
+/// parsing surface lives in the binary and converts across the boundary.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum EvalDialectArg {
+    Posix,
+    #[value(alias = "nushell")]
+    Nu,
+    #[value(alias = "pwsh")]
+    Powershell,
+}
+
+impl From<EvalDialectArg> for EvalDialect {
+    fn from(value: EvalDialectArg) -> Self {
+        match value {
+            EvalDialectArg::Posix => EvalDialect::Posix,
+            EvalDialectArg::Nu => EvalDialect::Nushell,
+            EvalDialectArg::Powershell => EvalDialect::Powershell,
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -181,7 +210,7 @@ mod consistency_tests {
     use vibe_core::completion::{GLOBAL_FLAGS, SUBCOMMANDS};
 
     /// Internal flags intentionally excluded from the completion spec.
-    const INTERNAL_FLAGS_NOT_EXPOSED: &[&str] = &["claude-code-worktree-hook"];
+    const INTERNAL_FLAGS_NOT_EXPOSED: &[&str] = &["claude-code-worktree-hook", "eval-dialect"];
 
     /// Long flag names that are clap-`global` (so they appear under every
     /// subcommand's `get_arguments()`) but are modeled once as GLOBAL_FLAGS in

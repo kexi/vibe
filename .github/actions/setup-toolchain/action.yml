@@ -35,8 +35,11 @@ runs:
         # `nix develop --command` prefix and stay identical to the Windows path.
         # We export just these tools (not the whole shell PATH) so the system
         # C toolchain stays in front for node-gyp (node-pty) and rustup linking.
+        # nu/fish/zsh feed the wrapper round-trip tests, which spawn each shell
+        # by name; nushell's binary is `nu`. pwsh is not listed because it comes
+        # from the runner image, not the dev shell.
         nix develop --command bash -c '
-          for t in node bun pnpm ruby rustup pinact git; do
+          for t in node bun pnpm ruby rustup pinact git deno nu fish zsh; do
             dirname "$(command -v "$t")"
           done' | sort -u >> "$GITHUB_PATH"
         echo "SHARP_IGNORE_GLOBAL_LIBVIPS=1" >> "$GITHUB_ENV"

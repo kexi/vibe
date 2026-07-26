@@ -1,6 +1,6 @@
 {
   "name": "@kexi/vibe-win32-x64",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "description": "Windows x64 binary for the vibe CLI",
   "os": [
     "win32"

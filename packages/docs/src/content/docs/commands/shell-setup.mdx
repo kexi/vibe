@@ -64,6 +64,18 @@ stdout receives the wrapper function (and completion script when `--with-complet
 
 If `$SHELL` cannot be detected and `--shell` is not provided, the command exits with code 1 and prints an error to stderr.
 
+### Nushell and PowerShell wrappers
+
+Since vibe 2.2.0, the wrappers emitted for `nushell` and `powershell` pass an internal
+`--eval-dialect` flag so the binary emits directory changes in that shell's own syntax.
+These two wrappers therefore require a matching binary (2.2.0 or later) — against an older
+binary the flag is rejected and the command exits with code 2 without doing anything.
+
+Wrappers already written into your rc file are **not** regenerated on upgrade. If you pasted
+the older nushell or powershell snippet, it keeps its old behavior — which never changed the
+directory on nushell, and mishandled quoted paths on PowerShell — until you re-run
+`vibe shell-setup` and replace it. The `bash`, `zsh`, and `fish` wrappers are unchanged.
+
 ## Examples
 
 ```bash

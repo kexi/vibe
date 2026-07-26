@@ -5,6 +5,18 @@ description: Version history and release notes for vibe
 
 All notable changes to vibe are documented here.
 
+## v2.2.0
+
+**Released:** 2026-07-26
+
+### Fixed
+
+- The nushell wrapper now actually works. The previous wrapper could never change your shell's directory (`nu -c` ran `cd` in a child process), rejected every flagged invocation such as `vibe start --dry-run` (missing `--wrapped`), and could not handle paths containing a single quote. The new wrapper receives the worktree path as plain data, so `vibe start` / `vibe jump` land your nushell session in the right directory — including quoted paths. **Action required:** replace your pasted wrapper in `config.nu` with the new snippet from `vibe shell-setup --shell nushell` (requires vibe 2.2.0 or later; the old wrapper keeps the old behavior).
+- The PowerShell wrapper now handles paths containing single quotes or wildcard characters (`[`, `]`) correctly, and no longer errors when a command produces no output (e.g. `vibe config`). **Action required:** re-paste the wrapper from the setup docs (requires vibe 2.2.0 or later).
+- bash, zsh, and fish are unaffected: their wrappers and output are byte-identical to previous releases.
+
+---
+
 ## v2.1.1
 
 **Released:** 2026-07-17

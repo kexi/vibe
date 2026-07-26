@@ -134,6 +134,8 @@ flowchart LR
 
 ## Shell Wrapper Architecture
 
+The current, normative statement of this protocol is [The stdout Eval Contract](specifications/eval-contract.md).
+
 Vibe uses a shell wrapper pattern to enable directory changes after command execution.
 
 ### UNIX Process Model Constraint
