@@ -452,3 +452,7 @@ describe the **removed TypeScript implementation** and are kept only as design h
 Use them for *why* a decision was made; never cite them as the current structure. The
 multi-runtime story in particular is dead — there is no Node/Deno/Bun runtime
 abstraction, no `AppContext`, no N-API module, and no Zod schema anymore.
+
+`docs/specifications/eval-contract.md` is the exception: it is **normative and current**
+— the authoritative specification of the stdout eval protocol — and may be cited as the
+present-day behaviour.

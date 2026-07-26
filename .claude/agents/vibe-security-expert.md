@@ -162,7 +162,7 @@ Commands never print. They return an `Outcome` (`rust/crates/vibe-core/src/comma
 
 Every `vibe-core` / `vibe-native` module opens with a `//!` header recording its pre-Rust origin, intentional divergences, and the **numbered security findings** (with CWE/OWASP references) that shaped it. **Read a module's header before judging its code** — an odd-looking line is usually a deliberate hardening, and a change that quietly contradicts the header is itself a finding.
 
-`docs/architecture.md`, `docs/specifications/copy-strategies.md`, and `docs/specifications/native-clone.md` describe the **removed** TypeScript implementation and are design history only. Never audit against their module layout. `docs/SECURITY_CHECKLIST.md` (above) is authoritative.
+`docs/architecture.md`, `docs/specifications/copy-strategies.md`, and `docs/specifications/native-clone.md` describe the **removed** TypeScript implementation and are design history only. Never audit against their module layout. `docs/SECURITY_CHECKLIST.md` (above) is authoritative, as is `docs/specifications/eval-contract.md` — the latter is the **normative, current** specification of the stdout eval protocol, not design history, and should be audited against directly.
 
 ---
 

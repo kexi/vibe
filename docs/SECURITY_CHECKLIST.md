@@ -81,6 +81,7 @@ A gitleaks hit means the secret is already in the working tree or git history an
 - **Risk**: Paths containing special characters (e.g., single quotes) causing shell injection when `eval`'d
 - **Mitigation**: `shell_escape()` (`rust/crates/vibe-core/src/shell.rs`) escapes single quotes in all `cd` output
 - **Enforcement**: Custom security check script detects unescaped `cd` patterns
+- **Reference**: Full protocol specification: [specifications/eval-contract.md](specifications/eval-contract.md)
 
 ## 11. Configuration File Poisoning
 
@@ -99,7 +100,7 @@ A gitleaks hit means the secret is already in the working tree or git history an
 - **Risk**: Executing dynamically constructed code enabling arbitrary code execution
 - **Mitigation**: No `eval()` or `new Function()` in production code
 - **Enforcement**: ESLint `security/detect-eval-with-expression` + custom security check script
-- **Note**: The shell wrapper itself `eval`s vibe's `cd` output by design; that output is single-quote escaped (see "Shell Output Injection" above)
+- **Note**: The shell wrapper itself `eval`s vibe's `cd` output by design; that output is single-quote escaped (see "Shell Output Injection" above). Full protocol specification: [specifications/eval-contract.md](specifications/eval-contract.md)
 
 ---
 

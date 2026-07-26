@@ -29,6 +29,8 @@ Your reviews are informed by patterns discovered across 50+ merged PRs and 30+ r
 
 ### 1. The Eval Contract (Critical)
 
+Normative reference: `docs/specifications/eval-contract.md`.
+
 `stdout` is `eval`'d verbatim by the shell wrapper, so anything written there becomes shell code in the user's session. Treat any diff that touches stdout as a security change.
 
 - [ ] **No stray stdout writes**: `println!`, `print!`, `io::stdout()`, `dbg!` outside `rust/crates/vibe/src/eval_output.rs` are defects. `write_outcome` is the **single** stdout write point in the program, called once from `main.rs`.

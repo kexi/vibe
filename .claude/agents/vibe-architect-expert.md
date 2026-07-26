@@ -97,34 +97,23 @@ and delegates to `vibe_core::commands::*`. Command implementations live in
 
 ## 3. The Eval Contract (highest-risk invariant)
 
-**stdout is evaluated verbatim by the shell wrapper.** Anything written there becomes
-shell code in the user's interactive session. Treat every change touching stdout as a
-security change.
+Normative reference: `docs/specifications/eval-contract.md`.
 
-```rust
-struct Outcome {
-    cd_path: Option<String>,  // request a directory change
-    stdout: Option<String>,   // shell code to eval (shell-setup, completions)
-}
-```
+**stdout is evaluated verbatim by the shell wrapper.** Treat every change touching
+stdout as a security change. The load-bearing invariants when designing:
 
-The two fields are **mutually exclusive by construction** (`Outcome::cd` /
-`Outcome::stdout` constructors; a debug assertion catches violations). Handlers
-*request* a cd by returning `Outcome::cd(path)`; they never print it themselves.
-
-`rust/crates/vibe/src/eval_output.rs::write_outcome` is the **single stdout write
-point** in the entire program. It refuses any `cd_path` containing `\n` or `\r`,
-because a newline would terminate the `cd` command and inject a second one.
-
-**All human-facing output goes to stderr**, via `rust/crates/vibe-core/src/output.rs`:
-`log`, `verbose_log`, `success_log`, `error_log`, `warn_log`, `log_dry_run` — each
-gated by `OutputOptions` (quiet/verbose/dry-run). Supporting pieces:
-
-- `ansi.rs` — color detection precedence `FORCE_COLOR` > `NO_COLOR` > stderr-is-a-tty,
-  all read through the `Io` seam (never `std::env` directly).
-- `progress.rs` — draws to stderr only.
-- `shell.rs` — `shell_escape`, `escape_shell_path`, `format_cd_command`. Output must
-  stay **byte-identical**; shell wrappers in the wild depend on the exact bytes.
+- **Single stdout write point**: `rust/crates/vibe/src/eval_output.rs::write_outcome`,
+  with its sole call site in `rust/crates/vibe/src/main.rs`. No other code writes stdout.
+- **Handlers request, never print**: commands return an `Outcome`
+  (`Outcome::cd(path)` / `Outcome::stdout(code)`); they never format a `cd` line
+  themselves.
+- **`cd_path` / `stdout` are mutually exclusive by construction**, and `write_outcome`
+  refuses any `cd_path` containing `\n` or `\r` (a newline would terminate the `cd` and
+  inject a second command).
+- **All human-facing output goes to stderr** — `rust/crates/vibe-core/src/output.rs`
+  helpers gated by `OutputOptions`, plus `progress.rs` and clap's errors/help.
+- **Byte-stability**: `shell.rs` escaping and the generated wrapper/completion output
+  must stay byte-identical; shell wrappers in the wild depend on the exact bytes.
 
 ---
 
@@ -383,3 +372,7 @@ Consult them for **why** a decision was made — the CoW ladder, trust model, an
 severities all originate there. **Never cite them as the current structure**, and never
 reason from their module layout: `packages/core`, `AppContext`, the `Runtime`
 abstraction, Zod schemas, and the N-API build no longer exist.
+
+**Exception**: `docs/specifications/eval-contract.md` is *not* design history — it is the
+**normative, current** specification of the stdout eval protocol (section 3) and must be
+cited as such.

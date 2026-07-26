@@ -606,7 +606,7 @@ The following environment variables are available in all hook commands:
 
 Vibe follows security best practices for CLI tools:
 
-- **Shell injection prevention**: The `cd` lines printed for the shell wrapper to `eval` are single-quote escaped (`rust/crates/vibe-core/src/shell.rs`) to prevent command injection through crafted directory names
+- **Shell injection prevention**: The `cd` lines printed for the shell wrapper to `eval` are single-quote escaped (`rust/crates/vibe-core/src/shell.rs`) to prevent command injection through crafted directory names. For the full protocol, see [The stdout Eval Contract](docs/specifications/eval-contract.md)
 - **No shell string execution**: Subprocesses are spawned via `std::process::Command` with argument arrays, never shell strings, so there is no shell interpretation of arguments
 - **Configuration trust mechanism**: SHA-256 hash verification for `.vibe.toml` and `.vibe.local.toml` files
 - **Path validation**: All user-supplied paths are validated before use
