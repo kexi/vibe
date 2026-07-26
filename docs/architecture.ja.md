@@ -134,6 +134,8 @@ flowchart LR
 
 ## シェルラッパーアーキテクチャ
 
+このプロトコルの現行の規範仕様は [The stdout Eval Contract](specifications/eval-contract.ja.md) を参照してください。
+
 Vibe はコマンド実行後にディレクトリ変更を有効にするため、シェルラッパーパターンを使用しています。
 
 ### UNIX プロセスモデルの制約
