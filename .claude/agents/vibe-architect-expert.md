@@ -8,7 +8,7 @@ description: >-
   planning new features, refactoring architecture, adding new modules, or
   making structural decisions.
 tools: Read, Glob, Grep, Bash, Edit, Write, WebFetch
-model: opus
+model: fable
 color: purple
 ---
 
