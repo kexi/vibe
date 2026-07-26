@@ -1,6 +1,6 @@
 {
   "name": "@kexi/vibe",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "description": "Git worktree helper CLI",
   "type": "module",
   "bin": {
@@ -15,11 +15,11 @@
     "test:watch": "vitest"
   },
   "optionalDependencies": {
-    "@kexi/vibe-linux-x64": "2.1.1",
-    "@kexi/vibe-linux-arm64": "2.1.1",
-    "@kexi/vibe-darwin-x64": "2.1.1",
-    "@kexi/vibe-darwin-arm64": "2.1.1",
-    "@kexi/vibe-win32-x64": "2.1.1"
+    "@kexi/vibe-linux-x64": "2.2.0",
+    "@kexi/vibe-linux-arm64": "2.2.0",
+    "@kexi/vibe-darwin-x64": "2.2.0",
+    "@kexi/vibe-darwin-arm64": "2.2.0",
+    "@kexi/vibe-win32-x64": "2.2.0"
   },
   "devDependencies": {
     "vitest": "^3.2.6"
