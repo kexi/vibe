@@ -6,6 +6,9 @@ license.workspace = true
 repository.workspace = true
 description = "Core library for the vibe git worktree CLI"
 
+[lints]
+workspace = true
+
 [features]
 # Exposes in-memory fakes (FakeIo, etc.) to downstream test code (the binary's
 # integration tests). Always on under `cfg(test)` within this crate.

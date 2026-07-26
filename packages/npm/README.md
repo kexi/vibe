@@ -98,8 +98,12 @@ end
 > package instead.
 
 ```powershell
-function vibe { Invoke-Expression (& vibe.exe $args) }
+function vibe { $out = & vibe.exe --eval-dialect powershell @args; if ($out) { Invoke-Expression ($out -join "`n") } }
 ```
+
+Requires vibe 2.2.0 or later. Replace any older `Invoke-Expression (& vibe.exe $args)`
+snippet you pasted before — it mishandled paths containing a single quote and threw
+an error when vibe produced no output.
 
 </details>
 

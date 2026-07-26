@@ -136,19 +136,47 @@ Add **one** of the following to your shell configuration (choose based on your i
     # Add to ~/.config/nushell/config.nu (choose one)
 
     # For global install (Homebrew, npm -g, bun -g)
-    def --env vibe [...args] {
-        ^vibe ...$args | lines | each { |line| nu -c $line }
+    def --env --wrapped vibe [...args] {
+        let out = (^vibe --eval-dialect nu ...$args)
+        for line in ($out | lines) {
+            if ($line | str starts-with "__VIBE_CD__") {
+                cd ($line | str replace "__VIBE_CD__" "")
+            } else {
+                print $line
+            }
+        }
     }
 
     # For npx (without global install)
-    def --env vibe [...args] {
-        npx @kexi/vibe ...$args | lines | each { |line| nu -c $line }
+    def --env --wrapped vibe [...args] {
+        let out = (npx @kexi/vibe --eval-dialect nu ...$args)
+        for line in ($out | lines) {
+            if ($line | str starts-with "__VIBE_CD__") {
+                cd ($line | str replace "__VIBE_CD__" "")
+            } else {
+                print $line
+            }
+        }
     }
     # Or for bunx:
-    # def --env vibe [...args] {
-    #     bunx @kexi/vibe ...$args | lines | each { |line| nu -c $line }
+    # def --env --wrapped vibe [...args] {
+    #     let out = (bunx @kexi/vibe --eval-dialect nu ...$args)
+    #     for line in ($out | lines) {
+    #         if ($line | str starts-with "__VIBE_CD__") {
+    #             cd ($line | str replace "__VIBE_CD__" "")
+    #         } else {
+    #             print $line
+    #         }
+    #     }
     # }
     ```
+
+    :::note
+    Requires vibe 2.2.0 or later and nushell 0.83 or later. Replace any older `nu -c`
+    snippet you pasted before — it never actually changed your directory and rejected
+    any command carrying a flag. Keep both `--wrapped` (so flags reach `...args`) and
+    `for` (nushell discards environment changes made inside an `each` closure).
+    :::
 
   </TabItem>
   <TabItem label="PowerShell">
@@ -156,13 +184,19 @@ Add **one** of the following to your shell configuration (choose based on your i
     # Add to your $PROFILE (choose one)
 
     # For global install (Homebrew, npm -g, bun -g)
-    function vibe { Invoke-Expression (& vibe.exe $args) }
+    function vibe { $out = & vibe.exe --eval-dialect powershell @args; if ($out) { Invoke-Expression ($out -join "`n") } }
 
     # For npx (without global install)
-    function vibe { Invoke-Expression (& npx @kexi/vibe $args) }
+    function vibe { $out = & npx @kexi/vibe --eval-dialect powershell @args; if ($out) { Invoke-Expression ($out -join "`n") } }
     # Or for bunx:
-    # function vibe { Invoke-Expression (& bunx @kexi/vibe $args) }
+    # function vibe { $out = & bunx @kexi/vibe --eval-dialect powershell @args; if ($out) { Invoke-Expression ($out -join "`n") } }
     ```
+
+    :::note
+    Requires vibe 2.2.0 or later. Replace any older
+    `Invoke-Expression (& vibe.exe $args)` snippet you pasted before — it mishandled
+    paths containing a single quote and threw an error when vibe produced no output.
+    :::
 
   </TabItem>
 </Tabs>

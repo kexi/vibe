@@ -11,6 +11,9 @@ description = "Native Copy-on-Write clone + trash operations for vibe (clonefile
 # links it as an ordinary Rust dependency. All napi/tokio scaffolding is stripped
 # (see lib.rs) and only synchronous `pub fn`s remain.
 
+[lints]
+workspace = true
+
 [dependencies]
 thiserror = { workspace = true }
 trash = "5.2"

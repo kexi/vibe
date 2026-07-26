@@ -61,18 +61,39 @@ vibeはWorktreeの作成やクリーンアップ後にディレクトリを変�
     `~/.config/nushell/config.nu`に追加：
 
     ```nu
-    def --env vibe [...args] {
-        ^vibe ...$args | lines | each { |line| nu -c $line }
+    def --env --wrapped vibe [...args] {
+        let out = (^vibe --eval-dialect nu ...$args)
+        for line in ($out | lines) {
+            if ($line | str starts-with "__VIBE_CD__") {
+                cd ($line | str replace "__VIBE_CD__" "")
+            } else {
+                print $line
+            }
+        }
     }
     ```
+
+    :::note
+    vibe 2.2.0 以降と nushell 0.83 以降が必要です。以前の `nu -c` を使うスニペットを貼り付けている場合は
+    置き換えてください。`nu -c` は子プロセスで `cd` を実行するため、あのバージョンは実際にはディレクトリを
+    変更できておらず、フラグを伴うコマンドも拒否していました。`--wrapped` と `for` の両方が必要です。
+    `--wrapped` がフラグを `...args` に通し、`for` が必要なのは nushell が `each` のクロージャ内での
+    環境変更を破棄するためです。
+    :::
 
   </TabItem>
   <TabItem label="PowerShell">
     `$PROFILE`に追加：
 
     ```powershell
-    function vibe { Invoke-Expression (& vibe.exe $args) }
+    function vibe { $out = & vibe.exe --eval-dialect powershell @args; if ($out) { Invoke-Expression ($out -join "`n") } }
     ```
+
+    :::note
+    vibe 2.2.0 以降が必要です。以前の `Invoke-Expression (& vibe.exe $args)` を使うスニペットを
+    貼り付けている場合は置き換えてください。あのバージョンはシングルクォートを含むパスを正しく扱えず、
+    vibe が何も出力しないときにエラーを送出していました。
+    :::
 
   </TabItem>
 </Tabs>

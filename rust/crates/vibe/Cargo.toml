@@ -7,6 +7,9 @@ repository.workspace = true
 description = "Git worktree helper CLI"
 build = "build.rs"
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "vibe"
 path = "src/main.rs"

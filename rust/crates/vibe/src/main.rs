@@ -16,6 +16,7 @@ use cli::{Cli, Command};
 use std::io::Write;
 use vibe_core::commands::Outcome;
 use vibe_core::output::OutputOptions;
+use vibe_core::shell::EvalDialect;
 use vibe_core::{format_error_message, Io, RealIo, VibeError};
 
 fn main() {
@@ -46,6 +47,9 @@ fn main() {
     }
     let quiet = cli.quiet;
     let opts = OutputOptions::new(cli.verbose, cli.quiet);
+    // Read before `cli.command` is moved below. An absent flag means an old
+    // wrapper is calling us, so the default (Posix) keeps stdout byte-identical.
+    let dialect = cli.eval_dialect.map(EvalDialect::from).unwrap_or_default();
 
     let Some(command) = cli.command else {
         // No subcommand: clap prints help on `--help`; bare invocation shows help.
@@ -60,7 +64,7 @@ fn main() {
     match dispatch(command, opts) {
         Ok(outcome) => {
             // The SINGLE stdout write point for the eval contract.
-            if let Err(error) = eval_output::write_outcome(&outcome) {
+            if let Err(error) = eval_output::write_outcome(&outcome, dialect) {
                 let exit_code = report_error(&io, &error, quiet);
                 std::process::exit(exit_code.max(1));
             }
