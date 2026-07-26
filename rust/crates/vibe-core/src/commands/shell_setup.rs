@@ -52,10 +52,28 @@ fn shell_function(shell: ShellName) -> &'static str {
     match shell {
         ShellName::Bash | ShellName::Zsh => r#"vibe() { eval "$(command vibe "$@")"; }"#,
         ShellName::Fish => "function vibe; eval (command vibe $argv); end",
+        // Why not `each { nu -c $line }`: nu has no `eval`, so the old wrapper
+        // spawned a CHILD nu to run the line — the `cd` applied to the child and
+        // vanished. `for` runs in the caller's scope (an `each` closure's env
+        // changes are discarded too), and `--eval-dialect nu` makes the binary
+        // emit `__VIBE_CD__<raw path>` so the path is handled as data, never as
+        // nu source. `let out = (^vibe ...)` captures stdout only, so stderr
+        // (progress, warnings) still streams live to the terminal.
+        //
+        // Why `--wrapped`: a rest-only signature (`[...args]`) does NOT make nu
+        // forward flags — nu parses `vibe start --dry-run` against the custom
+        // command's own (empty) flag list and aborts with
+        // `nu::parser::unknown_flag` before the body ever runs, so EVERY flagged
+        // invocation failed. `--wrapped` is nu's documented opt-out: unknown
+        // flags are collected into the rest parameter verbatim.
         ShellName::Nushell => {
-            "def --env vibe [...args] { ^vibe ...$args | lines | each { |line| nu -c $line } }"
+            r#"def --env --wrapped vibe [...args] { let out = (^vibe --eval-dialect nu ...$args); for line in ($out | lines) { if ($line | str starts-with "__VIBE_CD__") { cd ($line | str replace "__VIBE_CD__" "") } else { print $line } } }"#
         }
-        ShellName::Powershell => "function vibe { Invoke-Expression (& vibe.exe $args) }",
+        // Why the `if ($out)` guard: `Invoke-Expression` on empty stdout (every
+        // command that returns no cd line) raised a parameter-binding error.
+        ShellName::Powershell => {
+            "function vibe { $out = & vibe.exe --eval-dialect powershell @args; if ($out) { Invoke-Expression ($out -join \"`n\") } }"
+        }
     }
 }
 
@@ -206,7 +224,9 @@ mod tests {
             shell_setup_command(&io, Some("nushell"), false, OutputOptions::default()).unwrap();
         assert_eq!(
             out.stdout.as_deref(),
-            Some("def --env vibe [...args] { ^vibe ...$args | lines | each { |line| nu -c $line } }\n")
+            Some(
+                "def --env --wrapped vibe [...args] { let out = (^vibe --eval-dialect nu ...$args); for line in ($out | lines) { if ($line | str starts-with \"__VIBE_CD__\") { cd ($line | str replace \"__VIBE_CD__\" \"\") } else { print $line } } }\n"
+            )
         );
     }
 
@@ -217,8 +237,42 @@ mod tests {
             shell_setup_command(&io, Some("powershell"), false, OutputOptions::default()).unwrap();
         assert_eq!(
             out.stdout.as_deref(),
-            Some("function vibe { Invoke-Expression (& vibe.exe $args) }\n")
+            Some(
+                "function vibe { $out = & vibe.exe --eval-dialect powershell @args; if ($out) { Invoke-Expression ($out -join \"`n\") } }\n"
+            )
         );
+    }
+
+    /// Drift guard: the nushell wrapper's sentinel literal must stay equal to
+    /// the constant the binary emits, or `cd` silently stops working in nu.
+    #[test]
+    fn nushell_wrapper_uses_the_shared_cd_sentinel() {
+        let wrapper = shell_function(ShellName::Nushell);
+        let occurrences = wrapper.matches(crate::shell::NU_CD_SENTINEL).count();
+        // Once in the `str starts-with` test, once in the `str replace` strip.
+        assert_eq!(
+            occurrences,
+            2,
+            "expected 2 occurrences of {} in: {wrapper}",
+            crate::shell::NU_CD_SENTINEL
+        );
+    }
+
+    /// Drift guard: each new-style wrapper must request its dialect, otherwise
+    /// the binary falls back to POSIX output the shell cannot consume.
+    #[test]
+    fn new_wrappers_request_their_eval_dialect() {
+        assert!(shell_function(ShellName::Nushell).contains("--eval-dialect nu"));
+        assert!(shell_function(ShellName::Powershell).contains("--eval-dialect powershell"));
+    }
+
+    /// The POSIX wrappers must NOT pass `--eval-dialect`: their bytes are frozen
+    /// (already pasted into users' rc files) and Posix is the default anyway.
+    #[test]
+    fn posix_wrappers_do_not_request_a_dialect() {
+        for shell in [ShellName::Bash, ShellName::Zsh, ShellName::Fish] {
+            assert!(!shell_function(shell).contains("--eval-dialect"));
+        }
     }
 
     #[test]

@@ -61,18 +61,39 @@ vibe needs a shell wrapper function to change directories after creating or clea
     Add to `~/.config/nushell/config.nu`:
 
     ```nu
-    def --env vibe [...args] {
-        ^vibe ...$args | lines | each { |line| nu -c $line }
+    def --env --wrapped vibe [...args] {
+        let out = (^vibe --eval-dialect nu ...$args)
+        for line in ($out | lines) {
+            if ($line | str starts-with "__VIBE_CD__") {
+                cd ($line | str replace "__VIBE_CD__" "")
+            } else {
+                print $line
+            }
+        }
     }
     ```
+
+    :::note
+    Requires vibe 2.2.0 or later and nushell 0.83 or later. If you previously pasted the
+    older `nu -c` snippet, replace it — that version never actually changed your directory,
+    because `nu -c` runs `cd` in a child process, and it rejected any command carrying a
+    flag. Both `--wrapped` and `for` are required: `--wrapped` lets flags through to
+    `...args`, and nushell discards environment changes made inside an `each` closure.
+    :::
 
   </TabItem>
   <TabItem label="PowerShell">
     Add to your `$PROFILE`:
 
     ```powershell
-    function vibe { Invoke-Expression (& vibe.exe $args) }
+    function vibe { $out = & vibe.exe --eval-dialect powershell @args; if ($out) { Invoke-Expression ($out -join "`n") } }
     ```
+
+    :::note
+    Requires vibe 2.2.0 or later. If you previously pasted the older
+    `Invoke-Expression (& vibe.exe $args)` snippet, replace it — that version mishandled
+    paths containing a single quote and threw an error whenever vibe produced no output.
+    :::
 
   </TabItem>
 </Tabs>

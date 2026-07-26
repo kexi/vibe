@@ -58,8 +58,8 @@ picks behaviour at **runtime** via capability probes, not compile-time cfg — a
 | bash       | `vibe() { eval "$(command vibe "$@")"; }`                                               |
 | zsh        | `vibe() { eval "$(command vibe "$@")"; }`                                               |
 | fish       | `function vibe; eval (command vibe $argv); end`                                         |
-| nushell    | `def --env vibe [...args] { ^vibe ...$args \| lines \| each { \|line\| nu -c $line } }` |
-| powershell | `function vibe { Invoke-Expression (& vibe.exe $args) }`                                |
+| nushell    | `def --env --wrapped vibe [...args] { let out = (^vibe --eval-dialect nu ...$args); for line in ($out \| lines) { if ($line \| str starts-with "__VIBE_CD__") { cd ($line \| str replace "__VIBE_CD__" "") } else { print $line } } }` |
+| powershell | `function vibe { $out = & vibe.exe --eval-dialect powershell @args; if ($out) { Invoke-Expression ($out -join "`n") } }` |
 
 - Implementation: `rust/crates/vibe-core/src/commands/shell_setup.rs` (`enum ShellName`)
 - Detection: basename of `--shell` value or `$SHELL` (read through the `Io` seam),

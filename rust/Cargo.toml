@@ -12,6 +12,15 @@ edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/kexi/vibe"
 
+[workspace.lints.clippy]
+# The shell wrapper evals stdout, so any unsanctioned stdout write is a contract
+# break (and potentially a command injection). `eval_output.rs` is the single
+# allowed write point and opts out locally; everywhere else this is a build
+# failure. `disallowed-methods` in rust/clippy.toml covers the handle-based
+# escape hatch that `print_stdout` does not see.
+print_stdout = "deny"
+dbg_macro = "deny"
+
 [workspace.dependencies]
 vibe-core = { path = "crates/vibe-core" }
 vibe-native = { path = "crates/vibe-native" }

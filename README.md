@@ -312,10 +312,22 @@ end
 <summary>Nushell (~/.config/nushell/config.nu)</summary>
 
 ```nu
-def --env vibe [...args] {
-    ^vibe ...$args | lines | each { |line| nu -c $line }
+def --env --wrapped vibe [...args] {
+    let out = (^vibe --eval-dialect nu ...$args)
+    for line in ($out | lines) {
+        if ($line | str starts-with "__VIBE_CD__") {
+            cd ($line | str replace "__VIBE_CD__" "")
+        } else {
+            print $line
+        }
+    }
 }
 ```
+
+Requires vibe 2.2.0 or later and nushell 0.83 or later. Replace any older `nu -c`
+snippet you pasted before — it never actually changed your directory and rejected any
+command carrying a flag. Keep both `--wrapped` (so flags reach `...args`) and `for`
+(nushell discards environment changes made inside an `each` closure).
 
 </details>
 
@@ -323,8 +335,12 @@ def --env vibe [...args] {
 <summary>PowerShell ($PROFILE)</summary>
 
 ```powershell
-function vibe { Invoke-Expression (& vibe.exe $args) }
+function vibe { $out = & vibe.exe --eval-dialect powershell @args; if ($out) { Invoke-Expression ($out -join "`n") } }
 ```
+
+Requires vibe 2.2.0 or later. Replace any older `Invoke-Expression (& vibe.exe $args)`
+snippet you pasted before — it mishandled paths containing a single quote and threw
+an error when vibe produced no output.
 
 </details>
 

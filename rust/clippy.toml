@@ -1,0 +1,5 @@
+# `clippy::print_stdout` only catches the `print!`/`println!` macros, so a
+# `std::io::stdout()` handle would slip past it. stdout is the shell-eval channel
+# (docs/specifications/eval-contract.md): `vibe/src/eval_output.rs` is the single
+# sanctioned write point.
+disallowed-methods = ["std::io::stdout"]

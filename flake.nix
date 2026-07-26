@@ -167,6 +167,15 @@
             git
             gitleaks
             just
+            # Shells driven by the wrapper round-trip tests
+            # (crates/vibe/tests/wrapper_round_trip.rs), which source the
+            # generated `vibe shell-setup` wrapper in a REAL shell and assert the
+            # cwd actually changed. bash is always present; pwsh comes from the
+            # GitHub runner image (nixpkgs' powershell is unfree-adjacent and
+            # heavyweight for a dev shell), so only these three are added here.
+            nushell
+            fish
+            zsh
           ];
 
           # Formerly .mise.toml [env]; avoids sharp pulling in a global libvips.
