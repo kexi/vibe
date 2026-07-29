@@ -10,7 +10,7 @@ description: >-
   dependencies, updating versions, reviewing Dependabot PRs, or auditing license
   compliance.
 tools: Read, Glob, Grep, Bash, WebFetch
-model: sonnet
+model: opus
 color: yellow
 ---
 
