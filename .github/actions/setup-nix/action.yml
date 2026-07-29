@@ -25,8 +25,22 @@ runs:
     # permission is required. Note cache entries are immutable per key: on an
     # exact primary-key hit the post-step save is skipped, so the key must hash
     # everything the cached store is derived from.
+    # The inputs are copied into job-scoped env rather than passed straight
+    # through: when this action is itself nested inside another composite
+    # (setup-toolchain), the runner no longer provides the parent `inputs`
+    # context while re-evaluating the cache action's `with:` for its post
+    # (save) step (actions/runner#2009), so `${{ inputs.* }}` would make the
+    # save fail with "Input required and not supplied". `env` survives to the
+    # post step.
+    - name: Export cache key to job env
+      shell: bash
+      run: |
+        {
+          echo "SETUP_NIX_PRIMARY_KEY=${{ inputs.primary-key }}"
+          echo "SETUP_NIX_RESTORE_PREFIX=${{ inputs.restore-prefix }}"
+        } >> "$GITHUB_ENV"
     - name: Nix store cache
       uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
       with:
-        primary-key: ${{ inputs.primary-key }}
-        restore-prefixes-first-match: ${{ inputs.restore-prefix }}
+        primary-key: ${{ env.SETUP_NIX_PRIMARY_KEY }}
+        restore-prefixes-first-match: ${{ env.SETUP_NIX_RESTORE_PREFIX }}
