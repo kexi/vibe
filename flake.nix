@@ -66,7 +66,7 @@
 
           commonMeta = with pkgs.lib; {
             homepage = "https://github.com/kexi/vibe";
-            license = licenses.asl20;
+            license = licenses.mit;
             platforms = systems;
             mainProgram = "vibe";
           };

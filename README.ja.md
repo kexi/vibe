@@ -635,4 +635,6 @@ Vibe は CLI ツールのセキュリティベストプラクティスに従っ�
 
 ## ライセンス
 
-Apache-2.0
+MIT — [LICENSE](./LICENSE) を参照してください。
+
+v2.x までのリリースは Apache-2.0 で公開されています。MIT ライセンスは v3.0.0 以降に適用されます（[#553](https://github.com/kexi/vibe/issues/553) 参照）。

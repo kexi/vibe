@@ -10,6 +10,12 @@ packages/vibe-*/bin/*
 # THIRD-PARTY-LICENSES.md is also staged into each platform package at build time
 # (the canonical copy lives at the repo root and is checked in).
 packages/vibe-*/THIRD-PARTY-LICENSES.md
+# LICENSE is likewise staged into each publishable package at build/release time
+# from the repo root. npm includes a top-level LICENSE in the tarball regardless
+# of `files`, so the published packages carry vibe's terms without a committed
+# duplicate per package (which would be N copies to keep in sync).
+packages/vibe-*/LICENSE
+packages/npm/LICENSE
 
 # OS
 .DS_Store

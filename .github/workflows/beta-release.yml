@@ -37,6 +37,16 @@ jobs:
           echo "version=${BETA_VERSION}" >> $GITHUB_OUTPUT
           echo "Beta version: ${BETA_VERSION}"
 
+      # Same fail-closed assert as release.yml (shared composite action, so the
+      # two workflows cannot drift): betas are cut from develop, the branch
+      # where a half-applied relicense actually lands, so a mixed tree would
+      # otherwise ship a beta whose LICENSE contradicts its version. The 2.*
+      # match is on BASE_VERSION's prefix; the -beta.N suffix never affects it.
+      - name: Assert LICENSE matches the release version's licensing era
+        uses: ./.github/actions/assert-license-era
+        with:
+          version: ${{ steps.version.outputs.version }}
+
       - name: Check if release already exists
         id: check
         env:
@@ -287,6 +297,12 @@ jobs:
             grep "PLACEHOLDER" Formula/vibe-beta.rb
             exit 1
           fi
+
+          # The tap is a separately-published statement of vibe's license; a
+          # formula still claiming the pre-v3 Apache-2.0 terms must not ship.
+          # The check itself is shared with release.yml (../vibe-source is
+          # this repo's checkout — the same tree the formula was copied from).
+          bash ../vibe-source/scripts/assert-formula-license.sh Formula/vibe-beta.rb
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
