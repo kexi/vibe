@@ -32,13 +32,22 @@ runs:
     # (save) step (actions/runner#2009), so `${{ inputs.* }}` would make the
     # save fail with "Input required and not supplied". `env` survives to the
     # post step.
+    # The inputs reach bash via `env:` rather than `${{ }}` interpolation in
+    # the script body, so a hostile input cannot inject shell; the newline
+    # guard exists because a newline in a value written KEY=value into
+    # GITHUB_ENV would inject arbitrary extra variables.
     - name: Export cache key to job env
       shell: bash
+      env:
+        PRIMARY_KEY: ${{ inputs.primary-key }}
+        RESTORE_PREFIX: ${{ inputs.restore-prefix }}
       run: |
-        {
-          echo "SETUP_NIX_PRIMARY_KEY=${{ inputs.primary-key }}"
-          echo "SETUP_NIX_RESTORE_PREFIX=${{ inputs.restore-prefix }}"
-        } >> "$GITHUB_ENV"
+        case "$PRIMARY_KEY$RESTORE_PREFIX" in *$'\n'*)
+          echo "::error::setup-nix cache key inputs must not contain newlines"
+          exit 1
+        esac
+        printf 'SETUP_NIX_PRIMARY_KEY=%s\n' "$PRIMARY_KEY" >> "$GITHUB_ENV"
+        printf 'SETUP_NIX_RESTORE_PREFIX=%s\n' "$RESTORE_PREFIX" >> "$GITHUB_ENV"
     - name: Nix store cache
       uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
       with:
