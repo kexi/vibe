@@ -1,0 +1,14 @@
+# Legal documents are compared byte-for-byte, so their line endings must not
+# depend on the checkout.
+#
+# scripts/generate-third-party-licenses.ts --check compares the file it would
+# generate against the committed one, and scripts/build-deb.ts derives the .deb
+# copyright body from LICENSE. On a Windows runner with core.autocrlf=true both
+# would be checked out with CRLF, making --check report a false "stale" and the
+# generated document differ from the committed one for no real reason.
+#
+# Why not `* text=auto eol=lf` for the whole repo: nothing else here is compared
+# byte-for-byte, and a repo-wide normalization would rewrite files (including
+# test fixtures) well outside the problem this pins down.
+THIRD-PARTY-LICENSES.md text eol=lf
+LICENSE text eol=lf
