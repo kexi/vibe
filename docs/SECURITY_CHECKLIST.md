@@ -1,5 +1,5 @@
 > [!NOTE]
-> :jp: [日本語版](./SECURITY_CHECKLIST.ja.md)
+> :jp: [日本語版](./SECURITY_CHECKLIST.ja.md) | :cn: [简体中文](./SECURITY_CHECKLIST.zh.md)
 
 # CLI Security Checklist
 

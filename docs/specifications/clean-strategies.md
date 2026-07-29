@@ -1,4 +1,4 @@
-> 🇯🇵 [日本語版](./clean-strategies.ja.md)
+> 🇯🇵 [日本語版](./clean-strategies.ja.md) | 🇨🇳 [简体中文](./clean-strategies.zh.md)
 
 # Clean Strategies
 

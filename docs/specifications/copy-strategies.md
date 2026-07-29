@@ -1,4 +1,4 @@
-> 🇯🇵 [日本語版](./copy-strategies.ja.md)
+> 🇯🇵 [日本語版](./copy-strategies.ja.md) | 🇨🇳 [简体中文](./copy-strategies.zh.md)
 
 # Copy Strategies
 

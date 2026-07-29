@@ -1,0 +1,234 @@
+---
+title: 快速开始
+description: 几分钟内上手 vibe
+---
+
+## 什么是 vibe？
+
+vibe 是一个简化 Git Worktree 管理的命令行工具。它可以帮助你：
+
+- 无需离开主仓库即可为新功能创建 worktree
+- 自动复制配置文件和依赖
+- 在创建或清理 worktree 时运行配置钩子
+- 通过交互式提示安全地管理 worktree 的生命周期
+
+## 快速开始
+
+### 1. 安装 vibe
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+<Tabs>
+  <TabItem label="Homebrew">
+    ```bash frame="terminal"
+    brew install kexi/tap/vibe
+    ```
+  </TabItem>
+  <TabItem label="npm/npx">
+    ```bash frame="terminal"
+    # 全局安装
+    npm install -g @kexi/vibe
+
+    # 或使用 npx 直接运行
+    npx @kexi/vibe start feat/my-feature
+    ```
+    :::note
+    需要进行 shell 设置（步骤 2）。使用 npx 时，请选择「npx」对应的选项。
+    :::
+    :::tip
+    如果经常使用，推荐全局安装。npx 因为要解析软件包，启动会比较慢。
+    :::
+
+  </TabItem>
+  <TabItem label="Bun">
+    ```bash frame="terminal"
+    # 全局安装
+    bun add -g @kexi/vibe
+
+    # 或使用 bunx 直接运行
+    bunx @kexi/vibe start feat/my-feature
+    ```
+    :::note
+    需要进行 shell 设置（步骤 2）。使用 bunx 时，请选择「bunx」对应的选项。
+    :::
+    :::tip
+    如果经常使用，推荐全局安装。bunx 因为要解析软件包，启动会比较慢。
+    :::
+
+  </TabItem>
+  <TabItem label="Linux">
+    ```bash frame="terminal"
+    # Ubuntu/Debian (x64)
+    curl -LO https://github.com/kexi/vibe/releases/latest/download/vibe_amd64.deb
+    sudo apt install ./vibe_amd64.deb
+
+    # 其他发行版 (x64)
+    curl -L https://github.com/kexi/vibe/releases/latest/download/vibe-linux-x64 -o vibe
+    chmod +x vibe && sudo mv vibe /usr/local/bin/
+    ```
+
+  </TabItem>
+  <TabItem label="Windows">
+    ```bash frame="terminal"
+    npm install -g @kexi/vibe
+    ```
+
+    Windows x64 通过 `@kexi/vibe-win32-x64` 二进制软件包获得支持。WSL2 用户也可以使用上面的 Linux 安装方法。
+
+  </TabItem>
+</Tabs>
+
+### 2. 设置你的 shell
+
+请根据你的安装方式，将以下内容中的**其中一项**添加到 shell 配置文件中：
+
+<Tabs>
+  <TabItem label="Zsh">
+    ```bash frame="terminal"
+    # 添加到 ~/.zshrc（任选其一）
+
+    # 用于全局安装（Homebrew、npm -g、bun -g）
+    vibe() { eval "$(command vibe "$@")" }
+
+    # 用于 npx（未全局安装）
+    vibe() { eval "$(npx @kexi/vibe "$@")" }
+    # 或用于 bunx：
+    # vibe() { eval "$(bunx @kexi/vibe "$@")" }
+    ```
+
+  </TabItem>
+  <TabItem label="Bash">
+    ```bash frame="terminal"
+    # 添加到 ~/.bashrc（任选其一）
+
+    # 用于全局安装（Homebrew、npm -g、bun -g）
+    vibe() { eval "$(command vibe "$@")"; }
+
+    # 用于 npx（未全局安装）
+    vibe() { eval "$(npx @kexi/vibe "$@")"; }
+    # 或用于 bunx：
+    # vibe() { eval "$(bunx @kexi/vibe "$@")"; }
+    ```
+
+  </TabItem>
+  <TabItem label="Fish">
+    ```fish frame="terminal"
+    # 添加到 ~/.config/fish/config.fish（任选其一）
+
+    # 用于全局安装（Homebrew、npm -g、bun -g）
+    function vibe
+        eval (command vibe $argv)
+    end
+
+    # 用于 npx（未全局安装）
+    function vibe
+        eval (npx @kexi/vibe $argv)
+    end
+    # 或用于 bunx：
+    # function vibe
+    #     eval (bunx @kexi/vibe $argv)
+    # end
+    ```
+
+  </TabItem>
+  <TabItem label="Nushell">
+    ```nu frame="terminal"
+    # 添加到 ~/.config/nushell/config.nu（任选其一）
+
+    # 用于全局安装（Homebrew、npm -g、bun -g）
+    def --env --wrapped vibe [...args] {
+        let out = (^vibe --eval-dialect nu ...$args)
+        for line in ($out | lines) {
+            if ($line | str starts-with "__VIBE_CD__") {
+                cd ($line | str replace "__VIBE_CD__" "")
+            } else {
+                print $line
+            }
+        }
+    }
+
+    # 用于 npx（未全局安装）
+    def --env --wrapped vibe [...args] {
+        let out = (npx @kexi/vibe --eval-dialect nu ...$args)
+        for line in ($out | lines) {
+            if ($line | str starts-with "__VIBE_CD__") {
+                cd ($line | str replace "__VIBE_CD__" "")
+            } else {
+                print $line
+            }
+        }
+    }
+    # 或用于 bunx：
+    # def --env --wrapped vibe [...args] {
+    #     let out = (bunx @kexi/vibe --eval-dialect nu ...$args)
+    #     for line in ($out | lines) {
+    #         if ($line | str starts-with "__VIBE_CD__") {
+    #             cd ($line | str replace "__VIBE_CD__" "")
+    #         } else {
+    #             print $line
+    #         }
+    #     }
+    # }
+    ```
+
+    :::note
+    需要 vibe 2.2.0 或更高版本，以及 nushell 0.83 或更高版本。请替换掉你之前粘贴的旧
+    `nu -c` 代码片段 —— 它实际上从未改变过你的目录，并且会拒绝任何带标志的命令。请同时保留
+    `--wrapped`（让标志能传递到 `...args`）和 `for`（nushell 会丢弃在 `each` 闭包内所做的
+    环境变更）。
+    :::
+
+  </TabItem>
+  <TabItem label="PowerShell">
+    ```powershell frame="terminal"
+    # 添加到你的 $PROFILE（任选其一）
+
+    # 用于全局安装（Homebrew、npm -g、bun -g）
+    function vibe { $out = & vibe.exe --eval-dialect powershell @args; if ($out) { Invoke-Expression ($out -join "`n") } }
+
+    # 用于 npx（未全局安装）
+    function vibe { $out = & npx @kexi/vibe --eval-dialect powershell @args; if ($out) { Invoke-Expression ($out -join "`n") } }
+    # 或用于 bunx：
+    # function vibe { $out = & bunx @kexi/vibe --eval-dialect powershell @args; if ($out) { Invoke-Expression ($out -join "`n") } }
+    ```
+
+    :::note
+    需要 vibe 2.2.0 或更高版本。请替换掉你之前粘贴的旧
+    `Invoke-Expression (& vibe.exe $args)` 代码片段 —— 它无法正确处理包含单引号的路径，
+    并且在 vibe 没有产生任何输出时会抛出错误。
+    :::
+
+  </TabItem>
+</Tabs>
+
+### 3. 创建你的第一个 worktree
+
+```bash frame="terminal"
+# 开始开发一个新功能
+vibe start feat/my-new-feature
+
+# 你的终端现在已经位于新的 worktree 中了！
+# 进行修改、提交、推送等操作。
+
+# 完成后，清理该 worktree
+vibe clean
+```
+
+## 基本工作流
+
+```
+主仓库
+     │
+     ├── vibe start feat/feature-a  →  repo-feat-feature-a/
+     │                                      │
+     │                                      └── (开发功能)
+     │
+     └── vibe clean  ←─────────────────────────┘
+           (返回主仓库并删除 worktree)
+```
+
+## 下一步
+
+- [安装](/zh/installation/) - 详细的安装说明
+- [Shell 设置](/zh/setup/) - 配置你的 shell
+- [配置](/zh/configuration/) - 设置 `.vibe.toml`

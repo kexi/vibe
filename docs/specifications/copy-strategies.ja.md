@@ -1,4 +1,4 @@
-> 🇺🇸 [English](./copy-strategies.md)
+> 🇺🇸 [English](./copy-strategies.md) | 🇨🇳 [简体中文](./copy-strategies.zh.md)
 
 # コピー戦略
 

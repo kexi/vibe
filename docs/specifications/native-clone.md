@@ -1,4 +1,4 @@
-> 🇯🇵 [日本語版](./native-clone.ja.md)
+> 🇯🇵 [日本語版](./native-clone.ja.md) | 🇨🇳 [简体中文](./native-clone.zh.md)
 
 # Native Clone Implementation
 

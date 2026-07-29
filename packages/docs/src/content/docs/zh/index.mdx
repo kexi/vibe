@@ -1,0 +1,62 @@
+---
+title: 欢迎使用 vibe
+description: 轻松管理 Git Worktree 的命令行工具
+template: splash
+hero:
+  tagline: 轻松管理 Git Worktree。创建、切换、清理，一气呵成。
+  actions:
+    - text: 快速开始
+      link: /zh/getting-started/
+      icon: right-arrow
+    - text: 在 GitHub 上查看
+      link: https://github.com/kexi/vibe
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from "@astrojs/starlight/components";
+
+## 演示
+
+<div style="width: 100%; max-width: 800px; margin: 0 auto 2rem;">
+  <img
+    src="/demo.gif"
+    alt="vibe 演示"
+    style="width: 100%; border-radius: 8px;"
+  />
+</div>
+
+## 特性
+
+<CardGrid stagger>
+  <Card title="简单的命令" icon="terminal">
+    只有两个主要命令：`vibe start` 创建 worktree，`vibe clean` 删除它。
+  </Card>
+  <Card title="幂等的操作" icon="approve-check">
+    多次运行 `vibe start` 也很安全 —— 它会妥善处理已存在的 worktree。
+  </Card>
+  <Card title="自动化配置" icon="setting">
+    通过 `.vibe.toml` 自动复制文件、运行钩子并配置你的开发环境。
+  </Card>
+  <Card title="安全优先" icon="warning">
+    SHA-256 哈希校验可防止配置文件被未经授权地修改。
+  </Card>
+</CardGrid>
+
+## 快速开始
+
+```bash
+# 通过 Homebrew 安装（macOS）
+brew install kexi/tap/vibe
+
+# 设置 shell 集成（添加到 ~/.zshrc）
+vibe() { eval "$(command vibe "$@")" }
+
+# 为新功能创建一个 worktree
+vibe start feat/new-feature
+
+# 完成后进行清理
+vibe clean
+```
+
+> **注意：** 使用其他 shell？请参阅[快速开始](/zh/getting-started/#2-设置你的-shell)指南，了解 Bash、Fish、Nushell 和 PowerShell 的设置方法。

@@ -1,0 +1,118 @@
+---
+title: vibe start
+description: 使用新建或已有分支创建 worktree
+sidebar:
+  order: 2
+---
+
+import { Badge } from "@astrojs/starlight/components";
+
+`start` 命令会为指定分支创建 Git Worktree，并切换到该目录。
+
+## 使用方法
+
+```bash
+vibe start <branch> [options]
+```
+
+## 选项
+
+| 选项                          | 说明                                |                           |
+| ----------------------------- | ----------------------------------- | ------------------------- |
+| `--reuse`                     | 使用已有分支（不新建）              |                           |
+| `--base <ref>`                | 新分支的基础分支/提交               |                           |
+| `--track`                     | 使用 --base 时设置 upstream 跟踪    |                           |
+| `--no-hooks`                  | 跳过 pre-start 和 post-start 钩子   | <Badge text="v0.5.0+" />  |
+| `--no-copy`                   | 跳过文件和目录的复制                | <Badge text="v0.5.0+" />  |
+| `-n`, `--dry-run`             | 预览操作而不实际执行                | <Badge text="v0.8.0+" />  |
+| `-f`, `--force`               | 跳过确认提示                        | <Badge text="v2.0.0+" />  |
+| `-V`, `--verbose`             | 显示详细输出                        | <Badge text="v0.8.0+" />  |
+| `-q`, `--quiet`               | 抑制非必要的输出                    | <Badge text="v0.8.0+" />  |
+| `--claude-code-worktree-hook` | Claude Code WorktreeCreate 钩子模式 | <Badge text="v0.23.0+" /> |
+
+注意：`--base` 仅在创建新分支时生效。如果分支已存在，则会被忽略。默认情况下 `--base` 不会设置 upstream 跟踪，需要设置时请使用 `--track`。
+
+注意：`--claude-code-worktree-hook` 由 Claude Code 的 WorktreeCreate 钩子在内部使用。配置详情请参阅 [Claude Code 集成](/zh/configuration/hooks/#claude-code-integration)。
+
+## 示例
+
+```bash
+# 使用新分支创建 worktree
+vibe start feat/new-feature
+
+# 使用已有分支
+vibe start feat/existing-branch
+
+# 基于基础分支创建新分支
+vibe start feat/from-main --base main
+
+# 不执行钩子快速开始
+vibe start feat/quick-fix --no-hooks
+
+# 不复制文件直接开始
+vibe start feat/clean-slate --no-copy
+
+# 预览将要执行的操作（短选项）
+vibe start feat/preview -n
+
+# 显示详细输出
+vibe start feat/debug -V
+
+# 抑制输出
+vibe start feat/silent -q
+```
+
+## 行为
+
+### 幂等操作
+
+`vibe start` 是幂等的 —— 对同一分支多次执行是安全的：
+
+- 如果同一分支的 worktree 已存在，vibe 会直接跳转过去
+- 不会创建重复的 worktree
+
+### 交互式提示
+
+`vibe start` 会以交互方式处理各种情况：
+
+#### 分支正被其他 worktree 使用
+
+```
+$ vibe start feat/new-feature
+分支 'feat/new-feature' 已被 worktree '/path/to/repo-feat-new-feature' 使用。
+是否跳转到已有的 worktree? (Y/n)
+```
+
+#### 目录已存在但分支不同
+
+你可以从以下选项中选择：
+
+- **覆盖**：删除并重新创建 worktree
+- **复用**：直接使用已有目录
+- **取消**：中止操作
+
+指定 `--force` 时，vibe 会跳过这些提示。如果分支已被其他 worktree 使用，vibe 会跳转到该 worktree。如果目标目录是其他分支的 worktree，vibe 会覆盖它并创建所请求的 worktree。
+
+### Worktree 的位置
+
+默认情况下，worktree 会作为主仓库的同级目录创建：
+
+```
+/path/to/repo/           # 主仓库
+/path/to/repo-feat-new-feature/  # worktree
+```
+
+## 工作流程
+
+执行 `vibe start` 时：
+
+1. **pre-start 钩子**在源仓库中执行（如已配置）
+2. **创建 worktree**：创建 Git worktree
+3. **复制文件**：复制文件/目录（如已配置）
+4. **post-start 钩子**在新 worktree 中执行（如已配置）
+5. **切换目录**：终端切换到新的 worktree
+
+## 相关内容
+
+- [clean](/zh/commands/clean/) - 完成后删除 worktree
+- [钩子](/zh/configuration/hooks/) - 配置自动化工作流

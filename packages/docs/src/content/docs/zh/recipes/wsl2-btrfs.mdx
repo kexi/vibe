@@ -1,0 +1,65 @@
+---
+title: WSL2 + btrfs
+description: 通过挂载 btrfs 卷在 WSL2 中启用真正的 Copy-on-Write (reflink) 复制
+sidebar:
+  order: 5
+---
+
+在 WSL2 内部，vibe 以 Linux 身份运行，并会自动选择 `clone`（`cp --reflink`）或 `rsync` [复制策略](/zh/configuration/vibe-toml/#复制性能优化)——无需任何配置。但 WSL2 的根文件系统始终是 **ext4**，它并不支持 reflink，因此 `cp --reflink=auto` 会静默地回退为完整复制。
+
+要在 WSL2 中获得真正的 Copy-on-Write，需要单独挂载一个 **btrfs** 卷，并把项目（例如 `node_modules`）放在上面。只要项目位于 btrfs 上，vibe 现有的 `clone` 策略就会自动产生瞬时的 CoW 复制。
+
+## 为什么 WSL 根目录无法实现 CoW
+
+- WSL2 的根目录是 **ext4** 且被硬编码——无法通过 `.wslconfig` 或 `wsl.conf` 配置（参见 [microsoft/WSL#9339](https://github.com/microsoft/WSL/issues/9339)）。
+- 使用「btrfs 发行版」（openSUSE / Fedora）**并不能**解决问题：无论使用哪个发行版，WSL 都会把 rootfs 解包到它自己的 ext4 VHDX 中。
+- 对根目录执行 `btrfs-convert` **并不可行**——转换后的根目录无法在 WSL 中启动。
+- reflink 只能在**同一文件系统内**工作，因此源文件和副本必须都位于 btrfs 卷上。
+
+## 推荐方案 — 挂载一块辅助的 btrfs VHD
+
+:::caution
+`wsl --mount` 需要 Windows 11（或 Store 版本的 WSL）以及**管理员权限**的 PowerShell（以管理员身份运行）。
+:::
+
+在 Windows 一侧，打开管理员权限的 PowerShell，创建 VHD 并将其挂接到 WSL：
+
+```powershell
+New-VHD -Path C:\wsl\dev-btrfs.vhdx -Dynamic -SizeBytes 128GB -BlockSizeBytes 1MB
+wsl --mount --vhd C:\wsl\dev-btrfs.vhdx --bare
+```
+
+然后在 WSL 内部，对该卷执行一次格式化和挂载：
+
+```bash
+lsblk                                  # 找到新设备，例如 /dev/sdd
+sudo mkfs.btrfs /dev/sdd
+sudo mkdir -p /mnt/btrfs
+sudo blkid /dev/sdd                    # 复制 UUID
+echo 'UUID=<uuid> /mnt/btrfs btrfs defaults,nofail 0 0' | sudo tee -a /etc/fstab
+sudo mount -a
+sudo chown $USER:$USER /mnt/btrfs
+
+# 把项目放到 btrfs 卷上；reflink 在其内部可以工作
+mv ~/myproject /mnt/btrfs/myproject
+cd /mnt/btrfs && cp --reflink=always -r myproject myproject-copy
+```
+
+## 重启后重新挂接
+
+`wsl --mount --vhd ... --bare` 是宿主机一侧的操作，在 Windows 重启后必须重新执行（例如设置一个「使用最高权限运行」的登录时任务计划）。磁盘挂接完成后，`/etc/fstab` 会自动挂载它（`automount.mountFsTab` 默认为 `true`）。
+
+## 注意事项
+
+:::caution
+
+- 跨文件系统的 reflink 是不可能的——从 ext4 根目录复制到 btrfs 卷是完整复制。
+- 在同一个 btrfs 上跨挂载点使用 reflink 需要内核 ≥ 5.18；WSL2 的 6.6 内核满足该条件。
+  :::
+
+## 参考资料
+
+- [MS Learn – 在 WSL2 中挂载 Linux 磁盘](https://learn.microsoft.com/zh-cn/windows/wsl/wsl2-mount-disk)
+- [microsoft/WSL#9339 – 非 ext4 根文件系统](https://github.com/microsoft/WSL/issues/9339)
+- [btrfs docs – Reflink](https://btrfs.readthedocs.io/en/latest/Reflink.html)
+- vibe – [复制性能优化](/zh/configuration/vibe-toml/#复制性能优化)

@@ -1,35 +1,35 @@
-> 🇯🇵 [日本語版](./multi-runtime.ja.md) | 🇨🇳 [简体中文](./multi-runtime.zh.md)
+> 🇺🇸 [English](./multi-runtime.md) | 🇯🇵 [日本語版](./multi-runtime.ja.md)
 
 # Multi-Runtime Support
 
-> **Historical note:** The TypeScript implementation described here was removed in Phase 6 of the Rust port. vibe is now a single Rust binary and the worktree logic lives in `rust/crates/vibe-core`. This document is retained as design history.
+> **历史性说明：** 此处描述的 TypeScript 实现已在 Rust 移植的 Phase 6 中被删除。vibe 现在是单一的 Rust 二进制文件，worktree 逻辑位于 `rust/crates/vibe-core`。本文档作为设计历史保留。
 
-In the TypeScript-era implementation, vibe provided a runtime abstraction layer that enabled the CLI to run on multiple JavaScript/TypeScript runtimes including Deno, Node.js, and Bun. The current implementation is a single Rust binary and does not support Deno.
+在 TypeScript 时代的实现中，vibe 提供了一个运行时抽象层，使 CLI 能够在包括 Deno、Node.js 和 Bun 在内的多个 JavaScript/TypeScript 运行时上运行。当前实现是单一的 Rust 二进制文件，不支持 Deno。
 
-## What is the Runtime Abstraction Layer?
+## 什么是运行时抽象层？
 
-The runtime abstraction layer provides a unified interface for platform-specific operations such as file system access, process execution, and environment variables. This allows the same codebase to run on different runtimes without modification.
+运行时抽象层为文件系统访问、进程执行、环境变量等平台相关操作提供统一的接口。这使得同一套代码库无需修改即可在不同运行时上运行。
 
-**Benefits:**
+**优势：**
 
-- Single codebase for multiple runtimes
-- Easy testing with mock implementations
-- Consistent API across platforms
-- Dependency injection support
+- 面向多个运行时的单一代码库
+- 借助 mock 实现轻松测试
+- 跨平台一致的 API
+- 支持依赖注入
 
-## Architecture Overview
+## 架构概览
 
 ```mermaid
 flowchart TD
-    subgraph App["Application Code"]
+    subgraph App["应用程序代码"]
         AppDesc["commands, services, utils"]
     end
 
     subgraph Ctx["AppContext"]
-        CtxDesc["Dependency Injection Container"]
+        CtxDesc["依赖注入容器"]
     end
 
-    subgraph Runtime["Runtime Interface"]
+    subgraph Runtime["Runtime 接口"]
         RuntimeDesc["fs, process, env, build, control, io, errors, signals"]
     end
 
@@ -47,25 +47,25 @@ flowchart TD
     Runtime --> Node
 ```
 
-## Runtime Interface
+## Runtime 接口
 
-The `Runtime` interface (`packages/core/src/runtime/types.ts`) defines the contract for all runtime implementations:
+`Runtime` 接口（`packages/core/src/runtime/types.ts`）定义了所有运行时实现必须遵守的契约：
 
-| Module    | Description                          | Example Methods                        |
-| --------- | ------------------------------------ | -------------------------------------- |
-| `fs`      | File system operations               | readFile, writeTextFile, mkdir, rename |
-| `process` | Process execution                    | run, spawn                             |
-| `env`     | Environment variables                | get, set, delete, toObject             |
-| `build`   | Platform information                 | os, arch                               |
-| `control` | Process control                      | exit, chdir, cwd, execPath, args       |
-| `io`      | Standard I/O streams                 | stdin, stderr                          |
-| `errors`  | Runtime-specific error types         | NotFound, AlreadyExists, isNotFound    |
-| `signals` | Signal handling                      | addListener, removeListener            |
-| `ffi`     | FFI operations (Deno-only, optional) | dlopen                                 |
+| 模块      | 说明                            | 方法示例                               |
+| --------- | ------------------------------- | -------------------------------------- |
+| `fs`      | 文件系统操作                    | readFile, writeTextFile, mkdir, rename |
+| `process` | 进程执行                        | run, spawn                             |
+| `env`     | 环境变量                        | get, set, delete, toObject             |
+| `build`   | 平台信息                        | os, arch                               |
+| `control` | 进程控制                        | exit, chdir, cwd, execPath, args       |
+| `io`      | 标准 I/O 流                     | stdin, stderr                          |
+| `errors`  | 运行时特有的错误类型            | NotFound, AlreadyExists, isNotFound    |
+| `signals` | 信号处理                        | addListener, removeListener            |
+| `ffi`     | FFI 操作（仅 Deno，可选）       | dlopen                                 |
 
-## Runtime Detection
+## 运行时检测
 
-The runtime is automatically detected at module load time:
+运行时在模块加载时被自动检测：
 
 ```typescript
 // From packages/core/src/runtime/index.ts
@@ -92,11 +92,11 @@ function detectRuntime(): "deno" | "node" | "bun" {
 }
 ```
 
-## Implementation Details
+## 实现细节
 
 ### Deno Runtime
 
-Uses Deno's built-in APIs directly:
+直接使用 Deno 的内置 API：
 
 ```typescript
 // packages/core/src/runtime/deno/fs.ts
@@ -118,7 +118,7 @@ export const denoFS: RuntimeFS = {
 
 ### Node.js Runtime
 
-Wraps Node.js APIs to match the Runtime interface:
+将 Node.js API 包装为符合 Runtime 接口的形式：
 
 ```typescript
 // packages/core/src/runtime/node/fs.ts
@@ -144,11 +144,11 @@ export const nodeFS: RuntimeFS = {
 };
 ```
 
-## Usage Pattern
+## 使用模式
 
 ### Application Context
 
-The `AppContext` provides dependency injection for the runtime:
+`AppContext` 为运行时提供依赖注入：
 
 ```typescript
 // packages/core/src/context/index.ts
@@ -159,9 +159,9 @@ export interface AppContext {
 }
 ```
 
-### Using in Functions
+### 在函数中使用
 
-Functions accept an optional `ctx` parameter with a default value:
+函数接收一个带默认值的可选 `ctx` 参数：
 
 ```typescript
 export async function someFunction(
@@ -184,9 +184,9 @@ export async function someFunction(
 }
 ```
 
-### Initialization
+### 初始化
 
-At application startup:
+在应用程序启动时：
 
 ```typescript
 import { initRuntime, createAppContext, setGlobalContext } from "./runtime/index.ts";
@@ -200,9 +200,9 @@ const ctx = createAppContext(runtime);
 setGlobalContext(ctx);
 ```
 
-## Testing Support
+## 测试支持
 
-The abstraction layer enables easy mocking for tests:
+抽象层使得测试中的 mock 变得容易：
 
 ```typescript
 // Create a mock runtime
@@ -223,7 +223,7 @@ const testCtx: AppContext = { runtime: mockRuntime };
 await someFunction(options, testCtx);
 ```
 
-## File Structure
+## 文件结构
 
 ```
 packages/core/src/runtime/
@@ -251,15 +251,32 @@ packages/core/src/context/
 └── index.ts           # AppContext definition and management
 ```
 
-## Platform-specific Features
+**文件说明：**
 
-| Feature               | Deno | Node.js | Bun   |
-| --------------------- | ---- | ------- | ----- |
-| File System           | Yes  | Yes     | Yes\* |
-| Process Execution     | Yes  | Yes     | Yes\* |
-| Environment Variables | Yes  | Yes     | Yes\* |
-| Signal Handling       | Yes  | Yes     | Yes\* |
-| FFI (Native Calls)    | Yes  | No\*\*  | No    |
+| 文件               | 说明                     |
+| ------------------ | ------------------------ |
+| `runtime/index.ts` | 运行时检测与初始化       |
+| `runtime/types.ts` | Runtime 接口定义         |
+| `deno/index.ts`    | Deno 运行时组装          |
+| `node/index.ts`    | Node.js 运行时组装       |
+| `*/fs.ts`          | 文件系统实现             |
+| `*/process.ts`     | 进程执行实现             |
+| `*/env.ts`         | 环境变量与控制的实现     |
+| `*/io.ts`          | I/O 流实现               |
+| `*/errors.ts`      | 错误类型实现             |
+| `*/signals.ts`     | 信号处理实现             |
+| `deno/ffi.ts`      | FFI 实现（仅 Deno）      |
+| `context/index.ts` | AppContext 定义与管理    |
 
-\* Bun uses the Node.js runtime implementation
-\*\* Node.js requires the `@kexi/vibe-native` package for native operations
+## 平台相关功能
+
+| 功能             | Deno | Node.js | Bun   |
+| ---------------- | ---- | ------- | ----- |
+| 文件系统         | Yes  | Yes     | Yes\* |
+| 进程执行         | Yes  | Yes     | Yes\* |
+| 环境变量         | Yes  | Yes     | Yes\* |
+| 信号处理         | Yes  | Yes     | Yes\* |
+| FFI（原生调用）  | Yes  | No\*\*  | No    |
+
+\* Bun 使用 Node.js 运行时实现
+\*\* Node.js 的原生操作需要 `@kexi/vibe-native` 包

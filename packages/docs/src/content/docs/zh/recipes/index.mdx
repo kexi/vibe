@@ -1,0 +1,21 @@
+---
+title: 实用配方
+description: 将 vibe 与其他工具集成的简短可复制代码片段
+sidebar:
+  order: 1
+---
+
+这里收集了一批极简的 `.vibe.toml` 代码片段，用于满足「我还想让 vibe 顺便做 X」这类常见的工作流需求。
+
+每个配方都刻意保持精简——只有一两行 TOML，可以直接粘贴到你现有的配置中。完整的钩子参考请见[钩子](/zh/configuration/hooks/)。
+
+## 内容一览
+
+- [cmux](/zh/recipes/cmux/) — 在新的 worktree 中打开一个 cmux 工作区
+- [tmux](/zh/recipes/tmux/) — 把 tmux 窗格分割到新的 worktree
+- [direnv](/zh/recipes/direnv/) — 对新的 worktree 自动执行 `direnv allow`
+- [WSL2 + btrfs](/zh/recipes/wsl2-btrfs/) — 通过挂载 btrfs 卷在 WSL2 中启用真正的 CoW 复制
+
+:::tip
+这些配方只使用有文档记载的环境变量（`VIBE_WORKTREE_PATH`、`VIBE_ORIGIN_PATH`）和 `sh` 兼容语法，因此在 macOS 和 Linux 上都可以开箱即用。
+:::

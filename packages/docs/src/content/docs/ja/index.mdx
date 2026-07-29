@@ -49,9 +49,14 @@ import { Card, CardGrid } from "@astrojs/starlight/components";
 # Homebrewでインストール (macOS)
 brew install kexi/tap/vibe
 
+# シェル統合をセットアップ (~/.zshrcに追加)
+vibe() { eval "$(command vibe "$@")" }
+
 # 新機能用のWorktreeを作成
 vibe start feat/new-feature
 
 # 作業完了後、クリーンアップ
 vibe clean
 ```
+
+> **注:** 他のシェルをお使いですか？ Bash、Fish、Nushell、PowerShell の設定は[はじめに](/ja/getting-started/#2-シェルを設定)ガイドをご覧ください。

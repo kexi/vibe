@@ -30,6 +30,13 @@ jobs:
         run: bun run fmt:check
       - name: Run linter
         run: bun run lint
+      # Documentation i18n (en/ja/zh): triplet completeness, docs-site locale
+      # mirroring, and cross-language header links. Pure filesystem inspection —
+      # no cargo, no build — so it belongs in the cheap lint job rather than the
+      # docs job, which is skipped when nothing under packages/docs/ changed and
+      # would therefore miss a root README/docs translation going stale.
+      - name: Check documentation i18n sync
+        run: pnpm run check:i18n
       # The npm-package tests (launcher shim + the release/packaging scripts)
       # otherwise run only in publish-npm.yml, i.e. after the merge that would
       # have broken them. This job already has pnpm install, so they gate the PR.

@@ -1,4 +1,4 @@
-> 🇺🇸 [English](./architecture.md)
+> 🇺🇸 [English](./architecture.md) | 🇨🇳 [简体中文](./architecture.zh.md)
 
 # アーキテクチャ概要
 

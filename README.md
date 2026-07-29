@@ -2,7 +2,7 @@
 
 A super fast CLI tool for easy Git Worktree management.
 
-[日本語](README.ja.md)
+[日本語](README.ja.md) | [简体中文](README.zh.md)
 
 ## Documentation
 
