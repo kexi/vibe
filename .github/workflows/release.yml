@@ -63,6 +63,34 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
+      # The relicense (#553) draws the line at v3.0.0: 2.x was published under
+      # Apache-2.0 and must stay that way, everything from 3.0.0 on is MIT.
+      # Both arms assert the license they REQUIRE rather than the one they
+      # reject. Why not "fail if 2.x sees MIT": that shape passes a 3.x built
+      # from a stale Apache tree, and any rewording of LICENSE (e.g. "The MIT
+      # License (MIT)") silently disables it — a missing match would mean
+      # "allowed" instead of "stop". Requiring a positive match fails closed on
+      # both an unexpected version/license pairing and on wording drift.
+      - name: Assert LICENSE matches the release version's licensing era
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          case "$VERSION" in
+            2.*)
+              EXPECTED="Apache License"
+              ERA="the 2.x line is Apache-2.0"
+              ;;
+            *)
+              EXPECTED="MIT License"
+              ERA="releases from 3.0.0 on are MIT"
+              ;;
+          esac
+          if ! grep -q "$EXPECTED" LICENSE; then
+            echo "::error::Refusing to release v$VERSION: LICENSE does not contain \"$EXPECTED\" ($ERA — see #553)."
+            exit 1
+          fi
+          echo "License/version consistency check passed for $VERSION (LICENSE contains \"$EXPECTED\")"
+
       - name: Determine release state
         id: state
         env:
@@ -478,6 +506,14 @@ jobs:
             exit 1
           fi
 
+          # The tap is a separately-published statement of vibe's license; a
+          # formula still claiming the pre-v3 Apache-2.0 terms must not ship.
+          if ! grep -q 'license "MIT"' "Formula/${FORMULA_TEMPLATE}"; then
+            echo "::error::Formula/${FORMULA_TEMPLATE} does not declare license \"MIT\" (vibe is MIT-licensed from v3.0.0)"
+            grep -n "license" "Formula/${FORMULA_TEMPLATE}" || true
+            exit 1
+          fi
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add "Formula/${FORMULA_TEMPLATE}"
@@ -504,6 +540,12 @@ jobs:
           if grep -q "PLACEHOLDER" "Formula/${VERSIONED_FORMULA}"; then
             echo "Error: Placeholders were not replaced correctly in versioned formula"
             grep "PLACEHOLDER" "Formula/${VERSIONED_FORMULA}"
+            exit 1
+          fi
+
+          if ! grep -q 'license "MIT"' "Formula/${VERSIONED_FORMULA}"; then
+            echo "::error::Formula/${VERSIONED_FORMULA} does not declare license \"MIT\" (vibe is MIT-licensed from v3.0.0)"
+            grep -n "license" "Formula/${VERSIONED_FORMULA}" || true
             exit 1
           fi
 

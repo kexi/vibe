@@ -241,6 +241,15 @@ This project follows [GNU Coding Standards](https://www.gnu.org/prep/standards/)
 - Use long options with `--` prefix (e.g., `--verbose`)
 - Use short options with `-` prefix (e.g., `-v`)
 
+## License
+
+vibe is released under the MIT License (see [LICENSE](LICENSE)). By submitting a
+contribution, you agree that it is licensed under the same terms as the project
+itself — inbound license equals outbound license. No separate CLA is required.
+
+Releases up to and including v2.x were published under Apache-2.0; MIT applies
+from v3.0.0 onward (see [#553](https://github.com/kexi/vibe/issues/553)).
+
 ## Security Guidelines
 
 When contributing to vibe, please keep these security considerations in mind:

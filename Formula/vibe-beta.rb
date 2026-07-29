@@ -2,7 +2,7 @@ class VibeBeta < Formula
   desc "Git worktree helper CLI (beta channel)"
   homepage "https://github.com/kexi/vibe"
   version "VERSION_PLACEHOLDER"
-  license "Apache-2.0"
+  license "MIT"
 
 
   on_macos do

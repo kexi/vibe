@@ -9,12 +9,14 @@
  * thing that controls what `npm publish` includes, so a wrong glob (or a missing
  * staging step) would silently publish an empty / non-runnable package. This
  * script runs `npm pack --dry-run --json` (no tarball written) and fails unless
- * the planned contents include BOTH:
- *   - bin/vibe, with an executable mode bit set, and
- *   - THIRD-PARTY-LICENSES.md.
+ * the planned contents include ALL of:
+ *   - bin/vibe, with an executable mode bit set,
+ *   - THIRD-PARTY-LICENSES.md, and
+ *   - LICENSE (vibe's own MIT terms; npm includes a top-level LICENSE
+ *     irrespective of `files`, so its absence means staging did not run).
  *
  * It must run AFTER scripts/stage-platform-package.ts has staged the binary and
- * the license into the package dir (the bin/ dirs are gitignored).
+ * the licenses into the package dir (the bin/ dirs are gitignored).
  *
  * Usage:
  *   bun run scripts/verify-platform-tarball.ts --package vibe-linux-x64
@@ -38,7 +40,9 @@ interface PackResult {
 
 // The Windows package ships `bin/vibe.exe`; every other platform ships the
 // extensionless `bin/vibe`. The caller derives the right name from the package.
-const LICENSE_FILE = "THIRD-PARTY-LICENSES.md";
+const THIRD_PARTY_LICENSE_FILE = "THIRD-PARTY-LICENSES.md";
+const PROJECT_LICENSE_FILE = "LICENSE";
+const REQUIRED_LICENSE_FILES = [THIRD_PARTY_LICENSE_FILE, PROJECT_LICENSE_FILE];
 
 /** The staged binary's path inside the tarball for a given package directory. */
 export function binaryPathFor(dir: string): string {
@@ -77,7 +81,7 @@ export function findTarballProblems(files: PackEntry[], binName: string): string
   const byPath = new Map(files.map((f) => [f.path, f]));
   const problems: string[] = [];
 
-  for (const required of [binName, LICENSE_FILE]) {
+  for (const required of [binName, ...REQUIRED_LICENSE_FILES]) {
     if (!byPath.has(required)) {
       problems.push(`missing required file: ${required}`);
     }
@@ -119,7 +123,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`✓ ${dir}: tarball includes ${binName}, ${LICENSE_FILE}`);
+  console.log(`✓ ${dir}: tarball includes ${binName}, ${REQUIRED_LICENSE_FILES.join(", ")}`);
 }
 
 if (import.meta.main) {

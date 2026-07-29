@@ -12,7 +12,7 @@
     "bin/",
     "THIRD-PARTY-LICENSES.md"
   ],
-  "license": "Apache-2.0",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kexi/vibe.git"

@@ -1,8 +1,9 @@
 /**
  * Tests for scripts/verify-platform-tarball.ts (G-3) — asserts that a platform
- * package's planned npm tarball includes bin/vibe (executable) AND
- * THIRD-PARTY-LICENSES.md, so a wrong `files` glob or a skipped staging step
- * cannot publish an empty / non-runnable package.
+ * package's planned npm tarball includes bin/vibe (executable),
+ * THIRD-PARTY-LICENSES.md AND the project's own LICENSE, so a wrong `files`
+ * glob or a skipped staging step cannot publish an empty / non-runnable /
+ * license-less package.
  *
  * Only the pure validation (findTarballProblems) is unit-tested here; the
  * `npm pack --dry-run --json` invocation that feeds it is exercised by the CI
@@ -24,11 +25,12 @@ describe("binaryPathFor", () => {
 });
 
 describe("findTarballProblems", () => {
-  it("returns no problems when bin/vibe (executable) and the license are present", () => {
+  it("returns no problems when bin/vibe (executable) and both licenses are present", () => {
     const problems = findTarballProblems(
       [
         { path: "bin/vibe", size: 100, mode: execMode },
         { path: "THIRD-PARTY-LICENSES.md", size: 10, mode: plainMode },
+        { path: "LICENSE", size: 10, mode: plainMode },
         { path: "package.json", size: 50, mode: plainMode },
       ],
       "bin/vibe",
@@ -42,6 +44,7 @@ describe("findTarballProblems", () => {
         // Windows tarball entries carry no meaningful unix mode bits.
         { path: "bin/vibe.exe", size: 100, mode: plainMode },
         { path: "THIRD-PARTY-LICENSES.md", size: 10, mode: plainMode },
+        { path: "LICENSE", size: 10, mode: plainMode },
         { path: "package.json", size: 50, mode: plainMode },
       ],
       "bin/vibe.exe",
@@ -53,6 +56,7 @@ describe("findTarballProblems", () => {
     const problems = findTarballProblems(
       [
         { path: "THIRD-PARTY-LICENSES.md", size: 10, mode: plainMode },
+        { path: "LICENSE", size: 10, mode: plainMode },
         { path: "package.json", size: 50, mode: plainMode },
       ],
       "bin/vibe",
@@ -64,6 +68,7 @@ describe("findTarballProblems", () => {
     const problems = findTarballProblems(
       [
         { path: "bin/vibe", size: 100, mode: execMode },
+        { path: "LICENSE", size: 10, mode: plainMode },
         { path: "package.json", size: 50, mode: plainMode },
       ],
       "bin/vibe",
@@ -71,11 +76,24 @@ describe("findTarballProblems", () => {
     expect(problems.some((p) => p.includes("THIRD-PARTY-LICENSES.md"))).toBe(true);
   });
 
+  it("flags a missing LICENSE (vibe's own terms must ship in the tarball)", () => {
+    const problems = findTarballProblems(
+      [
+        { path: "bin/vibe", size: 100, mode: execMode },
+        { path: "THIRD-PARTY-LICENSES.md", size: 10, mode: plainMode },
+        { path: "package.json", size: 50, mode: plainMode },
+      ],
+      "bin/vibe",
+    );
+    expect(problems).toEqual(["missing required file: LICENSE"]);
+  });
+
   it("flags a non-executable unix binary", () => {
     const problems = findTarballProblems(
       [
         { path: "bin/vibe", size: 100, mode: plainMode },
         { path: "THIRD-PARTY-LICENSES.md", size: 10, mode: plainMode },
+        { path: "LICENSE", size: 10, mode: plainMode },
       ],
       "bin/vibe",
     );
@@ -87,7 +105,7 @@ describe("findTarballProblems", () => {
       [{ path: "package.json", size: 50, mode: plainMode }],
       "bin/vibe",
     );
-    // Both required files missing.
-    expect(problems.length).toBe(2);
+    // Binary + both license files missing.
+    expect(problems.length).toBe(3);
   });
 });

@@ -2,7 +2,7 @@ class VibeATCLASSNAME_PLACEHOLDER < Formula
   desc "Git worktree helper CLI (versioned)"
   homepage "https://github.com/kexi/vibe"
   version "VERSION_PLACEHOLDER"
-  license "Apache-2.0"
+  license "MIT"
   keg_only :versioned_formula
 
   on_macos do
