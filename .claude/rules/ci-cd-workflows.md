@@ -17,17 +17,22 @@ Before adding a setup action, check:
 
 1. Does the job just need the standard project toolchain (bun, node, pnpm, ruby,
    rust/rustup, pinact, git)? → use `./.github/actions/setup-toolchain`.
-2. Does the job need a tool the dev shell does not provide? → add it to
+2. Does the job run bare `nix` commands and must NOT build/enter the dev shell
+   (e.g. `nix build` in `nix.yml`)? → use `./.github/actions/setup-nix` (Nix
+   install + store cache only), with a job-specific cache key.
+3. Does the job need a tool the dev shell does not provide? → add it to
    `flake.nix` `devShells.default` (so it is available locally and in CI), then
    use the composite action.
-3. Is it a one-off, distribution-specific tool (e.g. `denoland/setup-deno` for
+4. Is it a one-off, distribution-specific tool (e.g. `denoland/setup-deno` for
    JSR smoke tests, or `actions/setup-node` purely for npm registry auth)? → use
    the individual action as a fallback, on top of `setup-toolchain` if needed.
 
 ### How `setup-toolchain` works
 
-- **Linux/macOS**: installs Nix (`DeterminateSystems/nix-installer-action` +
-  `magic-nix-cache-action`), enters the flake dev shell, and exposes its tools
+- **Linux/macOS**: calls `./.github/actions/setup-nix` — the single home of the
+  `DeterminateSystems/determinate-nix-action` and
+  `nix-community/cache-nix-action` pins, which installs Determinate Nix and
+  caches the Nix store — then enters the flake dev shell and exposes its tools
   on `PATH` for all subsequent `run:` steps. No `nix develop --command` prefix
   is needed — steps look the same as on any runner.
 - **Windows**: Nix does not run on Windows, so it falls back to
@@ -75,7 +80,7 @@ steps:
 2. **Consistency**: the exact same dev shell is used locally (`nix develop`) and in CI
 3. **Simpler workflows**: one composite action instead of several setup actions
 4. **Reproducibility**: `flake.lock` pins the entire toolchain to a nixpkgs commit
-5. **Faster CI**: `magic-nix-cache-action` caches the Nix store across runs
+5. **Faster CI**: `nix-community/cache-nix-action` caches the Nix store across runs
 
 ### Adding New Tools
 

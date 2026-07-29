@@ -18,12 +18,16 @@ on:
   pull_request:
     branches: [main, develop]
 
+permissions:
+  contents: read
+
 jobs:
   # G-8: build the source derivation on BOTH Linux and macOS. The dev only
   # verified `nix build .#fromSource` on macOS locally, and CI previously only
   # exercised Linux, so a macOS-specific source-build break (e.g. the clonefile
   # cfg path or a Darwin-only dependency) could slip through. nix-on-macOS in CI
-  # is heavier (no magic-nix-cache hits on a cold runner) but catches that gap.
+  # is heavier (a cold runner starts from an empty Nix store) but catches that
+  # gap.
   nix-build:
     strategy:
       fail-fast: false
@@ -63,11 +67,21 @@ jobs:
         if: steps.nix_changes.outputs.should_run == 'false'
         run: echo "No Nix-relevant changes; required check passes without running Nix."
 
-      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      # setup-nix rather than setup-toolchain: this job runs bare `nix` builds
+      # and must not build/enter the dev shell. The key prefix is `nix-build-`
+      # — distinct from the dev-shell cache — because cache entries are
+      # immutable per key: sharing the key across workflows would let the
+      # dev-shell store win the save and the `.#fromSource` build dependencies
+      # would never be cached. rust/Cargo.lock is hashed in for the same
+      # reason: the fromSource build vendors its crate deps from it (flake.nix
+      # `cargoLock.lockFile`), and with an exact primary-key hit the save is
+      # skipped, so a key that ignored Cargo.lock would never cache a new
+      # dependency set.
+      - uses: ./.github/actions/setup-nix
         if: steps.nix_changes.outputs.should_run == 'true'
-
-      - uses: DeterminateSystems/magic-nix-cache-action@908b263ff629f4cc17666315b7fd3ec127c6244d # v14
-        if: steps.nix_changes.outputs.should_run == 'true'
+        with:
+          primary-key: nix-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock', 'rust/Cargo.lock') }}
+          restore-prefix: nix-build-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Check flake
         if: steps.nix_changes.outputs.should_run == 'true'
