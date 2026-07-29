@@ -26,9 +26,10 @@ Before adding a setup action, check:
 
 ### How `setup-toolchain` works
 
-- **Linux/macOS**: installs Nix (`DeterminateSystems/nix-installer-action` +
-  `magic-nix-cache-action`), enters the flake dev shell, and exposes its tools
-  on `PATH` for all subsequent `run:` steps. No `nix develop --command` prefix
+- **Linux/macOS**: installs Determinate Nix
+  (`DeterminateSystems/determinate-nix-action`), caches the Nix store with
+  `nix-community/cache-nix-action`, enters the flake dev shell, and exposes its
+  tools on `PATH` for all subsequent `run:` steps. No `nix develop --command` prefix
   is needed — steps look the same as on any runner.
 - **Windows**: Nix does not run on Windows, so it falls back to
   `oven-sh/setup-bun` + `actions/setup-node` + `pnpm/action-setup`, pinned to the
@@ -75,7 +76,7 @@ steps:
 2. **Consistency**: the exact same dev shell is used locally (`nix develop`) and in CI
 3. **Simpler workflows**: one composite action instead of several setup actions
 4. **Reproducibility**: `flake.lock` pins the entire toolchain to a nixpkgs commit
-5. **Faster CI**: `magic-nix-cache-action` caches the Nix store across runs
+5. **Faster CI**: `nix-community/cache-nix-action` caches the Nix store across runs
 
 ### Adding New Tools
 

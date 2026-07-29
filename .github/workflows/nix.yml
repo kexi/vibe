@@ -23,7 +23,8 @@ jobs:
   # verified `nix build .#fromSource` on macOS locally, and CI previously only
   # exercised Linux, so a macOS-specific source-build break (e.g. the clonefile
   # cfg path or a Darwin-only dependency) could slip through. nix-on-macOS in CI
-  # is heavier (no magic-nix-cache hits on a cold runner) but catches that gap.
+  # is heavier (a cold runner starts from an empty Nix store) but catches that
+  # gap.
   nix-build:
     strategy:
       fail-fast: false
@@ -63,11 +64,20 @@ jobs:
         if: steps.nix_changes.outputs.should_run == 'false'
         run: echo "No Nix-relevant changes; required check passes without running Nix."
 
-      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      - uses: DeterminateSystems/determinate-nix-action@d96678350ffd6a456235832eb11e1c491589b7bb # v3.21.8
         if: steps.nix_changes.outputs.should_run == 'true'
 
-      - uses: DeterminateSystems/magic-nix-cache-action@908b263ff629f4cc17666315b7fd3ec127c6244d # v14
+      # Same store-caching approach as setup-toolchain (see its rationale for
+      # preferring cache-nix-action over the retired magic-nix-cache). The key
+      # prefix is `nix-build-` — distinct from the dev-shell cache — because
+      # cache entries are immutable per key: sharing the key would let the
+      # dev-shell store win the save and the `.#fromSource` build dependencies
+      # would never be cached.
+      - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         if: steps.nix_changes.outputs.should_run == 'true'
+        with:
+          primary-key: nix-build-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-build-${{ runner.os }}-
 
       - name: Check flake
         if: steps.nix_changes.outputs.should_run == 'true'

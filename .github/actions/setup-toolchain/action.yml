@@ -10,7 +10,7 @@ runs:
     # --- Linux/macOS: Nix flake dev shell ---
     - name: Install Nix
       if: runner.os != 'Windows'
-      uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      uses: DeterminateSystems/determinate-nix-action@d96678350ffd6a456235832eb11e1c491589b7bb # v3.21.8
     # Cache the Nix store via the standard GitHub Actions cache (actions/cache
     # under the hood). Unlike magic-nix-cache, this does not reverse-engineer
     # GitHub's cache API, so it is not subject to the 418/429 throttling that
