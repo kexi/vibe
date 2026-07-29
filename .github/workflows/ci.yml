@@ -30,6 +30,17 @@ jobs:
         run: bun run fmt:check
       - name: Run linter
         run: bun run lint
+      # The npm-package tests (launcher shim + the release/packaging scripts)
+      # otherwise run only in publish-npm.yml, i.e. after the merge that would
+      # have broken them. This job already has pnpm install, so they gate the PR.
+      - name: Run npm package tests
+        run: pnpm run test:npm
+      # THIRD-PARTY-LICENSES.md freshness + the `ring` link guard. Needs cargo
+      # (cargo metadata / cargo tree), which setup-toolchain provides here.
+      # publish-npm.yml also runs --check, but only immediately before publish —
+      # too late to be a PR gate.
+      - name: Check third-party license notices
+        run: pnpm run check:licenses
 
   rust-linux:
     if: github.event_name == 'push' || github.base_ref == 'main'
@@ -172,6 +183,15 @@ jobs:
         run: |
           VERSION=$(bun run scripts/get-version.ts)
           bun run scripts/build-deb.ts "$VERSION" ${{ matrix.arch }} "rust/target/${{ matrix.target }}/release/vibe"
+
+      # Inspect the archive (no install, no sudo): a package that drops
+      # usr/share/doc/vibe/copyright or THIRD-PARTY-LICENSES.md still passes the
+      # smoke test below, so the contents are asserted separately.
+      - name: Verify .deb contents
+        run: |
+          set -euo pipefail
+          VERSION=$(bun run scripts/get-version.ts)
+          bun run scripts/verify-deb.ts "vibe_${VERSION}_${{ matrix.arch }}.deb"
 
       # G-11: install the freshly built .deb and run the installed binary, so a
       # broken package layout (wrong install path, missing exec bit, bad control

@@ -243,6 +243,17 @@ jobs:
           chmod +x "$BINARY"
           bun run scripts/build-deb.ts "$VERSION" "$ARCH" "$BINARY"
 
+      # Inspect the archive before it becomes a release asset: the .deb must
+      # carry usr/share/doc/vibe/copyright and THIRD-PARTY-LICENSES.md, neither
+      # of which any other release check would notice missing.
+      - name: Verify .deb contents
+        env:
+          ARCH: ${{ matrix.arch }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          bun run scripts/verify-deb.ts "vibe_${VERSION}_${ARCH}.deb"
+
       - name: Upload .deb artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

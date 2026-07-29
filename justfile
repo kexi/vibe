@@ -18,7 +18,7 @@ default:
 
 # --- Aggregate check ---
 
-# All checks required before opening a PR (fmt:check + lint + check:rust + test:npm + test:e2e + check:docs).
+# All checks required before opening a PR (fmt:check + lint + check:rust + check:licenses + test:npm + test:e2e + check:docs).
 check:
     pnpm run check:all
 
@@ -37,6 +37,10 @@ run *args:
 # Rust (shipped binary) — fmt + clippy + workspace tests.
 check-rust:
     pnpm run check:rust
+
+# Third-party license notices — THIRD-PARTY-LICENSES.md freshness + the ring link guard.
+check-licenses:
+    pnpm run check:licenses
 
 # Docs package checks only (lint + format + check).
 check-docs:
