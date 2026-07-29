@@ -119,6 +119,25 @@ describe("Rust workspace license", () => {
     // would trip it — a false positive about prose, not about the declaration.
     expect(readRepoFile("rust/Cargo.toml")).toMatch(/^license = "MIT"$/m);
   });
+
+  it("every crate inherits the workspace license (no per-crate override)", () => {
+    // The workspace assertion above proves nothing about the crates: a crate
+    // that replaces `license.workspace = true` with its own `license = "..."`
+    // wins over the workspace value and would ship under different terms while
+    // every check here still passed. Scanned from disk for the same reason as
+    // the packages/ manifests.
+    const cratesDir = join(REPO_ROOT, "rust", "crates");
+    const crates = readdirSync(cratesDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .filter((e) => existsSync(join(cratesDir, e.name, "Cargo.toml")));
+    expect(crates.length).toBeGreaterThan(0);
+    for (const crate of crates) {
+      const rel = `rust/crates/${crate.name}/Cargo.toml`;
+      const manifest = readRepoFile(rel);
+      expect(manifest, rel).toMatch(/^license\.workspace = true$/m);
+      expect(manifest, rel).not.toMatch(/^license = /m);
+    }
+  });
 });
 
 describe("Homebrew formula licenses", () => {
