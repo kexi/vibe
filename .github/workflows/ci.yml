@@ -345,12 +345,18 @@ jobs:
       # Bun on Windows (Bun's execFile cannot launch the npm.cmd shim). The
       # Windows leg's real purpose — that the shim execs the binary — is covered
       # by the steps below, which run npm/pnpm through Git Bash, not Bun.
-      - name: Assert platform tarball contents (G-3)
+      - name: Assert platform and shim tarball contents (G-3)
         if: runner.os != 'Windows'
         env:
           PLATFORM: ${{ matrix.platform }}
           ARCH: ${{ matrix.arch }}
-        run: bun run scripts/verify-platform-tarball.ts --package "vibe-${PLATFORM}-${ARCH}"
+        run: |
+          bun run scripts/verify-platform-tarball.ts --package "vibe-${PLATFORM}-${ARCH}"
+          # Mirror publish-npm.yml's shim staging so the shim leg of G-3 (npm's
+          # implicit top-level-LICENSE inclusion actually firing for this
+          # package.json) is proven here in PR CI, not first at publish time.
+          cp LICENSE packages/npm/LICENSE
+          bun run scripts/verify-platform-tarball.ts --package npm
 
       - name: Pack shim and platform tarballs
         id: pack

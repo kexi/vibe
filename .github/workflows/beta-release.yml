@@ -37,29 +37,15 @@ jobs:
           echo "version=${BETA_VERSION}" >> $GITHUB_OUTPUT
           echo "Beta version: ${BETA_VERSION}"
 
-      # Same fail-closed assert as release.yml: betas are cut from develop, the
-      # branch where a half-applied relicense actually lands, so a mixed tree
-      # would otherwise ship a beta whose LICENSE contradicts its version. The
-      # 2.* match is on BASE_VERSION's prefix; the -beta.N suffix never affects it.
+      # Same fail-closed assert as release.yml (shared composite action, so the
+      # two workflows cannot drift): betas are cut from develop, the branch
+      # where a half-applied relicense actually lands, so a mixed tree would
+      # otherwise ship a beta whose LICENSE contradicts its version. The 2.*
+      # match is on BASE_VERSION's prefix; the -beta.N suffix never affects it.
       - name: Assert LICENSE matches the release version's licensing era
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          case "$VERSION" in
-            2.*)
-              EXPECTED="Apache License"
-              ERA="the 2.x line is Apache-2.0"
-              ;;
-            *)
-              EXPECTED="MIT License"
-              ERA="releases from 3.0.0 on are MIT"
-              ;;
-          esac
-          if ! grep -q "$EXPECTED" LICENSE; then
-            echo "::error::Refusing to release v$VERSION: LICENSE does not contain \"$EXPECTED\" ($ERA — see #553)."
-            exit 1
-          fi
-          echo "License/version consistency check passed for $VERSION (LICENSE contains \"$EXPECTED\")"
+        uses: ./.github/actions/assert-license-era
+        with:
+          version: ${{ steps.version.outputs.version }}
 
       - name: Check if release already exists
         id: check
@@ -314,11 +300,9 @@ jobs:
 
           # The tap is a separately-published statement of vibe's license; a
           # formula still claiming the pre-v3 Apache-2.0 terms must not ship.
-          if ! grep -q 'license "MIT"' Formula/vibe-beta.rb; then
-            echo "::error::Formula/vibe-beta.rb does not declare license \"MIT\" (vibe is MIT-licensed from v3.0.0)"
-            grep -n "license" Formula/vibe-beta.rb || true
-            exit 1
-          fi
+          # The check itself is shared with release.yml (../vibe-source is
+          # this repo's checkout — the same tree the formula was copied from).
+          bash ../vibe-source/scripts/assert-formula-license.sh Formula/vibe-beta.rb
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

@@ -420,28 +420,14 @@ jobs:
           cp LICENSE packages/npm/LICENSE
           test -s packages/npm/LICENSE
 
-      - name: Assert shim tarball includes LICENSE (G-3)
+      - name: Assert shim tarball contents (bin/vibe.cjs + LICENSE) (G-3)
         if: steps.guard.outputs.skip != 'true'
-        working-directory: packages/npm
         # Asserting the source file exists only proves the cp ran; this checks
         # what npm will actually pack. `files` does not list LICENSE, so the
         # tarball's contents rest entirely on npm's implicit-inclusion
-        # behaviour — verify it here rather than trusting it, exactly as the
-        # platform packages do via scripts/verify-platform-tarball.ts.
-        run: |
-          npm pack --dry-run --json > "$RUNNER_TEMP/shim-pack.json"
-          if ! node -e '
-            const r = require(process.env.RUNNER_TEMP + "/shim-pack.json");
-            const files = (r[0] && r[0].files || []).map((f) => f.path);
-            if (!files.includes("LICENSE")) {
-              console.error("packed files: " + files.join(", "));
-              process.exit(1);
-            }
-          '; then
-            echo "::error::@kexi/vibe tarball would not include LICENSE"
-            exit 1
-          fi
-          echo "OK: @kexi/vibe tarball includes LICENSE"
+        # behaviour — verify it here rather than trusting it, with the same
+        # unit-tested script the platform packages use.
+        run: bun run scripts/verify-platform-tarball.ts --package npm
 
       - name: Publish @kexi/vibe
         if: steps.guard.outputs.skip != 'true'
