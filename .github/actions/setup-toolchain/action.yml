@@ -8,22 +8,18 @@ runs:
   using: composite
   steps:
     # --- Linux/macOS: Nix flake dev shell ---
-    - name: Install Nix
+    # Keyed on the flake inputs so the cache invalidates only when the
+    # toolchain changes; the restore prefix lets unrelated changes still reuse
+    # the previous store. runner.arch is in the key because ci.yml runs both
+    # x64 (ubuntu-latest) and arm64 (ubuntu-24.04-arm) Linux runners, whose
+    # stores share no paths — an os-only key would let one arch win the save
+    # and leave the other permanently cold.
+    - name: Install Nix and cache the store
       if: runner.os != 'Windows'
-      uses: DeterminateSystems/determinate-nix-action@d96678350ffd6a456235832eb11e1c491589b7bb # v3.21.8
-    # Cache the Nix store via the standard GitHub Actions cache (actions/cache
-    # under the hood). Unlike magic-nix-cache, this does not reverse-engineer
-    # GitHub's cache API, so it is not subject to the 418/429 throttling that
-    # made CI flaky. Keyed on the flake inputs so the cache invalidates only
-    # when the toolchain changes; restore-prefixes lets unrelated changes still
-    # reuse the previous store. purge is left off so no `actions: write`
-    # permission is required.
-    - name: Nix store cache
-      if: runner.os != 'Windows'
-      uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
+      uses: ./.github/actions/setup-nix
       with:
-        primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
-        restore-prefixes-first-match: nix-${{ runner.os }}-
+        primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+        restore-prefix: nix-${{ runner.os }}-${{ runner.arch }}-
     - name: Load dev shell into environment
       if: runner.os != 'Windows'
       shell: bash

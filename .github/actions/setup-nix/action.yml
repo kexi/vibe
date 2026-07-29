@@ -1,0 +1,32 @@
+name: Setup Nix
+description: >-
+  Install Determinate Nix and cache the Nix store. Shared by setup-toolchain
+  (dev-shell jobs) and workflows that run bare `nix` commands without the dev
+  shell (nix.yml), so the two action pins live in exactly one place.
+inputs:
+  primary-key:
+    description: >-
+      Cache key for the Nix store. Include runner.arch: Nix store paths are
+      per-architecture, and CI runs both x64 and arm64 runners for the same
+      runner.os.
+    required: true
+  restore-prefix:
+    description: Key prefix to restore from on a primary-key miss.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Install Nix
+      uses: DeterminateSystems/determinate-nix-action@d96678350ffd6a456235832eb11e1c491589b7bb # v3.21.8
+    # Cache the Nix store via the standard GitHub Actions cache (actions/cache
+    # under the hood). Unlike the retired magic-nix-cache, this does not
+    # reverse-engineer GitHub's cache API, so it is not subject to the 418/429
+    # throttling that made CI flaky. purge is left off so no `actions: write`
+    # permission is required. Note cache entries are immutable per key: on an
+    # exact primary-key hit the post-step save is skipped, so the key must hash
+    # everything the cached store is derived from.
+    - name: Nix store cache
+      uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
+      with:
+        primary-key: ${{ inputs.primary-key }}
+        restore-prefixes-first-match: ${{ inputs.restore-prefix }}
