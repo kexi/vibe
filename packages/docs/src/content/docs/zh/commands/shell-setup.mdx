@@ -1,0 +1,98 @@
+---
+title: vibe shell-setup
+description: 输出用于 eval 的 shell 包装函数（以及可选的自动补全脚本）
+sidebar:
+  order: 10
+---
+
+`shell-setup` 命令会输出一个 shell 包装函数，使 vibe 能够在创建或清理 worktree 之后切换你当前的工作目录。它还可以在包装函数之后一并输出 fish 或 zsh 的自动补全脚本。
+
+## 使用方法
+
+```bash
+vibe shell-setup
+vibe shell-setup --shell <name>
+vibe shell-setup --shell fish --with-completion
+vibe shell-setup --shell zsh --with-completion
+```
+
+默认情况下，该命令会从 `$SHELL` 检测你的 shell，并将包装函数输出到 stdout。请将输出通过管道传给 `eval`（bash / zsh）或 `source`（fish）—— 各 shell 的安装片段请参阅 [Shell 设置](/zh/setup/)。
+
+## 选项
+
+### `--shell <name>`
+
+强制输出指定 shell 的内容，跳过 `$SHELL` 检测。支持的取值：`bash`、`zsh`、`fish`、`nushell`、`powershell`。
+
+```bash
+vibe shell-setup --shell zsh
+```
+
+### `--with-completion`
+
+在包装函数之后追加 shell 自动补全脚本。目前支持 `fish` 和 `zsh`；与 `bash`/`nushell`/`powershell` 一起使用会以错误退出。
+
+```bash
+vibe shell-setup --shell fish --with-completion | source
+eval "$(vibe shell-setup --shell zsh --with-completion)"
+```
+
+补全脚本涵盖以下内容：
+
+- 所有子命令及其描述（`vibe <Tab>`）
+- 各子命令的选项（`vibe start --<Tab>`）
+- `vibe start <Tab>` 的本地分支名（通过 `git for-each-ref refs/heads`）
+- `vibe jump <Tab>` 的 worktree 分支名（通过 `git worktree list --porcelain`）
+
+> zsh 用户必须在 `~/.zshrc` 中的 `eval` 行之前调用 `autoload -Uz compinit && compinit`。如果 `compinit` 未执行，补全的注册会被静默跳过，但 `vibe` 包装函数仍会被定义。
+
+### `-V`, `--verbose`
+
+除了在 stdout 输出包装函数外，还会在 stderr 显示检测到的 shell。
+
+```bash
+vibe shell-setup --verbose
+```
+
+### `-q`, `--quiet`
+
+抑制非必要的输出。
+
+## 行为
+
+stdout 输出的是包装函数（指定 `--with-completion` 时还包括补全脚本），因此可以直接通过管道传给 `eval` / `source` 而无需额外解析。日志、警告和错误都输出到 stderr，因此绝不会混入 eval 管道。
+
+如果无法检测 `$SHELL` 且未指定 `--shell`，该命令会以退出码 1 结束，并将错误输出到 stderr。
+
+### Nushell 和 PowerShell 的包装函数
+
+从 vibe 2.2.0 起，为 `nushell` 和 `powershell` 输出的包装函数会传递内部的
+`--eval-dialect` 选项，使二进制文件以该 shell 自身的语法输出目录切换命令。
+因此这两个包装函数需要配套的二进制文件（2.2.0 或更高版本）—— 对于较旧的二进制文件，
+该选项会被拒绝，命令将以退出码 2 结束且不执行任何操作。
+
+已经写入你 rc 文件的包装函数**不会**在升级时自动重新生成。如果你粘贴的是较旧的
+nushell 或 powershell 片段，它会保持原有行为 —— 在 nushell 上从不切换目录，在
+PowerShell 上错误处理带引号的路径 —— 直到你重新执行 `vibe shell-setup` 并替换它。
+`bash`、`zsh` 和 `fish` 的包装函数没有变化。
+
+## 示例
+
+```bash
+# 自动检测 shell（zsh / bash 风格）
+eval "$(vibe shell-setup)"
+
+# 强制输出 fish 的包装函数
+vibe shell-setup --shell fish | source
+
+# 一行完成 fish 包装函数 + Tab 补全
+vibe shell-setup --shell fish --with-completion | source
+
+# 一行完成 zsh 包装函数 + Tab 补全（需要事先执行 compinit）
+eval "$(vibe shell-setup --shell zsh --with-completion)"
+```
+
+## 相关内容
+
+- [Shell 设置](/zh/setup/) - 各 shell 的完整设置说明
+- [安装](/zh/installation/) - 安装 vibe 并配置你的 shell

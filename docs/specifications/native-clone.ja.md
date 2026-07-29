@@ -1,4 +1,4 @@
-> 🇺🇸 [English](./native-clone.md)
+> 🇺🇸 [English](./native-clone.md) | 🇨🇳 [简体中文](./native-clone.zh.md)
 
 # ネイティブクローン実装
 

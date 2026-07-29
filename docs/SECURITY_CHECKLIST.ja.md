@@ -1,5 +1,5 @@
 > [!NOTE]
-> :us: [English](./SECURITY_CHECKLIST.md)
+> :us: [English](./SECURITY_CHECKLIST.md) | :cn: [简体中文](./SECURITY_CHECKLIST.zh.md)
 
 # CLI セキュリティチェックリスト
 

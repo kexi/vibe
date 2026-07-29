@@ -1,0 +1,171 @@
+---
+title: 安装
+description: 在你的系统上安装 vibe
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+## 包管理器
+
+<Tabs>
+  <TabItem label="Homebrew (macOS)">
+    ```bash frame="terminal"
+    brew install kexi/tap/vibe
+    ```
+  </TabItem>
+  <TabItem label="npm (Node.js)">
+    ```bash frame="terminal"
+    # 全局安装
+    npm install -g @kexi/vibe
+
+    # 或使用 npx 直接运行
+    npx @kexi/vibe start feat/my-feature
+    ```
+
+    :::note
+    `@kexi/vibe` 只是一个轻量启动器。安装时，npm 会通过 `optionalDependencies` 拉取与当前平台匹配的软件包（`@kexi/vibe-<platform>-<arch>`），并运行其中附带的 Rust 二进制文件。写时复制（Copy-on-Write）文件克隆（macOS APFS、Linux Btrfs/XFS）已内置在该二进制文件中。
+    :::
+
+  </TabItem>
+  <TabItem label="Bun">
+    ```bash frame="terminal"
+    # 全局安装
+    bun add -g @kexi/vibe
+
+    # 或使用 bunx 直接运行
+    bunx @kexi/vibe start feat/my-feature
+    ```
+
+    :::note
+    需要 Bun 1.2.0 或更高版本。`@kexi/vibe` 只是一个轻量启动器：它会通过 `optionalDependencies` 拉取与当前平台匹配的软件包（`@kexi/vibe-<platform>-<arch>`），并运行其中附带的 Rust 二进制文件。写时复制（Copy-on-Write）文件克隆（macOS APFS、Linux Btrfs/XFS）已内置在该二进制文件中。
+    :::
+
+  </TabItem>
+  <TabItem label="mise">
+    添加到你的 `.mise.toml`：
+
+    ```toml
+    [plugins]
+    vibe = "https://github.com/kexi/mise-vibe"
+
+    [tools]
+    vibe = "latest"
+    ```
+
+    然后运行：
+
+    ```bash frame="terminal"
+    mise install
+    ```
+
+    :::tip
+    通过 mise hooks 使用 `vibe shell-setup`，可以跳过[手动 shell 设置](/zh/setup/)。
+    详情请参阅[自动配置](/zh/setup/#使用-mise自动配置)。
+    :::
+
+  </TabItem>
+  <TabItem label="Nix">
+    ```bash frame="terminal"
+    # 直接运行（临时）
+    nix run github:kexi/vibe -- start feat/my-feature
+
+    # 持久化安装
+    nix profile install github:kexi/vibe
+    ```
+
+    对于 NixOS 或 Home Manager，可将其添加为 flake input：
+
+    ```nix
+    {
+      inputs.vibe.url = "github:kexi/vibe";
+
+      # 然后在你的配置中使用：
+      # environment.systemPackages = [ inputs.vibe.packages.${system}.default ];
+    }
+    ```
+
+    :::note
+    默认软件包（`packages.default` / `.#fromSource`）为了可复现性会从源码构建。
+    如果你更希望使用预编译的发行版二进制文件（跳过编译，并通过 SHA-256 哈希校验），
+    请使用 `packages.binary`：
+
+    ```bash frame="terminal"
+    nix run github:kexi/vibe#binary -- start feat/my-feature
+    ```
+    :::
+
+  </TabItem>
+</Tabs>
+
+## Linux
+
+:::note
+WSL2 用户可以根据自己的发行版，使用下面的 Linux 安装方法。
+:::
+
+<Tabs>
+  <TabItem label="Ubuntu/Debian">
+    ```bash frame="terminal"
+    # x64
+    curl -LO https://github.com/kexi/vibe/releases/latest/download/vibe_amd64.deb
+    sudo apt install ./vibe_amd64.deb
+
+    # ARM64
+    curl -LO https://github.com/kexi/vibe/releases/latest/download/vibe_arm64.deb
+    sudo apt install ./vibe_arm64.deb
+
+    # 卸载
+    sudo apt remove vibe
+    ```
+
+    该软件包会将其许可证文档安装到 `/usr/share/doc/vibe/` 目录下：
+    `copyright`（vibe 自身的 MIT 许可条款，采用 Debian 的机器可读 DEP-5 格式）
+    和 `THIRD-PARTY-LICENSES.md`（静态链接进该二进制文件的 Rust crate 的许可声明）。
+
+  </TabItem>
+  <TabItem label="其他发行版">
+    ```bash frame="terminal"
+    # x64
+    curl -L https://github.com/kexi/vibe/releases/latest/download/vibe-linux-x64 -o vibe
+    chmod +x vibe
+    sudo mv vibe /usr/local/bin/
+
+    # ARM64
+    curl -L https://github.com/kexi/vibe/releases/latest/download/vibe-linux-arm64 -o vibe
+    chmod +x vibe
+    sudo mv vibe /usr/local/bin/
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Windows
+
+vibe 支持 Windows（x64）。通过 npm 安装即可 —— `@kexi/vibe` 启动器会拉取适用于你所在平台的 `@kexi/vibe-win32-x64` 二进制软件包：
+
+```bash frame="terminal"
+npm install -g @kexi/vibe
+```
+
+:::note
+Windows 上无法使用写时复制（CoW）克隆；创建 worktree 时，vibe 会回退为标准的文件复制。除此之外的一切（命令、标志、信任模型）与 Linux 和 macOS 上完全相同。
+:::
+
+:::tip
+你也可以在 [WSL2](https://learn.microsoft.com/windows/wsl/) 下按照上面的 [Linux](#linux) 说明运行 vibe —— 如果你希望在 Btrfs 卷上使用写时复制，这会很有用 —— 或者使用 Rust 工具链[从源码构建](#从源码构建)。
+:::
+
+## 从源码构建
+
+在安装了 [Rust 工具链](https://rustup.rs/)之后，你可以从源码构建二进制文件：
+
+```bash frame="terminal"
+git clone https://github.com/kexi/vibe.git
+cd vibe
+cargo build --manifest-path rust/Cargo.toml -p vibe --release
+# 二进制文件会输出到 rust/target/release/vibe
+```
+
+## 下一步
+
+安装完成后，请[设置你的 shell](/zh/setup/)以启用 vibe 的目录切换功能。

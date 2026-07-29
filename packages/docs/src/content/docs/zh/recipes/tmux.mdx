@@ -1,0 +1,31 @@
+---
+title: tmux
+description: 把 tmux 窗格分割到新的 worktree
+sidebar:
+  order: 3
+---
+
+将当前的 tmux 窗口水平分割，并在新 worktree 的目录中打开。
+
+```toml
+[hooks]
+post_start = ['[ -n "$TMUX" ] && tmux split-window -h -c "$VIBE_WORKTREE_PATH"']
+```
+
+`[ -n "$TMUX" ] &&` 这个保护条件使得在 tmux 之外执行 `vibe start` 时该钩子不做任何事，因此同一份配置在任何环境下都能正常工作。
+
+## 变体
+
+打开新窗口而不是分割窗格：
+
+```toml
+[hooks]
+post_start = ['[ -n "$TMUX" ] && tmux new-window -c "$VIBE_WORKTREE_PATH"']
+```
+
+垂直分割：
+
+```toml
+[hooks]
+post_start = ['[ -n "$TMUX" ] && tmux split-window -v -c "$VIBE_WORKTREE_PATH"']
+```

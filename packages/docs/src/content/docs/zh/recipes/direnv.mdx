@@ -1,0 +1,22 @@
+---
+title: direnv
+description: 在新的 worktree 中自动允许 .envrc
+sidebar:
+  order: 4
+---
+
+如果你的项目使用 [direnv](https://direnv.net)，并且会把 `.envrc` 复制到 worktree 中，那么在你执行 `direnv allow` 之前 direnv 会一直阻止加载。可以将这一步自动化：
+
+```toml
+[copy]
+files = [".envrc"]
+
+[hooks]
+post_start = ['direnv allow .']
+```
+
+`post_start` 是在新的 worktree 内部执行的，所以只写一个 `.` 就足够了。
+
+:::caution
+`direnv allow` 会以完整的 shell 权限执行 `.envrc`。请仅在你信任所检出分支上每一个提交的仓库中启用它。
+:::

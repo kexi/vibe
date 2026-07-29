@@ -1,0 +1,111 @@
+---
+title: .vibe.local.toml
+description: 个人本地配置覆盖
+sidebar:
+  order: 3
+---
+
+通过 `.vibe.local.toml` 文件，你可以用个人设置覆盖或扩展共享的 `.vibe.toml` 配置。该文件会自动被 gitignore。
+
+## 使用场景
+
+- 开发者专属的环境文件
+- 本地路径或凭据
+- 个人工作流定制
+- 特定机器的配置
+
+## 基本示例
+
+```toml
+# 用本地命令覆盖或扩展共享钩子
+[hooks]
+post_start_prepend = ["echo '本地设置开始'"]
+post_start_append = ["npm run dev"]
+
+# 覆盖需要复制的文件
+[copy]
+files = [".env.local", ".secrets"]
+```
+
+## 配置合并
+
+当 `.vibe.toml` 和 `.vibe.local.toml` 同时存在时，它们会按照以下规则合并：
+
+| 方式     | 语法                     | 说明                 |
+| -------- | ------------------------ | -------------------- |
+| 完全覆盖 | `字段名 = [...]`         | 完全替换共享的值     |
+| 前置追加 | `字段名_prepend = [...]` | 在共享值之前添加条目 |
+| 后置追加 | `字段名_append = [...]`  | 在共享值之后添加条目 |
+
+### 合并示例
+
+```toml
+# .vibe.toml（共享）
+[hooks]
+post_start = ["npm install", "npm run build"]
+
+# .vibe.local.toml（本地）
+[hooks]
+post_start_prepend = ["echo '本地设置'"]
+post_start_append = ["npm run dev"]
+
+# 结果: ["echo '本地设置'", "npm install", "npm run build", "npm run dev"]
+```
+
+### 覆盖示例
+
+要完全替换共享配置：
+
+```toml
+# .vibe.local.toml
+[hooks]
+post_start = ["my-custom-script.sh"]
+
+# 结果: ["my-custom-script.sh"]
+# （共享的 post_start 被完全替换）
+```
+
+## Worktree 路径覆盖
+
+你可以在 `.vibe.local.toml` 中覆盖 worktree 路径脚本：
+
+```toml
+# .vibe.local.toml
+[worktree]
+path_script = "./my-local-path-script.sh"
+```
+
+它的优先级高于 `.vibe.toml` 中的 `path_script`。
+
+## 信任注册
+
+与 `.vibe.toml` 一样，本地配置文件也必须经过信任注册：
+
+```bash
+vibe trust
+```
+
+该命令会同时信任 `.vibe.toml` 和 `.vibe.local.toml`（如果存在）。
+
+## 完整示例
+
+```toml
+# .vibe.local.toml
+
+[copy]
+# 追加仅本地使用的复制文件
+files = [".env.local", ".secrets", "local-config.json"]
+
+[hooks]
+# 在共享的 pre_start 钩子之前执行
+pre_start_prepend = ["echo '开始本地设置'"]
+
+# 在共享的 post_start 钩子之后执行
+post_start_append = [
+  "npm run dev",
+  "open http://localhost:3000"
+]
+
+# 完全覆盖 pre_clean
+pre_clean = ["echo '自定义清理'"]
+```

@@ -1,0 +1,75 @@
+---
+title: vibe trust / untrust
+description: 管理配置文件的信任状态
+sidebar:
+  order: 4
+---
+
+`trust` 和 `untrust` 命令用于管理配置文件的信任状态。
+
+## 使用方法
+
+```bash
+# 信任配置文件
+vibe trust
+
+# 取消对配置文件的信任
+vibe untrust
+```
+
+## 为什么需要信任？
+
+vibe 使用 SHA-256 哈希校验来确保配置文件未被篡改。这可以防止恶意脚本通过钩子被执行。
+
+### 信任流程
+
+1. **首次使用**：执行 `vibe trust` 来登记 `.vibe.toml` 和 `.vibe.local.toml` 的哈希值
+2. **后续运行**：vibe 会在执行任何钩子之前校验哈希值
+3. **文件变更**：如果文件发生变更，你需要重新执行 `vibe trust`
+
+## vibe trust
+
+通过保存当前配置文件的 SHA-256 哈希值，将其登记为受信任。
+
+```bash
+$ vibe trust
+Trusted .vibe.toml (hash: abc123...)
+Trusted .vibe.local.toml (hash: def456...)
+```
+
+### 被信任的对象
+
+- `.vibe.toml`（如果存在）
+- `.vibe.local.toml`（如果存在）
+
+## vibe untrust
+
+取消对当前仓库中配置文件的信任。
+
+```bash
+$ vibe untrust
+Untrusted .vibe.toml
+Untrusted .vibe.local.toml
+```
+
+## 哈希校验
+
+### 哈希不匹配时
+
+如果配置文件在被信任之后发生了修改：
+
+```bash
+$ vibe start feat/new-feature
+Error: .vibe.toml hash mismatch.
+The file has been modified since last trusted.
+Run 'vibe trust' to re-trust the file.
+```
+
+### 多个哈希值
+
+vibe 会为每个文件保存多个哈希值（最多 100 个），因此只要每个分支的版本都被信任过一次，你就可以在分支之间切换而无需重新信任。
+
+## 相关内容
+
+- [安全](/zh/security/) - 哈希校验的详细说明
+- [配置](/zh/configuration/) - 配置文件格式

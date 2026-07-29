@@ -1,0 +1,124 @@
+---
+title: vibe jump
+description: 按分支名跳转到已有的 worktree
+sidebar:
+  order: 3
+---
+
+`jump` 命令通过匹配分支名跳转到已有的 Git Worktree。它支持精确匹配、部分匹配、模糊匹配以及交互式选择。
+
+## 使用方法
+
+```bash
+vibe jump <branch-name> [options]
+```
+
+## 选项
+
+| 选项              | 说明             |
+| ----------------- | ---------------- |
+| `-V`, `--verbose` | 显示详细输出     |
+| `-q`, `--quiet`   | 抑制非必要的输出 |
+
+## 示例
+
+```bash
+# 通过完整分支名跳转到 worktree
+vibe jump feat/new-feature
+
+# 使用部分匹配跳转
+vibe jump login
+
+# 使用模糊匹配跳转（子序列匹配）
+vibe jump feli   # 匹配 "feat/login"
+
+# 显示详细输出
+vibe jump feat/debug -V
+```
+
+## 行为
+
+### 搜索顺序
+
+`vibe jump` 按以下顺序搜索 worktree：
+
+1. **精确匹配**（区分大小写）：如果存在分支名完全一致的 worktree，立即跳转
+2. **精确匹配**（不区分大小写）：如果忽略大小写后分支名一致，跳转到该 worktree
+3. **单词边界匹配**（先区分大小写，再不区分）：如果输入出现在单词边界处（`/`、`-` 或 `_` 之后），这类匹配优先于普通的子串匹配
+4. **子串匹配**（先区分大小写，再不区分）：如果没有找到单词边界匹配，则回退到子串匹配。如果匹配到多个 worktree，会显示交互式选择提示
+5. **模糊匹配**（子序列匹配）：如果没有找到子串匹配且搜索词至少有 3 个字符，则执行子序列匹配，即搜索词的每个字符按顺序出现在分支名中（例如 `feli` 匹配 `feat/login`）。结果会通过考虑连续匹配、单词边界和匹配位置的评分算法进行排序
+6. **无匹配**：询问是否使用 `vibe start` 创建新的 worktree
+
+### 精确匹配
+
+```
+$ vibe jump feat/new-feature
+# → cd '/path/to/repo-feat-new-feature'
+```
+
+### 部分匹配
+
+```
+$ vibe jump login
+Matched: feat/login-page
+# → cd '/path/to/repo-feat-login-page'
+```
+
+### 模糊匹配
+
+```
+$ vibe jump feli
+Matched: feat/login
+# → cd '/path/to/repo-feat-login'
+```
+
+### 排除 scratch worktree
+
+带有 `scratch/` 前缀的分支（由 [`vibe scratch`](/zh/commands/scratch/) 创建）默认**被排除在单词边界匹配、子串匹配和模糊匹配之外**。这样即使 scratch 不断累积，候选列表也能保持清爽。
+
+若要跳转到 scratch worktree，可以：
+
+- 输入字面量 `scratch/` 前缀（不区分大小写）。此时 `scratch/` 下的所有分支都会成为子串/模糊匹配的候选：
+  ```
+  $ vibe jump scratch/2026
+  # → cd '/path/to/scratch-20260427-143052'
+  ```
+- 或者使用完整的分支名。精确匹配始终有效，对 scratch 也不例外。
+
+### 多个匹配
+
+```
+$ vibe jump auth
+Multiple worktrees match 'auth':
+  1. feat/auth-login (/path/to/repo-feat-auth-login)
+  2. feat/auth-logout (/path/to/repo-feat-auth-logout)
+  3. Cancel
+Please select (enter number):
+```
+
+### 无匹配（回退）
+
+```
+$ vibe jump feat/nonexistent
+No worktree found for 'feat/nonexistent'. Create one with 'vibe start'? (Y/n)
+```
+
+确认后会调用 `vibe start` 来创建 worktree。
+
+## 退出码
+
+| 退出码 | 条件                                 |
+| ------ | ------------------------------------ |
+| `0`    | 跳转成功，或用户主动取消             |
+| `1`    | 错误（分支名为空、git 命令执行失败） |
+
+用户主动取消（在选择提示中选择“取消”，或拒绝创建新的 worktree）会被视为成功退出，而不是错误。
+
+## 限制
+
+- **游离 HEAD 的 worktree**：处于游离 HEAD 状态（未关联分支）的 worktree 不会包含在搜索范围内。只有带分支引用的 worktree 才可被搜索。
+
+## 相关内容
+
+- [start](/zh/commands/start/) - 创建新的 worktree
+- [clean](/zh/commands/clean/) - 完成后删除 worktree
