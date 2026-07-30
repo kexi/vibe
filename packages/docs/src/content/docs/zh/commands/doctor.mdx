@@ -1,0 +1,85 @@
+---
+title: vibe doctor
+description: 检查环境中的问题，例如过时的 shell 包装函数
+sidebar:
+  order: 6
+---
+
+`doctor` 命令用于检查环境中的已知问题。目前它只做一件事：告诉你 shell 配置文件中的 nushell 或 PowerShell 包装函数是否为当前版本。
+
+自 v3.0.0 起提供。
+
+## 使用方法
+
+```bash
+vibe doctor
+```
+
+### `-V`, `--verbose`
+
+同时列出所有被检查过的路径，包括那些并不存在的路径。
+
+```bash
+vibe doctor --verbose
+```
+
+## 为什么需要它
+
+vibe 2.2.0 之前分发的 nushell 与 PowerShell 包装函数是有缺陷的 —— nushell 版本在子进程中执行 `cd`（因此从未真正改变过你的目录），并且会拒绝任何标志；PowerShell 版本无法正确处理包含单引号的路径，并且在 vibe 没有产生任何输出时会抛出错误。
+
+vibe 绝不会改写你的 shell 配置，所以如果你粘贴过其中某个代码片段，它至今仍在那里、也仍然是坏的。`vibe doctor` 会找到它，并告诉你如何替换。
+
+bash、zsh 与 fish 的包装函数从未出现过问题，因此不在检查范围内。
+
+## 检查内容
+
+当前的包装函数会传递 `--eval-dialect` 标志，而旧的包装函数不会。`doctor` 会在下列各个配置文件中查找 `vibe` 函数的定义，并报告该定义是否请求了自己的 dialect。
+
+| Shell      | 平台          | 路径                                                                                                                                  |
+| ---------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| nushell    | macOS / Linux | `$XDG_CONFIG_HOME/nushell/config.nu`，否则为 `~/.config/nushell/config.nu`                                                            |
+| nushell    | Windows       | `%APPDATA%\nushell\config.nu`                                                                                                         |
+| PowerShell | macOS / Linux | `~/.config/powershell/Microsoft.PowerShell_profile.ps1`、`profile.ps1`                                                                |
+| PowerShell | Windows       | `%USERPROFILE%\Documents\{PowerShell,WindowsPowerShell}\*.ps1`，以及在设置了 `%OneDrive%` 时 `%OneDrive%\Documents\` 下的同样两个目录 |
+
+不存在的文件不会被报告。每个被报告的文件会得到以下状态之一：
+
+| 状态                               | 含义                                     |
+| ---------------------------------- | ---------------------------------------- |
+| `current`                          | 包装函数请求了自己的 dialect —— 无需处理 |
+| `stale`                            | 2.2.0 之前的包装函数；需要替换           |
+| `no vibe wrapper`                  | 文件存在，但其中没有定义 `vibe` 函数     |
+| `not checked (not a regular file)` | 该路径是目录、套接字或设备               |
+| `unreadable`                       | 文件存在但无法读取（权限、I/O 错误）     |
+
+## 输出
+
+```
+$ vibe doctor
+Checking shell wrappers for nushell and PowerShell...
+  /Users/you/.config/nushell/config.nu: stale
+Fix: run 'vibe shell-setup --shell nushell' and replace the vibe function in /Users/you/.config/nushell/config.nu
+If your wrapper is sourced from another file, compare it with 'vibe shell-setup --shell <nushell|powershell>'.
+```
+
+所有输出都写入标准错误。标准输出保留给 shell 的 eval 协议使用，因此把报告打印到那里会被你的包装函数*执行*。
+
+## 退出码
+
+| 退出码 | 含义                                         |
+| ------ | -------------------------------------------- |
+| `0`    | 未发现过时的包装函数（包括完全没有配置文件） |
+| `1`    | 发现了至少一个过时的包装函数                 |
+
+即使指定了 `--quiet`，报告也依然会输出，因此非零退出码绝不会悄无声息。
+
+## 注意事项
+
+- **从其他文件加载的包装函数无法被发现。** 如果你的配置文件通过 `source` 加载了另一个定义 `vibe` 的文件，`doctor` 会报告 `no vibe wrapper`。请手动将该文件与 `vibe shell-setup --shell nushell`（或 `powershell`）的输出进行比较。
+- **OneDrive 的已知文件夹重定向。** 设置了 `%OneDrive%` 时会检查 `%OneDrive%\Documents`，但如果 `Documents` 文件夹被重定向到了其他位置，则无法找到。
+
+## 相关内容
+
+- [shell-setup](/zh/commands/shell-setup/) - 输出当前的 shell 包装函数
+- [upgrade](/zh/commands/upgrade/) - 检查更新
+- [Shell 设置](/zh/setup/) - 各受支持 shell 的包装函数代码片段

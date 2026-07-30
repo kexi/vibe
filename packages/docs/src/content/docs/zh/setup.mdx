@@ -78,6 +78,7 @@ vibe 需要一个 shell 包装函数，才能在创建或清理 worktree 之后�
     代码片段，请将其替换 —— 那个版本实际上从未改变过你的目录，因为 `nu -c` 是在子进程中执行
     `cd` 的，而且它会拒绝任何带标志的命令。`--wrapped` 和 `for` 两者都是必需的：`--wrapped`
     让标志能传递到 `...args`，而 nushell 会丢弃在 `each` 闭包内所做的环境变更。
+    运行 `vibe doctor` 可以检查此前粘贴的包装函数是否为当前版本。
     :::
 
   </TabItem>
@@ -92,6 +93,7 @@ vibe 需要一个 shell 包装函数，才能在创建或清理 worktree 之后�
     需要 vibe 2.2.0 或更高版本。如果你之前粘贴过旧的
     `Invoke-Expression (& vibe.exe $args)` 代码片段，请将其替换 —— 那个版本无法正确处理
     包含单引号的路径，并且在 vibe 没有产生任何输出时会抛出错误。
+    运行 `vibe doctor` 可以检查此前粘贴的包装函数是否为当前版本。
     :::
 
   </TabItem>

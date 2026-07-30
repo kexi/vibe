@@ -81,7 +81,12 @@ vibe 0.8.0
 You are using the latest version.
 ```
 
+### 过时 shell 包装函数的提示
+
+如果你的 `$SHELL` 是 nushell 或 PowerShell（或者你正在 Windows 上），并且调用 vibe 的包装函数不是当前版本，`upgrade` 会追加一行提示，引导你使用 [`vibe doctor`](/zh/commands/doctor/)。当包装函数已表明自己是当前版本时，这行提示会被跳过。
+
 ## 相关内容
 
 - [安装](/zh/installation/) - 安装方式
+- [doctor](/zh/commands/doctor/) - 检查环境中是否存在过时的 shell 包装函数
 - [变更历史](/zh/changelog/) - 版本历史
