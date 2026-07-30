@@ -137,7 +137,7 @@ sequenceDiagram
 
 尚存的限制：
 
-- **包装函数不会被自动重新生成。** 把旧的 nushell 或 powershell 代码片段粘贴进 rc 文件的用户，在重新执行 `vibe shell-setup`（或从文档重新粘贴片段）之前，仍会保持旧的、有缺陷的行为。这是有意为之的设计：vibe 绝不会改写用户的 shell 配置。
+- **包装函数不会被自动重新生成。** 把旧的 nushell 或 powershell 代码片段粘贴进 rc 文件的用户，在重新执行 `vibe shell-setup`（或从文档重新粘贴片段）之前，仍会保持旧的、有缺陷的行为。这是有意为之的设计：vibe 绝不会改写用户的 shell 配置。`vibe doctor` 会**检测**已粘贴的过时包装函数，并打印用于重新生成它的命令；当存在过时包装函数的可能性时（在 Posix dialect 下 `$SHELL` 为 nushell / PowerShell，或运行在 Windows 上），`vibe upgrade` 会追加一行指向 `vibe doctor` 的提示。两者仅做检测与提示：绝不改写的原则并未改变，它们都不会触碰文件本身。
 - Posix 系包装函数（bash、zsh、fish）的字节序列未发生变化，因此不会影响任何原本可用的配置。
 
 ## 7. 相邻协议：Claude Code worktree hook（stdin JSON）
@@ -230,6 +230,7 @@ sequenceDiagram
 - `rust/clippy.toml` —— 将 `std::io::stdout` 挡在生产代码之外的 disallowed-methods 列表
 - `rust/crates/vibe/tests/eval_contract.rs` —— 本规格的可执行形式
 - `rust/crates/vibe/tests/wrapper_round_trip.rs` —— 针对全部包装函数与 dialect 的真实 shell 往返测试
+- `rust/crates/vibe-core/src/commands/doctor.rs` —— 过时包装函数的检测（§6.1）
 
 相关文档：
 

@@ -61,7 +61,7 @@ fn main() {
     // RealIo routes both the eval-write-failure and dispatch-failure paths.
     let io = RealIo;
 
-    match dispatch(command, opts) {
+    match dispatch(command, dialect, opts) {
         Ok(outcome) => {
             // The SINGLE stdout write point for the eval contract.
             if let Err(error) = eval_output::write_outcome(&outcome, dialect) {
@@ -89,7 +89,15 @@ fn report_error(io: &impl Io, error: &VibeError, quiet: bool) -> i32 {
 }
 
 /// Route a parsed subcommand into its handler, returning its [`Outcome`].
-fn dispatch(command: Command, opts: OutputOptions) -> Result<Outcome, VibeError> {
+///
+/// `dialect` is passed by VALUE to the handlers that need to *reason* about which
+/// wrapper called them (only `upgrade` today). The dialect used for the actual
+/// stdout write stays the local in `main`, so a handler can never redirect it.
+fn dispatch(
+    command: Command,
+    dialect: EvalDialect,
+    opts: OutputOptions,
+) -> Result<Outcome, VibeError> {
     match command {
         Command::Clean(args) => {
             // Mutually exclusive: matches the TS validation in main.ts.
@@ -151,7 +159,8 @@ fn dispatch(command: Command, opts: OutputOptions) -> Result<Outcome, VibeError>
         Command::Untrust => commands::untrust(opts),
         Command::Verify => commands::verify(opts),
         Command::Config => commands::config(opts),
-        Command::Upgrade(args) => commands::upgrade(args.check, opts),
+        Command::Upgrade(args) => commands::upgrade(args.check, dialect, opts),
+        Command::Doctor => commands::doctor(opts),
         Command::ShellSetup(args) => {
             commands::shell_setup(args.shell.as_deref(), args.with_completion, opts)
         }

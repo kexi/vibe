@@ -45,13 +45,26 @@ fn vibe_bin() -> &'static str {
 // plumbing is the cheaper duplication. Keep the two copies behaviourally
 // equivalent if you touch either.
 
+/// An empty file used as `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`, created inside
+/// `dir` and returned.
+///
+/// Why not `/dev/null`: it does not exist on Windows, and git treats an
+/// unreadable config path as *absent* — so the isolation would silently vanish
+/// and the developer's real `~/.gitconfig` would be read. An empty regular file
+/// is a valid, empty config on every OS.
+fn empty_git_config(dir: &Path) -> PathBuf {
+    let path = dir.join("empty.gitconfig");
+    std::fs::write(&path, "").unwrap();
+    path
+}
+
 /// Run `git <args>` in `cwd`, panicking on failure (test setup must succeed).
-fn git(cwd: &Path, args: &[&str]) {
+fn git(cwd: &Path, args: &[&str], git_config: &Path) {
     let status = Command::new("git")
         .args(args)
         .current_dir(cwd)
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .env("GIT_CONFIG_GLOBAL", git_config)
+        .env("GIT_CONFIG_SYSTEM", git_config)
         .status()
         .expect("failed to spawn git");
     assert!(status.success(), "git {args:?} failed in {cwd:?}");
@@ -73,13 +86,26 @@ fn git_available() -> bool {
 /// `vibe start`: this suite is about the eval protocol, and routing setup
 /// through `start` would drag in the copy/hook machinery (and its failure
 /// modes) for no added coverage.
-fn setup_worktrees(root: &Path, secondary_dir: &str, branch: &str) -> (PathBuf, PathBuf) {
+fn setup_worktrees(
+    root: &Path,
+    secondary_dir: &str,
+    branch: &str,
+    git_config: &Path,
+) -> (PathBuf, PathBuf) {
     let main = root.join("main");
     std::fs::create_dir_all(&main).unwrap();
-    git(&main, &["init", "-q", "-b", "main"]);
-    git(&main, &["config", "user.email", "test@example.com"]);
-    git(&main, &["config", "user.name", "Test"]);
-    git(&main, &["commit", "-q", "--allow-empty", "-m", "init"]);
+    git(&main, &["init", "-q", "-b", "main"], git_config);
+    git(
+        &main,
+        &["config", "user.email", "test@example.com"],
+        git_config,
+    );
+    git(&main, &["config", "user.name", "Test"], git_config);
+    git(
+        &main,
+        &["commit", "-q", "--allow-empty", "-m", "init"],
+        git_config,
+    );
 
     let secondary = root.join(secondary_dir);
     git(
@@ -92,6 +118,7 @@ fn setup_worktrees(root: &Path, secondary_dir: &str, branch: &str) -> (PathBuf, 
             branch,
             secondary.to_str().unwrap(),
         ],
+        git_config,
     );
     // `git worktree list` reports canonicalized paths (e.g. /private/tmp on
     // macOS), so canonicalize here too for byte-exact comparison.
@@ -163,22 +190,52 @@ fn shim_dir(root: &Path) -> PathBuf {
 ///
 /// `START` is exported so each shell script can `cd` there without embedding a
 /// path — which would just re-create the quoting problem inside the test.
-fn run_shell(program: &str, args: &[&str], shim: &Path, home: &Path, start: &Path) -> Output {
-    let path = std::env::var("PATH").unwrap_or_default();
+fn run_shell(program: &str, args: &[&str], fx: &Fixture, start: &Path) -> Output {
+    let home = fx.home.as_path();
     Command::new(program)
         .args(args)
         // Run somewhere neutral so a leg that never cds cannot accidentally
         // already be sitting in the expected directory.
         .current_dir(home)
-        .env("PATH", format!("{}:{}", shim.display(), path))
+        .env("PATH", prepend_to_path(&fx.shim))
         .env("HOME", home)
+        // Windows has no $HOME: pwsh resolves the profile/home from
+        // %USERPROFILE%, so both must point at the fixture home for the
+        // isolation to hold on a Windows runner. Harmless on Unix.
+        .env("USERPROFILE", home)
         .env("START", start)
         .env_remove("FORCE_COLOR")
         .env("NO_COLOR", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .env("GIT_CONFIG_GLOBAL", &fx.git_config)
+        .env("GIT_CONFIG_SYSTEM", &fx.git_config)
         .output()
         .unwrap_or_else(|e| panic!("failed to spawn {program}: {e}"))
+}
+
+/// `dir` prepended to the inherited `PATH`, using the platform separator.
+///
+/// Why not `format!("{dir}:{path}")`: `:` is the Unix separator; Windows uses
+/// `;`, so the hardcoded form produced one unusable mega-entry and the shim was
+/// never found.
+fn prepend_to_path(dir: &Path) -> std::ffi::OsString {
+    let inherited = std::env::var_os("PATH").unwrap_or_default();
+    let entries = std::iter::once(dir.to_path_buf()).chain(std::env::split_paths(&inherited));
+    std::env::join_paths(entries).expect("PATH entries must not contain the path separator")
+}
+
+/// Whether the POSIX-wrapper legs (bash/zsh/fish) can run on this host.
+///
+/// Why not run them on native Windows: the only bash there is Git Bash, whose
+/// MSYS path-translation layer rewrites the paths flowing through the wrapper —
+/// so the leg would exercise MSYS, not the wrapper. A POSIX shell as the primary
+/// Windows-native shell is not a supported configuration; the Linux/macOS jobs
+/// own that coverage.
+fn posix_legs_supported() -> bool {
+    if !cfg!(windows) {
+        return true;
+    }
+    eprintln!("skipping POSIX wrapper round-trip: not supported on native Windows");
+    false
 }
 
 /// The last non-empty line of stdout — every leg prints the shell's final cwd
@@ -223,12 +280,14 @@ struct Fixture {
     home: PathBuf,
     main: PathBuf,
     worktree: PathBuf,
+    git_config: PathBuf,
 }
 
 fn fixture() -> Fixture {
     let root = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
-    let (main, worktree) = setup_worktrees(root.path(), "wt-it's", "quoted");
+    let git_config = empty_git_config(root.path());
+    let (main, worktree) = setup_worktrees(root.path(), "wt-it's", "quoted", &git_config);
     assert!(
         worktree.display().to_string().contains('\''),
         "fixture worktree path must contain a single quote: {worktree:?}"
@@ -242,6 +301,7 @@ fn fixture() -> Fixture {
         home: home_path,
         main,
         worktree,
+        git_config,
     }
 }
 
@@ -260,6 +320,7 @@ fn wrapper_for(shell: &str, home: &Path) -> String {
         .args(["shell-setup", "--shell", shell])
         .current_dir(home)
         .env("HOME", home)
+        .env("USERPROFILE", home)
         .env_remove("FORCE_COLOR")
         .env("NO_COLOR", "1")
         .output()
@@ -280,6 +341,9 @@ fn bash_wrapper_round_trip() {
         eprintln!("skipping: git unavailable");
         return;
     }
+    if !posix_legs_supported() {
+        return;
+    }
     if !shell_available("bash") {
         return;
     }
@@ -294,8 +358,7 @@ fn bash_wrapper_round_trip() {
             "-c",
             r#"eval "$(vibe shell-setup --shell bash)"; cd "$START"; vibe jump quoted; pwd"#,
         ],
-        &fx.shim,
-        &fx.home,
+        &fx,
         &fx.main,
     );
     assert_landed_in("bash", &out, &fx.worktree);
@@ -305,6 +368,9 @@ fn bash_wrapper_round_trip() {
 fn zsh_wrapper_round_trip() {
     if !git_available() {
         eprintln!("skipping: git unavailable");
+        return;
+    }
+    if !posix_legs_supported() {
         return;
     }
     if !shell_available("zsh") {
@@ -319,8 +385,7 @@ fn zsh_wrapper_round_trip() {
             "-c",
             r#"eval "$(vibe shell-setup --shell zsh)"; cd "$START"; vibe jump quoted; pwd"#,
         ],
-        &fx.shim,
-        &fx.home,
+        &fx,
         &fx.main,
     );
     assert_landed_in("zsh", &out, &fx.worktree);
@@ -330,6 +395,9 @@ fn zsh_wrapper_round_trip() {
 fn fish_wrapper_round_trip() {
     if !git_available() {
         eprintln!("skipping: git unavailable");
+        return;
+    }
+    if !posix_legs_supported() {
         return;
     }
     if !shell_available("fish") {
@@ -344,8 +412,7 @@ fn fish_wrapper_round_trip() {
             "-c",
             r#"vibe shell-setup --shell fish | source; cd "$START"; vibe jump quoted; pwd"#,
         ],
-        &fx.shim,
-        &fx.home,
+        &fx,
         &fx.main,
     );
     assert_landed_in("fish", &out, &fx.worktree);
@@ -378,8 +445,7 @@ fn nushell_wrapper_round_trip() {
     let out = run_shell(
         "nu",
         &["--no-config-file", path.to_str().unwrap()],
-        &fx.shim,
-        &fx.home,
+        &fx,
         &fx.main,
     );
     assert_landed_in("nu", &out, &fx.worktree);
@@ -410,8 +476,7 @@ fn nushell_wrapper_passes_non_cd_stdout_through_verbatim() {
     let out = run_shell(
         "nu",
         &["--no-config-file", path.to_str().unwrap()],
-        &fx.shim,
-        &fx.home,
+        &fx,
         &fx.main,
     );
     let stdout = String::from_utf8_lossy(&out.stdout).to_string();
@@ -455,8 +520,7 @@ fn powershell_wrapper_round_trip() {
     let out = run_shell(
         "pwsh",
         &["-NoProfile", "-NoLogo", "-File", path.to_str().unwrap()],
-        &fx.shim,
-        &fx.home,
+        &fx,
         &fx.main,
     );
     assert_landed_in("pwsh", &out, &fx.worktree);

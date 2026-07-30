@@ -21,6 +21,7 @@ vibe provides a simple set of commands for managing Git Worktrees.
 | `vibe untrust`                       | Untrust configuration files                            |
 | `vibe config`                        | Show current configuration                             |
 | `vibe upgrade`                       | Check for updates and show upgrade instructions        |
+| `vibe doctor`                        | Check the environment for a stale shell wrapper        |
 | `vibe shell-setup`                   | Print shell wrapper function (and optional completion) |
 
 ## Quick Reference
@@ -49,6 +50,9 @@ vibe config
 
 # Check for updates
 vibe upgrade
+
+# Check the environment for a stale shell wrapper
+vibe doctor
 ```
 
 ## Global Options
@@ -73,4 +77,5 @@ These options are available for most commands:
 - [trust](/commands/trust/) - Manage configuration trust
 - [config](/commands/config/) - View configuration
 - [upgrade](/commands/upgrade/) - Check for updates
+- [doctor](/commands/doctor/) - Check the environment for a stale shell wrapper
 - [shell-setup](/commands/shell-setup/) - Print shell wrapper function and fish completion

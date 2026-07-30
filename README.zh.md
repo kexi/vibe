@@ -23,6 +23,7 @@
 | `vibe verify`                      | 查看信任状态与哈希历史                                       |
 | `vibe config`                      | 显示当前设置                                                 |
 | `vibe upgrade [options]`           | 检查更新并显示升级方法                                       |
+| `vibe doctor`                      | 检查环境中是否存在过时的 nushell / PowerShell 包装函数       |
 
 ### 示例
 

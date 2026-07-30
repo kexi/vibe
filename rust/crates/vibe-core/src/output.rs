@@ -60,11 +60,56 @@ pub fn warn_log(io: &impl Io, message: &str) {
     io.writeln_stderr(&colored);
 }
 
+/// Log an uncolored diagnostic line to stderr. Always prints (never suppressed
+/// by quiet).
+///
+/// Why not `log`: a command whose entire purpose IS the report (`doctor`) would
+/// exit non-zero in total silence under `--quiet`, which is unexplainable. Why
+/// not `warn_log`: painting a clean report yellow makes a passing check look like
+/// a problem, so the color stays reserved for the actual findings.
+pub fn report_log(io: &impl Io, message: &str) {
+    io.writeln_stderr(message);
+}
+
 /// Log a dim `[dry-run] `-prefixed message to stderr. Always prints (never
 /// suppressed by quiet), matching the TS `logDryRun`.
 pub fn log_dry_run(io: &impl Io, message: &str) {
     let colored = colorize(DIM, &format!("[dry-run] {message}"), is_color_enabled(io));
     io.writeln_stderr(&colored);
+}
+
+/// Make an attacker-influenced path safe to print on a terminal.
+///
+/// Replaces every terminal-control character with U+FFFD: C0/C1 controls and
+/// ESC (which could otherwise reposition the cursor, clear the line, or emit a
+/// forged status line), the Unicode line separators, and the bidi
+/// override/isolate codepoints (which can visually reverse a path so a file in
+/// one directory renders as if it were in another).
+///
+/// Why replace rather than strip: stripping collapses two genuinely different
+/// paths into the same rendering, so a report line could name an innocent file
+/// while describing a different one. A U+FFFD keeps the strings distinct and
+/// makes the tampering visible.
+///
+/// Scope: currently applied only by `doctor`, whose paths are built straight from
+/// environment variables. The other stderr paths (`fast_remove`, `start`) do
+/// their own stripping/rejecting and have NOT been migrated onto this helper, so
+/// its use is not yet a program-wide guarantee.
+pub fn sanitize_for_display(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            let is_unsafe = c.is_control()
+                || matches!(c, '\u{2028}' | '\u{2029}')
+                || ('\u{200e}'..='\u{200f}').contains(&c)
+                || ('\u{202a}'..='\u{202e}').contains(&c)
+                || ('\u{2066}'..='\u{2069}').contains(&c);
+            if is_unsafe {
+                '\u{fffd}'
+            } else {
+                c
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -124,6 +169,43 @@ mod tests {
         let io = FakeIo::new().with_env("FORCE_COLOR", "1");
         log_dry_run(&io, "x");
         assert_eq!(io.stderr_text(), "\x1b[2m[dry-run] x\x1b[0m");
+    }
+
+    #[test]
+    fn report_log_prints_uncolored_even_when_quiet_and_color_enabled() {
+        let io = FakeIo::new().with_env("FORCE_COLOR", "1");
+        report_log(&io, "checked: current");
+        assert_eq!(io.stderr_text(), "checked: current");
+    }
+
+    #[test]
+    fn sanitize_replaces_escape_and_newline_but_keeps_length() {
+        let out = sanitize_for_display("/tmp/a\x1b[2Kb\nc");
+        assert_eq!(out, "/tmp/a\u{fffd}[2Kb\u{fffd}c");
+    }
+
+    #[test]
+    fn sanitize_replaces_bidi_and_line_separators() {
+        for bad in ['\u{202e}', '\u{2066}', '\u{200f}', '\u{2028}', '\u{2029}'] {
+            let out = sanitize_for_display(&format!("/tmp/{bad}x"));
+            assert_eq!(out, "/tmp/\u{fffd}x", "not sanitized: {:?}", bad);
+        }
+    }
+
+    #[test]
+    fn sanitize_leaves_ordinary_paths_untouched() {
+        // Including non-ASCII, which is legitimate in a path.
+        let path = "/home/ユーザー/.config/nushell/config.nu";
+        assert_eq!(sanitize_for_display(path), path);
+    }
+
+    #[test]
+    fn sanitize_keeps_distinct_paths_distinct() {
+        // Stripping would render both as `/tmp/ab`; replacing must not.
+        assert_ne!(
+            sanitize_for_display("/tmp/a\u{202e}b"),
+            sanitize_for_display("/tmp/ab")
+        );
     }
 
     #[test]

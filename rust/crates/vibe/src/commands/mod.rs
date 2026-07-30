@@ -21,6 +21,7 @@ use vibe_core::output::OutputOptions;
 use vibe_core::progress::{IndicatifTracker, NullTracker, ProgressTracker};
 use vibe_core::prompt::RealPrompt;
 use vibe_core::repo_info::RealRepoResolver;
+use vibe_core::shell::EvalDialect;
 use vibe_core::stdin::RealStdinReader;
 use vibe_core::worktree_path::RealScriptRunner;
 use vibe_core::{commands, Result};
@@ -300,8 +301,18 @@ pub fn clean(
     clean_command(&deps, &flags, opts)
 }
 
+/// `vibe doctor`.
+pub fn doctor(opts: OutputOptions) -> Result<Outcome> {
+    let io = RealIo;
+    let fs = commands::doctor::RealProfileFs;
+    // The platform fact enters here, at the binary edge: vibe-core carries no
+    // `cfg(target_os)` so both branches stay testable on any host.
+    let is_windows = std::env::consts::OS == "windows";
+    commands::doctor::doctor_command(&io, &fs, is_windows, opts)
+}
+
 /// `vibe upgrade [--check]`.
-pub fn upgrade(check: bool, opts: OutputOptions) -> Result<Outcome> {
+pub fn upgrade(check: bool, eval_dialect: EvalDialect, opts: OutputOptions) -> Result<Outcome> {
     let io = RealIo;
     let http = UreqClient::new();
 
@@ -319,6 +330,8 @@ pub fn upgrade(check: bool, opts: OutputOptions) -> Result<Outcome> {
         exec_path: &exec_path,
         real_path: &real_path,
         is_mac: std::env::consts::OS == "macos",
+        is_windows: std::env::consts::OS == "windows",
+        eval_dialect,
     };
     commands::upgrade::upgrade_command_run(&io, &http, &env, check, opts)
 }

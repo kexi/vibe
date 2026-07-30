@@ -13,6 +13,7 @@ complete -c vibe -n __fish_use_subcommand -a untrust -d 'Remove trust for .vibe.
 complete -c vibe -n __fish_use_subcommand -a verify -d 'Verify trust status and hash history'
 complete -c vibe -n __fish_use_subcommand -a config -d 'Show current settings'
 complete -c vibe -n __fish_use_subcommand -a upgrade -d 'Check for updates and show upgrade instructions'
+complete -c vibe -n __fish_use_subcommand -a doctor -d 'Check the environment for problems (stale shell wrappers)'
 complete -c vibe -n __fish_use_subcommand -a shell-setup -d 'Print shell wrapper function for eval'
 
 # Global flags

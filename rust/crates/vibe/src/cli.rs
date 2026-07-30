@@ -86,6 +86,8 @@ pub enum Command {
     Config,
     /// Check for updates and show upgrade instructions.
     Upgrade(UpgradeArgs),
+    /// Check the environment for problems (stale nushell/PowerShell wrappers).
+    Doctor,
     /// Print shell wrapper function for eval.
     #[command(name = "shell-setup")]
     ShellSetup(ShellSetupArgs),

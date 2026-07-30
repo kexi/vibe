@@ -23,6 +23,7 @@ A super fast CLI tool for easy Git Worktree management.
 | `vibe verify`                      | Verify trust status and hash history                                              |
 | `vibe config`                      | Show current settings                                                             |
 | `vibe upgrade [options]`           | Check for updates and show upgrade instructions                                   |
+| `vibe doctor`                      | Check the environment for a stale nushell/PowerShell shell wrapper                |
 
 ### Examples
 

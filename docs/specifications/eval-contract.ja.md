@@ -137,7 +137,7 @@ dialect 機構の導入以前、nushell と powershell のラッパーは壊れ�
 
 残っている制限:
 
-- **ラッパーは自動的に再生成されません。** 旧い nushell / powershell のスニペットを rc ファイルに貼り付けたユーザーは、`vibe shell-setup` を再実行する（またはドキュメントからスニペットを貼り直す）まで、旧来の壊れた挙動のままです。これは設計上の意図です。vibe がユーザーのシェル設定を書き換えることはありません。
+- **ラッパーは自動的に再生成されません。** 旧い nushell / powershell のスニペットを rc ファイルに貼り付けたユーザーは、`vibe shell-setup` を再実行する（またはドキュメントからスニペットを貼り直す）まで、旧来の壊れた挙動のままです。これは設計上の意図です。vibe がユーザーのシェル設定を書き換えることはありません。 `vibe doctor` は貼り付け済みの旧ラッパーを**検出**し、再生成用のコマンドを表示します。また `vibe upgrade` は旧ラッパーの可能性がある場合（Posix dialect のもとで `$SHELL` が nushell / PowerShell、または Windows）に `vibe doctor` を案内する1行のヒントを追記します。あくまで検出と案内のみで、書き換えない原則は変わらず、どちらもファイルには手を触れません。
 - Posix 系ラッパー（bash / zsh / fish）のバイト列は変更されていないため、動作していた構成への影響はありません。
 
 ## 7. 隣接プロトコル: Claude Code worktree フック（stdin JSON）
@@ -230,6 +230,7 @@ dialect 機構の導入以前、nushell と powershell のラッパーは壊れ�
 - `rust/clippy.toml` — `std::io::stdout` をプロダクションコードから締め出す disallowed-methods リスト
 - `rust/crates/vibe/tests/eval_contract.rs` — この仕様の実行可能な形
 - `rust/crates/vibe/tests/wrapper_round_trip.rs` — すべてのラッパーと dialect の実シェル往復テスト
+- `rust/crates/vibe-core/src/commands/doctor.rs` — 旧ラッパーの検出（§6.1）
 
 関連ドキュメント:
 
