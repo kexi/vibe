@@ -1,0 +1,92 @@
+---
+title: vibe scratch
+description: 使用自动生成的 scratch 分支名创建 worktree
+sidebar:
+  order: 2
+---
+
+`scratch` 命令会使用自动生成的 `scratch/<timestamp>` 分支名创建 Git Worktree。它与 `vibe start` 相同，但省去了事先取名的麻烦 —— 非常适合“先随便试试”的场景。
+
+## 使用方法
+
+```bash
+vibe scratch [options]
+```
+
+## 选项
+
+除了 `--claude-code-worktree-hook` 之外，`vibe scratch` 接受与 [`vibe start`](/zh/commands/start/) 相同的选项。
+
+| 选项              | 说明                               |
+| ----------------- | ---------------------------------- |
+| `--reuse`         | 使用已有分支（很少有实际意义）     |
+| `--base <ref>`    | 新分支的基础分支/提交              |
+| `--track`         | 使用 `--base` 时设置 upstream 跟踪 |
+| `--no-hooks`      | 跳过 pre-start 和 post-start 钩子  |
+| `--no-copy`       | 跳过文件和目录的复制               |
+| `-n`, `--dry-run` | 预览操作而不实际执行               |
+| `-V`, `--verbose` | 显示详细输出                       |
+| `-q`, `--quiet`   | 抑制非必要的输出                   |
+
+## 示例
+
+```bash
+# 创建 scratch worktree
+vibe scratch
+
+# 基于指定的基础分支创建
+vibe scratch --base develop
+
+# 不执行钩子的快速 scratch
+vibe scratch --no-hooks
+```
+
+输出：
+
+```
+$ vibe scratch
+Created worktree: scratch/20260427-143052
+Promote with: vibe rename <new-name>
+```
+
+## 行为
+
+### 分支命名
+
+生成的分支名为本地时间的 `scratch/<YYYYMMDD-HHMMSS>`。该格式具有以下特点：
+
+- **可排序**：最新的 worktree 在 `vibe list` 中排在最前
+- **可预期**：将 worktree 与你开始工作的时间关联起来
+- **不冲突**：如果同一秒内出现两次（实际中很罕见），会追加 `-2`、`-3`……
+
+### 与 `vibe start` 相同的流程
+
+名称生成之后，`vibe scratch` 会执行与 `vibe start` 完全相同的流程：
+
+1. 在源仓库中执行 **pre-start 钩子**
+2. **创建 worktree**
+3. **复制文件**
+4. 在新 worktree 中执行 **post-start 钩子**
+5. **切换目录**到新的 worktree
+
+成功后，vibe 会打印一条指向 [`vibe rename`](/zh/commands/rename/) 的提示，方便你在工作成形后把 scratch 提升为正式名称。
+
+### 何时提升
+
+如果 scratch 产出了值得保留的成果，请在该 worktree 内执行 `vibe rename <name>`：
+
+```bash
+$ cd /path/to/scratch-20260427-143052
+$ vibe rename my-feature
+Renamed scratch/20260427-143052 -> my-feature
+```
+
+### 清理
+
+使用 `vibe clean` 删除不再需要的 scratch。scratch 没有任何特殊待遇 —— 它们的行为与其他 worktree 完全一致。
+
+## 相关内容
+
+- [start](/zh/commands/start/) - 使用显式名称创建 worktree
+- [rename](/zh/commands/rename/) - 将 scratch 提升为正式名称
+- [clean](/zh/commands/clean/) - 完成后删除 worktree

@@ -1,0 +1,20 @@
+---
+title: cmux
+description: 在新的 worktree 中打开一个 cmux 工作区
+sidebar:
+  order: 2
+---
+
+打开一个指向刚刚创建的 worktree 的新 [cmux](https://github.com/kexi/cmux) 工作区。
+
+```toml
+[hooks]
+post_start = ['cmux new-workspace --cwd "$VIBE_WORKTREE_PATH"']
+```
+
+就是这么简单——每次执行 `vibe start` 都会把 worktree 路径交给 cmux。
+
+## 注意事项
+
+- `post_start` 是在新的 worktree **内部**执行的，因此 `--cwd "$VIBE_WORKTREE_PATH"` 严格来说是多余的，但保留它可以在你日后把该命令移到其他钩子阶段时保持语义明确。
+- 如果在非交互式 shell 的 `PATH` 中找不到 cmux，请使用绝对路径：`'/usr/local/bin/cmux new-workspace --cwd "$VIBE_WORKTREE_PATH"'`。

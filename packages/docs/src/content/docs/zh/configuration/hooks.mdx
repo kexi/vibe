@@ -1,0 +1,227 @@
+---
+title: 钩子
+description: 配置钩子以实现自动化工作流
+sidebar:
+  order: 4
+---
+
+通过钩子，你可以在 worktree 生命周期中自动执行命令。
+
+## 可用的钩子
+
+| 钩子         | 执行时机          | 工作目录      |
+| ------------ | ----------------- | ------------- |
+| `pre_start`  | worktree 创建之后 | 源仓库        |
+| `post_start` | worktree 创建之后 | 新的 worktree |
+| `pre_clean`  | worktree 删除之前 | 当前 worktree |
+| `post_clean` | worktree 删除之后 | 主仓库        |
+
+## 配置
+
+```toml
+[hooks]
+pre_start = ["echo '正在准备 worktree...'"]
+post_start = [
+  "pnpm install",
+  "pnpm db:migrate"
+]
+pre_clean = ["git stash"]
+post_clean = ["echo '清理完成'"]
+```
+
+## 环境变量
+
+所有钩子命令中都可以使用以下环境变量：
+
+| 变量                 | 说明                       |
+| -------------------- | -------------------------- |
+| `VIBE_WORKTREE_PATH` | 所创建 worktree 的绝对路径 |
+| `VIBE_ORIGIN_PATH`   | 源仓库的绝对路径           |
+
+### 使用示例
+
+```toml
+[hooks]
+post_start = [
+  "echo 'Worktree 创建于: $VIBE_WORKTREE_PATH'",
+  "echo '源仓库: $VIBE_ORIGIN_PATH'"
+]
+```
+
+## 钩子的输出行为
+
+vibe 会在钩子执行期间显示实时的进度树：
+
+```
+✶ Setting up worktree feature/new-ui…
+┗ ☒ Pre-start hooks
+   ┗ ☒ npm install
+     ☒ cargo build --release
+  ⠋ Copying files
+   ┗ ⠋ .env.local
+     ☐ node_modules/
+```
+
+### 输出处理
+
+| 情况         | 标准输出       | 标准错误 |
+| ------------ | -------------- | -------- |
+| 进度显示启用 | 被抑制         | 始终显示 |
+| 进度显示禁用 | 输出到标准错误 | 始终显示 |
+| 钩子执行失败 | N/A            | 始终显示 |
+
+:::note
+在非 TTY 环境（例如 CI/CD）中，进度显示会自动禁用，钩子的输出将正常显示。
+:::
+
+## 钩子的执行顺序
+
+对于 `vibe start`：
+
+1. 创建 worktree
+2. 当配置了 `[submodules] configs = [...]` 时，初始化列出的子模块
+3. 各个列出的子模块中已信任的 `pre_start`、copy 规则和 `post_start` 会以该子模块根目录为基准执行
+4. 父仓库的 `pre_start` 钩子在源仓库中执行
+5. 复制父仓库的文件/目录
+6. 父仓库的 `post_start` 钩子在新的 worktree 中执行
+
+对于 `vibe clean`：
+
+1. `pre_clean` 钩子在当前 worktree 中执行
+2. 删除 worktree
+3. `post_clean` 钩子在主仓库中执行
+
+## 常见模式
+
+### Node.js 项目
+
+```toml
+[hooks]
+post_start = [
+  "pnpm install",
+  "pnpm build"
+]
+pre_clean = ["git stash --include-untracked"]
+```
+
+### Bun 项目
+
+```toml
+[hooks]
+post_start = [
+  "bun install",
+  "bun run build"
+]
+pre_clean = ["git stash --include-untracked"]
+```
+
+### 数据库迁移
+
+```toml
+[hooks]
+post_start = [
+  "pnpm install",
+  "pnpm db:migrate",
+  "pnpm db:seed"
+]
+```
+
+### Docker 环境
+
+```toml
+[hooks]
+post_start = [
+  "docker-compose up -d",
+  "sleep 5",
+  "pnpm db:migrate"
+]
+pre_clean = ["docker-compose down"]
+```
+
+### Git 子模块
+
+当某个直接子模块有自己的 setup 文件或钩子时，请使用一等公民的子模块配置：
+
+```toml
+[submodules]
+configs = ["libs/foo"]
+```
+
+这会在新的 worktree 中执行 `git submodule update --init -- libs/foo`，然后通过常规的 trust store 加载 `libs/foo/.vibe.toml`。该子模块的 copy 规则和钩子会以 `libs/foo` 为基准解析路径，并在父仓库的 `pre_start` 钩子之前执行。
+
+:::note
+如果你需要自定义的子模块行为，例如递归更新、过滤更新，或有意忽略失败，请改用钩子。
+:::
+
+## 跳过钩子
+
+你可以使用 `--no-hooks` 选项跳过钩子：
+
+```bash
+vibe start feat/quick-fix --no-hooks
+```
+
+## Claude Code 集成
+
+vibe 可以与 [Claude Code](https://claude.ai/code) 的 `WorktreeCreate` 和 `WorktreeRemove` 钩子集成。这会把 Claude Code 默认的 `git worktree add` 行为替换为 vibe 的完整工作流，包括钩子、CoW 文件复制和配置。
+
+### 设置
+
+在 Claude Code 的 `settings.json` 中添加以下内容：
+
+```json
+{
+  "hooks": {
+    "WorktreeCreate": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "vibe start --claude-code-worktree-hook --quiet 2>/dev/null"
+          }
+        ]
+      }
+    ],
+    "WorktreeRemove": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "vibe clean --claude-code-worktree-hook --force 2>/dev/null"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### 工作原理
+
+当 Claude Code 创建 worktree 时（通过自然语言、`isolation: "worktree"` 或 `/worktree` 命令），vibe 会接管完整的生命周期：
+
+**WorktreeCreate:**
+
+1. 从 stdin 读取 worktree 名称（Claude Code 钩子协议）
+2. 创建 git worktree
+3. 当配置了 `[submodules] configs = [...]` 时，初始化列出的子模块并执行其已信任的 setup
+4. 在源仓库中执行父仓库的 `pre_start` 钩子
+5. 使用 CoW 复制父仓库的文件/目录
+6. 在新的 worktree 中执行父仓库的 `post_start` 钩子（例如 `pnpm install`）
+7. 将 worktree 路径输出到 stdout 供 Claude Code 使用
+
+**WorktreeRemove:**
+
+1. 从 stdin 读取 worktree 路径（Claude Code 钩子协议）
+2. 在 worktree 中执行 `pre_clean` 钩子
+3. 删除 git worktree
+4. 在主仓库中执行 `post_clean` 钩子
+
+### 优势
+
+如果没有该集成，Claude Code 创建 worktree 时只会执行 `git worktree add`。借助 vibe 的钩子，你可以获得：
+
+- **自动安装依赖**（`pnpm install`、`bun install` 等）
+- **CoW 文件复制**（`.env`、`node_modules` 等）
+- **自定义 setup 脚本**（数据库迁移、Docker 容器等）
+- **worktree 删除时的清理钩子**

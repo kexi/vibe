@@ -1,4 +1,4 @@
-> 🇺🇸 [English](./eval-contract.md)
+> 🇺🇸 [English](./eval-contract.md) | 🇨🇳 [简体中文](./eval-contract.zh.md)
 
 # The stdout Eval Contract
 

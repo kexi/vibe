@@ -1,0 +1,109 @@
+---
+title: vibe rename
+description: 重命名当前 worktree 的分支和目录
+sidebar:
+  order: 3
+---
+
+`rename` 命令会重命名当前 worktree 的分支并移动其目录。它的主要用途是：当由 [`vibe scratch`](/zh/commands/scratch/) 创建的 scratch worktree 中的工作逐渐成形后，将其提升为正式的名称。
+
+## 使用方法
+
+```bash
+vibe rename <new-name> [options]
+```
+
+## 选项
+
+| 选项              | 说明                 |
+| ----------------- | -------------------- |
+| `-n`, `--dry-run` | 预览操作而不实际执行 |
+| `-V`, `--verbose` | 显示详细输出         |
+| `-q`, `--quiet`   | 抑制非必要的输出     |
+
+## 示例
+
+```bash
+# 将当前 scratch 提升为正式名称
+vibe rename my-feature
+
+# 预览而不实际应用
+vibe rename my-feature --dry-run
+
+# 重命名任意（未推送的）worktree
+cd /path/to/scratch-20260427-143052
+vibe rename feat/login
+```
+
+输出：
+
+```
+$ vibe rename my-feature
+Renamed scratch/20260427-143052 -> my-feature
+Directory: /path/to/scratch-20260427-143052 -> /path/to/repo-my-feature
+# → cd '/path/to/repo-my-feature'
+```
+
+## 行为
+
+`vibe rename` 会执行两个操作：
+
+1. `git worktree move <old-path> <new-path>` —— 重命名目录
+2. `git branch -m <old-name> <new-name>` —— 重命名分支
+
+两者都成功后，vibe 会更新内部的 MRU 记录，并向 shell 包装函数输出 `cd` 命令，把你带入重命名后的 worktree。
+
+### 不支持已推送的分支
+
+如果当前分支存在远程 upstream（即已被推送），`vibe rename` 会中止操作，并打印出你需要手动执行的确切 git 命令：
+
+```
+$ vibe rename my-feature
+Error: branch 'scratch/20260427-143052' is pushed to 'origin'
+vibe rename does not handle pushed branches to avoid remote divergence.
+To rename manually:
+  git branch -m scratch/20260427-143052 my-feature
+  git push origin -u my-feature
+  git push origin --delete scratch/20260427-143052
+  # then move the worktree directory yourself
+```
+
+这样可以让 vibe 的行为保持简单且可预测。重命名带远程跟踪的分支应当由用户自觉地直接使用 git 来完成。
+
+本地跟踪分支（即 `branch.<name>.remote = "."`）**不会**被视为已推送，重命名会正常进行。
+
+### 冲突检测
+
+如果目标名称已被占用，`vibe rename` 会中止：
+
+- 存在同名的分支
+- 存在使用该新目录路径的 worktree
+
+### 拒绝在主 worktree 中执行
+
+`vibe rename` 无法在主 worktree（仓库的主检出目录）中运行。移动目录会导致整个仓库被搬迁，这是不安全的。如果你确实需要这样做，请直接使用 `git`。
+
+### 同名时为空操作
+
+如果 `vibe rename` 使用与当前分支相同的名称执行，则为空操作：vibe 会打印 `Already named '<name>'`，并针对当前路径输出 `cd` 命令。
+
+### 失败恢复
+
+如果 `git worktree move` 成功但 `git branch -m` 失败，vibe 会尝试回滚目录移动。如果回滚也失败，vibe 会打印手动恢复命令并以退出码 1 结束。
+
+### MRU 更新
+
+如果你的 worktree 已被记录在 MRU 列表中（`vibe jump` 用它来排序），该条目会被更新为新的路径和分支名。时间戳会被保留，因此 MRU 的排序不会改变。
+
+## 退出码
+
+| 退出码 | 条件                                                            |
+| ------ | --------------------------------------------------------------- |
+| `0`    | 重命名成功，或同名的空操作                                      |
+| `1`    | 错误（名称为空、主 worktree、已推送的分支、冲突、git 执行失败） |
+
+## 相关内容
+
+- [scratch](/zh/commands/scratch/) - 创建自动命名的 worktree
+- [start](/zh/commands/start/) - 使用显式名称创建 worktree
+- [jump](/zh/commands/jump/) - 在 worktree 之间跳转

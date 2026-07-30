@@ -1,0 +1,54 @@
+---
+title: 配置概览
+description: 使用 .vibe.toml 配置 vibe
+sidebar:
+  order: 1
+---
+
+vibe 可以通过 TOML 文件进行配置，从而自动化创建和清理 worktree 时的工作流。
+
+## 配置文件
+
+| 文件               | 用途             | 位置              | 是否纳入 Git 管理    |
+| ------------------ | ---------------- | ----------------- | -------------------- |
+| `.vibe.toml`       | 团队共享配置     | 仓库根目录        | 是                   |
+| `.vibe.local.toml` | 个人本地覆盖配置 | 仓库根目录        | 否（已被 gitignore） |
+| `settings.json`    | 用户级全局设置   | `~/.config/vibe/` | 否（位于用户主目录） |
+
+## 基本示例
+
+在仓库根目录创建 `.vibe.toml` 文件：
+
+```toml
+# 将文件和目录从源仓库复制到 worktree
+[copy]
+files = [".env"]
+dirs = ["node_modules", ".cache"]
+
+# worktree 创建后要执行的命令
+[hooks]
+pre_start = ["echo '正在准备 worktree...'"]
+post_start = [
+  "pnpm install",
+  "pnpm db:migrate"
+]
+pre_clean = ["git stash"]
+post_clean = ["echo '清理完成'"]
+```
+
+## 首次设置
+
+在使用配置文件之前，需要先信任它们：
+
+```bash
+vibe trust
+```
+
+该命令会注册配置文件的 SHA-256 哈希值，以防止未经授权的修改。
+
+## 配置主题
+
+- [.vibe.toml](/zh/configuration/vibe-toml/) - 共享配置详解
+- [.vibe.local.toml](/zh/configuration/local-config/) - 本地覆盖配置
+- [settings.json](/zh/configuration/settings/) - 用户级全局设置
+- [钩子](/zh/configuration/hooks/) - 可用的钩子与环境变量

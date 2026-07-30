@@ -1,0 +1,202 @@
+---
+title: .vibe.toml
+description: 团队共享的配置文件
+sidebar:
+  order: 2
+---
+
+import { Badge } from "@astrojs/starlight/components";
+
+`.vibe.toml` 文件包含共享配置，通常会提交到 git 并与团队成员共享。
+
+## Copy 配置
+
+### 文件
+
+将源仓库中的单个文件复制到 worktree：
+
+```toml
+[copy]
+files = [".env", "config.json"]
+```
+
+#### Glob 模式
+
+`files` 数组支持 glob 模式，可以灵活地选择文件：
+
+```toml
+[copy]
+files = [
+  "*.env",              # 根目录下的所有 .env 文件
+  "**/*.json",          # 所有 JSON 文件（递归）
+  "config/*.txt",       # config/ 下的所有 .txt 文件
+  ".env.production"     # 精确路径依然可用
+]
+```
+
+**支持的模式：**
+
+| 模式    | 说明                            |
+| ------- | ------------------------------- |
+| `*`     | 匹配除 `/` 以外的任意字符       |
+| `**`    | 匹配包含 `/` 的任意字符（递归） |
+| `?`     | 匹配任意单个字符                |
+| `[abc]` | 匹配方括号内的任意字符          |
+
+:::tip[性能]
+递归模式（`**/*`）在大型仓库中可能较慢。请尽量使用更具体的模式（例如用 `config/**/*.json` 代替 `**/*.json`）。
+:::
+
+### 目录 <Badge text="v0.4.0+" />
+
+递归复制整个目录：
+
+```toml
+[copy]
+dirs = [
+  "node_modules",      # 精确的目录路径
+  ".cache",            # 隐藏目录
+  "packages/*"         # 匹配多个目录的 Glob 模式
+]
+```
+
+:::note
+
+- 目录会被完整复制（而非增量同步）
+- 像 `node_modules` 这样的大目录可能需要较长的复制时间
+- 复制匹配到的文件时会保留目录结构
+  :::
+
+### 并发数 <Badge text="v0.17.0+" />
+
+控制并行执行的目录复制操作数量：
+
+```toml
+[copy]
+concurrency = 8
+```
+
+- **默认值**：`4`
+- **取值范围**：`1` 到 `32`
+- 在存储速度较快的系统（NVMe、SSD）上，提高该值可以加快复制
+- 降低该值可以减少系统资源占用
+
+**通过环境变量覆盖：**
+
+```bash
+VIBE_COPY_CONCURRENCY=16 vibe start feat/my-feature
+```
+
+环境变量的优先级高于配置文件中的设置。
+
+## 复制性能优化 <Badge text="v0.4.0+" />
+
+vibe 会根据你的系统自动选择最佳的复制策略：
+
+| 策略             | 使用场景                    | 平台        |
+| ---------------- | --------------------------- | ----------- |
+| Clone (CoW)      | APFS 上的目录复制           | macOS       |
+| Clone (reflink)  | Btrfs/XFS 上的目录复制      | Linux       |
+| rsync            | 无法使用 clone 时的目录复制 | macOS/Linux |
+| robocopy (`/MT`) | 目录复制                    | Windows     |
+| Standard         | 文件复制，或作为兜底方案    | 全部        |
+
+**工作原理：**
+
+- **文件复制**：始终使用原生的 `copyFile()`，以获得最佳的单文件性能
+- **目录复制**：自动使用当前可用的最快方式
+
+**优势：**
+
+- Copy-on-Write 只复制元数据而非实际数据，因此速度极快
+- 无需配置 - 最佳策略会被自动检测
+- 自动回退机制确保复制始终可用
+
+## 钩子配置
+
+关于 pre/post 钩子的配置细节，请参阅[钩子](/zh/configuration/hooks/)。
+
+## 子模块配置
+
+在 worktree 创建之后、父仓库的 `pre_start` 钩子执行之前，加载所选直接子模块中已信任的 `.vibe.toml` 文件：
+
+```toml
+[submodules]
+configs = ["libs/foo", "vendor/bar"]
+```
+
+- **默认值**：`[]`
+- 每一项都必须与 `.gitmodules` 中某个直接子模块的路径完全匹配
+- 会在新的 worktree 中执行 `git submodule update --init -- <paths>`
+- 使用各子模块自身的 trust entry 加载其 `.vibe.toml` / `.vibe.local.toml`
+- 子模块配置中的钩子和 copy 规则会以子模块根目录为基准解析路径并执行
+- `--no-hooks` 会跳过子模块的钩子，但不会跳过子模块的初始化
+- `--no-copy` 会跳过子模块的 copy 规则
+- 子模块更新、trust、路径校验或 setup 失败都会中断 `vibe start`，已创建的 worktree 会保留下来以便排查
+
+## Worktree 配置 <Badge text="v0.6.0+" />
+
+使用外部脚本自定义 worktree 的目录路径。
+
+### path_script
+
+指定一个输出 worktree 路径的脚本：
+
+```toml
+[worktree]
+path_script = "~/.config/vibe/worktree-path.sh"
+```
+
+脚本会接收到以下环境变量：
+
+| 变量                    | 说明                          | 示例               |
+| ----------------------- | ----------------------------- | ------------------ |
+| `VIBE_REPO_NAME`        | 仓库名称                      | `my-project`       |
+| `VIBE_BRANCH_NAME`      | 分支名称                      | `feat/new-feature` |
+| `VIBE_SANITIZED_BRANCH` | 净化后的分支名称（`/` → `-`） | `feat-new-feature` |
+| `VIBE_REPO_ROOT`        | 仓库根目录路径                | `/path/to/repo`    |
+
+**脚本示例：**
+
+```bash
+#!/bin/bash
+# ~/.config/vibe/worktree-path.sh
+echo "${HOME}/worktrees/${VIBE_REPO_NAME}-${VIBE_SANITIZED_BRANCH}"
+```
+
+:::note
+脚本必须向标准输出打印一个**绝对路径**。
+:::
+
+## 完整示例
+
+```toml
+[copy]
+files = [
+  ".env",
+  ".env.local",
+  "**/*.secret"
+]
+dirs = [
+  "node_modules",
+  ".cache",
+  "vendor"
+]
+concurrency = 8
+
+[hooks]
+pre_start = ["echo '正在准备 worktree...'"]
+post_start = [
+  "pnpm install",
+  "pnpm db:migrate",
+  "pnpm build"
+]
+pre_clean = ["git stash"]
+post_clean = ["echo '清理完成'"]
+
+[submodules]
+configs = ["libs/foo"]
+
+[worktree]
+path_script = "~/.config/vibe/worktree-path.sh"
+```

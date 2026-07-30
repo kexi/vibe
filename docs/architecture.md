@@ -1,4 +1,4 @@
-> 🇯🇵 [日本語版](./architecture.ja.md)
+> 🇯🇵 [日本語版](./architecture.ja.md) | 🇨🇳 [简体中文](./architecture.zh.md)
 
 # Architecture Overview
 

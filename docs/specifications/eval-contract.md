@@ -1,4 +1,4 @@
-> 🇯🇵 [日本語版](./eval-contract.ja.md)
+> 🇯🇵 [日本語版](./eval-contract.ja.md) | 🇨🇳 [简体中文](./eval-contract.zh.md)
 
 # The stdout Eval Contract
 

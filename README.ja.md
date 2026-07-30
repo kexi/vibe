@@ -2,7 +2,7 @@
 
 Git Worktreeを簡単かつ超高速に管理するCLIツール。
 
-[English](README.md)
+[English](README.md) | [简体中文](README.zh.md)
 
 ## ドキュメント
 

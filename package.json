@@ -25,6 +25,8 @@
     "test:rust": "cargo test --manifest-path rust/Cargo.toml --workspace",
     "build:rust": "cargo build --manifest-path rust/Cargo.toml -p vibe --release",
     "check:rust": "pnpm run fmt:rust:check && pnpm run lint:rust && pnpm run test:rust",
+    "check:licenses": "bun run scripts/generate-third-party-licenses.ts --check && bun run scripts/check-ring-unlinked.ts",
+    "check:i18n": "bun run scripts/check-markdown-i18n.ts",
     "get-version": "node -e \"console.log(JSON.parse(require('fs').readFileSync('package.json')).version)\"",
     "bmp": "deno run --frozen --allow-env=NO_COLOR,TERM,CI,LOG_TOKENS,LOG_STREAM --allow-read=.bmp.yml,package.json,packages/npm/package.json,packages/vibe-linux-x64/package.json,packages/vibe-linux-arm64/package.json,packages/vibe-darwin-x64/package.json,packages/vibe-darwin-arm64/package.json,packages/vibe-win32-x64/package.json,rust/crates/vibe/Cargo.toml,rust/crates/vibe-core/Cargo.toml,rust/crates/vibe-test-support/Cargo.toml,pnpm-lock.yaml --allow-write=.bmp.yml,package.json,packages/npm/package.json,packages/vibe-linux-x64/package.json,packages/vibe-linux-arm64/package.json,packages/vibe-darwin-x64/package.json,packages/vibe-darwin-arm64/package.json,packages/vibe-win32-x64/package.json,rust/crates/vibe/Cargo.toml,rust/crates/vibe-core/Cargo.toml,rust/crates/vibe-test-support/Cargo.toml,pnpm-lock.yaml jsr:@kt3k/bmp@0.3.3",
     "install:all": "pnpm install",
@@ -32,7 +34,7 @@
     "test:e2e": "cargo build --manifest-path rust/Cargo.toml -p vibe && pnpm -C packages/e2e test",
     "clean": "pnpm -r exec rm -rf node_modules dist",
     "check:docs": "pnpm -C packages/docs lint && pnpm -C packages/docs format && pnpm -C packages/docs check",
-    "check:all": "pnpm run fmt:check && pnpm run lint && pnpm run check:rust && pnpm run test:npm && pnpm run test:e2e && pnpm run check:docs"
+    "check:all": "pnpm run fmt:check && pnpm run lint && pnpm run check:i18n && pnpm run check:rust && pnpm run check:licenses && pnpm run test:npm && pnpm run test:e2e && pnpm run check:docs"
   },
   "devDependencies": {
     "@oxlint/plugins": "^1.67.0",

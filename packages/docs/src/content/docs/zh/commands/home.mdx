@@ -1,0 +1,80 @@
+---
+title: vibe home
+description: 不删除当前 worktree 直接返回主 worktree
+sidebar:
+  order: 4
+---
+
+`home` 命令会返回主 worktree，而不删除当前的次级 worktree。当你需要临时到主仓库确认某些内容，或切换到其他 worktree 时，这个命令非常有用。
+
+## 使用方法
+
+```bash
+vibe home
+```
+
+## 选项
+
+### `-V`, `--verbose`
+
+显示详细输出，包括主 worktree 的路径。
+
+```bash
+vibe home --verbose
+```
+
+### `-q`, `--quiet`
+
+抑制非必要的输出。
+
+```bash
+vibe home --quiet
+```
+
+## 行为
+
+在次级 worktree 中执行时，`vibe home` 会：
+
+1. 确认当前处于 git 仓库中
+2. 检查是否已经位于主 worktree
+3. 跳转到主 worktree 目录
+
+如果已经位于主 worktree，则显示提示信息且不做任何操作。
+
+## 示例
+
+```bash
+# 从次级 worktree 跳转到主 worktree
+vibe home
+
+# 已经位于主 worktree 的情况
+$ vibe home
+Already in the main worktree.
+```
+
+## 与 `vibe clean` 的对比
+
+| 特性          | `vibe home` | `vibe clean`      |
+| ------------- | ----------- | ----------------- |
+| 删除 worktree | 否          | 是                |
+| 返回主仓库    | 是          | 是                |
+| 保留 worktree | 是          | 否                |
+| 适用场景      | 临时跳转    | worktree 使用完毕 |
+
+## 工作流程
+
+```
+worktree (当前)
+     │
+     └── cd 到主仓库
+            │
+            ▼
+主仓库 (新的当前位置)
+     │
+     └── worktree 仍然存在（可以 cd 回去）
+```
+
+## 相关内容
+
+- [start](/zh/commands/start/) - 创建 worktree
+- [clean](/zh/commands/clean/) - 删除 worktree

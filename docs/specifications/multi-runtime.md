@@ -1,4 +1,4 @@
-> 🇯🇵 [日本語版](./multi-runtime.ja.md)
+> 🇯🇵 [日本語版](./multi-runtime.ja.md) | 🇨🇳 [简体中文](./multi-runtime.zh.md)
 
 # Multi-Runtime Support
 

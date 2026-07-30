@@ -1,0 +1,60 @@
+---
+title: vibe config
+description: 显示当前配置
+sidebar:
+  order: 5
+---
+
+`config` 命令用于显示当前生效的配置。
+
+## 使用方法
+
+```bash
+vibe config
+```
+
+## 输出
+
+显示由 `.vibe.toml` 和 `.vibe.local.toml` 合并后的配置：
+
+```bash
+$ vibe config
+Copy:
+  files: [".env", ".env.local"]
+  dirs: ["node_modules", ".cache"]
+
+Hooks:
+  pre_start: ["echo 'Starting'"]
+  post_start: ["pnpm install", "pnpm build"]
+  pre_clean: ["git stash"]
+  post_clean: ["echo 'Done'"]
+```
+
+## 使用场景
+
+### 确认配置
+
+在创建 worktree 之前确认配置是否正确：
+
+```bash
+vibe config
+vibe start feat/new-feature
+```
+
+### 调试合并结果
+
+查看 `.vibe.toml` 与 `.vibe.local.toml` 是如何合并的：
+
+```bash
+# 查看合并后的结果
+vibe config
+
+# 与各个文件进行对比
+cat .vibe.toml
+cat .vibe.local.toml
+```
+
+## 相关内容
+
+- [配置](/zh/configuration/) - 如何配置 vibe
+- [.vibe.local.toml](/zh/configuration/local-config/) - 本地覆盖设置
