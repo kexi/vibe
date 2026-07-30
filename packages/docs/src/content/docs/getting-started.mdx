@@ -176,6 +176,7 @@ Add **one** of the following to your shell configuration (choose based on your i
     snippet you pasted before — it never actually changed your directory and rejected
     any command carrying a flag. Keep both `--wrapped` (so flags reach `...args`) and
     `for` (nushell discards environment changes made inside an `each` closure).
+    Run `vibe doctor` to check whether a previously pasted wrapper is current.
     :::
 
   </TabItem>
@@ -196,6 +197,7 @@ Add **one** of the following to your shell configuration (choose based on your i
     Requires vibe 2.2.0 or later. Replace any older
     `Invoke-Expression (& vibe.exe $args)` snippet you pasted before — it mishandled
     paths containing a single quote and threw an error when vibe produced no output.
+    Run `vibe doctor` to check whether a previously pasted wrapper is current.
     :::
 
   </TabItem>

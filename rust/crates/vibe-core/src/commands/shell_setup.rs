@@ -14,7 +14,7 @@ use crate::output::{verbose_log, OutputOptions};
 
 /// Supported shells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ShellName {
+pub(crate) enum ShellName {
     Bash,
     Zsh,
     Fish,
@@ -23,7 +23,7 @@ enum ShellName {
 }
 
 impl ShellName {
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             ShellName::Bash => "bash",
             ShellName::Zsh => "zsh",
@@ -35,7 +35,7 @@ impl ShellName {
 }
 
 /// Detect a shell from a path/name (e.g. `/bin/zsh` → `Zsh`).
-fn detect_shell(shell_path: &str) -> Option<ShellName> {
+pub(crate) fn detect_shell(shell_path: &str) -> Option<ShellName> {
     let basename = shell_path.rsplit('/').next().unwrap_or(shell_path);
     match basename.to_ascii_lowercase().as_str() {
         "bash" => Some(ShellName::Bash),
@@ -48,7 +48,10 @@ fn detect_shell(shell_path: &str) -> Option<ShellName> {
 }
 
 /// The wrapper function definition for a shell.
-fn shell_function(shell: ShellName) -> &'static str {
+///
+/// `pub(crate)` so `doctor` can drift-guard its stale/current classifier against
+/// the exact bytes shipped here, instead of a hand-copied duplicate.
+pub(crate) fn shell_function(shell: ShellName) -> &'static str {
     match shell {
         ShellName::Bash | ShellName::Zsh => r#"vibe() { eval "$(command vibe "$@")"; }"#,
         ShellName::Fish => "function vibe; eval (command vibe $argv); end",

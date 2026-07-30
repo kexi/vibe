@@ -1,0 +1,85 @@
+---
+title: vibe doctor
+description: 古いシェルラッパーなど、環境の問題をチェックする
+sidebar:
+  order: 6
+---
+
+`doctor`コマンドは既知の環境問題をチェックします。現時点での役割は1つで、シェルプロファイルにあるnushell/PowerShellのラッパーが最新かどうかを教えてくれます。
+
+v3.0.0で追加されました。
+
+## 使い方
+
+```bash
+vibe doctor
+```
+
+### `-V`, `--verbose`
+
+存在しないものも含め、チェックしたすべてのパスを一覧表示します。
+
+```bash
+vibe doctor --verbose
+```
+
+## なぜ必要か
+
+vibe 2.2.0より前に配布していたnushell/PowerShellのラッパーは壊れていました。nushell版は`cd`を子プロセスで実行していたため（ディレクトリが実際には変わらない）、さらにフラグ付きの呼び出しをすべて拒否していました。PowerShell版はシングルクォートを含むパスを正しく扱えず、vibeが何も出力しないときにエラーを投げていました。
+
+vibeはユーザーのシェル設定を書き換えないため、それらのスニペットを貼り付けたままなら今も壊れたままです。`vibe doctor`はそれを見つけて、置き換え方を案内します。
+
+bash・zsh・fishのラッパーは壊れていなかったため、チェック対象外です。
+
+## チェック内容
+
+現行のラッパーは`--eval-dialect`フラグを渡しますが、古いラッパーは渡しません。`doctor`は以下の各プロファイルから`vibe`関数の定義を探し、その定義がdialectを要求しているかを報告します。
+
+| シェル     | プラットフォーム | パス                                                                                                                                                       |
+| ---------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| nushell    | macOS / Linux    | `$XDG_CONFIG_HOME/nushell/config.nu`、未設定なら`~/.config/nushell/config.nu`                                                                              |
+| nushell    | Windows          | `%APPDATA%\nushell\config.nu`                                                                                                                              |
+| PowerShell | macOS / Linux    | `~/.config/powershell/Microsoft.PowerShell_profile.ps1`、`profile.ps1`                                                                                     |
+| PowerShell | Windows          | `%USERPROFILE%\Documents\{PowerShell,WindowsPowerShell}\*.ps1`、および`%OneDrive%`が設定されている場合は`%OneDrive%\Documents\`配下の同じ2つのディレクトリ |
+
+存在しないファイルは報告されません。報告される各ファイルには次のいずれかが付きます。
+
+| ステータス                         | 意味                                                |
+| ---------------------------------- | --------------------------------------------------- |
+| `current`                          | ラッパーがdialectを要求している（対応不要）         |
+| `stale`                            | 2.2.0より前のラッパー。置き換えが必要               |
+| `no vibe wrapper`                  | ファイルは存在するが`vibe`関数の定義がない          |
+| `not checked (not a regular file)` | パスがディレクトリ・ソケット・デバイスである        |
+| `unreadable`                       | ファイルは存在するが読み取れない（権限・I/Oエラー） |
+
+## 出力
+
+```
+$ vibe doctor
+Checking shell wrappers for nushell and PowerShell...
+  /Users/you/.config/nushell/config.nu: stale
+Fix: run 'vibe shell-setup --shell nushell' and replace the vibe function in /Users/you/.config/nushell/config.nu
+If your wrapper is sourced from another file, compare it with 'vibe shell-setup --shell <nushell|powershell>'.
+```
+
+すべての出力は標準エラー出力に書き出されます。標準出力はシェルのeval用プロトコルに予約されているため、そこにレポートを出すとラッパーによって*実行*されてしまいます。
+
+## 終了コード
+
+| コード | 意味                                                               |
+| ------ | ------------------------------------------------------------------ |
+| `0`    | 古いラッパーは見つからなかった（プロファイル自体がない場合も含む） |
+| `1`    | 古いラッパーが1つ以上見つかった                                    |
+
+レポートは`--quiet`でも表示されるため、終了コードが0以外のときに何も表示されない状況は起きません。
+
+## 注意点
+
+- **別ファイルから読み込んでいるラッパーは検出できません。** プロファイルが別のファイルを`source`して`vibe`を定義している場合、`doctor`は`no vibe wrapper`と報告します。その場合は`vibe shell-setup --shell nushell`（または`powershell`）の出力と手動で比較してください。
+- **OneDriveのKnown Folderリダイレクト。** `%OneDrive%`が設定されていれば`%OneDrive%\Documents`もチェックしますが、`Documents`フォルダが他の場所にリダイレクトされている場合は見つけられません。
+
+## 関連
+
+- [shell-setup](/ja/commands/shell-setup/) - 現行のシェルラッパーを出力
+- [upgrade](/ja/commands/upgrade/) - 更新の確認
+- [シェルセットアップ](/ja/setup/) - 対応シェルごとのラッパースニペット

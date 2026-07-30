@@ -187,6 +187,12 @@ pub const SUBCOMMANDS: &[CommandSpec] = &[
         )],
     },
     CommandSpec {
+        name: "doctor",
+        description: "Check the environment for problems (stale shell wrappers)",
+        positional_completion: None,
+        flags: &[],
+    },
+    CommandSpec {
         name: "shell-setup",
         description: "Print shell wrapper function for eval",
         positional_completion: None,

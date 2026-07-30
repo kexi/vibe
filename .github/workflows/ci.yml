@@ -82,6 +82,29 @@ jobs:
           VIBE_REQUIRE_SHELLS: bash,zsh,fish,nu,pwsh
         run: cargo test --manifest-path rust/Cargo.toml --workspace
 
+  # Windows-native proof of the PowerShell wrapper: rust-linux/rust-macos run
+  # the pwsh leg on Unix pwsh, which cannot exercise Windows path semantics,
+  # vibe.exe resolution, or `& vibe.exe ... @args` splatting where PowerShell
+  # users actually live. Scoped to the round-trip test: the rest of the
+  # workspace suite is platform-covered by the linux/macos jobs, and a full
+  # `cargo test --workspace` on the slow Windows runner would roughly double
+  # this job's cost for no unique coverage. Windows PowerShell 5.1 is not
+  # exercised (the wrapper targets pwsh 7).
+  rust-windows:
+    if: github.event_name == 'push' || github.base_ref == 'main'
+    runs-on: windows-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-toolchain
+      - name: Wrapper round-trip test (Windows-native pwsh)
+        env:
+          VIBE_REQUIRE_SHELLS: pwsh
+        run: cargo test --manifest-path rust/Cargo.toml -p vibe --test wrapper_round_trip
+
   # Compile the shipped Rust binary for every supported target so a
   # target-specific build break is caught before release. The
   # x86_64-apple-darwin entry cross-compiles on the arm64 macos-latest runner
@@ -559,6 +582,7 @@ jobs:
         lint,
         rust-linux,
         rust-macos,
+        rust-windows,
         build-rust-binaries,
         build-deb,
         e2e-test,
@@ -580,6 +604,7 @@ jobs:
           LINT: ${{ needs.lint.result }}
           RUST_LINUX: ${{ needs.rust-linux.result }}
           RUST_MACOS: ${{ needs.rust-macos.result }}
+          RUST_WINDOWS: ${{ needs.rust-windows.result }}
           BUILD_RUST_BINARIES: ${{ needs.build-rust-binaries.result }}
           BUILD_DEB: ${{ needs.build-deb.result }}
           E2E_TEST: ${{ needs.e2e-test.result }}
@@ -592,11 +617,12 @@ jobs:
           set -euo pipefail
 
           failed=0
-          full_only_jobs=" RUST_LINUX BUILD_RUST_BINARIES BUILD_DEB E2E_TEST NPM_INSTALL_MATRIX "
+          full_only_jobs=" RUST_LINUX RUST_WINDOWS BUILD_RUST_BINARIES BUILD_DEB E2E_TEST NPM_INSTALL_MATRIX "
           for job in \
             LINT \
             RUST_LINUX \
             RUST_MACOS \
+            RUST_WINDOWS \
             BUILD_RUST_BINARIES \
             BUILD_DEB \
             E2E_TEST \

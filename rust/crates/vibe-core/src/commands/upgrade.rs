@@ -9,11 +9,13 @@
 //! path) are passed in via [`UpgradeEnv`] so the command is fully testable
 //! offline. No `cd` is produced.
 
+use crate::commands::shell_setup::{detect_shell, ShellName};
 use crate::commands::Outcome;
 use crate::error::{Result, VibeError};
 use crate::http::{HttpClient, MAX_RESPONSE_SIZE};
 use crate::io::Io;
-use crate::output::{log, verbose_log, OutputOptions};
+use crate::output::{log, verbose_log, warn_log, OutputOptions};
+use crate::shell::EvalDialect;
 use crate::upgrade_meta::{
     detect_install_method, is_homebrew_path, is_npm_path, latest_version_from_meta, parse_semver,
     upgrade_command,
@@ -36,6 +38,53 @@ pub struct UpgradeEnv<'a> {
     pub real_path: &'a str,
     /// Whether the host is macOS (homebrew detection only applies there).
     pub is_mac: bool,
+    /// Whether the host is Windows (widens the stale-wrapper notice audience).
+    pub is_windows: bool,
+    /// The stdout dialect the calling wrapper requested. A read-only copy: the
+    /// binary owns the dialect used for the actual stdout write, and this
+    /// command never returns one.
+    pub eval_dialect: EvalDialect,
+}
+
+/// The one-line pointer at `vibe doctor`, shown when a stale pasted nushell /
+/// PowerShell wrapper is plausible.
+const STALE_WRAPPER_NOTICE: &str =
+    "Note: nushell/PowerShell wrappers pasted before vibe 2.2.0 were broken and \
+     have been replaced. Run 'vibe doctor' to check yours.";
+
+/// Whether to show [`STALE_WRAPPER_NOTICE`].
+///
+/// A wrapper that passes `--eval-dialect nu`/`powershell` is by definition the
+/// NEW one, so the notice would be pure noise — the Posix default (which is also
+/// what every old wrapper sends, since it passes no flag at all) is the only
+/// dialect worth warning under. Beyond that, either `$SHELL` names nushell or
+/// PowerShell, or the host is Windows (where `$SHELL` is usually unset yet
+/// PowerShell is the default shell).
+///
+/// `$SHELL` is only inspected, never printed: it is user-controlled and the
+/// notice goes to a terminal.
+fn should_show_stale_wrapper_notice(io: &impl Io, env: &UpgradeEnv) -> bool {
+    let is_posix_dialect = env.eval_dialect == EvalDialect::Posix;
+    if !is_posix_dialect {
+        return false;
+    }
+    if env.is_windows {
+        return true;
+    }
+    let shell = io.env("SHELL").unwrap_or_default();
+    matches!(
+        detect_shell(&shell),
+        Some(ShellName::Nushell) | Some(ShellName::Powershell)
+    )
+}
+
+/// Print the notice when it applies. `warn_log` (not `log`) so it survives
+/// `--quiet`: a user scripting `vibe upgrade -q` is exactly the user who would
+/// otherwise never learn their wrapper is broken.
+fn maybe_warn_stale_wrapper(io: &impl Io, env: &UpgradeEnv) {
+    if should_show_stale_wrapper_notice(io, env) {
+        warn_log(io, STALE_WRAPPER_NOTICE);
+    }
 }
 
 /// Run `vibe upgrade`. `check` is the `--check` flag.
@@ -62,6 +111,7 @@ pub fn upgrade_command_run(
     let is_up_to_date = comparison != Ordering::Less;
     if is_up_to_date {
         log(io, "You are using the latest version.", opts);
+        maybe_warn_stale_wrapper(io, env);
         return Ok(Outcome::none());
     }
 
@@ -75,6 +125,7 @@ pub fn upgrade_command_run(
     if check {
         log(io, &format!("Current: {current_version}"), opts);
         log(io, &format!("Latest:  {latest_version}"), opts);
+        maybe_warn_stale_wrapper(io, env);
         return Ok(Outcome::none());
     }
 
@@ -98,6 +149,7 @@ pub fn upgrade_command_run(
     log(io, "", opts);
     log(io, "Release notes:", opts);
     log(io, &format!("  {release_tag}"), opts);
+    maybe_warn_stale_wrapper(io, env);
 
     Ok(Outcome::none())
 }
@@ -151,6 +203,8 @@ mod tests {
             exec_path: "/home/u/.local/bin/vibe",
             real_path: "/home/u/.local/bin/vibe",
             is_mac: false,
+            is_windows: false,
+            eval_dialect: EvalDialect::Posix,
         }
     }
 
@@ -240,6 +294,8 @@ mod tests {
             exec_path: "/opt/homebrew/bin/vibe",
             real_path: "/opt/homebrew/bin/vibe",
             is_mac: true,
+            is_windows: false,
+            eval_dialect: EvalDialect::Posix,
         };
         upgrade_command_run(&io, &http, &env, false, OutputOptions::default()).unwrap();
         assert!(io.stderr_text().contains("brew upgrade kexi/tap/vibe"));
@@ -315,6 +371,8 @@ mod tests {
             exec_path: "/usr/lib/node_modules/@kexi/vibe-linux-x64/bin/vibe",
             real_path: "/usr/lib/node_modules/@kexi/vibe-linux-x64/bin/vibe",
             is_mac: false,
+            is_windows: false,
+            eval_dialect: EvalDialect::Posix,
         };
         upgrade_command_run(&io, &http, &env, false, OutputOptions::default()).unwrap();
         let text = io.stderr_text();
@@ -382,6 +440,156 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("Response too large"), "got: {err}");
+    }
+
+    // --- stale-wrapper notice gate ---
+
+    /// Run `upgrade` with the notice inputs varied, returning captured stderr.
+    /// `latest` drives which output path is taken (equal → up-to-date).
+    fn run_with_notice_inputs(
+        latest: &str,
+        check: bool,
+        is_windows: bool,
+        dialect: EvalDialect,
+        shell: Option<&str>,
+        opts: OutputOptions,
+    ) -> String {
+        let io = match shell {
+            Some(s) => FakeIo::new().with_env("SHELL", s),
+            None => FakeIo::new(),
+        };
+        let http = FakeHttpClient::json(&meta(latest));
+        let env = UpgradeEnv {
+            version: "1.0.0",
+            distribution: "dev",
+            exec_path: "/home/u/.local/bin/vibe",
+            real_path: "/home/u/.local/bin/vibe",
+            is_mac: false,
+            is_windows,
+            eval_dialect: dialect,
+        };
+        upgrade_command_run(&io, &http, &env, check, opts).unwrap();
+        io.stderr_text()
+    }
+
+    const NOTICE_MARKER: &str = "Run 'vibe doctor' to check yours.";
+
+    #[test]
+    fn notice_is_shown_for_a_nushell_shell_in_both_version_paths() {
+        for latest in ["1.0.0", "2.0.0"] {
+            let text = run_with_notice_inputs(
+                latest,
+                false,
+                false,
+                EvalDialect::Posix,
+                Some("/usr/bin/nu"),
+                OutputOptions::default(),
+            );
+            assert!(text.contains(NOTICE_MARKER), "latest={latest} got: {text}");
+        }
+    }
+
+    #[test]
+    fn notice_is_shown_for_a_powershell_shell() {
+        let text = run_with_notice_inputs(
+            "2.0.0",
+            false,
+            false,
+            EvalDialect::Posix,
+            Some("pwsh"),
+            OutputOptions::default(),
+        );
+        assert!(text.contains(NOTICE_MARKER), "got: {text}");
+    }
+
+    #[test]
+    fn notice_is_shown_on_windows_even_without_shell() {
+        // Windows usually leaves $SHELL unset yet PowerShell is the default.
+        let text = run_with_notice_inputs(
+            "2.0.0",
+            false,
+            true,
+            EvalDialect::Posix,
+            None,
+            OutputOptions::default(),
+        );
+        assert!(text.contains(NOTICE_MARKER), "got: {text}");
+    }
+
+    #[test]
+    fn notice_is_suppressed_for_a_posix_shell_on_a_non_windows_host() {
+        for shell in [Some("/bin/bash"), Some("/usr/bin/fish"), None] {
+            let text = run_with_notice_inputs(
+                "2.0.0",
+                false,
+                false,
+                EvalDialect::Posix,
+                shell,
+                OutputOptions::default(),
+            );
+            assert!(!text.contains(NOTICE_MARKER), "shell={shell:?} got: {text}");
+        }
+    }
+
+    #[test]
+    fn notice_is_suppressed_when_a_new_wrapper_requested_its_dialect() {
+        // The dialect flag proves the wrapper is already the 2.2.0+ one, so the
+        // notice would be noise even though $SHELL/the host say nu/Windows.
+        for dialect in [EvalDialect::Nushell, EvalDialect::Powershell] {
+            let text = run_with_notice_inputs(
+                "2.0.0",
+                false,
+                true,
+                dialect,
+                Some("/usr/bin/nu"),
+                OutputOptions::default(),
+            );
+            assert!(
+                !text.contains(NOTICE_MARKER),
+                "dialect={dialect:?} got: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn notice_is_shown_in_the_check_path() {
+        let text = run_with_notice_inputs(
+            "2.0.0",
+            true,
+            false,
+            EvalDialect::Posix,
+            Some("nu"),
+            OutputOptions::default(),
+        );
+        assert!(text.contains(NOTICE_MARKER), "got: {text}");
+    }
+
+    #[test]
+    fn notice_survives_quiet() {
+        let text = run_with_notice_inputs(
+            "2.0.0",
+            false,
+            false,
+            EvalDialect::Posix,
+            Some("nu"),
+            OutputOptions::new(false, true),
+        );
+        // Everything else is suppressed; the notice is the only line left.
+        assert_eq!(text, STALE_WRAPPER_NOTICE);
+    }
+
+    #[test]
+    fn the_notice_never_echoes_the_shell_value() {
+        let text = run_with_notice_inputs(
+            "2.0.0",
+            false,
+            false,
+            EvalDialect::Posix,
+            Some("/opt/secret-path/nu"),
+            OutputOptions::default(),
+        );
+        assert!(text.contains(NOTICE_MARKER));
+        assert!(!text.contains("secret-path"), "got: {text}");
     }
 
     #[test]

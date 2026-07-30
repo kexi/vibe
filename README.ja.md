@@ -23,6 +23,7 @@ Git Worktreeを簡単かつ超高速に管理するCLIツール。
 | `vibe verify`                      | 信頼ステータスとハッシュ履歴を検証                                       |
 | `vibe config`                      | 現在の設定を表示                                                         |
 | `vibe upgrade [options]`           | アップデートを確認しアップグレード方法を表示                             |
+| `vibe doctor`                      | 古い nushell / PowerShell ラッパーがないか環境をチェック                  |
 
 ### 例
 

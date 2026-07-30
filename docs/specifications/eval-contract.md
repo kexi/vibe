@@ -137,7 +137,7 @@ Both are fixed by the dialect mechanism: nushell no longer evaluates the line as
 
 Remaining limitations:
 
-- **Wrappers are not auto-regenerated.** A user who pasted the old nushell or powershell snippet into their rc file keeps the old, buggy behavior until they re-run `vibe shell-setup` (or re-paste the snippet from the docs). This is by design: vibe never rewrites a user's shell configuration.
+- **Wrappers are not auto-regenerated.** A user who pasted the old nushell or powershell snippet into their rc file keeps the old, buggy behavior until they re-run `vibe shell-setup` (or re-paste the snippet from the docs). This is by design: vibe never rewrites a user's shell configuration. `vibe doctor` **detects** a stale pasted wrapper and prints the command to regenerate it, and `vibe upgrade` appends a one-line hint pointing at `vibe doctor` when a stale wrapper is plausible (a nushell/PowerShell `$SHELL`, or Windows, under the Posix dialect). Detection and hinting only: the never-rewrite principle is unchanged, and both leave the file untouched.
 - The Posix wrapper bytes (bash, zsh, fish) are unchanged, so no working configuration is affected.
 
 ## 7. Adjacent protocol: Claude Code worktree hook (stdin JSON)
@@ -230,6 +230,7 @@ Implementation ground truth:
 - `rust/clippy.toml` — the disallowed-methods list that keeps `std::io::stdout` out of production code
 - `rust/crates/vibe/tests/eval_contract.rs` — the executable form of this specification
 - `rust/crates/vibe/tests/wrapper_round_trip.rs` — real-shell round trip for every wrapper and dialect
+- `rust/crates/vibe-core/src/commands/doctor.rs` — stale-wrapper detection (§6.1)
 
 Related documents:
 
