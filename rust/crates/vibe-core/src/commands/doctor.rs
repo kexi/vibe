@@ -612,7 +612,8 @@ enum MaskState {
 ///
 /// Multi-line rules (`state` is threaded through the whole block scan):
 /// - PowerShell here-strings: `@"` / `@'` as the last non-whitespace on a line
-///   opens one; it ends only at a line whose first non-whitespace is `"@` / `'@`.
+///   opens one; it ends only at a line that BEGINS with `"@` / `'@` — PowerShell
+///   rejects an indented terminator, so an indented `"@` is still string content.
 /// - nu raw strings: `r#'` … `'#`, with the terminator required to carry the same
 ///   number of `#` as the opener, so `r##'…'#…'##` nests correctly.
 /// - An ordinary `'…'` / `"…"` left open at end of line CONTINUES onto the next,
@@ -627,15 +628,15 @@ fn mask_line(line: &str, shell: ShellName, state: &mut MaskState) -> String {
     let is_pwsh = !matches!(shell, ShellName::Nushell);
     let mut out = String::with_capacity(line.len());
 
-    // A here-string terminator is line-oriented: `"@` must be the first
-    // non-whitespace on the line, and everything after it is code again.
+    // A here-string terminator is line-oriented: `"@` must be at COLUMN 0 (the
+    // PowerShell grammar rejects an indented terminator, so an indented `"@` is
+    // still string content), and everything after it is code again.
     if let MaskState::HereString { quote } = *state {
-        let trimmed = line.trim_start();
-        let closes = trimmed.starts_with(quote) && trimmed[quote.len_utf8()..].starts_with('@');
+        let closes = line.starts_with(quote) && line[quote.len_utf8()..].starts_with('@');
         if !closes {
             return blank(line);
         }
-        let consumed = line.len() - trimmed.len() + quote.len_utf8() + 1;
+        let consumed = quote.len_utf8() + 1;
         *state = MaskState::Code;
         let mut masked = blank(&line[..consumed]);
         masked.push_str(&mask_line(&line[consumed..], shell, state));

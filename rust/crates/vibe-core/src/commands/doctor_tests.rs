@@ -957,16 +957,34 @@ fn a_hash_counted_nu_raw_string_needs_a_matching_terminator() {
 #[test]
 fn a_here_string_that_never_mentions_the_marker_leaves_a_good_wrapper_current() {
     // False-positive guard: masking must not swallow the real call below it.
+    // The terminator sits at column 0, as the PowerShell grammar requires.
     let content = "function vibe {\n\
                    \x20 $banner = @\"\n\
                    \x20 welcome to the shell\n\
-                   \x20 \"@\n\
+                   \"@\n\
                    \x20 $out = & vibe.exe --eval-dialect powershell @args\n\
                    \x20 if ($out) { Invoke-Expression ($out -join \"`n\") }\n\
                    }\n";
     assert_eq!(
         classify(content, ShellName::Powershell),
         WrapperStatus::Current
+    );
+}
+
+#[test]
+fn an_indented_here_string_terminator_does_not_close_the_string() {
+    // PowerShell only ends a here-string at a line BEGINNING with `"@`; an
+    // indented `"@` is string content. Everything after it here — including
+    // the marker line — is therefore still inside the string, the block's
+    // braces are masked away, and the wrapper must NOT read current.
+    let content = "function vibe {\n\
+                   \x20 $note = @\"\n\
+                   \x20 \"@\n\
+                   \x20 & vibe.exe --eval-dialect powershell @args\n\
+                   }\n";
+    assert_eq!(
+        classify(content, ShellName::Powershell),
+        WrapperStatus::Stale
     );
 }
 
