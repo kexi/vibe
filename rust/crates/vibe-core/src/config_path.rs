@@ -8,22 +8,30 @@
 use crate::error::{Result, VibeError};
 use std::path::{Component, Path, PathBuf};
 
-/// `$HOME/.config/vibe`, after validating `home`.
+/// Whether an environment-supplied directory root may be joined onto.
 ///
-/// Why walk `Path::components()` for `..` instead of `home.contains("..")`: a
+/// Non-empty, absolute, and free of `..` components. Shared with `vibe doctor`
+/// (which layers a Windows prefix restriction on top) so the two commands cannot
+/// disagree about which HOME values are usable.
+///
+/// Why walk `Path::components()` for `..` instead of `value.contains("..")`: a
 /// substring check would wrongly reject a legitimate directory like `a..b`,
 /// while a component walk rejects only a real parent-dir segment.
+pub(crate) fn is_valid_abs_root(value: &str) -> bool {
+    let path = Path::new(value);
+
+    let is_non_empty = !value.is_empty();
+    let is_absolute = path.is_absolute();
+    let has_parent_dir = path.components().any(|c| matches!(c, Component::ParentDir));
+
+    is_non_empty && is_absolute && !has_parent_dir
+}
+
+/// `$HOME/.config/vibe`, after validating `home`.
 pub fn config_dir(home: &str) -> Result<PathBuf> {
     let home_path = Path::new(home);
 
-    let is_non_empty = !home.is_empty();
-    let is_absolute = home_path.is_absolute();
-    let has_parent_dir = home_path
-        .components()
-        .any(|c| matches!(c, Component::ParentDir));
-
-    let is_valid_home = is_non_empty && is_absolute && !has_parent_dir;
-    if !is_valid_home {
+    if !is_valid_abs_root(home) {
         return Err(VibeError::Configuration(
             "Invalid HOME environment variable. \
              HOME must be an absolute path without '..' components."

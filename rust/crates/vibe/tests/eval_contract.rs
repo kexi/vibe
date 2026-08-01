@@ -1045,3 +1045,41 @@ fn doctor_with_a_stale_wrapper_exits_one_with_still_empty_stdout() {
     // AlreadyReported must not add a second, contentless `Error:` line.
     assert!(!stderr.contains("Error:"), "got: {stderr:?}");
 }
+
+/// The third doctor branch: with no usable profile root at all, nothing was
+/// inspected, so the command fails with an explanation instead of reporting a
+/// clean bill of health. It is a `Configuration` error rather than
+/// `AlreadyReported`, so the binary's `Error:` line IS the report — and that line
+/// still has to go to stderr, leaving the eval channel empty.
+#[cfg(unix)]
+#[test]
+fn doctor_without_any_profile_root_exits_one_with_empty_stdout() {
+    let tmp = tempfile::tempdir().unwrap();
+
+    // Not `run_vibe`: that helper's whole job is to POINT the root variables at an
+    // isolated home, and this case needs them gone.
+    let out = Command::new(vibe_bin())
+        .arg("doctor")
+        .current_dir(tmp.path())
+        .env_remove("FORCE_COLOR")
+        .env("NO_COLOR", "1")
+        .env_remove("HOME")
+        .env_remove("XDG_CONFIG_HOME")
+        .output()
+        .expect("failed to spawn vibe");
+
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert!(
+        stdout.is_empty(),
+        "doctor's no-root path must keep the eval channel empty: {stdout:?}"
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "no usable profile root must exit 1; stderr={stderr:?}"
+    );
+    assert!(stderr.contains("Error:"), "got: {stderr:?}");
+    assert!(stderr.contains("HOME"), "got: {stderr:?}");
+}

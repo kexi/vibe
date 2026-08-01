@@ -305,10 +305,13 @@ pub fn clean(
 pub fn doctor(opts: OutputOptions) -> Result<Outcome> {
     let io = RealIo;
     let fs = commands::doctor::RealProfileFs;
-    // The platform fact enters here, at the binary edge: vibe-core carries no
-    // `cfg(target_os)` so both branches stay testable on any host.
-    let is_windows = std::env::consts::OS == "windows";
-    commands::doctor::doctor_command(&io, &fs, is_windows, opts)
+    // The platform facts enter here, at the binary edge: vibe-core carries no
+    // `cfg(target_os)` so every branch stays testable on any host.
+    let platform = commands::doctor::HostPlatform {
+        is_windows: std::env::consts::OS == "windows",
+        is_macos: std::env::consts::OS == "macos",
+    };
+    commands::doctor::doctor_command(&io, &fs, platform, opts)
 }
 
 /// `vibe upgrade [--check]`.

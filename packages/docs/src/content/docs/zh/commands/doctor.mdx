@@ -37,20 +37,26 @@ bash、zsh 与 fish 的包装函数从未出现过问题，因此不在检查范
 
 | Shell      | 平台          | 路径                                                                                                                                  |
 | ---------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| nushell    | macOS / Linux | `$XDG_CONFIG_HOME/nushell/config.nu`，否则为 `~/.config/nushell/config.nu`                                                            |
+| nushell    | Linux         | `$XDG_CONFIG_HOME/nushell/config.nu`，否则为 `~/.config/nushell/config.nu`                                                            |
+| nushell    | macOS         | 同上，**并且**还有 `~/Library/Application Support/nushell/config.nu`（nu 在 macOS 上的默认位置）—— 两者都会检查                       |
 | nushell    | Windows       | `%APPDATA%\nushell\config.nu`                                                                                                         |
 | PowerShell | macOS / Linux | `~/.config/powershell/Microsoft.PowerShell_profile.ps1`、`profile.ps1`                                                                |
 | PowerShell | Windows       | `%USERPROFILE%\Documents\{PowerShell,WindowsPowerShell}\*.ps1`，以及在设置了 `%OneDrive%` 时 `%OneDrive%\Documents\` 下的同样两个目录 |
 
 不存在的文件不会被报告。每个被报告的文件会得到以下状态之一：
 
-| 状态                               | 含义                                     |
-| ---------------------------------- | ---------------------------------------- |
-| `current`                          | 包装函数请求了自己的 dialect —— 无需处理 |
-| `stale`                            | 2.2.0 之前的包装函数；需要替换           |
-| `no vibe wrapper`                  | 文件存在，但其中没有定义 `vibe` 函数     |
-| `not checked (not a regular file)` | 该路径是目录、套接字或设备               |
-| `unreadable`                       | 文件存在但无法读取（权限、I/O 错误）     |
+| 状态                                           | 含义                                                            |
+| ---------------------------------------------- | --------------------------------------------------------------- |
+| `current`                                      | 包装函数请求了自己的 dialect —— 无需处理                        |
+| `stale`                                        | 2.2.0 之前的包装函数；需要替换                                  |
+| `no vibe wrapper`                              | 文件存在，但其中没有定义 `vibe` 函数                            |
+| `could not determine (wrapper block too long)` | 包装函数的 `{ ... }` 代码块在扫描上限内始终没有闭合；请手动比较 |
+| `not checked (not a regular file)`             | 该路径是目录、套接字或设备                                      |
+| `unreadable`                                   | 文件存在但无法读取（权限、I/O 错误）                            |
+
+形如 `<变量名>: skipped (invalid value)` 的行表示该环境变量虽然已设置，但其取值无法用作目录根：它必须是不含 `..` 的绝对路径（在 Windows 上还必须是带盘符的路径，UNC 共享或设备路径都会被拒绝）。输出中只会出现变量名，其取值绝不会被打印。而对于根本*未设置*的变量，则不会产生任何行，因为 `XDG_CONFIG_HOME` 与 `%OneDrive%` 未设置本就是常态。
+
+以 UTF-16 保存的配置文件（Windows PowerShell 的 `Out-File` 默认生成的格式）以及带 UTF-8 字节顺序标记的配置文件，都会在判定前先行解码。没有字节顺序标记的 UTF-16 文件则无法识别。
 
 ## 输出
 
@@ -66,12 +72,16 @@ If your wrapper is sourced from another file, compare it with 'vibe shell-setup 
 
 ## 退出码
 
-| 退出码 | 含义                                         |
-| ------ | -------------------------------------------- |
-| `0`    | 未发现过时的包装函数（包括完全没有配置文件） |
-| `1`    | 发现了至少一个过时的包装函数                 |
+| 退出码 | 含义                                                                       |
+| ------ | -------------------------------------------------------------------------- |
+| `0`    | 未发现过时的包装函数（包括完全没有配置文件）                               |
+| `1`    | 发现了至少一个过时的包装函数，**或者**不存在可用的配置文件根目录（见下文） |
+
+如果 `HOME` 与 `XDG_CONFIG_HOME` 都未设置或取值无效（在 Windows 上则是 `APPDATA`、`USERPROFILE` 与 `OneDrive`），就根本无处可查。此时 `doctor` 会给出说明并失败，而不是对一个从未检查过的环境宣称一切正常。
 
 即使指定了 `--quiet`，报告也依然会输出，因此非零退出码绝不会悄无声息。
+
+若要在脚本中获取退出码，请直接调用二进制文件，而不要经过 shell 包装函数 —— POSIX 用 `command vibe doctor`，nushell 用 `^vibe doctor`，PowerShell 用 `vibe.exe doctor`（或 `& vibe.exe doctor`）。POSIX 的包装函数在 `eval "$(...)"` 中运行 vibe，会丢弃其退出码；而 nushell 的包装函数在外部命令以非零状态退出时会中断调用它的脚本。
 
 ## 注意事项
 
