@@ -40,10 +40,10 @@ bash、zsh 与 fish 的包装函数从未出现过问题，因此不在检查范
 | nushell    | Linux         | 设置了 `XDG_CONFIG_HOME` 时为 `$XDG_CONFIG_HOME/nushell/config.nu`，否则为 `~/.config/nushell/config.nu`                                                 |
 | nushell    | macOS         | 设置了 `XDG_CONFIG_HOME` 时为 `$XDG_CONFIG_HOME/nushell/config.nu`，否则为 `~/Library/Application Support/nushell/config.nu`（nu 在 macOS 上的默认位置） |
 | nushell    | Windows       | `%APPDATA%\nushell\config.nu`                                                                                                                            |
-| PowerShell | macOS / Linux | `~/.config/powershell/…`，**并且**在设置了 `XDG_CONFIG_HOME` 时还有 `$XDG_CONFIG_HOME/powershell/…` —— 两者都会检查                                      |
+| PowerShell | macOS / Linux | 设置了 `XDG_CONFIG_HOME` 时为 `$XDG_CONFIG_HOME/powershell/…`，否则为 `~/.config/powershell/…`                                                           |
 | PowerShell | Windows       | `%USERPROFILE%\Documents\{PowerShell,WindowsPowerShell}\*.ps1`，以及在设置了 `%OneDrive%` 时 `%OneDrive%\Documents\` 下的同样两个目录                    |
 
-两种 shell 的处理方式不同，这是有意为之。nushell 只会解析出唯一一个配置目录 —— 设置了 `XDG_CONFIG_HOME` 时用它，否则用平台默认位置 —— 因此也只检查那一个；留在另一处的文件是 nushell 根本不会加载的，报告它只会让检查因为一个对你的 shell 毫无影响的文件而失败。而 PowerShell 确实存在歧义（.NET 会遵循 `XDG_CONFIG_HOME`，但配置文件通常位于 `~/.config`），因此两者都会检查。相同的路径只会报告一次。
+每种 shell 都只会解析出唯一一个配置目录，因此也只检查那一个。在 Unix 上两者都遵循 `XDG_CONFIG_HOME`（nushell 依据自身的规则，PowerShell 则是因为 .NET 的 `ApplicationData` 文件夹会解析到那里），未设置时则使用各自的平台默认位置。留在*未生效*的那个目录中的文件是你的 shell 根本不会加载的，报告它只会让检查因为一个对你的环境毫无影响的文件而失败。
 
 不存在的文件不会被报告。每个被报告的文件会得到以下状态之一：
 
@@ -88,7 +88,7 @@ If your wrapper is sourced from another file, compare it with 'vibe shell-setup 
 ## 注意事项
 
 - **从其他文件加载的包装函数无法被发现。** 如果你的配置文件通过 `source` 加载了另一个定义 `vibe` 的文件，`doctor` 会报告 `no vibe wrapper`。请手动将该文件与 `vibe shell-setup --shell nushell`（或 `powershell`）的输出进行比较。
-- **不常见的字符串语法可能被判定为 `stale`。** 在做出判断之前，`doctor` 会把字符串字面量以及 PowerShell 的 `<# … #>` 块注释涂成空白，因此引号内部的花括号或 `--eval-dialect` 字样都无法左右判定结果。但有两种结构未被处理：跨越多行的字符串，以及 here-string（`@"…"@`、nushell 的 `r#'…'#`）。使用了这些结构的包装函数即使能正常工作，也可能被报告为 `stale`。判断出错时总是倒向这一侧，绝不会把有缺陷的包装函数当作正常。给 dialect 取值本身加引号（`--eval-dialect "powershell"`）也会因同样的原因被判为 `stale`；`vibe shell-setup` 输出的是不带引号的形式。
+- **不常见的字符串语法可能被判定为 `stale`。** 在做出判断之前，`doctor` 会把字符串字面量、PowerShell 的 `<# … #>` 块注释、PowerShell 的 here-string（`@"…"@`、`@'…'@`）以及 nushell 的原始字符串（`r#'…'#`）涂成空白，并且这些状态都会跨行跟踪。因此它们内部的花括号或 `--eval-dialect` 字样都无法左右判定结果。剩下的限制有两点：代码中出现不成对的引号时，包装函数的剩余部分都会被涂白；给 dialect 取值本身加引号（`--eval-dialect "powershell"`）会让取值被隐藏。这两种情况都会被判为 `stale`。判断出错时总是倒向这一侧，绝不会把有缺陷的包装函数当作正常；另外 `vibe shell-setup` 输出的是不带引号的形式。
 - **OneDrive 的已知文件夹重定向。** 设置了 `%OneDrive%` 时会检查 `%OneDrive%\Documents`，但如果 `Documents` 文件夹被重定向到了其他位置，则无法找到。
 
 ## 相关内容

@@ -30,15 +30,20 @@
 //!   that variable is set, but a redirection to an arbitrary folder (or a wrapper
 //!   sourced from a file included by the profile) is invisible — hence the
 //!   closing hint pointing at `vibe shell-setup`.
-//! - The classifier masks string literals and PowerShell `<# #>` block comments
-//!   before it counts braces or looks for the dialect flag (see [`mask_line`]),
-//!   which is what keeps a `}` or a `--eval-dialect` inside quotes from deciding
-//!   the verdict. Two constructs are still not modeled: strings that span lines,
-//!   and here-strings (`@"..."@`, nu `r#'...'#`). Quote state resets at every
-//!   newline, so an unterminated quote blanks the remainder of that line only —
-//!   the masked tail loses its braces, the block fails to close, and the wrapper
-//!   reads `stale` or `could not determine`. Both residual cases therefore fail
-//!   toward reporting a problem, never toward blessing a broken wrapper.
+//! - The classifier masks string literals, PowerShell `<# #>` block comments,
+//!   PowerShell here-strings (`@"`…`"@`, `@'`…`'@`) and nu raw strings
+//!   (`r#'`…`'#`, hash counts matched) before it counts braces or looks for the
+//!   dialect flag (see [`mask_line`]). All of that state is carried ACROSS lines
+//!   within a block scan, which is what keeps a `}` or a `--eval-dialect` inside
+//!   any of them from deciding the verdict.
+//!
+//!   What is left: an unpaired quote in real code masks the remainder of the
+//!   block, so its braces vanish, the block never closes, and the verdict is
+//!   `stale`/`could not determine`. A quoted dialect VALUE
+//!   (`--eval-dialect "nu"`) reads stale for the same reason — once a string's
+//!   contents are blanked, a quoted value is indistinguishable from a quoted
+//!   mention of the flag. Both residual cases therefore fail toward reporting a
+//!   problem, never toward blessing a broken wrapper.
 //! - Profile bytes are decoded from UTF-8, or from UTF-16 when a byte-order mark
 //!   says so (see [`decode_profile_bytes`]); a BOM-less UTF-16 profile is not
 //!   detected.
@@ -290,40 +295,32 @@ fn unix_profiles(
 
     let mut out = Vec::new();
 
-    // nu resolves its config dir from XDG_CONFIG_HOME when that is set, and falls
-    // back to the platform default otherwise. Only the location nu would ACTUALLY
-    // load is probed: reporting a stale leftover in a directory nu never reads
-    // would exit 1 over a file that has no effect on the user's shell.
+    // Both shells resolve exactly ONE config directory, so exactly one is probed.
+    // Reporting a leftover in a directory the shell never reads would exit 1 over
+    // a file that has no effect on the user's setup.
+    //
+    // nu: XDG_CONFIG_HOME when set, else the platform default (the Apple
+    // convention on macOS, `~/.config` elsewhere).
     let nu_config_home = xdg.clone().or_else(|| {
-        // macOS nu defaults to the Apple convention, not to ~/.config.
-        let apple_dir = home
-            .as_ref()
-            .map(|home| home.join("Library").join("Application Support"));
         if platform.is_macos {
-            apple_dir
-        } else {
-            dot_config.clone()
+            return home
+                .as_ref()
+                .map(|home| home.join("Library").join("Application Support"));
         }
+        dot_config.clone()
     });
     if let Some(dir) = nu_config_home {
         out.push((ShellName::Nushell, dir.join("nushell").join("config.nu")));
     }
 
-    // PowerShell is the opposite case: .NET honours XDG_CONFIG_HOME when set, but
-    // ~/.config is where the profile actually lives on a great many machines, so
-    // BOTH are probed. One extra `metadata` call per profile name buys certainty
-    // instead of a documented ambiguity.
-    let pwsh_roots = [xdg, dot_config];
-    let mut seen_pwsh_dirs: Vec<PathBuf> = Vec::new();
-    for root in pwsh_roots.into_iter().flatten() {
-        let pwsh_dir = root.join("powershell");
-        // XDG_CONFIG_HOME is very often literally `$HOME/.config`; probing it
-        // twice would print the same path as two report rows.
-        let is_duplicate = seen_pwsh_dirs.contains(&pwsh_dir);
-        if is_duplicate {
-            continue;
-        }
-        seen_pwsh_dirs.push(pwsh_dir.clone());
+    // PowerShell: `Environment.GetFolderPath(ApplicationData)` on Unix is
+    // XDG_CONFIG_HOME when set and `~/.config` otherwise (see .NET's
+    // `Environment.GetFolderPathCore.Unix.cs`), so the same single-root rule
+    // applies — and on the same variable, which is why no macOS special case is
+    // needed here.
+    let pwsh_config_home = xdg.or(dot_config);
+    if let Some(dir) = pwsh_config_home {
+        let pwsh_dir = dir.join("powershell");
         for name in PWSH_PROFILE_NAMES {
             out.push((ShellName::Powershell, pwsh_dir.join(name)));
         }
@@ -399,10 +396,15 @@ fn region_contains_dialect_marker(region: &str, shell: ShellName) -> bool {
             continue;
         };
         // The wrapper embeds the flag in shell syntax, so the value token can
-        // arrive wrapped in punctuation on either side: `(^vibe --eval-dialect
-        // nu ...)`, `--eval-dialect "powershell"`, `--eval-dialect='nu'`. Trimmed
-        // from BOTH ends — a leading quote is just as common as a trailing one,
-        // and leaving it on would report a perfectly good wrapper as stale.
+        // arrive wrapped in grouping punctuation on either side:
+        // `(^vibe --eval-dialect nu ...)`. Trimmed from BOTH ends, since a
+        // leading paren is as likely as a trailing one.
+        //
+        // The quote characters here are vestigial by design: `mask_line` blanks
+        // string CONTENTS before this runs, so a quoted value never reaches this
+        // point and `--eval-dialect "nu"` reads stale. That is the deliberate
+        // price of masking (a quoted value cannot be told apart from a quoted
+        // mention of the flag); they stay in the set only to keep the trim total.
         let value = value.trim_matches([')', '(', '"', '\'', ';']);
         if accepted.contains(&value) {
             return true;
@@ -562,15 +564,27 @@ fn strip_trailing_comment(line: &str) -> &str {
     }
 }
 
-/// Carries the only masking state that survives across lines.
+/// What the masker is in the middle of, carried from one line to the next.
 ///
-/// PowerShell's `<# ... #>` block comment is the one construct here that is
-/// genuinely multi-line, and an open one must keep swallowing text (including a
-/// stray `}` or a `--eval-dialect` note) until its `#>`. String quote state
-/// deliberately does NOT persist — see [`mask_line`].
-#[derive(Debug, Default, Clone, Copy)]
-struct MaskState {
-    in_block_comment: bool,
+/// Every construct here is genuinely multi-line, and each must keep swallowing
+/// text — including a stray `}` or a `--eval-dialect` note — until its own
+/// terminator. Resetting any of them at the newline is precisely how a marker
+/// inside a here-string used to leak out and bless a broken wrapper.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+enum MaskState {
+    #[default]
+    Code,
+    /// Inside a PowerShell `<# ... #>` block comment.
+    BlockComment,
+    /// Inside a `'...'` / `"..."` literal that has not been closed yet. Both
+    /// shells let such a string run on to the following line.
+    String { quote: char },
+    /// Inside a PowerShell here-string (`@"` / `@'`), which ends only at a line
+    /// whose first non-whitespace is the matching `"@` / `'@`.
+    HereString { quote: char },
+    /// Inside a nu raw string (`r#'` … `'#`), with `hashes` recording how many
+    /// `#` the opener used so the terminator must match it.
+    RawString { hashes: usize },
 }
 
 /// Blank out everything on `line` that is not executable code, preserving byte
@@ -596,77 +610,140 @@ struct MaskState {
 /// - nu `'...'`: no escapes (this is why the nu wrapper can carry raw paths).
 /// - nu `"..."`: backslash escapes, so `\"` stays inside the string.
 ///
-/// Why not more (all out of scope, and all documented in the module header):
-/// strings that span lines and here-strings (`@"..."@`, nu `r#'...'#`). Quote
-/// state resets at every newline, so an unterminated quote blanks the rest of
-/// THAT line only. That is the safe direction: the masked tail loses its braces,
-/// so the block fails to close and the wrapper reads `stale`/`could not
-/// determine` rather than `current`.
+/// Multi-line rules (`state` is threaded through the whole block scan):
+/// - PowerShell here-strings: `@"` / `@'` as the last non-whitespace on a line
+///   opens one; it ends only at a line whose first non-whitespace is `"@` / `'@`.
+/// - nu raw strings: `r#'` … `'#`, with the terminator required to carry the same
+///   number of `#` as the opener, so `r##'…'#…'##` nests correctly.
+/// - An ordinary `'…'` / `"…"` left open at end of line CONTINUES onto the next,
+///   which is what both shells do.
+///
+/// The one remaining failure mode is an unpaired quote in real code (say an
+/// apostrophe in a comment the masker already stripped): it masks the rest of the
+/// block, so the braces vanish, the block never closes, and the verdict is
+/// `stale`/`could not determine`. That is the safe direction — the alternative
+/// would be blessing a broken wrapper.
 fn mask_line(line: &str, shell: ShellName, state: &mut MaskState) -> String {
     let is_pwsh = !matches!(shell, ShellName::Nushell);
     let mut out = String::with_capacity(line.len());
+
+    // A here-string terminator is line-oriented: `"@` must be the first
+    // non-whitespace on the line, and everything after it is code again.
+    if let MaskState::HereString { quote } = *state {
+        let trimmed = line.trim_start();
+        let closes = trimmed.starts_with(quote) && trimmed[quote.len_utf8()..].starts_with('@');
+        if !closes {
+            return blank(line);
+        }
+        let consumed = line.len() - trimmed.len() + quote.len_utf8() + 1;
+        *state = MaskState::Code;
+        let mut masked = blank(&line[..consumed]);
+        masked.push_str(&mask_line(&line[consumed..], shell, state));
+        return masked;
+    }
+
     let mut chars = line.char_indices().peekable();
-
-    while let Some((_, c)) = chars.next() {
-        // An open `<# ... #>` swallows everything until its terminator.
-        if state.in_block_comment {
-            let is_terminator = c == '#' && chars.peek().is_some_and(|(_, next)| *next == '>');
-            if is_terminator {
-                chars.next();
-                push_spaces(&mut out, '>');
-                state.in_block_comment = false;
-            }
-            push_spaces(&mut out, c);
-            continue;
-        }
-
-        let opens_block_comment =
-            is_pwsh && c == '<' && chars.peek().is_some_and(|(_, next)| *next == '#');
-        if opens_block_comment {
-            chars.next();
-            push_spaces(&mut out, '#');
-            push_spaces(&mut out, c);
-            state.in_block_comment = true;
-            continue;
-        }
-
-        let opens_string = c == '\'' || c == '"';
-        if !opens_string {
-            out.push(c);
-            continue;
-        }
-
-        // Consume the literal, blanking it (delimiters included) so nothing
-        // inside can be read as a brace, a flag or a comment marker.
-        push_spaces(&mut out, c);
-        let escape = string_escape_char(c, is_pwsh);
-        while let Some((_, inner)) = chars.next() {
-            let is_escape = escape == Some(inner);
-            if is_escape {
-                push_spaces(&mut out, inner);
-                if let Some((_, escaped)) = chars.next() {
-                    push_spaces(&mut out, escaped);
-                }
-                continue;
-            }
-            let is_closing = inner == c;
-            if is_closing {
-                // PowerShell/nu single quotes double `''` to embed one literal
-                // quote, so a second quote right here reopens rather than closes.
-                let is_doubled_quote =
-                    c == '\'' && chars.peek().is_some_and(|(_, next)| *next == '\'');
-                if is_doubled_quote {
+    while let Some((at, c)) = chars.next() {
+        match *state {
+            // An open `<# ... #>` swallows everything until its terminator.
+            MaskState::BlockComment => {
+                let ends = c == '#' && chars.peek().is_some_and(|(_, next)| *next == '>');
+                if ends {
                     chars.next();
-                    push_spaces(&mut out, inner);
-                    push_spaces(&mut out, inner);
+                    push_spaces(&mut out, '>');
+                    *state = MaskState::Code;
+                }
+                push_spaces(&mut out, c);
+            }
+            // A raw string ends at `'` followed by exactly `hashes` `#`.
+            MaskState::RawString { hashes } => {
+                let ends =
+                    c == '\'' && line[at + c.len_utf8()..].starts_with(&"#".repeat(hashes.max(1)));
+                push_spaces(&mut out, c);
+                if ends {
+                    for _ in 0..hashes.max(1) {
+                        chars.next();
+                        push_spaces(&mut out, '#');
+                    }
+                    *state = MaskState::Code;
+                }
+            }
+            MaskState::String { quote } => {
+                let escape = string_escape_char(quote, is_pwsh);
+                let is_escape = escape == Some(c);
+                if is_escape {
+                    push_spaces(&mut out, c);
+                    if let Some((_, escaped)) = chars.next() {
+                        push_spaces(&mut out, escaped);
+                    }
                     continue;
                 }
-                push_spaces(&mut out, inner);
-                break;
+                push_spaces(&mut out, c);
+                let is_closing = c == quote;
+                if !is_closing {
+                    continue;
+                }
+                // `''` embeds one literal quote, so a second quote right here
+                // reopens the string rather than closing it.
+                let is_doubled = quote == '\'' && chars.peek().is_some_and(|(_, n)| *n == '\'');
+                if is_doubled {
+                    chars.next();
+                    push_spaces(&mut out, quote);
+                    continue;
+                }
+                *state = MaskState::Code;
             }
-            push_spaces(&mut out, inner);
+            MaskState::HereString { .. } => unreachable!("handled before the char loop"),
+            MaskState::Code => {
+                let rest = &line[at..];
+
+                let opens_block_comment = is_pwsh && rest.starts_with("<#");
+                if opens_block_comment {
+                    chars.next();
+                    push_spaces(&mut out, '<');
+                    push_spaces(&mut out, '#');
+                    *state = MaskState::BlockComment;
+                    continue;
+                }
+
+                // `@"` / `@'` opens a here-string only when nothing but
+                // whitespace follows it on the line; otherwise it is a splat or
+                // an ordinary string.
+                let here_quote = rest
+                    .strip_prefix('@')
+                    .and_then(|r| r.chars().next())
+                    .filter(|q| *q == '"' || *q == '\'');
+                let opens_here_string = is_pwsh
+                    && here_quote.is_some_and(|q| rest[1 + q.len_utf8()..].trim().is_empty());
+                if let Some(quote) = here_quote.filter(|_| opens_here_string) {
+                    *state = MaskState::HereString { quote };
+                    out.push_str(&blank(rest));
+                    break;
+                }
+
+                if let Some(hashes) = raw_string_opener(rest, is_pwsh) {
+                    for _ in 0..hashes + 1 {
+                        chars.next();
+                    }
+                    out.push_str(&blank(&rest[..hashes + 2]));
+                    *state = MaskState::RawString { hashes };
+                    continue;
+                }
+
+                let opens_string = c == '\'' || c == '"';
+                if !opens_string {
+                    out.push(c);
+                    continue;
+                }
+                push_spaces(&mut out, c);
+                *state = MaskState::String { quote: c };
+            }
         }
     }
+
+    // An ordinary quote left open at end of line continues onto the next one, so
+    // `state` is deliberately NOT reset here. A here-string/raw string/block
+    // comment likewise stays open.
 
     out
 }
@@ -688,6 +765,29 @@ fn push_spaces(out: &mut String, c: char) {
     for _ in 0..c.len_utf8() {
         out.push(' ');
     }
+}
+
+/// `text` replaced by an equal number of space BYTES, preserving offsets.
+fn blank(text: &str) -> String {
+    " ".repeat(text.len())
+}
+
+/// The `#` count of a nu raw-string opener (`r#'` → 1, `r##'` → 2) at the start
+/// of `rest`, or `None` when this is not one.
+///
+/// nu only: PowerShell has no such literal, and `r#'` there is just an
+/// identifier followed by a comment.
+fn raw_string_opener(rest: &str, is_pwsh: bool) -> Option<usize> {
+    if is_pwsh {
+        return None;
+    }
+    let after_r = rest.strip_prefix('r')?;
+    let hashes = after_r.chars().take_while(|c| *c == '#').count();
+    let has_opener = hashes > 0 && after_r[hashes..].starts_with('\'');
+    if !has_opener {
+        return None;
+    }
+    Some(hashes)
 }
 
 /// The outcome of scanning a wrapper definition's brace block.

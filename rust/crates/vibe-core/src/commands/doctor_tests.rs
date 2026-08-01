@@ -107,11 +107,11 @@ fn unix_defaults_to_home_dot_config() {
 }
 
 #[test]
-fn xdg_redirects_nushell_but_powershell_probes_both_roots() {
-    // nu resolves ONE config dir (XDG when set), so only that one is probed —
-    // a leftover in the other is not a file nu would load. PowerShell is
-    // ambiguous (.NET honours XDG, but ~/.config is where profiles usually sit),
-    // so both are probed rather than documenting a blind spot.
+fn xdg_redirects_both_shells_to_exactly_one_root() {
+    // Each shell resolves ONE config dir. For PowerShell that is .NET's
+    // `ApplicationData`, which on Unix is XDG_CONFIG_HOME when set and `~/.config`
+    // otherwise — the same rule nu follows, so no `~/.config` candidate is probed
+    // while XDG is set.
     let io = FakeIo::new()
         .with_env("HOME", "/home/u")
         .with_env("XDG_CONFIG_HOME", "/xdg");
@@ -121,19 +121,13 @@ fn xdg_redirects_nushell_but_powershell_probes_both_roots() {
             "/xdg/nushell/config.nu",
             "/xdg/powershell/Microsoft.PowerShell_profile.ps1",
             "/xdg/powershell/profile.ps1",
-            "/home/u/.config/powershell/Microsoft.PowerShell_profile.ps1",
-            "/home/u/.config/powershell/profile.ps1",
         ]
     );
 }
 
 #[test]
-fn a_powershell_root_is_not_probed_twice_when_xdg_equals_dot_config() {
-    // Exporting `XDG_CONFIG_HOME=$HOME/.config` is common and must not turn every
-    // PowerShell profile into two identical report rows.
-    let io = FakeIo::new()
-        .with_env("HOME", "/home/u")
-        .with_env("XDG_CONFIG_HOME", "/home/u/.config");
+fn powershell_falls_back_to_dot_config_when_xdg_is_unset() {
+    let io = FakeIo::new().with_env("HOME", "/home/u");
     assert_eq!(
         paths(&io, UNIX),
         vec![
@@ -145,10 +139,23 @@ fn a_powershell_root_is_not_probed_twice_when_xdg_equals_dot_config() {
 }
 
 #[test]
-fn a_stale_powershell_profile_under_home_is_found_even_when_xdg_points_elsewhere() {
+fn a_stale_powershell_leftover_under_home_is_ignored_when_xdg_points_elsewhere() {
+    // The inverse of the previous policy: with XDG set, `~/.config/powershell` is
+    // not the directory PowerShell loads, so a stale file there is inert and must
+    // not fail the run.
     let io = FakeIo::new()
         .with_env("HOME", "/home/u")
         .with_env("XDG_CONFIG_HOME", "/xdg");
+    let fs = FakeProfileFs::new()
+        .with_content("/home/u/.config/powershell/profile.ps1", OLD_PWSH_WRAPPER);
+    let outcome = doctor_command(&io, &fs, UNIX, OutputOptions::default()).unwrap();
+    assert_eq!(outcome, Outcome::none());
+    assert!(!io.stderr_text().contains("stale"));
+}
+
+#[test]
+fn a_stale_powershell_profile_under_dot_config_is_found_when_xdg_is_unset() {
+    let io = unix_io();
     let fs = FakeProfileFs::new()
         .with_content("/home/u/.config/powershell/profile.ps1", OLD_PWSH_WRAPPER);
     let err = doctor_command(&io, &fs, UNIX, OutputOptions::default()).unwrap_err();
@@ -888,6 +895,130 @@ fn a_flag_and_its_value_may_sit_on_separate_lines() {
     assert_eq!(
         classify(content, ShellName::Nushell),
         WrapperStatus::Current
+    );
+}
+
+// --- multi-line strings (masking state crosses lines) ---
+
+#[test]
+fn a_marker_inside_a_powershell_here_string_does_not_bless_a_stale_wrapper() {
+    // The state must survive the newline: a here-string's contents are data, and
+    // a marker mentioned there says nothing about how the wrapper calls vibe.
+    let content = "function vibe {\n\
+                   \x20 $note = @\"\n\
+                   \x20 --eval-dialect powershell\n\
+                   \x20 \"@\n\
+                   \x20 Invoke-Expression (& vibe.exe $args)\n\
+                   }\n";
+    assert_eq!(
+        classify(content, ShellName::Powershell),
+        WrapperStatus::Stale
+    );
+}
+
+#[test]
+fn a_marker_inside_a_single_quoted_here_string_does_not_bless_a_stale_wrapper() {
+    let content = "function vibe {\n\
+                   \x20 $note = @'\n\
+                   \x20 --eval-dialect powershell\n\
+                   \x20 '@\n\
+                   \x20 Invoke-Expression (& vibe.exe $args)\n\
+                   }\n";
+    assert_eq!(
+        classify(content, ShellName::Powershell),
+        WrapperStatus::Stale
+    );
+}
+
+#[test]
+fn a_marker_inside_a_nu_raw_string_does_not_bless_a_stale_wrapper() {
+    let content = "def --env vibe [...args] {\n\
+                   \x20 let note = r#'\n\
+                   \x20 --eval-dialect nu\n\
+                   \x20 '#\n\
+                   \x20 ^vibe ...$args\n\
+                   }\n";
+    assert_eq!(classify(content, ShellName::Nushell), WrapperStatus::Stale);
+}
+
+#[test]
+fn a_hash_counted_nu_raw_string_needs_a_matching_terminator() {
+    // `r##'` is closed only by `'##`, so the `'#` in between stays inside the
+    // literal and the marker after it remains masked.
+    let content = "def --env vibe [...args] {\n\
+                   \x20 let note = r##'\n\
+                   \x20 '# --eval-dialect nu\n\
+                   \x20 '##\n\
+                   \x20 ^vibe ...$args\n\
+                   }\n";
+    assert_eq!(classify(content, ShellName::Nushell), WrapperStatus::Stale);
+}
+
+#[test]
+fn a_here_string_that_never_mentions_the_marker_leaves_a_good_wrapper_current() {
+    // False-positive guard: masking must not swallow the real call below it.
+    let content = "function vibe {\n\
+                   \x20 $banner = @\"\n\
+                   \x20 welcome to the shell\n\
+                   \x20 \"@\n\
+                   \x20 $out = & vibe.exe --eval-dialect powershell @args\n\
+                   \x20 if ($out) { Invoke-Expression ($out -join \"`n\") }\n\
+                   }\n";
+    assert_eq!(
+        classify(content, ShellName::Powershell),
+        WrapperStatus::Current
+    );
+}
+
+#[test]
+fn a_marker_after_a_properly_closed_here_string_still_counts() {
+    // The here-string terminator returns the scan to code, so the genuine flag on
+    // the SAME line as the terminator is not lost.
+    let content = "function vibe {\n\
+                   \x20 $n = @'\n\
+                   \x20 note\n\
+                   '@; $out = & vibe.exe --eval-dialect powershell @args\n\
+                   }\n";
+    assert_eq!(
+        classify(content, ShellName::Powershell),
+        WrapperStatus::Current
+    );
+}
+
+#[test]
+fn a_nu_raw_string_that_closes_leaves_a_later_marker_visible() {
+    let content = "def --env --wrapped vibe [...args] {\n\
+                   \x20 let note = r#'plain'#\n\
+                   \x20 let out = (^vibe --eval-dialect nu ...$args)\n\
+                   }\n";
+    assert_eq!(
+        classify(content, ShellName::Nushell),
+        WrapperStatus::Current
+    );
+}
+
+#[test]
+fn an_at_sign_splat_is_not_mistaken_for_a_here_string_opener() {
+    // `@args` is PowerShell splatting and the shipped wrapper's own syntax; only
+    // `@"`/`@'` with nothing after it opens a here-string.
+    assert_eq!(
+        classify(shell_function(ShellName::Powershell), ShellName::Powershell),
+        WrapperStatus::Current
+    );
+}
+
+#[test]
+fn an_unclosed_quote_masks_the_rest_and_never_reads_as_current() {
+    // The documented residual failure mode: an unpaired quote swallows the block's
+    // remaining braces, so the block cannot close. It must fail toward stale.
+    let content = "def --env vibe [...args] {\n\
+                   \x20 print 'unterminated\n\
+                   \x20 let out = (^vibe --eval-dialect nu ...$args)\n\
+                   }\n";
+    assert_ne!(
+        classify(content, ShellName::Nushell),
+        WrapperStatus::Current,
+        "an unpaired quote must never produce a current verdict"
     );
 }
 

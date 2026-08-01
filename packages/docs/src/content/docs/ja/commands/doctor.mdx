@@ -40,10 +40,10 @@ bash・zsh・fishのラッパーは壊れていなかったため、チェック
 | nushell    | Linux            | `XDG_CONFIG_HOME`が設定されていれば`$XDG_CONFIG_HOME/nushell/config.nu`、そうでなければ`~/.config/nushell/config.nu`                                       |
 | nushell    | macOS            | `XDG_CONFIG_HOME`が設定されていれば`$XDG_CONFIG_HOME/nushell/config.nu`、そうでなければ`~/Library/Application Support/nushell/config.nu`（nuのmacOS既定）  |
 | nushell    | Windows          | `%APPDATA%\nushell\config.nu`                                                                                                                              |
-| PowerShell | macOS / Linux    | `~/.config/powershell/…`に加えて、`XDG_CONFIG_HOME`が設定されていれば`$XDG_CONFIG_HOME/powershell/…`。両方をチェックします                                 |
+| PowerShell | macOS / Linux    | `XDG_CONFIG_HOME`が設定されていれば`$XDG_CONFIG_HOME/powershell/…`、そうでなければ`~/.config/powershell/…`                                                 |
 | PowerShell | Windows          | `%USERPROFILE%\Documents\{PowerShell,WindowsPowerShell}\*.ps1`、および`%OneDrive%`が設定されている場合は`%OneDrive%\Documents\`配下の同じ2つのディレクトリ |
 
-2つのシェルで扱いが異なるのは意図的です。nushellは設定ディレクトリを1つだけ解決します（`XDG_CONFIG_HOME`が設定されていればそちら、なければプラットフォーム既定）。そのため、チェックするのもその1つだけです。もう一方に残っているファイルはnushellが読み込むことのないファイルであり、それを報告してしまうと、シェルに何の影響もないファイルのために実行が失敗してしまいます。一方PowerShellは本質的に曖昧なため（.NETは`XDG_CONFIG_HOME`を尊重しますが、プロファイルは`~/.config`に置かれるのが一般的です）、両方をチェックします。同一のパスは1回だけ報告されます。
+どちらのシェルも設定ディレクトリを1つだけ解決するため、チェックするのもその1つだけです。Unixではどちらも`XDG_CONFIG_HOME`が設定されていればそれに従い（nushellは独自の規則により、PowerShellは.NETの`ApplicationData`フォルダがそこへ解決されるため）、設定されていなければプラットフォーム既定の場所を使います。有効でない方のディレクトリに残っているファイルは、シェルが読み込むことのないファイルです。それを報告してしまうと、環境に何の影響もないファイルのために実行が失敗してしまいます。
 
 存在しないファイルは報告されません。報告される各ファイルには次のいずれかが付きます。
 
@@ -88,7 +88,7 @@ If your wrapper is sourced from another file, compare it with 'vibe shell-setup 
 ## 注意点
 
 - **別ファイルから読み込んでいるラッパーは検出できません。** プロファイルが別のファイルを`source`して`vibe`を定義している場合、`doctor`は`no vibe wrapper`と報告します。その場合は`vibe shell-setup --shell nushell`（または`powershell`）の出力と手動で比較してください。
-- **特殊な文字列構文は`stale`と判定されることがあります。** 判定の前に、`doctor`は文字列リテラルとPowerShellの`<# … #>`ブロックコメントを空白で塗りつぶします。そのため、引用符の中にある波かっこや`--eval-dialect`という記述が判定を左右することはありません。ただし、複数行にまたがる文字列とヒアストリング（`@"…"@`、nushellの`r#'…'#`）の2つは解釈されません。これらを使ったラッパーは、正しく動作していても`stale`と報告される可能性があります。判定の誤りは常にこちら側に倒れ、壊れたラッパーを正常と見なすことはありません。dialectの値そのものを引用符で囲んだ場合（`--eval-dialect "powershell"`）も同じ理由で`stale`になります。`vibe shell-setup`は引用符なしで出力します。
+- **特殊な文字列構文は`stale`と判定されることがあります。** 判定の前に、`doctor`は文字列リテラル、PowerShellの`<# … #>`ブロックコメント、PowerShellのヒアストリング（`@"…"@`、`@'…'@`）、nushellの生文字列（`r#'…'#`）を空白で塗りつぶします。これらはいずれも改行をまたいで追跡されるため、その内部にある波かっこや`--eval-dialect`という記述が判定を左右することはありません。残る制約は次の2つです。コード中で引用符の対応が取れていない場合はラッパーの残り全体が塗りつぶされること、そしてdialectの値そのものを引用符で囲んだ場合（`--eval-dialect "powershell"`）に値が隠れてしまうことです。いずれも`stale`と判定されます。判定の誤りは常にこちら側に倒れ、壊れたラッパーを正常と見なすことはありません。なお`vibe shell-setup`は値を引用符なしで出力します。
 - **OneDriveのKnown Folderリダイレクト。** `%OneDrive%`が設定されていれば`%OneDrive%\Documents`もチェックしますが、`Documents`フォルダが他の場所にリダイレクトされている場合は見つけられません。
 
 ## 関連
