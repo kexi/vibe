@@ -30,11 +30,15 @@
 //!   that variable is set, but a redirection to an arbitrary folder (or a wrapper
 //!   sourced from a file included by the profile) is invisible — hence the
 //!   closing hint pointing at `vibe shell-setup`.
-//! - The classifier reads one line at a time and tracks quote state only within
-//!   that line (see [`strip_trailing_comment`]), so escaped quotes, multi-line
-//!   strings and PowerShell `<# #>` block comments can still confuse it. Every
-//!   such confusion is steered toward reporting `stale`/`could not determine`
-//!   rather than blessing a broken wrapper.
+//! - The classifier masks string literals and PowerShell `<# #>` block comments
+//!   before it counts braces or looks for the dialect flag (see [`mask_line`]),
+//!   which is what keeps a `}` or a `--eval-dialect` inside quotes from deciding
+//!   the verdict. Two constructs are still not modeled: strings that span lines,
+//!   and here-strings (`@"..."@`, nu `r#'...'#`). Quote state resets at every
+//!   newline, so an unterminated quote blanks the remainder of that line only —
+//!   the masked tail loses its braces, the block fails to close, and the wrapper
+//!   reads `stale` or `could not determine`. Both residual cases therefore fail
+//!   toward reporting a problem, never toward blessing a broken wrapper.
 //! - Profile bytes are decoded from UTF-8, or from UTF-16 when a byte-order mark
 //!   says so (see [`decode_profile_bytes`]); a BOM-less UTF-16 profile is not
 //!   detected.
@@ -281,33 +285,48 @@ fn unix_profiles(
     skipped: &mut Vec<&'static str>,
 ) -> Vec<(ShellName, PathBuf)> {
     let home = safe_root(io, "HOME", skipped);
-    // XDG_CONFIG_HOME wins when set and safe; otherwise ~/.config.
-    let config_home = safe_root(io, "XDG_CONFIG_HOME", skipped)
-        .or_else(|| home.as_ref().map(|home| home.join(".config")));
+    let xdg = safe_root(io, "XDG_CONFIG_HOME", skipped);
+    let dot_config = home.as_ref().map(|home| home.join(".config"));
 
     let mut out = Vec::new();
-    if let Some(config_home) = config_home {
-        out.push((
-            ShellName::Nushell,
-            config_home.join("nushell").join("config.nu"),
-        ));
-        let pwsh_dir = config_home.join("powershell");
+
+    // nu resolves its config dir from XDG_CONFIG_HOME when that is set, and falls
+    // back to the platform default otherwise. Only the location nu would ACTUALLY
+    // load is probed: reporting a stale leftover in a directory nu never reads
+    // would exit 1 over a file that has no effect on the user's shell.
+    let nu_config_home = xdg.clone().or_else(|| {
+        // macOS nu defaults to the Apple convention, not to ~/.config.
+        let apple_dir = home
+            .as_ref()
+            .map(|home| home.join("Library").join("Application Support"));
+        if platform.is_macos {
+            apple_dir
+        } else {
+            dot_config.clone()
+        }
+    });
+    if let Some(dir) = nu_config_home {
+        out.push((ShellName::Nushell, dir.join("nushell").join("config.nu")));
+    }
+
+    // PowerShell is the opposite case: .NET honours XDG_CONFIG_HOME when set, but
+    // ~/.config is where the profile actually lives on a great many machines, so
+    // BOTH are probed. One extra `metadata` call per profile name buys certainty
+    // instead of a documented ambiguity.
+    let pwsh_roots = [xdg, dot_config];
+    let mut seen_pwsh_dirs: Vec<PathBuf> = Vec::new();
+    for root in pwsh_roots.into_iter().flatten() {
+        let pwsh_dir = root.join("powershell");
+        // XDG_CONFIG_HOME is very often literally `$HOME/.config`; probing it
+        // twice would print the same path as two report rows.
+        let is_duplicate = seen_pwsh_dirs.contains(&pwsh_dir);
+        if is_duplicate {
+            continue;
+        }
+        seen_pwsh_dirs.push(pwsh_dir.clone());
         for name in PWSH_PROFILE_NAMES {
             out.push((ShellName::Powershell, pwsh_dir.join(name)));
         }
-    }
-
-    // nu on macOS defaults to the Apple convention rather than XDG, so a Mac user
-    // who never set XDG_CONFIG_HOME keeps their config here and nowhere else.
-    // Both locations are probed: nu honours XDG_CONFIG_HOME when it is set, so
-    // which one is live depends on the environment, and a stale wrapper is worth
-    // reporting wherever it sits.
-    let macos_nu_dir = platform
-        .is_macos
-        .then(|| home.map(|home| home.join("Library").join("Application Support")))
-        .flatten();
-    if let Some(dir) = macos_nu_dir {
-        out.push((ShellName::Nushell, dir.join("nushell").join("config.nu")));
     }
 
     out
@@ -442,6 +461,11 @@ fn nushell_def_name(code: &str) -> Option<&str> {
 /// Case-insensitive on the KEYWORD only (PowerShell keywords are), but the name
 /// is returned verbatim; `vibe` is what `shell-setup` emits and what the wrapper
 /// must be called for PowerShell to resolve it.
+///
+/// A scope qualifier is stripped first: `function global:vibe { ... }` defines
+/// the very same `vibe` command the wrapper occupies, so leaving the prefix on
+/// would classify a genuinely stale wrapper as "no vibe wrapper" — silently
+/// clean, the one direction this command must not have.
 fn powershell_function_name(code: &str) -> Option<&str> {
     let mut tokens = code.split_whitespace();
     let is_function = tokens.next()?.eq_ignore_ascii_case("function");
@@ -450,7 +474,26 @@ fn powershell_function_name(code: &str) -> Option<&str> {
     }
     let name = tokens.next()?;
     // `function vibe{` / `function vibe(` need splitting off the delimiter.
-    Some(name.split(['{', '(']).next().unwrap_or(name))
+    let name = name.split(['{', '(']).next().unwrap_or(name);
+    Some(strip_powershell_scope(name))
+}
+
+/// PowerShell scope qualifiers that may prefix a function name.
+const PWSH_SCOPES: [&str; 4] = ["global:", "script:", "local:", "private:"];
+
+/// `global:vibe` → `vibe`. Names with no qualifier are returned untouched.
+///
+/// Matched with the colon included, so `globalvibe` (a different function that
+/// merely starts with a scope word) keeps its full name and is correctly NOT
+/// treated as the wrapper.
+fn strip_powershell_scope(name: &str) -> &str {
+    for scope in PWSH_SCOPES {
+        let is_scoped = name.len() > scope.len() && name[..scope.len()].eq_ignore_ascii_case(scope);
+        if is_scoped {
+            return &name[scope.len()..];
+        }
+    }
+    name
 }
 
 /// Classify the `vibe` wrapper in `content`, if any.
@@ -503,40 +546,148 @@ fn is_comment(line: &str) -> bool {
     line.trim_start().starts_with('#')
 }
 
-/// `line` with any trailing `#`-comment removed, ignoring `#` inside a quoted
-/// string.
+/// `line` with any trailing `#`-comment removed.
 ///
-/// Quote tracking is deliberately minimal: a single pass over the line toggling
-/// on `'`/`"`, same-kind only, no nesting. That is enough for the case that
-/// actually misfires — the shipped nu wrapper's own `"__VIBE_CD__"` literals and
-/// any path or prompt string containing a `#` — which a naive "cut at the first
-/// `#`" would truncate, hiding the dialect marker and reporting a correct wrapper
-/// as stale.
+/// Operates on an ALREADY-MASKED line (see [`mask_line`]), where string contents
+/// and `<# #>` block comments have been blanked out. A `#` surviving into this
+/// function is therefore genuinely a line comment, so the naive cut at the first
+/// one is correct rather than merely tolerable.
 ///
-/// Why not more: escape sequences (nu `\"`, PowerShell's backtick, `''`
-/// doubling), multi-line/here-strings and PowerShell `<# #>` block comments are
-/// all out of scope. Each of them can only make the scan mis-state where a string
-/// ends, and every such mistake is steered toward `stale`/`could not determine`,
-/// never toward blessing a broken wrapper. Full shell-literal parsing is not
-/// warranted for a classifier whose closing hint ("compare with
-/// `vibe shell-setup`") covers the residue.
-///
-/// Note that [`block_region`]'s brace counting stays quote-UNAWARE on purpose: a
-/// `{` inside a string literal must still unbalance the block, because that is
-/// what keeps the scan bounded and steers those files to `stale` rather than to a
-/// whole-file marker hunt.
+/// Kept separate from the masking pass because `is_wrapper_definition` needs it
+/// on raw text too, where the masker's shell-specific state is not available.
 fn strip_trailing_comment(line: &str) -> &str {
-    let mut quote: Option<char> = None;
+    match line.find('#') {
+        Some(at) => &line[..at],
+        None => line,
+    }
+}
 
-    for (at, c) in line.char_indices() {
-        match (quote, c) {
-            (None, '\'' | '"') => quote = Some(c),
-            (Some(open), c) if c == open => quote = None,
-            (None, '#') => return &line[..at],
-            _ => {}
+/// Carries the only masking state that survives across lines.
+///
+/// PowerShell's `<# ... #>` block comment is the one construct here that is
+/// genuinely multi-line, and an open one must keep swallowing text (including a
+/// stray `}` or a `--eval-dialect` note) until its `#>`. String quote state
+/// deliberately does NOT persist — see [`mask_line`].
+#[derive(Debug, Default, Clone, Copy)]
+struct MaskState {
+    in_block_comment: bool,
+}
+
+/// Blank out everything on `line` that is not executable code, preserving byte
+/// offsets so the result can be used for brace counting and marker detection
+/// alike.
+///
+/// Masked to spaces: string literal contents *and* their delimiters, and any
+/// `<# ... #>` block comment (PowerShell only). Everything else is copied
+/// through, so braces and flags in real code keep both their identity and their
+/// position.
+///
+/// Why mask rather than truncate: the block scan needs ONE representation that is
+/// correct for two different questions. A `}` inside `"..."` must not close the
+/// wrapper's block, and a `--eval-dialect powershell` inside `"..."` or `<# #>`
+/// must not bless it. Deleting the text would shift offsets; replacing it with
+/// spaces keeps `block_region`'s slicing honest.
+///
+/// Shell-specific literal rules, matching each language's actual grammar:
+/// - PowerShell `'...'`: no escapes at all; a doubled `''` is a literal quote and
+///   does NOT end the string.
+/// - PowerShell `"..."`: a backtick escapes the next character, so `` `" `` stays
+///   inside the string.
+/// - nu `'...'`: no escapes (this is why the nu wrapper can carry raw paths).
+/// - nu `"..."`: backslash escapes, so `\"` stays inside the string.
+///
+/// Why not more (all out of scope, and all documented in the module header):
+/// strings that span lines and here-strings (`@"..."@`, nu `r#'...'#`). Quote
+/// state resets at every newline, so an unterminated quote blanks the rest of
+/// THAT line only. That is the safe direction: the masked tail loses its braces,
+/// so the block fails to close and the wrapper reads `stale`/`could not
+/// determine` rather than `current`.
+fn mask_line(line: &str, shell: ShellName, state: &mut MaskState) -> String {
+    let is_pwsh = !matches!(shell, ShellName::Nushell);
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.char_indices().peekable();
+
+    while let Some((_, c)) = chars.next() {
+        // An open `<# ... #>` swallows everything until its terminator.
+        if state.in_block_comment {
+            let is_terminator = c == '#' && chars.peek().is_some_and(|(_, next)| *next == '>');
+            if is_terminator {
+                chars.next();
+                push_spaces(&mut out, '>');
+                state.in_block_comment = false;
+            }
+            push_spaces(&mut out, c);
+            continue;
+        }
+
+        let opens_block_comment =
+            is_pwsh && c == '<' && chars.peek().is_some_and(|(_, next)| *next == '#');
+        if opens_block_comment {
+            chars.next();
+            push_spaces(&mut out, '#');
+            push_spaces(&mut out, c);
+            state.in_block_comment = true;
+            continue;
+        }
+
+        let opens_string = c == '\'' || c == '"';
+        if !opens_string {
+            out.push(c);
+            continue;
+        }
+
+        // Consume the literal, blanking it (delimiters included) so nothing
+        // inside can be read as a brace, a flag or a comment marker.
+        push_spaces(&mut out, c);
+        let escape = string_escape_char(c, is_pwsh);
+        while let Some((_, inner)) = chars.next() {
+            let is_escape = escape == Some(inner);
+            if is_escape {
+                push_spaces(&mut out, inner);
+                if let Some((_, escaped)) = chars.next() {
+                    push_spaces(&mut out, escaped);
+                }
+                continue;
+            }
+            let is_closing = inner == c;
+            if is_closing {
+                // PowerShell/nu single quotes double `''` to embed one literal
+                // quote, so a second quote right here reopens rather than closes.
+                let is_doubled_quote =
+                    c == '\'' && chars.peek().is_some_and(|(_, next)| *next == '\'');
+                if is_doubled_quote {
+                    chars.next();
+                    push_spaces(&mut out, inner);
+                    push_spaces(&mut out, inner);
+                    continue;
+                }
+                push_spaces(&mut out, inner);
+                break;
+            }
+            push_spaces(&mut out, inner);
         }
     }
-    line
+
+    out
+}
+
+/// The escape character that keeps the next char inside a string, if any.
+///
+/// Only expandable (double-quoted) strings have one: PowerShell uses a backtick,
+/// nu a backslash. Single-quoted literals in both languages have no escapes.
+fn string_escape_char(quote: char, is_pwsh: bool) -> Option<char> {
+    let is_expandable = quote == '"';
+    if !is_expandable {
+        return None;
+    }
+    Some(if is_pwsh { '`' } else { '\\' })
+}
+
+/// Append as many spaces as `c` occupies, so masking never shifts byte offsets.
+fn push_spaces(out: &mut String, c: char) {
+    for _ in 0..c.len_utf8() {
+        out.push(' ');
+    }
 }
 
 /// The outcome of scanning a wrapper definition's brace block.
@@ -555,17 +706,28 @@ enum BlockScan {
 
 /// Scan the brace block opened by the definition on `lines[0]`.
 ///
+/// Every line is first run through [`mask_line`] (string contents and `<# #>`
+/// block comments blanked) and then through [`strip_trailing_comment`]. That one
+/// masked form drives BOTH the brace counting and the marker search, which is
+/// what makes the two agree: a `}` inside `"..."` no longer closes the block, and
+/// a `--eval-dialect` inside a string or a block comment no longer blesses it.
+///
 /// Restricting the marker search to the block's own character region is what
 /// keeps a marker that lives OUTSIDE it — in a trailing comment, or in a statement
 /// after the closing brace (`... } ; print '--eval-dialect nu'`) — from blessing a
-/// stale wrapper. Comments are stripped first, then the marker is only accepted
-/// while brace depth is ≥ 1.
+/// stale wrapper: the marker is only accepted while brace depth is ≥ 1.
+///
+/// The in-block regions are accumulated into one buffer and tokenized ONCE, at
+/// the end, rather than per line. A flag and its value may legitimately sit on
+/// different lines — nu's `(\n ^vibe\n --eval-dialect\n nu\n ...$args\n)` is valid
+/// syntax — and a per-line search would never see the pair, reporting a correct
+/// wrapper as stale. Lines are joined with a space so no token is fused across
+/// the line break.
 ///
 /// The scan is bounded three ways: the matching close brace, the next wrapper
 /// definition, and [`MAX_BLOCK_SEARCH_LINES`]. Without the last two, an
-/// unbalanced brace inside a string literal (which this classifier deliberately
-/// does not parse — see [`strip_trailing_comment`]) would let the scan run to end
-/// of file and pick up an unrelated marker.
+/// unbalanced brace (from a construct the masker does not model — see the module
+/// header) would let the scan run to end of file and pick up an unrelated marker.
 ///
 /// A marker is only honoured once the block is known to CLOSE. An unbalanced
 /// block has no determinable extent, so a marker found inside the assumed region
@@ -577,10 +739,15 @@ enum BlockScan {
 fn scan_block(lines: &[&str], shell: ShellName) -> BlockScan {
     let mut depth = 0usize;
     let mut opened = false;
-    let mut seen_marker = false;
+    let mut region_buffer = String::new();
+    let mut mask = MaskState::default();
 
     for (index, line) in lines.iter().take(MAX_BLOCK_SEARCH_LINES).enumerate() {
-        if is_comment(line) {
+        // A whole-line comment still has to advance the block-comment state, so
+        // mask it before skipping: a line that is only `<# ...` opens a comment
+        // whose effect continues below.
+        let masked = mask_line(line, shell, &mut mask);
+        if is_comment(&masked) {
             continue;
         }
         // A following definition means this block never closed cleanly; stop
@@ -590,10 +757,12 @@ fn scan_block(lines: &[&str], shell: ShellName) -> BlockScan {
             return BlockScan::NeverClosed;
         }
 
-        let code = strip_trailing_comment(line);
+        let code = strip_trailing_comment(&masked);
         let (region, closed) = block_region(code, &mut depth, &mut opened);
-        seen_marker = seen_marker || region_contains_dialect_marker(region, shell);
+        region_buffer.push_str(region);
+        region_buffer.push(' ');
         if closed {
+            let seen_marker = region_contains_dialect_marker(&region_buffer, shell);
             return if seen_marker {
                 BlockScan::ClosedWithMarker
             } else {

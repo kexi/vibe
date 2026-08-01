@@ -107,7 +107,11 @@ fn unix_defaults_to_home_dot_config() {
 }
 
 #[test]
-fn unix_prefers_xdg_config_home_over_home() {
+fn xdg_redirects_nushell_but_powershell_probes_both_roots() {
+    // nu resolves ONE config dir (XDG when set), so only that one is probed —
+    // a leftover in the other is not a file nu would load. PowerShell is
+    // ambiguous (.NET honours XDG, but ~/.config is where profiles usually sit),
+    // so both are probed rather than documenting a blind spot.
     let io = FakeIo::new()
         .with_env("HOME", "/home/u")
         .with_env("XDG_CONFIG_HOME", "/xdg");
@@ -117,8 +121,41 @@ fn unix_prefers_xdg_config_home_over_home() {
             "/xdg/nushell/config.nu",
             "/xdg/powershell/Microsoft.PowerShell_profile.ps1",
             "/xdg/powershell/profile.ps1",
+            "/home/u/.config/powershell/Microsoft.PowerShell_profile.ps1",
+            "/home/u/.config/powershell/profile.ps1",
         ]
     );
+}
+
+#[test]
+fn a_powershell_root_is_not_probed_twice_when_xdg_equals_dot_config() {
+    // Exporting `XDG_CONFIG_HOME=$HOME/.config` is common and must not turn every
+    // PowerShell profile into two identical report rows.
+    let io = FakeIo::new()
+        .with_env("HOME", "/home/u")
+        .with_env("XDG_CONFIG_HOME", "/home/u/.config");
+    assert_eq!(
+        paths(&io, UNIX),
+        vec![
+            "/home/u/.config/nushell/config.nu",
+            "/home/u/.config/powershell/Microsoft.PowerShell_profile.ps1",
+            "/home/u/.config/powershell/profile.ps1",
+        ]
+    );
+}
+
+#[test]
+fn a_stale_powershell_profile_under_home_is_found_even_when_xdg_points_elsewhere() {
+    let io = FakeIo::new()
+        .with_env("HOME", "/home/u")
+        .with_env("XDG_CONFIG_HOME", "/xdg");
+    let fs = FakeProfileFs::new()
+        .with_content("/home/u/.config/powershell/profile.ps1", OLD_PWSH_WRAPPER);
+    let err = doctor_command(&io, &fs, UNIX, OutputOptions::default()).unwrap_err();
+    assert_eq!(err.exit_code(), 1);
+    assert!(io
+        .stderr_text()
+        .contains("/home/u/.config/powershell/profile.ps1: stale"));
 }
 
 #[test]
@@ -228,17 +265,12 @@ fn unix_and_windows_branches_are_selected_by_the_flag_not_the_host() {
 const MACOS_NU_PATH: &str = "/home/u/Library/Application Support/nushell/config.nu";
 
 #[test]
-fn macos_also_probes_the_application_support_nushell_config() {
-    // nu on macOS defaults to the Apple convention, so a Mac user who never set
-    // XDG_CONFIG_HOME keeps their real config here.
+fn macos_probes_application_support_when_xdg_is_unset() {
+    // With no XDG_CONFIG_HOME, nu on macOS reads the Apple convention path — so
+    // that, and not `~/.config`, is where the live config sits.
     let io = FakeIo::new().with_env("HOME", "/home/u");
     let found = paths(&io, MACOS);
     assert!(found.contains(&MACOS_NU_PATH.to_string()), "got: {found:?}");
-    // Both locations are checked: nu honours XDG_CONFIG_HOME when it is set.
-    assert!(
-        found.contains(&"/home/u/.config/nushell/config.nu".to_string()),
-        "got: {found:?}"
-    );
 }
 
 #[test]
@@ -248,18 +280,38 @@ fn non_macos_unix_does_not_probe_application_support() {
 }
 
 #[test]
-fn the_application_support_candidate_follows_home_not_xdg() {
-    // XDG redirects the `.config` candidates but not the Apple one: nu reads the
-    // Application Support path relative to the home directory.
+fn macos_skips_application_support_once_xdg_is_set() {
+    // nu prefers XDG_CONFIG_HOME when it is set, so an old file left behind in
+    // Application Support is one nu never loads. Reporting it would exit 1 over a
+    // file that has no effect on the user's shell.
     let io = FakeIo::new()
         .with_env("HOME", "/home/u")
         .with_env("XDG_CONFIG_HOME", "/xdg");
     let found = paths(&io, MACOS);
-    assert!(found.contains(&MACOS_NU_PATH.to_string()), "got: {found:?}");
+    assert!(
+        !found.contains(&MACOS_NU_PATH.to_string()),
+        "got: {found:?}"
+    );
     assert!(
         found.contains(&"/xdg/nushell/config.nu".to_string()),
         "got: {found:?}"
     );
+}
+
+#[test]
+fn a_stale_application_support_leftover_is_ignored_when_xdg_is_current() {
+    // The exit-code consequence of the rule above: the wrapper nu actually loads
+    // is current, so the run is clean despite the stale file on disk.
+    let io = FakeIo::new()
+        .with_env("HOME", "/home/u")
+        .with_env("XDG_CONFIG_HOME", "/xdg");
+    let fs = FakeProfileFs::new()
+        .with_content(MACOS_NU_PATH, OLD_NU_WRAPPER)
+        .with_content("/xdg/nushell/config.nu", shell_function(ShellName::Nushell));
+    let outcome = doctor_command(&io, &fs, MACOS, OutputOptions::default()).unwrap();
+    assert_eq!(outcome, Outcome::none());
+    let text = io.stderr_text();
+    assert!(!text.contains("stale"), "got: {text}");
 }
 
 #[test]
@@ -529,21 +581,32 @@ fn a_marker_before_the_opening_brace_does_not_rescue_it() {
 }
 
 #[test]
-fn an_unbalanced_brace_does_not_let_the_scan_reach_a_later_marker() {
-    // A `{` inside a string literal leaves the depth counter unbalanced. This
-    // classifier deliberately does not parse string literals, so the scan must be
-    // bounded instead of running on to an unrelated marker further down the file.
-    let content = "def --env vibe [...args] { print \"{\" }\n\
+fn a_brace_inside_a_string_no_longer_unbalances_the_block() {
+    // Masking changed this case's MECHANISM: the `{` is inside a literal, so it
+    // is blanked and the block closes normally on the real `}`. The verdict is
+    // still stale — now because the closed block genuinely has no marker, and the
+    // one below it is outside the block.
+    let content = "def --env vibe [...args] { if true {\n\
+                   print 'unrelated --eval-dialect nu'\n";
+    assert_eq!(classify(content, ShellName::Nushell), WrapperStatus::Stale);
+}
+
+#[test]
+fn a_genuinely_unbalanced_brace_does_not_let_the_scan_reach_a_later_marker() {
+    // An unmatched `{` in real code (not in a string) still leaves the depth
+    // counter open, so the scan must be bounded rather than running on to an
+    // unrelated marker further down the file.
+    let content = "def --env vibe [...args] { if true {\n\
                    print 'unrelated --eval-dialect nu'\n";
     assert_eq!(classify(content, ShellName::Nushell), WrapperStatus::Stale);
 }
 
 #[test]
 fn an_unbalanced_brace_stops_at_the_next_wrapper_definition() {
-    // The first (stale) block never closes; it must not absorb the second,
-    // current definition's marker.
+    // The first block never closes; it must not absorb the second, current
+    // definition's marker.
     let content = format!(
-        "def --env vibe [...args] {{ print \"{{\" }}\n{}\n",
+        "def --env vibe [...args] {{ if true {{\n{}\n",
         shell_function(ShellName::Nushell)
     );
     assert_eq!(classify(&content, ShellName::Nushell), WrapperStatus::Stale);
@@ -565,7 +628,7 @@ fn a_marker_far_below_an_unclosed_block_leaves_the_wrapper_stale() {
     // below it cannot be credited to the wrapper.
     let filler = "print 'x'\n".repeat(60);
     let content =
-        format!("def --env vibe [...args] {{ print \"{{\" }}\n{filler}print '--eval-dialect nu'\n");
+        format!("def --env vibe [...args] {{ if true {{\n{filler}print '--eval-dialect nu'\n");
     assert_eq!(classify(&content, ShellName::Nushell), WrapperStatus::Stale);
 }
 
@@ -624,7 +687,7 @@ fn a_block_that_never_closes_within_the_budget_is_indeterminate() {
     // Past the scan cap there is no evidence either way, so neither `current` nor
     // `stale` can be justified.
     let filler = "print 'x'\n".repeat(1200);
-    let content = format!("def --env vibe [...args] {{ print \"{{\" }}\n{filler}");
+    let content = format!("def --env vibe [...args] {{ if true {{\n{filler}");
     assert_eq!(
         classify(&content, ShellName::Nushell),
         WrapperStatus::Indeterminate
@@ -638,7 +701,7 @@ fn the_scan_cap_boundary_separates_stale_from_indeterminate() {
     // of budget with the file still going, which is the absence of evidence, so
     // `Indeterminate`. Locking the boundary down because the two verdicts differ
     // in exit code (1 vs 0).
-    let unclosed = "def --env vibe [...args] { print \"{\" }\n";
+    let unclosed = "def --env vibe [...args] { if true {\n";
 
     let at_cap = format!(
         "{unclosed}{}",
@@ -661,8 +724,7 @@ fn the_scan_cap_boundary_separates_stale_from_indeterminate() {
 #[test]
 fn a_stale_wrapper_outranks_an_indeterminate_one_in_the_same_file() {
     let filler = "print 'x'\n".repeat(1200);
-    let content =
-        format!("def --env vibe [...args] {{ print \"{{\" }}\n{filler}{OLD_NU_WRAPPER}\n");
+    let content = format!("def --env vibe [...args] {{ if true {{\n{filler}{OLD_NU_WRAPPER}\n");
     assert_eq!(classify(&content, ShellName::Nushell), WrapperStatus::Stale);
 }
 
@@ -711,6 +773,163 @@ fn a_marker_in_a_comment_after_a_closed_quote_does_not_rescue_it() {
     assert_eq!(classify(content, ShellName::Nushell), WrapperStatus::Stale);
 }
 
+// --- string / block-comment masking (external-review reproductions) ---
+//
+// Every case here was a FALSE CURRENT before the masking pass: the classifier
+// blessed a demonstrably broken wrapper, which is the one direction this command
+// must never fail in.
+
+#[test]
+fn a_marker_inside_a_double_quoted_string_does_not_bless_a_stale_wrapper() {
+    // Reproduction 1a: the flag is merely being TALKED ABOUT in a message.
+    let content = "function vibe {\n\
+                   \x20 Write-Host \"use --eval-dialect powershell\"\n\
+                   \x20 Invoke-Expression (& vibe.exe $args)\n\
+                   }\n";
+    assert_eq!(
+        classify(content, ShellName::Powershell),
+        WrapperStatus::Stale
+    );
+}
+
+#[test]
+fn a_marker_inside_a_powershell_block_comment_does_not_bless_a_stale_wrapper() {
+    // Reproduction 1b: `<# ... #>` is a comment, on one line and across several.
+    let single_line = "function vibe {\n\
+                       \x20 Invoke-Expression (& vibe.exe @args) <# TODO --eval-dialect powershell #>\n\
+                       }\n";
+    assert_eq!(
+        classify(single_line, ShellName::Powershell),
+        WrapperStatus::Stale
+    );
+
+    let multi_line = "function vibe {\n\
+                      \x20 Invoke-Expression (& vibe.exe @args)\n\
+                      \x20 <# TODO:\n\
+                      \x20    switch to --eval-dialect powershell\n\
+                      \x20 #>\n\
+                      }\n";
+    assert_eq!(
+        classify(multi_line, ShellName::Powershell),
+        WrapperStatus::Stale
+    );
+}
+
+#[test]
+fn a_backtick_escaped_quote_does_not_leak_a_trailing_comment_marker() {
+    // Reproduction 2: `` `" `` stays INSIDE the string, so the `#` after it really
+    // does start a comment. Treating the escaped quote as closing would end the
+    // string early and expose the comment's marker as code.
+    let content = "function vibe {\n\
+                   \x20 Write-Host \"quote: `\"\" # TODO --eval-dialect powershell\n\
+                   \x20 Invoke-Expression (& vibe.exe $args)\n\
+                   }\n";
+    assert_eq!(
+        classify(content, ShellName::Powershell),
+        WrapperStatus::Stale
+    );
+}
+
+#[test]
+fn a_closing_brace_inside_a_string_does_not_close_the_block() {
+    // Reproduction 3: the only `}` before EOF is inside a literal, so the block
+    // never really closes and its marker cannot be trusted.
+    let content = "function vibe {\n\
+                   \x20 $out = & vibe.exe --eval-dialect powershell @args\n\
+                   \x20 Write-Host \"}\"\n";
+    assert_ne!(
+        classify(content, ShellName::Powershell),
+        WrapperStatus::Current,
+        "an unclosed block must not read as current"
+    );
+    assert_eq!(
+        classify(content, ShellName::Powershell),
+        WrapperStatus::Stale
+    );
+}
+
+#[test]
+fn a_doubled_single_quote_does_not_end_a_powershell_literal() {
+    // `''` embeds one literal quote, so the string continues and the marker inside
+    // it stays masked.
+    let content = "function vibe {\n\
+                   \x20 Write-Host 'it''s --eval-dialect powershell'\n\
+                   \x20 Invoke-Expression (& vibe.exe $args)\n\
+                   }\n";
+    assert_eq!(
+        classify(content, ShellName::Powershell),
+        WrapperStatus::Stale
+    );
+}
+
+#[test]
+fn a_backslash_escaped_quote_keeps_a_nu_string_open() {
+    let content = "def --env vibe [...args] {\n\
+                   \x20 print \"quote: \\\"\" # TODO --eval-dialect nu\n\
+                   \x20 ^vibe ...$args\n\
+                   }\n";
+    assert_eq!(classify(content, ShellName::Nushell), WrapperStatus::Stale);
+}
+
+#[test]
+fn a_flag_and_its_value_may_sit_on_separate_lines() {
+    // Reproduction 6, and the reason the marker search runs over the WHOLE
+    // accumulated block rather than per line: splitting a nu pipeline across lines
+    // inside parens is valid syntax, and this wrapper genuinely works.
+    let content = "def --env --wrapped vibe [...args] {\n\
+                   \x20 let out = (\n\
+                   \x20   ^vibe\n\
+                   \x20   --eval-dialect\n\
+                   \x20   nu\n\
+                   \x20   ...$args\n\
+                   \x20 )\n\
+                   \x20 for line in ($out | lines) { print $line }\n\
+                   }\n";
+    assert_eq!(
+        classify(content, ShellName::Nushell),
+        WrapperStatus::Current
+    );
+}
+
+// --- PowerShell scope qualifiers ---
+
+#[test]
+fn a_scope_qualified_stale_wrapper_is_still_a_wrapper() {
+    // `function global:vibe` occupies the very same command name, so missing it
+    // would report a broken wrapper as "no vibe wrapper" — silently clean.
+    for scope in ["global", "script", "local", "private", "GLOBAL"] {
+        let content = format!("function {scope}:vibe {{ Invoke-Expression (& vibe.exe $args) }}\n");
+        assert_eq!(
+            classify(&content, ShellName::Powershell),
+            WrapperStatus::Stale,
+            "scope qualifier not handled: {scope}"
+        );
+    }
+}
+
+#[test]
+fn a_scope_qualified_current_wrapper_is_current() {
+    let content = "function global:vibe { $out = & vibe.exe --eval-dialect powershell @args }\n";
+    assert_eq!(
+        classify(content, ShellName::Powershell),
+        WrapperStatus::Current
+    );
+}
+
+#[test]
+fn a_name_that_merely_starts_with_a_scope_word_is_not_a_wrapper() {
+    // The colon is what makes it a qualifier; `globalvibe` is an unrelated
+    // function that must not be rewritten.
+    for name in ["globalvibe", "scriptvibe", "global-vibe"] {
+        let content = format!("function {name} {{ & vibe.exe start }}\n");
+        assert_eq!(
+            classify(&content, ShellName::Powershell),
+            WrapperStatus::NoWrapper,
+            "misdiagnosed as a wrapper: {name}"
+        );
+    }
+}
+
 // --- dialect-value matching ---
 
 #[test]
@@ -737,16 +956,30 @@ fn the_equals_form_of_the_flag_is_accepted() {
 }
 
 #[test]
-fn a_quoted_dialect_value_is_accepted() {
-    // Quoting the value is ordinary shell style and changes nothing about what
-    // the binary receives, so trimming only the TRAILING quote would report every
-    // one of these correct wrappers as stale.
+fn a_parenthesized_dialect_value_is_accepted() {
+    // Parens are shell syntax, not a string literal, so the value survives
+    // masking and the punctuation trim still has to cope with it on both sides.
+    let content = "function vibe { $out = & vibe.exe --eval-dialect (powershell) @args }\n";
+    assert_eq!(
+        classify(content, ShellName::Powershell),
+        WrapperStatus::Current
+    );
+}
+
+#[test]
+fn a_quoted_dialect_value_reads_as_stale_by_design() {
+    // A deliberate false-STALE, and the direct price of the masking pass that
+    // makes `Write-Host "use --eval-dialect powershell"` read as stale: once a
+    // string's CONTENTS are blanked, a quoted value is indistinguishable from a
+    // quoted mention. The classifier cannot have both, so it takes the safe
+    // direction — printing a fix for a working wrapper, rather than blessing a
+    // broken one. `vibe shell-setup` emits the value unquoted, so no wrapper this
+    // project ships is affected.
     for value in [
         "\"powershell\"",
         "'powershell'",
         "=\"powershell\"",
         "='powershell'",
-        "(powershell)",
     ] {
         let content = format!(
             "function vibe {{ $out = & vibe.exe --eval-dialect{}{value} @args }}\n",
@@ -754,8 +987,8 @@ fn a_quoted_dialect_value_is_accepted() {
         );
         assert_eq!(
             classify(&content, ShellName::Powershell),
-            WrapperStatus::Current,
-            "quoting style rejected: {value:?}"
+            WrapperStatus::Stale,
+            "expected the documented false-stale for: {value:?}"
         );
     }
 }
@@ -1020,7 +1253,7 @@ fn an_indeterminate_wrapper_is_reported_without_failing_the_run() {
     // the row plus the closing shell-setup hint is the remedy.
     let io = unix_io();
     let filler = "print 'x'\n".repeat(1200);
-    let content = format!("def --env vibe [...args] {{ print \"{{\" }}\n{filler}");
+    let content = format!("def --env vibe [...args] {{ if true {{\n{filler}");
     let fs = FakeProfileFs::new().with_content(NU_PATH, &content);
     let outcome = doctor_command(&io, &fs, UNIX, OutputOptions::default()).unwrap();
     assert_eq!(outcome, Outcome::none());
@@ -1038,7 +1271,7 @@ fn an_indeterminate_wrapper_is_reported_without_failing_the_run() {
 fn a_stale_wrapper_elsewhere_still_fails_the_run_alongside_an_indeterminate_one() {
     let io = unix_io();
     let filler = "print 'x'\n".repeat(1200);
-    let indeterminate = format!("def --env vibe [...args] {{ print \"{{\" }}\n{filler}");
+    let indeterminate = format!("def --env vibe [...args] {{ if true {{\n{filler}");
     let fs = FakeProfileFs::new()
         .with_content(NU_PATH, &indeterminate)
         .with_content(PWSH_PATH, OLD_PWSH_WRAPPER);

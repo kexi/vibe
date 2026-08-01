@@ -46,11 +46,19 @@ that definition requests its dialect.
 
 | Shell      | Platform      | Path                                                                                                                                                |
 | ---------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| nushell    | Linux         | `$XDG_CONFIG_HOME/nushell/config.nu`, else `~/.config/nushell/config.nu`                                                                            |
-| nushell    | macOS         | the same, **and** `~/Library/Application Support/nushell/config.nu` (nu's macOS default) — both are checked                                         |
+| nushell    | Linux         | `$XDG_CONFIG_HOME/nushell/config.nu` when that variable is set, otherwise `~/.config/nushell/config.nu`                                             |
+| nushell    | macOS         | `$XDG_CONFIG_HOME/nushell/config.nu` when that variable is set, otherwise `~/Library/Application Support/nushell/config.nu` (nu's macOS default)    |
 | nushell    | Windows       | `%APPDATA%\nushell\config.nu`                                                                                                                       |
-| PowerShell | macOS / Linux | `~/.config/powershell/Microsoft.PowerShell_profile.ps1`, `profile.ps1`                                                                              |
+| PowerShell | macOS / Linux | `~/.config/powershell/…` **and** `$XDG_CONFIG_HOME/powershell/…` when that variable is set — both are checked                                       |
 | PowerShell | Windows       | `%USERPROFILE%\Documents\{PowerShell,WindowsPowerShell}\*.ps1`, and the same two directories under `%OneDrive%\Documents\` when `%OneDrive%` is set |
+
+The two shells differ deliberately. nushell resolves exactly one config directory
+— `XDG_CONFIG_HOME` when it is set, the platform default otherwise — so only that
+one is checked; a leftover file in the other is one nushell never loads, and
+reporting it would fail the run over a file that has no effect on your shell.
+PowerShell is genuinely ambiguous (.NET honours `XDG_CONFIG_HOME`, but `~/.config`
+is where profiles usually live), so both are checked. Identical paths are reported
+once.
 
 A file that does not exist is not reported. Each reported file gets one of:
 
@@ -80,7 +88,7 @@ UTF-16 file with no byte-order mark is not detected.
 $ vibe doctor
 Checking shell wrappers for nushell and PowerShell...
   /Users/you/.config/nushell/config.nu: stale
-Fix: run 'vibe shell-setup --shell nushell' and replace the vibe function in /Users/you/.config/nushell/config.nu
+    Fix: run 'vibe shell-setup --shell nushell' and replace the vibe function in /Users/you/.config/nushell/config.nu
 If your wrapper is sourced from another file, compare it with 'vibe shell-setup --shell <nushell|powershell>'.
 ```
 
@@ -116,6 +124,14 @@ calling script when an external command exits non-zero.
 - **OneDrive Known Folder redirection.** `%OneDrive%\Documents` is checked when
   `%OneDrive%` is set, but a `Documents` folder redirected somewhere else is not
   found.
+- **Unusual string syntax may read as `stale`.** Before deciding, `doctor` blanks
+  out string literals and PowerShell `<# … #>` block comments, so a brace or a
+  `--eval-dialect` mention inside quotes cannot sway the verdict. Two constructs
+  are not modelled: strings that span several lines, and here-strings (`@"…"@`,
+  nushell `r#'…'#`). A wrapper using those may be reported `stale` even though it
+  works — the error always falls on that side, never on blessing a broken wrapper.
+  Quoting the dialect value itself (`--eval-dialect "powershell"`) reads as `stale`
+  for the same reason; `vibe shell-setup` emits it unquoted.
 
 ## Related
 

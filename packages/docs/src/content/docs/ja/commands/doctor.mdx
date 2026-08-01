@@ -37,11 +37,13 @@ bash・zsh・fishのラッパーは壊れていなかったため、チェック
 
 | シェル     | プラットフォーム | パス                                                                                                                                                       |
 | ---------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| nushell    | Linux            | `$XDG_CONFIG_HOME/nushell/config.nu`、未設定なら`~/.config/nushell/config.nu`                                                                              |
-| nushell    | macOS            | 上と同じものに加えて`~/Library/Application Support/nushell/config.nu`（nuのmacOS既定）。両方をチェックします                                               |
+| nushell    | Linux            | `XDG_CONFIG_HOME`が設定されていれば`$XDG_CONFIG_HOME/nushell/config.nu`、そうでなければ`~/.config/nushell/config.nu`                                       |
+| nushell    | macOS            | `XDG_CONFIG_HOME`が設定されていれば`$XDG_CONFIG_HOME/nushell/config.nu`、そうでなければ`~/Library/Application Support/nushell/config.nu`（nuのmacOS既定）  |
 | nushell    | Windows          | `%APPDATA%\nushell\config.nu`                                                                                                                              |
-| PowerShell | macOS / Linux    | `~/.config/powershell/Microsoft.PowerShell_profile.ps1`、`profile.ps1`                                                                                     |
+| PowerShell | macOS / Linux    | `~/.config/powershell/…`に加えて、`XDG_CONFIG_HOME`が設定されていれば`$XDG_CONFIG_HOME/powershell/…`。両方をチェックします                                 |
 | PowerShell | Windows          | `%USERPROFILE%\Documents\{PowerShell,WindowsPowerShell}\*.ps1`、および`%OneDrive%`が設定されている場合は`%OneDrive%\Documents\`配下の同じ2つのディレクトリ |
+
+2つのシェルで扱いが異なるのは意図的です。nushellは設定ディレクトリを1つだけ解決します（`XDG_CONFIG_HOME`が設定されていればそちら、なければプラットフォーム既定）。そのため、チェックするのもその1つだけです。もう一方に残っているファイルはnushellが読み込むことのないファイルであり、それを報告してしまうと、シェルに何の影響もないファイルのために実行が失敗してしまいます。一方PowerShellは本質的に曖昧なため（.NETは`XDG_CONFIG_HOME`を尊重しますが、プロファイルは`~/.config`に置かれるのが一般的です）、両方をチェックします。同一のパスは1回だけ報告されます。
 
 存在しないファイルは報告されません。報告される各ファイルには次のいずれかが付きます。
 
@@ -64,7 +66,7 @@ UTF-16で保存されたプロファイル（Windows PowerShellの`Out-File`が�
 $ vibe doctor
 Checking shell wrappers for nushell and PowerShell...
   /Users/you/.config/nushell/config.nu: stale
-Fix: run 'vibe shell-setup --shell nushell' and replace the vibe function in /Users/you/.config/nushell/config.nu
+    Fix: run 'vibe shell-setup --shell nushell' and replace the vibe function in /Users/you/.config/nushell/config.nu
 If your wrapper is sourced from another file, compare it with 'vibe shell-setup --shell <nushell|powershell>'.
 ```
 
@@ -86,6 +88,7 @@ If your wrapper is sourced from another file, compare it with 'vibe shell-setup 
 ## 注意点
 
 - **別ファイルから読み込んでいるラッパーは検出できません。** プロファイルが別のファイルを`source`して`vibe`を定義している場合、`doctor`は`no vibe wrapper`と報告します。その場合は`vibe shell-setup --shell nushell`（または`powershell`）の出力と手動で比較してください。
+- **特殊な文字列構文は`stale`と判定されることがあります。** 判定の前に、`doctor`は文字列リテラルとPowerShellの`<# … #>`ブロックコメントを空白で塗りつぶします。そのため、引用符の中にある波かっこや`--eval-dialect`という記述が判定を左右することはありません。ただし、複数行にまたがる文字列とヒアストリング（`@"…"@`、nushellの`r#'…'#`）の2つは解釈されません。これらを使ったラッパーは、正しく動作していても`stale`と報告される可能性があります。判定の誤りは常にこちら側に倒れ、壊れたラッパーを正常と見なすことはありません。dialectの値そのものを引用符で囲んだ場合（`--eval-dialect "powershell"`）も同じ理由で`stale`になります。`vibe shell-setup`は引用符なしで出力します。
 - **OneDriveのKnown Folderリダイレクト。** `%OneDrive%`が設定されていれば`%OneDrive%\Documents`もチェックしますが、`Documents`フォルダが他の場所にリダイレクトされている場合は見つけられません。
 
 ## 関連
