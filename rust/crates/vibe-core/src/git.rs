@@ -10,11 +10,15 @@ use crate::error::{Result, VibeError};
 use std::path::Path;
 use std::process::Command;
 
-/// A single worktree entry parsed from `git worktree list --porcelain`.
+/// A single worktree entry parsed from `git worktree list --porcelain [-z]`.
+///
+/// `branch` is `None` for a detached-HEAD worktree: git emits a bare `detached`
+/// line instead of `branch refs/heads/…` for those, and they are real worktrees
+/// a user can be standing in, so they must be representable rather than dropped.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Worktree {
     pub path: String,
-    pub branch: String,
+    pub branch: Option<String>,
 }
 
 /// Repository information extracted from a file path.
@@ -36,19 +40,38 @@ pub trait GitRunner {
     fn run(&self, args: &[&str]) -> Result<String>;
 }
 
+/// Environment pinned on every `git` invocation, forcing the C locale.
+///
+/// `is_unsupported_option_error` decides the `-z` fallback by matching git's
+/// English diagnostic text, and git translates its messages: under `ja_JP.UTF-8`
+/// a pre-2.36 git answers `-z` with a translated "unknown option", the match
+/// fails, and every worktree-enumerating command breaks instead of degrading.
+///
+/// Pinned here — on the one place a `git` process is constructed — rather than
+/// only on the probe invocation: the [`GitRunner`] seam takes just an argument
+/// vector, so a probe-only override would mean widening the trait or bypassing
+/// it for one call, and there is nothing to protect on the other callers. Every
+/// other invocation reads machine-stable output (`--porcelain`, `rev-parse`,
+/// `config --get`), which git does not translate, so the C locale changes
+/// nothing for them.
+///
+/// `LC_ALL` alone is not enough: `LANGUAGE` overrides it for message
+/// translation in gettext, so both must be set.
+const GIT_C_LOCALE_ENV: [(&str, &str); 2] = [("LC_ALL", "C"), ("LANGUAGE", "C")];
+
 /// Production [`GitRunner`] that shells out to the real `git` binary.
 pub struct RealGit;
 
 impl GitRunner for RealGit {
     fn run(&self, args: &[&str]) -> Result<String> {
-        let output =
-            Command::new("git")
-                .args(args)
-                .output()
-                .map_err(|e| VibeError::GitOperation {
-                    command: args.join(" "),
-                    message: e.to_string(),
-                })?;
+        let output = Command::new("git")
+            .args(args)
+            .envs(GIT_C_LOCALE_ENV)
+            .output()
+            .map_err(|e| VibeError::GitOperation {
+                command: args.join(" "),
+                message: e.to_string(),
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -68,27 +91,134 @@ pub fn sanitize_branch_name(branch_name: &str) -> String {
     branch_name.replace('/', "-")
 }
 
-/// Parse `git worktree list --porcelain` output into ordered worktree entries.
+/// The preferred argument vector for reading the worktree list.
+///
+/// `-z` (NUL-terminated records) rather than plain `--porcelain`: a worktree
+/// path may legally contain a literal newline, and the line-oriented format has
+/// no way to express that — git's own docs recommend `-z` for machine
+/// consumption for exactly this reason.
+const WORKTREE_LIST_ARGS_Z: [&str; 4] = ["worktree", "list", "--porcelain", "-z"];
+
+/// The compatibility argument vector, used when `git` rejects `-z`.
+///
+/// `git worktree list` only learned `-z` in 2.36, and some LTS distributions
+/// still ship an older git. Dropping `-z` there costs only the newline-in-path
+/// edge case (which the line-oriented format simply cannot express) instead of
+/// breaking every worktree-enumerating command — `list`, `start`, `clean`,
+/// `home` and `jump` all read through here.
+const WORKTREE_LIST_ARGS_PLAIN: [&str; 3] = ["worktree", "list", "--porcelain"];
+
+/// Read the raw worktree-list payload, preferring `-z` and degrading if unsupported.
+///
+/// Probing by *attempting* `-z` rather than parsing `git --version` first: the
+/// version string is not a reliable capability oracle (distributions backport,
+/// and vendored builds carry non-semver versions), and the happy path stays a
+/// single `git` invocation — the extra call only happens on the git that cannot
+/// serve the first one.
+///
+/// Only an argument-parsing rejection triggers the retry. A genuine failure —
+/// "not a git repository", a broken repo — must surface as itself rather than
+/// being retried and reported under the fallback command, which would hide the
+/// real cause behind a second identical error.
+fn run_worktree_list(runner: &impl GitRunner) -> Result<String> {
+    match runner.run(&WORKTREE_LIST_ARGS_Z) {
+        Ok(output) => Ok(output),
+        Err(err) if is_unsupported_option_error(&err) => runner.run(&WORKTREE_LIST_ARGS_PLAIN),
+        Err(err) => Err(err),
+    }
+}
+
+/// True when a git failure is "you passed an option I do not know".
+///
+/// git prints `error: unknown option ...` (and/or a `usage: git worktree list`
+/// synopsis) on an unparsed flag, versus `fatal: ...` for operational failures,
+/// so matching those markers separates "this git is too old" from "this repo is
+/// broken". Matching on the message rather than the exit status because git uses
+/// 129 for usage errors only on some paths, and the [`GitRunner`] abstraction
+/// intentionally carries the message, not the raw status.
+///
+/// The markers are git's untranslated English wording, which is only what
+/// [`RealGit`] sees because it pins [`GIT_C_LOCALE_ENV`]; without that pinning
+/// this predicate would silently stop matching under a non-English locale.
+fn is_unsupported_option_error(err: &VibeError) -> bool {
+    let VibeError::GitOperation { message, .. } = err else {
+        return false;
+    };
+    let message = message.to_ascii_lowercase();
+    message.contains("unknown option")
+        || message.contains("unknown switch")
+        || message.contains("usage: git worktree list")
+}
+
+/// Parse `git worktree list --porcelain [-z]` output into ordered worktree
+/// entries.
 ///
 /// git emits entries in a stable order (main worktree first), so we preserve
 /// the emitted order rather than re-sorting — and we never depend on
 /// nondeterministic filesystem `read_dir` order anywhere.
+///
+/// The record separator is detected from the payload — see
+/// [`split_worktree_records`] — so both the `-z` output we ask git for first and
+/// the plain line-oriented porcelain we fall back to on a pre-2.36 git parse
+/// identically. That is what lets a path containing a newline survive: under
+/// `-z` the newline is interior to a record rather than a record separator.
+///
+/// An entry is accumulated from its `worktree <path>` record and flushed when
+/// the next one starts (or at EOF), so a detached-HEAD worktree — which carries
+/// a bare `detached` record and NO `branch` record — yields `branch: None`
+/// instead of vanishing. A `bare` entry is dropped: a bare repository has no
+/// working tree to stand in or `cd` to, so it is not a worktree for any of our
+/// purposes.
 pub fn parse_worktree_list(output: &str) -> Vec<Worktree> {
     let mut worktrees = Vec::new();
-    let mut current_path = String::new();
+    let mut current: Option<Worktree> = None;
+    let mut is_bare = false;
 
-    for line in output.split('\n') {
-        if let Some(rest) = line.strip_prefix("worktree ") {
-            current_path = rest.to_string();
-        } else if let Some(rest) = line.strip_prefix("branch refs/heads/") {
-            worktrees.push(Worktree {
-                path: current_path.clone(),
-                branch: rest.to_string(),
-            });
+    // Push the entry accumulated so far, unless it is a bare repository.
+    fn flush(out: &mut Vec<Worktree>, current: Option<Worktree>, is_bare: bool) {
+        if let Some(wt) = current {
+            if !is_bare {
+                out.push(wt);
+            }
         }
     }
 
+    for line in split_worktree_records(output) {
+        if let Some(rest) = line.strip_prefix("worktree ") {
+            flush(&mut worktrees, current.take(), is_bare);
+            is_bare = false;
+            current = Some(Worktree {
+                path: rest.to_string(),
+                branch: None,
+            });
+        } else if let Some(rest) = line.strip_prefix("branch refs/heads/") {
+            if let Some(wt) = current.as_mut() {
+                wt.branch = Some(rest.to_string());
+            }
+        } else if line.trim() == "bare" {
+            is_bare = true;
+        }
+    }
+    flush(&mut worktrees, current.take(), is_bare);
+
     worktrees
+}
+
+/// Split worktree-list output into records, picking the separator from the data.
+///
+/// `-z` output is NUL-terminated and, by construction, uses `\n` for nothing but
+/// bytes that are genuinely part of a path; plain `--porcelain` output is
+/// newline-separated and contains no `\0` at all. So the presence of a single
+/// `\0` is an unambiguous discriminator, and keying off it — rather than
+/// splitting on both bytes — is what preserves a newline inside a path.
+///
+/// Not simply "always `-z`": the plain branch is what a git older than 2.36
+/// produces after [`run_worktree_list`] retries without `-z`, and it is also
+/// what the hand-written line-oriented fixtures use. Keeping one parser for both
+/// beats maintaining two that can drift apart.
+fn split_worktree_records(output: &str) -> impl Iterator<Item = &str> {
+    let separator = if output.contains('\0') { '\0' } else { '\n' };
+    output.split(separator)
 }
 
 /// Normalize a git remote URL to a canonical `host/user/repo` form.
@@ -153,11 +283,11 @@ pub fn find_worktree_by_branch(
     runner: &impl GitRunner,
     branch_name: &str,
 ) -> Result<Option<String>> {
-    let output = runner.run(&["worktree", "list", "--porcelain"])?;
+    let output = run_worktree_list(runner)?;
     let worktrees = parse_worktree_list(&output);
     Ok(worktrees
         .into_iter()
-        .find(|w| w.branch == branch_name)
+        .find(|w| w.branch.as_deref() == Some(branch_name))
         .map(|w| w.path))
 }
 
@@ -255,9 +385,9 @@ pub fn remote_branch_exists(runner: &impl GitRunner, branch_name: &str, remote: 
         .is_ok()
 }
 
-/// All worktrees from `git worktree list --porcelain`, in git's emitted order.
+/// All worktrees from `git worktree list --porcelain [-z]`, in git's emitted order.
 pub fn get_worktree_list(runner: &impl GitRunner) -> Result<Vec<Worktree>> {
-    let output = runner.run(&["worktree", "list", "--porcelain"])?;
+    let output = run_worktree_list(runner)?;
     Ok(parse_worktree_list(&output))
 }
 
@@ -441,6 +571,228 @@ mod tests {
         }
     }
 
+    /// A runner emulating a git that rejects `-z`, recording every invocation.
+    ///
+    /// `stderr_for_z` is the message such a git puts on stderr, so a test can
+    /// pin the exact wording an old git produces.
+    struct OldGit {
+        stderr_for_z: String,
+        plain_output: String,
+        calls: std::cell::RefCell<Vec<Vec<String>>>,
+    }
+    impl OldGit {
+        fn new(stderr_for_z: &str, plain_output: &str) -> Self {
+            Self {
+                stderr_for_z: stderr_for_z.to_string(),
+                plain_output: plain_output.to_string(),
+                calls: std::cell::RefCell::new(Vec::new()),
+            }
+        }
+        fn calls(&self) -> Vec<Vec<String>> {
+            self.calls.borrow().clone()
+        }
+    }
+    impl GitRunner for OldGit {
+        fn run(&self, args: &[&str]) -> Result<String> {
+            self.calls
+                .borrow_mut()
+                .push(args.iter().map(|a| a.to_string()).collect());
+            if args.contains(&"-z") {
+                return Err(VibeError::GitOperation {
+                    command: args.join(" "),
+                    message: format!("failed: {}", self.stderr_for_z),
+                });
+            }
+            Ok(self.plain_output.clone())
+        }
+    }
+
+    /// A runner whose worktree listing always fails with `message`.
+    struct FailingGit {
+        message: String,
+        calls: std::cell::RefCell<usize>,
+    }
+    impl GitRunner for FailingGit {
+        fn run(&self, args: &[&str]) -> Result<String> {
+            *self.calls.borrow_mut() += 1;
+            Err(VibeError::GitOperation {
+                command: args.join(" "),
+                message: self.message.clone(),
+            })
+        }
+    }
+
+    const PLAIN_LIST: &str = "worktree /repo/main\nHEAD aaaa\nbranch refs/heads/main\n\nworktree /repo/feat\nHEAD bbbb\nbranch refs/heads/feature\n\n";
+
+    #[test]
+    fn worktree_list_prefers_z_and_does_not_retry_when_it_works() {
+        // The modern path must stay a single git invocation.
+        let git = MockGit {
+            worktree_list: "worktree /repo/main\0branch refs/heads/main\0\0".to_string(),
+        };
+        assert_eq!(
+            get_worktree_list(&git).unwrap(),
+            vec![Worktree {
+                path: "/repo/main".into(),
+                branch: Some("main".into()),
+            }]
+        );
+    }
+
+    #[test]
+    fn worktree_list_falls_back_to_plain_porcelain_when_z_is_rejected() {
+        // A git older than 2.36 rejects `-z`; the listing must still be read
+        // rather than every worktree command failing outright.
+        let git = OldGit::new("error: unknown option `z'", PLAIN_LIST);
+        assert_eq!(
+            get_worktree_list(&git).unwrap(),
+            vec![
+                Worktree {
+                    path: "/repo/main".into(),
+                    branch: Some("main".into()),
+                },
+                Worktree {
+                    path: "/repo/feat".into(),
+                    branch: Some("feature".into()),
+                },
+            ]
+        );
+        assert_eq!(
+            git.calls(),
+            vec![
+                vec!["worktree", "list", "--porcelain", "-z"],
+                vec!["worktree", "list", "--porcelain"],
+            ],
+            "the fallback must retry without -z, and only after -z was rejected"
+        );
+    }
+
+    #[test]
+    fn real_git_runs_git_under_the_c_locale() {
+        // What it guarantees: the `-z` fallback probe keeps working on a
+        // non-English system. `is_unsupported_option_error` matches git's
+        // English diagnostics, so `RealGit` must force the C locale onto the
+        // child regardless of the ambient environment — otherwise a pre-2.36
+        // git under e.g. ja_JP.UTF-8 answers with a translated "unknown option"
+        // and the fallback never fires.
+        //
+        // Asserted by making git echo the locale variables it was launched
+        // with, rather than by comparing translated output: whether any given
+        // machine has git's translations installed is not something a test can
+        // rely on, so a message-text assertion would silently pass everywhere.
+        let ambient = [("LC_ALL", "ja_JP.UTF-8"), ("LANGUAGE", "ja")];
+        let output = Command::new("git")
+            .args([
+                "-c",
+                "alias.vibeshowlocale=!printf '%s|%s' \"$LC_ALL\" \"$LANGUAGE\"",
+                "vibeshowlocale",
+            ])
+            .envs(ambient)
+            .envs(GIT_C_LOCALE_ENV)
+            .output()
+            .expect("git must be runnable in the test environment");
+
+        assert!(
+            output.status.success(),
+            "probe alias failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout).trim(),
+            "C|C",
+            "RealGit's pinned env must override an ambient non-English locale"
+        );
+    }
+
+    #[test]
+    fn c_locale_pinning_covers_both_gettext_variables() {
+        // What it guarantees: LC_ALL alone is insufficient — gettext lets
+        // LANGUAGE override it for message translation, so dropping LANGUAGE
+        // would reintroduce the translated-diagnostic bug on systems that set
+        // it.
+        let pinned: std::collections::HashMap<_, _> = GIT_C_LOCALE_ENV.into_iter().collect();
+        assert_eq!(pinned.get("LC_ALL"), Some(&"C"));
+        assert_eq!(pinned.get("LANGUAGE"), Some(&"C"));
+    }
+
+    #[test]
+    fn unsupported_option_match_is_case_insensitive_over_git_wordings() {
+        // What it guarantees: the marker set covers the wordings git actually
+        // emits for an unparsed flag, in the C locale the runner pins.
+        for message in [
+            "failed: error: unknown option `z'",
+            "failed: error: unknown switch `z'",
+            "failed: usage: git worktree list [-v | --porcelain [-z]]",
+            "failed: ERROR: Unknown Option `z'",
+        ] {
+            let err = VibeError::GitOperation {
+                command: "worktree list --porcelain -z".to_string(),
+                message: message.to_string(),
+            };
+            assert!(
+                is_unsupported_option_error(&err),
+                "must be treated as an unsupported-option rejection: {message}"
+            );
+        }
+
+        let genuine = VibeError::GitOperation {
+            command: "worktree list --porcelain -z".to_string(),
+            message: "failed: fatal: not a git repository".to_string(),
+        };
+        assert!(!is_unsupported_option_error(&genuine));
+    }
+
+    #[test]
+    fn worktree_list_falls_back_on_a_usage_synopsis_rejection() {
+        // Some git builds answer an unparsed flag with only the usage synopsis.
+        let git = OldGit::new(
+            "usage: git worktree list [-v | --porcelain]",
+            "worktree /repo/main\nbranch refs/heads/main\n\n",
+        );
+        assert_eq!(
+            get_worktree_list(&git).unwrap(),
+            vec![Worktree {
+                path: "/repo/main".into(),
+                branch: Some("main".into()),
+            }]
+        );
+        assert_eq!(git.calls().len(), 2);
+    }
+
+    #[test]
+    fn find_worktree_by_branch_also_falls_back() {
+        // The fallback is shared, so the other call site degrades identically.
+        let git = OldGit::new("error: unknown option `z'", PLAIN_LIST);
+        assert_eq!(
+            find_worktree_by_branch(&git, "feature").unwrap(),
+            Some("/repo/feat".to_string())
+        );
+        assert_eq!(git.calls().len(), 2);
+    }
+
+    #[test]
+    fn worktree_list_does_not_retry_a_genuine_git_failure() {
+        // "Not a repository" must surface as itself, not be retried and then
+        // reported under the fallback command, hiding the real cause.
+        let git = FailingGit {
+            message: "failed: fatal: not a git repository".to_string(),
+            calls: std::cell::RefCell::new(0),
+        };
+        let err = get_worktree_list(&git).unwrap_err();
+        assert!(
+            err.to_string().contains("not a git repository"),
+            "the original failure must be preserved, got: {err}"
+        );
+        assert_eq!(*git.calls.borrow(), 1, "a real failure must not be retried");
+    }
+
+    #[test]
+    fn fallback_output_and_z_output_parse_to_the_same_entries() {
+        // One parser serves both invocations, so the two forms must agree.
+        let z = "worktree /repo/main\0HEAD aaaa\0branch refs/heads/main\0\0worktree /repo/feat\0HEAD bbbb\0branch refs/heads/feature\0\0";
+        assert_eq!(parse_worktree_list(z), parse_worktree_list(PLAIN_LIST));
+    }
+
     #[test]
     fn sanitize_replaces_slashes() {
         assert_eq!(sanitize_branch_name("feat/new-feature"), "feat-new-feature");
@@ -554,7 +906,7 @@ mod tests {
         let wt = get_worktree_by_path(&git, "/test/repo/../wt/./feat")
             .unwrap()
             .unwrap();
-        assert_eq!(wt.branch, "feature");
+        assert_eq!(wt.branch.as_deref(), Some("feature"));
         assert_eq!(wt.path, "/test/wt/feat");
     }
 
@@ -594,10 +946,10 @@ mod tests {
     // start/clean over real git) cannot silently change how worktrees are read.
 
     #[test]
-    fn parse_skips_detached_head_entry_without_branch_line() {
+    fn parse_keeps_detached_head_entry_with_no_branch() {
         // A detached-HEAD worktree emits `detached` instead of a `branch` line.
-        // The parser pushes only on a `branch refs/heads/` line, so the detached
-        // entry is intentionally OMITTED from the result.
+        // It is still a real worktree the user can stand in, so it is reported
+        // with `branch: None` rather than dropped.
         let out = "\
 worktree /repo/main
 HEAD aaaa
@@ -610,11 +962,30 @@ detached
 ";
         assert_eq!(
             parse_worktree_list(out),
+            vec![
+                Worktree {
+                    path: "/repo/main".into(),
+                    branch: Some("main".into()),
+                },
+                Worktree {
+                    path: "/repo/detached".into(),
+                    branch: None,
+                },
+            ],
+            "detached entry must be reported with no branch"
+        );
+    }
+
+    #[test]
+    fn parse_keeps_a_trailing_detached_entry_at_eof() {
+        // No trailing blank line: the last entry is flushed at EOF, not lost.
+        let out = "worktree /repo/detached\nHEAD bbbb\ndetached";
+        assert_eq!(
+            parse_worktree_list(out),
             vec![Worktree {
-                path: "/repo/main".into(),
-                branch: "main".into(),
-            }],
-            "detached entry (no branch line) must be skipped"
+                path: "/repo/detached".into(),
+                branch: None,
+            }]
         );
     }
 
@@ -631,8 +1002,46 @@ branch refs/heads/feat
             parse_worktree_list(out),
             vec![Worktree {
                 path: "/repo/my worktree dir".into(),
-                branch: "feat".into(),
+                branch: Some("feat".into()),
             }]
+        );
+    }
+
+    #[test]
+    fn parse_handles_nul_delimited_z_output() {
+        // What `git worktree list --porcelain -z` actually emits: every record is
+        // NUL-TERMINATED (not separated), so an entry ends with `\0\0`. Parsing
+        // must produce exactly what the line-oriented form produces.
+        let out = "worktree /repo/main\0HEAD aaaa\0branch refs/heads/main\0\0\
+                   worktree /repo/detached\0HEAD bbbb\0detached\0\0";
+        assert_eq!(
+            parse_worktree_list(out),
+            vec![
+                Worktree {
+                    path: "/repo/main".into(),
+                    branch: Some("main".into()),
+                },
+                Worktree {
+                    path: "/repo/detached".into(),
+                    branch: None,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_keeps_a_newline_inside_a_worktree_path_under_z() {
+        // A worktree path may legally contain a literal newline. Under `-z` that
+        // byte is interior to the record, so the path must survive INTACT and the
+        // entry must not be split into two bogus worktrees.
+        let out = "worktree /repo/we\nird\0HEAD aaaa\0branch refs/heads/feat\0\0";
+        assert_eq!(
+            parse_worktree_list(out),
+            vec![Worktree {
+                path: "/repo/we\nird".into(),
+                branch: Some("feat".into()),
+            }],
+            "a newline in the path must not act as a record separator"
         );
     }
 
@@ -653,7 +1062,7 @@ branch refs/heads/main
             parse_worktree_list(out),
             vec![Worktree {
                 path: "/repo/wt".into(),
-                branch: "main".into(),
+                branch: Some("main".into()),
             }]
         );
     }
@@ -672,11 +1081,11 @@ branch refs/heads/main
             vec![
                 Worktree {
                     path: "/a".into(),
-                    branch: "main".into()
+                    branch: Some("main".into())
                 },
                 Worktree {
                     path: "/b".into(),
-                    branch: "feat".into()
+                    branch: Some("feat".into())
                 },
             ]
         );

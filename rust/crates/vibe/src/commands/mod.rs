@@ -10,7 +10,7 @@ use vibe_core::clock::{RealClock, RealRandom};
 use vibe_core::commands::clean::{clean_command, CleanDeps, CleanFlags};
 use vibe_core::commands::scratch::scratch_command;
 use vibe_core::commands::start::{start_command, StartDeps, StartFlags};
-use vibe_core::commands::{Outcome, RealProcessControl, RealStart};
+use vibe_core::commands::{Outcome, ProcessControl, RealProcessControl, RealStart};
 use vibe_core::copy::{RealCopyExecutor, RealNativeClone, RealProbe};
 use vibe_core::fast_remove::RealBackgroundSpawner;
 use vibe_core::git::RealGit;
@@ -71,6 +71,23 @@ pub fn jump(branch_name: &str, opts: OutputOptions) -> Result<Outcome> {
         now_ms: now_ms(),
     };
     commands::jump::jump_command(&deps, branch_name, opts)
+}
+
+/// `vibe list [--json]`.
+pub fn list(json: bool, opts: OutputOptions) -> Result<Outcome> {
+    let io = RealIo;
+    let git = RealGit;
+    // Through the `ProcessControl` seam, and propagating rather than defaulting:
+    // an unreadable cwd used to collapse to `""`, which `collect_entries`
+    // normalizes to `"."` and so silently marks *no* worktree as current —
+    // a wrong listing presented as a correct one.
+    let cwd = RealProcessControl.current_dir()?;
+    let deps = commands::list::ListDeps {
+        io: &io,
+        git: &git,
+        cwd: &cwd,
+    };
+    commands::list::list_command(&deps, json, opts)
 }
 
 /// `vibe trust`.

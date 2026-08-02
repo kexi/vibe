@@ -5,6 +5,7 @@ complete -c vibe -f
 complete -c vibe -n __fish_use_subcommand -a start -d 'Create a new worktree with the given branch'
 complete -c vibe -n __fish_use_subcommand -a scratch -d 'Create a worktree with an auto-generated scratch/<timestamp> branch'
 complete -c vibe -n __fish_use_subcommand -a jump -d 'Jump to an existing worktree by branch name'
+complete -c vibe -n __fish_use_subcommand -a list -d 'List all worktrees of the current repository'
 complete -c vibe -n __fish_use_subcommand -a rename -d 'Rename the current worktree\'s branch and directory'
 complete -c vibe -n __fish_use_subcommand -a clean -d 'Remove current worktree and return to main'
 complete -c vibe -n __fish_use_subcommand -a home -d 'Return to main worktree without removing current'
@@ -42,6 +43,9 @@ complete -c vibe -n '__fish_seen_subcommand_from scratch' -l track -d 'Set upstr
 complete -c vibe -n '__fish_seen_subcommand_from scratch' -l no-hooks -d 'Skip pre-start and post-start hooks'
 complete -c vibe -n '__fish_seen_subcommand_from scratch' -l no-copy -d 'Skip copying files and directories'
 complete -c vibe -n '__fish_seen_subcommand_from scratch' -s n -l dry-run -d 'Show what would be executed'
+
+# list flags
+complete -c vibe -n '__fish_seen_subcommand_from list' -l json -d 'Output the listing as JSON'
 
 # rename flags
 complete -c vibe -n '__fish_seen_subcommand_from rename' -s n -l dry-run -d 'Show what would be executed'
