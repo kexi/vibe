@@ -152,7 +152,7 @@ pub struct RealStart<'a> {
 
 impl StartCommand for RealStart<'_> {
     fn run(&self, branch_name: &str) -> Result<Outcome> {
-        use crate::copy::{RealCopyExecutor, RealNativeClone, RealProbe};
+        use crate::copy::{RealCopyExecutor, RealNativeClone, RealProbe, RealSymlinkCreator};
         use crate::git::RealGit;
         use crate::io::{Io, RealIo};
         use crate::progress::{IndicatifTracker, NullTracker, ProgressTracker};
@@ -172,6 +172,7 @@ impl StartCommand for RealStart<'_> {
         let native = RealNativeClone;
         let probe = RealProbe;
         let executor = RealCopyExecutor::new(&native, &probe);
+        let symlink_creator = RealSymlinkCreator;
 
         // Live tracker only on an interactive stderr; otherwise a no-op. `+ Sync`
         // is required by StartDeps (copy_directories fans it across threads).
@@ -195,6 +196,7 @@ impl StartCommand for RealStart<'_> {
             stdin: &stdin,
             hook_runner: &hook_runner,
             executor: &executor,
+            symlink_creator: &symlink_creator,
             tracker,
             version: self.version,
         };

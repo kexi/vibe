@@ -11,7 +11,7 @@ use vibe_core::commands::clean::{clean_command, CleanDeps, CleanFlags};
 use vibe_core::commands::scratch::scratch_command;
 use vibe_core::commands::start::{start_command, StartDeps, StartFlags};
 use vibe_core::commands::{Outcome, ProcessControl, RealProcessControl, RealStart};
-use vibe_core::copy::{RealCopyExecutor, RealNativeClone, RealProbe};
+use vibe_core::copy::{RealCopyExecutor, RealNativeClone, RealProbe, RealSymlinkCreator};
 use vibe_core::fast_remove::RealBackgroundSpawner;
 use vibe_core::git::RealGit;
 use vibe_core::hooks::RealHookRunner;
@@ -194,6 +194,7 @@ fn with_start_deps<T>(
     let native = RealNativeClone;
     let probe = RealProbe;
     let executor = RealCopyExecutor::new(&native, &probe);
+    let symlink_creator = RealSymlinkCreator;
 
     let mut indicatif = None;
     let mut null = None;
@@ -208,6 +209,7 @@ fn with_start_deps<T>(
         stdin: &stdin,
         hook_runner: &hook_runner,
         executor: &executor,
+        symlink_creator: &symlink_creator,
         tracker,
         version: version::VERSION,
     };

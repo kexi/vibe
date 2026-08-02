@@ -10,6 +10,7 @@
 
 use crate::config::VibeConfig;
 use crate::copy::strategies::CopyExecutor;
+use crate::copy::symlink::{without_symlinked, SymlinkedPaths};
 use crate::glob::{expand_copy_patterns, expand_directory_patterns};
 use crate::io::Io;
 use crate::output::{log_dry_run, sanitize_for_display, warn_log};
@@ -63,11 +64,18 @@ fn join(a: &str, b: &str) -> String {
 ///
 /// Sequential, glob-expanded, one progress task per file. A per-file failure is
 /// warned and the task failed, but the overall op continues (TS parity).
+///
+/// `symlinked` are the entries a link was actually CREATED for (not the raw
+/// config); anything expanding to one of them (or under one) is dropped AFTER
+/// expansion, because a glob only reveals the overlap once expanded — see
+/// [`without_symlinked`], applied in [`copy_resolved_files`].
+#[allow(clippy::too_many_arguments)]
 pub fn copy_files(
     io: &impl Io,
     executor: &impl CopyExecutor,
     tracker: &dyn ProgressTracker,
     patterns: &[String],
+    symlinked: &SymlinkedPaths,
     repo_root: &str,
     worktree_path: &str,
     dry_run: bool,
@@ -78,6 +86,7 @@ pub fn copy_files(
         executor,
         tracker,
         &files,
+        symlinked,
         repo_root,
         worktree_path,
         dry_run,
@@ -92,16 +101,23 @@ pub fn copy_files(
 /// the pattern expander. Callers that mix both concatenate the expanded patterns
 /// with their literal paths and call this once, so a single progress phase and a
 /// single dedup pass cover everything.
+///
+/// The symlink exclusion lives HERE rather than in [`copy_files`] so it covers
+/// the git-derived candidates too: a file `git status` reports under a directory
+/// that was actually symlinked is already visible through the link, and copying
+/// it would write THROUGH the link back into the origin repo.
 #[allow(clippy::too_many_arguments)]
 pub fn copy_resolved_files(
     io: &impl Io,
     executor: &impl CopyExecutor,
     tracker: &dyn ProgressTracker,
     files: &[String],
+    symlinked: &SymlinkedPaths,
     repo_root: &str,
     worktree_path: &str,
     dry_run: bool,
 ) {
+    let files = &without_symlinked(symlinked, files);
     if files.is_empty() {
         return;
     }
@@ -159,12 +175,16 @@ pub fn copy_resolved_files(
 /// Returns the FIRST per-directory error (aggregated like `Promise.all`), or
 /// `Ok(())`. (Unlike `copy_files`, the TS `copyDirectories` lets a per-dir error
 /// reject the batch — here we surface it so the caller can react.)
+///
+/// `symlinked` are the `[copy] symlink` entries; see [`copy_files`] for why the
+/// exclusion has to happen after expansion.
 #[allow(clippy::too_many_arguments)]
 pub fn copy_directories<E, T>(
     io: &impl Io,
     executor: &E,
     tracker: &T,
     patterns: &[String],
+    symlinked: &SymlinkedPaths,
     repo_root: &str,
     worktree_path: &str,
     dry_run: bool,
@@ -174,7 +194,10 @@ where
     E: CopyExecutor + Sync,
     T: ProgressTracker + Sync,
 {
-    let dirs = expand_directory_patterns(io, patterns, repo_root);
+    let dirs = without_symlinked(
+        symlinked,
+        &expand_directory_patterns(io, patterns, repo_root),
+    );
     if dirs.is_empty() {
         return Ok(());
     }
@@ -337,6 +360,7 @@ mod tests {
             &exec,
             &tracker,
             &pats(&[".env", "config.toml"]),
+            &SymlinkedPaths::none(),
             fx.path().to_str().unwrap(),
             worktree.to_str().unwrap(),
             false,
@@ -363,6 +387,7 @@ mod tests {
             &exec,
             &tracker,
             &pats(&["good.txt", "bad.txt"]),
+            &SymlinkedPaths::none(),
             fx.path().to_str().unwrap(),
             "/wt",
             false,
@@ -384,6 +409,7 @@ mod tests {
             &exec,
             &tracker,
             &pats(&[".env"]),
+            &SymlinkedPaths::none(),
             fx.path().to_str().unwrap(),
             "/wt",
             true,
@@ -391,6 +417,175 @@ mod tests {
         assert!(exec.file_copies.lock().unwrap().is_empty());
         assert!(io.stderr_text().contains("[dry-run] Would copy files:"));
         assert!(io.stderr_text().contains("  - .env"));
+    }
+
+    // --- `[copy] symlink` exclusion happens AFTER glob expansion ---
+
+    /// `dirs = [".*"]` does not compare equal to `symlink = [".cache"]`, but it
+    /// EXPANDS to it. Copying it would run the strategy into the destination
+    /// that was just symlinked at the origin's `.cache`, writing through the
+    /// link and corrupting the shared directory.
+    #[test]
+    fn copy_directories_drops_a_glob_match_that_is_symlinked() {
+        let fx = Fixture::new();
+        fx.mkdir(".cache");
+        fx.mkdir(".turbo");
+        let io = FakeIo::new();
+        let exec = FakeCopyExecutor::new(CopyStrategyKind::Clone);
+        let res = copy_directories(
+            &io,
+            &exec,
+            &NullTracker,
+            &pats(&[".*"]),
+            &SymlinkedPaths::from_patterns(&pats(&[".cache"]), false),
+            fx.path().to_str().unwrap(),
+            "/wt",
+            false,
+            4,
+        );
+        assert!(res.is_ok());
+        let copied: Vec<String> = exec
+            .dir_copies
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(src, _)| src.clone())
+            .collect();
+        assert!(
+            copied.iter().all(|s| !s.ends_with(".cache")),
+            "the symlinked directory must not be copied: {copied:?}"
+        );
+        assert!(
+            copied.iter().any(|s| s.ends_with(".turbo")),
+            "the other glob matches must still be copied: {copied:?}"
+        );
+    }
+
+    /// The same hole on the file side: a file UNDER a shared directory would be
+    /// copied through the link into the origin worktree.
+    #[test]
+    fn copy_files_drops_a_glob_match_under_a_symlinked_directory() {
+        let fx = Fixture::new();
+        fx.write(".cache/secret.json", "shared");
+        fx.write("keep.json", "mine");
+        let io = FakeIo::new();
+        let exec = FakeCopyExecutor::new(CopyStrategyKind::Standard);
+        copy_files(
+            &io,
+            &exec,
+            &NullTracker,
+            &pats(&["**/*.json"]),
+            &SymlinkedPaths::from_patterns(&pats(&[".cache"]), false),
+            fx.path().to_str().unwrap(),
+            "/wt",
+            false,
+        );
+        let copied: Vec<String> = exec
+            .file_copies
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(src, _)| src.clone())
+            .collect();
+        assert!(
+            copied.iter().all(|s| !s.contains(".cache")),
+            "must not copy through the shared link: {copied:?}"
+        );
+        assert!(
+            copied.iter().any(|s| s.ends_with("keep.json")),
+            "unrelated matches must survive: {copied:?}"
+        );
+    }
+
+    /// On a case-insensitive volume (APFS, NTFS) `dirs = [".cache"]` names the
+    /// SAME directory entry as `symlink = [".Cache"]`, so the copy would land on
+    /// the link and write through it into the origin. The exclusion must fold
+    /// case exactly when the destination filesystem does.
+    #[test]
+    fn case_variant_spelling_is_excluded_on_a_case_insensitive_volume() {
+        let fx = Fixture::new();
+        fx.mkdir(".cache");
+        let io = FakeIo::new();
+        let exec = FakeCopyExecutor::new(CopyStrategyKind::Clone);
+        let res = copy_directories(
+            &io,
+            &exec,
+            &NullTracker,
+            &pats(&[".cache"]),
+            &SymlinkedPaths::from_patterns(&pats(&[".Cache"]), true),
+            fx.path().to_str().unwrap(),
+            "/wt",
+            false,
+            4,
+        );
+        assert!(res.is_ok());
+        assert!(
+            exec.dir_copies.lock().unwrap().is_empty(),
+            "a case-variant spelling must not be copied through the link"
+        );
+    }
+
+    /// The same pair on a case-SENSITIVE volume names two different directories,
+    /// so the copy must still run — the fold is driven by the filesystem, not by
+    /// a blanket rule that would silently drop legitimate copies on Linux.
+    #[test]
+    fn case_variant_spelling_is_copied_on_a_case_sensitive_volume() {
+        let fx = Fixture::new();
+        fx.mkdir(".cache");
+        let io = FakeIo::new();
+        let exec = FakeCopyExecutor::new(CopyStrategyKind::Clone);
+        let res = copy_directories(
+            &io,
+            &exec,
+            &NullTracker,
+            &pats(&[".cache"]),
+            &SymlinkedPaths::from_patterns(&pats(&[".Cache"]), false),
+            fx.path().to_str().unwrap(),
+            "/wt",
+            false,
+            4,
+        );
+        assert!(res.is_ok());
+        assert_eq!(exec.dir_copies.lock().unwrap().len(), 1);
+    }
+
+    /// The git-derived candidates (`[copy] untracked` / `modified`) reach the
+    /// runner as literal paths that never went through the glob expander, so the
+    /// exclusion has to live in `copy_resolved_files` to see them at all. A file
+    /// `git status` reports under a shared directory is already visible through
+    /// the link; copying it would write through the link into the origin repo.
+    #[test]
+    fn resolved_git_derived_paths_under_a_symlinked_directory_are_dropped() {
+        let fx = Fixture::new();
+        fx.write(".cache/untracked.bin", "shared");
+        fx.write("notes.txt", "mine");
+        let io = FakeIo::new();
+        let exec = FakeCopyExecutor::new(CopyStrategyKind::Standard);
+        copy_resolved_files(
+            &io,
+            &exec,
+            &NullTracker,
+            &[".cache/untracked.bin".to_string(), "notes.txt".to_string()],
+            &SymlinkedPaths::from_patterns(&pats(&[".cache"]), false),
+            fx.path().to_str().unwrap(),
+            "/wt",
+            false,
+        );
+        let copied: Vec<String> = exec
+            .file_copies
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(src, _)| src.clone())
+            .collect();
+        assert!(
+            copied.iter().all(|s| !s.contains(".cache")),
+            "a git-derived path under a created symlink must not be copied: {copied:?}"
+        );
+        assert!(
+            copied.iter().any(|s| s.ends_with("notes.txt")),
+            "unrelated git-derived paths must still be copied: {copied:?}"
+        );
     }
 
     #[test]
@@ -407,6 +602,7 @@ mod tests {
             &exec,
             &tracker,
             &[nasty.to_string()],
+            &SymlinkedPaths::none(),
             "/repo",
             "/wt",
             true,
@@ -433,6 +629,7 @@ mod tests {
             &exec,
             &tracker,
             &[nasty.to_string()],
+            &SymlinkedPaths::none(),
             fx.path().to_str().unwrap(),
             "/wt",
             false,
@@ -470,6 +667,7 @@ mod tests {
             &exec,
             &tracker,
             &[nasty.to_string()],
+            &SymlinkedPaths::none(),
             fx.path().to_str().unwrap(),
             "/wt",
             false,
@@ -536,6 +734,7 @@ mod tests {
             &exec,
             &tracker,
             &pats(&["node_modules", ".cache"]),
+            &SymlinkedPaths::none(),
             fx.path().to_str().unwrap(),
             "/wt",
             false,
@@ -559,6 +758,7 @@ mod tests {
             &exec,
             &tracker,
             &pats(&["ok_dir", "bad_dir"]),
+            &SymlinkedPaths::none(),
             fx.path().to_str().unwrap(),
             "/wt",
             // concurrency 1 makes ordering deterministic for the assertion.
@@ -591,6 +791,7 @@ mod tests {
             &exec,
             &tracker,
             &names,
+            &SymlinkedPaths::none(),
             fx.path().to_str().unwrap(),
             "/wt",
             false,
@@ -623,6 +824,7 @@ mod tests {
             &exec,
             &tracker,
             &pats(&["node_modules"]),
+            &SymlinkedPaths::none(),
             fx.path().to_str().unwrap(),
             "/wt",
             true,

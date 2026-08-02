@@ -97,6 +97,7 @@ mod tests {
     use super::*;
     use crate::clock::FakeClock;
     use crate::copy::strategies::FakeCopyExecutor;
+    use crate::copy::symlink::FakeSymlinkCreator;
     use crate::copy::types::CopyStrategyKind;
     use crate::error::VibeError;
     use crate::git::RepoInfo;
@@ -267,6 +268,7 @@ mod tests {
         let (r, s, p, sin) = (NoResolver, NoScript, YesPrompt, FakeStdin::none());
         let hooks = FakeHookRunner::ok();
         let exec = FakeCopyExecutor::new(CopyStrategyKind::Standard);
+        let symlink_creator = FakeSymlinkCreator::new();
         let tracker = NullTracker;
         let d = StartDeps {
             io: &io,
@@ -277,6 +279,7 @@ mod tests {
             stdin: &sin,
             hook_runner: &hooks,
             executor: &exec,
+            symlink_creator: &symlink_creator,
             tracker: &tracker,
             version: V,
         };
