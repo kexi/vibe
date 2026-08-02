@@ -247,6 +247,21 @@ cargo metadata --manifest-path rust/Cargo.toml --format-version 1 >/dev/null
 
 This updates the workspace package versions recorded in `rust/Cargo.lock`.
 
+**Third-party license notices:** the bump itself never changes
+`THIRD-PARTY-LICENSES.md` (the generator excludes the workspace's own crates),
+but if dependency bumps landed since the last release, confirm the committed
+file is fresh:
+
+```bash
+pnpm run check:licenses
+```
+
+If it reports stale, regenerate locally with
+`bun run scripts/generate-third-party-licenses.ts` and include the diff in the
+release branch. Regeneration is ALWAYS a local step: by policy this repo stores
+no push-capable tokens in secrets, so there is no CI auto-commit — CI
+(`check:licenses` in `check:all`) only fails on staleness, it never rewrites.
+
 ### 3.4 Verify Sync
 
 ```bash
@@ -743,9 +758,15 @@ Releasing is workflow-first (Immutable Releases-safe): a GitHub Release is
 never a trigger, it is the *output* of the Release workflow.
 
 - `release.yml` (dispatched via Step 7.3): builds the binaries and `.deb`s,
-  then creates and publishes the GitHub Release with all assets attached in
-  one `gh release create` call (the tag is burned only after every asset
-  uploaded)
+  then creates the GitHub Release as a **draft** with all assets attached,
+  verifies it, and only then publishes with `gh release edit --draft=false`
+  (the tag is burned only after verification passes — a failed check leaves
+  nothing published). Since PR #582 the assets also include `LICENSE` and
+  `THIRD-PARTY-LICENSES.md` taken from the release commit (9 assets total:
+  5 binaries + 2 `.deb` + 2 license documents), and
+  `scripts/verify-release-assets.ts` asserts they are present, non-empty, and
+  fully uploaded — a missing license document fails the run instead of
+  shipping a bare-binary release
 - `publish-npm.yml` (fires automatically via `workflow_run` after `release.yml`
   succeeds): npm publish (the launcher shim + the per-platform binary packages)
 

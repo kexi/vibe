@@ -5,33 +5,53 @@
  * The shipped binary statically links its Rust dependencies. Where a crate's
  * SPDX expression is a top-level `AND`, no `OR` election can shed the
  * obligation, so the crate's own license/notice files must be reproduced in
- * full. What these guarantee:
+ * full (Appendix A). Where an arm is elected, the elected license itself
+ * usually still requires its notice to travel with the distribution, so its
+ * text is reproduced too (Appendix B). What these guarantee:
  *   - the SPDX analysis distinguishes an electable `OR` from a binding `AND`,
  *     including the legacy `/` shorthand, parenthesized subexpressions and
  *     `WITH` exceptions — a misparse would silently drop a required notice;
+ *   - election picks a deterministic arm, exempts only the genuinely
+ *     obligation-free licenses, and FAILS LOUDLY on anything unclassified
+ *     rather than quietly omitting a crate's notice;
+ *   - the file chosen for an elected license matches that license, across the
+ *     several suffix spellings crates actually use, WITHOUT confusing licenses
+ *     that share a prefix (MIT vs MIT-0 are different grants);
+ *   - a crate shipping no license file gets the canonical text reconstructed
+ *     from its manifest instead of being dropped;
  *   - notice discovery lists a crate's root license files deterministically and
  *     refuses symlinks, so a crafted crate cannot inline a file from elsewhere
  *     on the machine into a published document;
+ *   - a manifest's `license_file` pointer — fully attacker-chosen text — is
+ *     confined to the crate directory and REJECTS rather than skips, so neither
+ *     a `../` escape nor a symlink can pull an unrelated file into the document;
  *   - notice text is normalized (BOM, CRLF, trailing newline) and REJECTED
  *     rather than repaired when oversized, non-UTF-8 or control-carrying —
  *     a truncated or sanitized license is no longer the license;
  *   - the code fence adapts to backtick runs in the content (aws-lc-sys's
  *     LICENSE really does contain a ``` run, which a fixed fence would break);
  *   - the committed THIRD-PARTY-LICENSES.md actually carries the Apache-2.0
- *     text and an appendix section for every top-level-AND row in its table.
+ *     text, an Appendix A section for every top-level-AND row in its table, and
+ *     an Appendix B section for every row whose elected license obligates.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, symlinkSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import {
   normalizeSpdx,
   parseSpdx,
   hasNonElectableObligation,
+  electLicense,
+  selectNoticeFiles,
+  copyrightLine,
+  synthesizeNoticeFile,
   discoverNoticeFiles,
+  resolveLicenseFile,
   normalizeNoticeText,
   renderNoticeAppendix,
+  renderElectedAppendix,
   fenceFor,
 } from "../../../scripts/generate-third-party-licenses";
 
@@ -144,6 +164,169 @@ describe("hasNonElectableObligation", () => {
   });
 });
 
+describe("electLicense", () => {
+  it("elects the only license of a single-atom expression", () => {
+    expect(electLicense("MIT")).toBe("MIT");
+    expect(electLicense("Apache-2.0")).toBe("Apache-2.0");
+    expect(electLicense("Zlib")).toBe("Zlib");
+    expect(electLicense("BSD-3-Clause")).toBe("BSD-3-Clause");
+    expect(electLicense("CDLA-Permissive-2.0")).toBe("CDLA-Permissive-2.0");
+  });
+
+  it("prefers MIT over Apache-2.0 regardless of the order the crate wrote them", () => {
+    // The two orderings are both common for the identical pair of files, so the
+    // election must not depend on which the crate happened to declare first.
+    expect(electLicense("MIT OR Apache-2.0")).toBe("MIT");
+    expect(electLicense("Apache-2.0 OR MIT")).toBe("MIT");
+  });
+
+  it("elects MIT through the legacy slash shorthand", () => {
+    expect(electLicense("MIT/Apache-2.0")).toBe("MIT");
+  });
+
+  it("returns null when an arm imposes no attribution obligation", () => {
+    expect(electLicense("Unlicense OR MIT")).toBeNull();
+    expect(electLicense("Unlicense/MIT")).toBeNull();
+    expect(electLicense("CC0-1.0 OR MIT-0 OR Apache-2.0")).toBeNull();
+    expect(electLicense("0BSD OR MIT")).toBeNull();
+  });
+
+  it("returns null for a top-level AND, which Appendix A covers instead", () => {
+    expect(electLicense("Apache-2.0 AND ISC")).toBeNull();
+    expect(electLicense("(MIT OR Apache-2.0) AND Unicode-3.0")).toBeNull();
+  });
+
+  it("judges a WITH-exception arm by its base license", () => {
+    expect(electLicense("Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT")).toBe("MIT");
+    expect(electLicense("Apache-2.0 WITH LLVM-exception")).toBe("Apache-2.0");
+  });
+
+  it("skips a copyleft arm in favour of the permissive one", () => {
+    expect(electLicense("MIT OR Apache-2.0 OR LGPL-2.1-or-later")).toBe("MIT");
+  });
+
+  it("throws on a compound OR arm rather than guessing which is cheaper", () => {
+    expect(() => electLicense("MIT OR (Apache-2.0 AND ISC)")).toThrowError(/is itself a conjunction/);
+  });
+
+  it("throws when no arm is a known attribution license", () => {
+    // Failing loudly is the point: a silent skip is indistinguishable from
+    // "this crate has no obligations", and ships a binary missing a notice.
+    expect(() => electLicense("GPL-3.0-only")).toThrowError(/none of \[GPL-3.0-only\]/);
+  });
+});
+
+describe("selectNoticeFiles", () => {
+  it("picks the file matching the elected license over its sibling", () => {
+    expect(selectNoticeFiles(["LICENSE-APACHE", "LICENSE-MIT"], "MIT")).toEqual(["LICENSE-MIT"]);
+    expect(selectNoticeFiles(["LICENSE-APACHE", "LICENSE-MIT"], "Apache-2.0")).toEqual([
+      "LICENSE-APACHE",
+    ]);
+  });
+
+  it("matches the suffix spellings crates actually ship", () => {
+    expect(selectNoticeFiles(["license-apache-2.0", "license-mit"], "MIT")).toEqual(["license-mit"]);
+    expect(selectNoticeFiles(["LICENSE_MIT"], "MIT")).toEqual(["LICENSE_MIT"]);
+    expect(selectNoticeFiles(["LICENSE.MIT"], "MIT")).toEqual(["LICENSE.MIT"]);
+    expect(selectNoticeFiles(["LICENSE-MIT.txt"], "MIT")).toEqual(["LICENSE-MIT.txt"]);
+  });
+
+  it("matches a hyphenated license id spelled out in full", () => {
+    expect(selectNoticeFiles(["LICENSE-BSD-3-Clause", "LICENSE-MIT"], "BSD-3-Clause")).toEqual([
+      "LICENSE-BSD-3-Clause",
+    ]);
+    expect(selectNoticeFiles(["LICENSE-Apache-2.0"], "Apache-2.0")).toEqual(["LICENSE-Apache-2.0"]);
+  });
+
+  it("accepts the version-eliding shorthand crates use", () => {
+    // `LICENSE-APACHE` for Apache-2.0 is the single most common notice filename
+    // in the graph, so requiring the ID in full would miss almost everything.
+    expect(selectNoticeFiles(["LICENSE-APACHE"], "Apache-2.0")).toEqual(["LICENSE-APACHE"]);
+    expect(selectNoticeFiles(["LICENSE-BSD"], "BSD-3-Clause")).toEqual(["LICENSE-BSD"]);
+  });
+
+  it("does not confuse licenses that merely share a token prefix", () => {
+    // MIT-0 is a different grant from MIT — it drops the attribution clause
+    // entirely — so reproducing one in place of the other misstates the terms.
+    // A concatenated prefix test ("mit0".startsWith("mit")) got this wrong.
+    expect(selectNoticeFiles(["LICENSE-MIT-0"], "MIT")).toEqual([]);
+    expect(selectNoticeFiles(["LICENSE-MIT-0"], "MIT-0")).toEqual(["LICENSE-MIT-0"]);
+    expect(selectNoticeFiles(["LICENSE-MIT"], "MIT")).toEqual(["LICENSE-MIT"]);
+  });
+
+  it("declines to read a plain LICENSE-MIT as an abbreviation of MIT-0", () => {
+    // The shortened form names a license we know, so it is far likelier to be
+    // that license's text than an abbreviation of the longer id.
+    expect(selectNoticeFiles(["LICENSE-MIT"], "MIT-0")).toEqual([]);
+  });
+
+  it("picks the exact file over a WITH-exception variant of the same license", () => {
+    // The exception variant is a different document; only the plain Apache-2.0
+    // spelling (or its APACHE shorthand) is the elected license's own text.
+    expect(
+      selectNoticeFiles(["LICENSE-APACHE", "LICENSE-Apache-2.0_WITH_LLVM-exception"], "Apache-2.0"),
+    ).toEqual(["LICENSE-APACHE"]);
+  });
+
+  it("falls back to the unqualified file when nothing names the license", () => {
+    expect(selectNoticeFiles(["LICENSE"], "ISC")).toEqual(["LICENSE"]);
+    expect(selectNoticeFiles(["LICENSE.txt"], "ISC")).toEqual(["LICENSE.txt"]);
+    expect(selectNoticeFiles(["COPYING"], "Zlib")).toEqual(["COPYING"]);
+  });
+
+  it("does not treat a dual-license COPYING as the elected text when a match exists", () => {
+    expect(selectNoticeFiles(["COPYING", "LICENSE-MIT"], "MIT")).toEqual(["LICENSE-MIT"]);
+  });
+
+  it("carries a NOTICE alongside an elected Apache-2.0 (its §4(d) obligation)", () => {
+    expect(selectNoticeFiles(["LICENSE-APACHE", "LICENSE-MIT", "NOTICE"], "Apache-2.0")).toEqual([
+      "LICENSE-APACHE",
+      "NOTICE",
+    ]);
+  });
+
+  it("leaves a NOTICE out when the elected license does not require it", () => {
+    expect(selectNoticeFiles(["LICENSE-APACHE", "LICENSE-MIT", "NOTICE"], "MIT")).toEqual([
+      "LICENSE-MIT",
+    ]);
+  });
+
+  it("returns nothing when the crate ships no notice file at all", () => {
+    expect(selectNoticeFiles([], "MIT")).toEqual([]);
+  });
+});
+
+describe("copyrightLine", () => {
+  it("uses the manifest authors when present", () => {
+    expect(copyrightLine("objc2", ["Mads Marquart <mads@marquart.dk>"])).toBe(
+      "Copyright (c) Mads Marquart <mads@marquart.dk>",
+    );
+  });
+
+  it("joins multiple authors", () => {
+    expect(copyrightLine("demo", ["A <a@x>", "B <b@x>"])).toBe("Copyright (c) A <a@x>, B <b@x>");
+  });
+
+  it("falls back to the collective form when the manifest names nobody", () => {
+    expect(copyrightLine("wasmparser", [])).toBe("Copyright (c) The wasmparser Authors");
+    expect(copyrightLine("wasmparser", ["  "])).toBe("Copyright (c) The wasmparser Authors");
+  });
+});
+
+describe("synthesizeNoticeFile", () => {
+  it("reconstructs the MIT body with the crate's copyright line", () => {
+    const file = synthesizeNoticeFile("objc2", ["Mads Marquart <mads@marquart.dk>"], "MIT");
+    expect(file.name).toBe("MIT (reconstructed)");
+    expect(file.text).toContain("Copyright (c) Mads Marquart <mads@marquart.dk>");
+    expect(file.text).toContain("Permission is hereby granted, free of charge");
+    expect(file.text).toContain("shall be included in all");
+  });
+
+  it("throws rather than approximating a license it has no canonical text for", () => {
+    expect(() => synthesizeNoticeFile("demo", [], "Zlib")).toThrowError(/LICENSE_TEMPLATES/);
+  });
+});
+
 describe("discoverNoticeFiles", () => {
   let crateDir: string;
 
@@ -200,6 +383,107 @@ describe("discoverNoticeFiles", () => {
   it("returns nothing for a crate that ships no notices", async () => {
     writeFileSync(join(crateDir, "Cargo.toml"), "[package]");
     expect(await discoverNoticeFiles(crateDir)).toEqual([]);
+  });
+});
+
+describe("resolveLicenseFile", () => {
+  // Unlike discoverNoticeFiles, this path follows a pointer written in a
+  // third-party Cargo.toml, so the value is fully attacker-chosen. It must be
+  // confined to the crate directory and must THROW on rejection: skipping would
+  // drop the crate's only statement of terms from the generated document.
+  let crateDir: string;
+  let outside: string;
+
+  beforeEach(() => {
+    crateDir = mkdtempSync(join(tmpdir(), "vibe-lf-"));
+    outside = mkdtempSync(join(tmpdir(), "vibe-lf-outside-"));
+  });
+
+  afterEach(() => {
+    rmSync(crateDir, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  it("accepts a plain file at the crate root", async () => {
+    writeFileSync(join(crateDir, "LICENSE-CUSTOM"), "terms");
+    expect(await resolveLicenseFile(crateDir, "LICENSE-CUSTOM", "demo 1.0.0")).toBe(
+      "LICENSE-CUSTOM",
+    );
+  });
+
+  it("accepts a file in a subdirectory of the crate", async () => {
+    // A license_file may legitimately point below the root, which containment
+    // must permit — only escaping the crate is forbidden.
+    mkdirSync(join(crateDir, "licenses"));
+    writeFileSync(join(crateDir, "licenses", "TERMS"), "terms");
+    expect(await resolveLicenseFile(crateDir, "licenses/TERMS", "demo 1.0.0")).toBe(
+      "licenses/TERMS",
+    );
+  });
+
+  it("rejects a relative path that climbs out of the crate", async () => {
+    // The attack in the review: `../../..` reaching a checkout's credentials,
+    // whose contents would then be inlined into a committed, published file.
+    writeFileSync(join(outside, "secret"), "SECRET");
+    const escape = join("..", basename(outside), "secret");
+    await expect(resolveLicenseFile(crateDir, escape, "demo 1.0.0")).rejects.toThrow(
+      /resolves outside the crate directory/,
+    );
+  });
+
+  it("rejects an absolute path outside the crate", async () => {
+    const secret = join(outside, "secret");
+    writeFileSync(secret, "SECRET");
+    await expect(resolveLicenseFile(crateDir, secret, "demo 1.0.0")).rejects.toThrow(
+      /resolves outside the crate directory/,
+    );
+  });
+
+  it("rejects a symlink even when it points inside the crate", async () => {
+    // Symlinks are refused outright rather than resolved, matching
+    // discoverNoticeFiles: whether the target is safe is not the question, the
+    // indirection itself is what is declined.
+    writeFileSync(join(crateDir, "real"), "terms");
+    symlinkSync(join(crateDir, "real"), join(crateDir, "LICENSE-LINK"));
+    await expect(resolveLicenseFile(crateDir, "LICENSE-LINK", "demo 1.0.0")).rejects.toThrow(
+      /is a symlink/,
+    );
+  });
+
+  it("rejects a symlink that escapes the crate", async () => {
+    const secret = join(outside, "secret");
+    writeFileSync(secret, "SECRET");
+    symlinkSync(secret, join(crateDir, "LICENSE-EVIL"));
+    await expect(resolveLicenseFile(crateDir, "LICENSE-EVIL", "demo 1.0.0")).rejects.toThrow(
+      /is a symlink/,
+    );
+  });
+
+  it("rejects a directory", async () => {
+    mkdirSync(join(crateDir, "LICENSE-DIR"));
+    await expect(resolveLicenseFile(crateDir, "LICENSE-DIR", "demo 1.0.0")).rejects.toThrow(
+      /is not a regular file/,
+    );
+  });
+
+  it("rejects a pointer to a file that does not exist", async () => {
+    await expect(resolveLicenseFile(crateDir, "MISSING", "demo 1.0.0")).rejects.toThrow(
+      /does not exist/,
+    );
+  });
+
+  it("rejects the crate directory itself", async () => {
+    await expect(resolveLicenseFile(crateDir, ".", "demo 1.0.0")).rejects.toThrow(
+      /is not a regular file/,
+    );
+  });
+
+  it("names the crate and the declared path but never the resolved target", async () => {
+    // Echoing the resolved path would push an attacker-chosen filesystem
+    // location into CI logs.
+    writeFileSync(join(outside, "secret"), "SECRET");
+    const secret = join(outside, "secret");
+    await expect(resolveLicenseFile(crateDir, secret, "evil 6.6.6")).rejects.toThrow(/evil 6.6.6/);
   });
 });
 
@@ -290,7 +574,7 @@ describe("renderNoticeAppendix", () => {
       },
     ]);
 
-    expect(out).toContain("## Appendix: License texts and notices for non-electable obligations");
+    expect(out).toContain("## Appendix A: License texts and notices for non-electable obligations");
     expect(out).toContain("### demo 1.0.0 — Apache-2.0 AND ISC");
     expect(out).toContain("#### LICENSE");
     expect(out).toContain("#### NOTICE");
@@ -320,8 +604,47 @@ describe("renderNoticeAppendix", () => {
   });
 });
 
+describe("renderElectedAppendix", () => {
+  it("names both the elected license and the expression it came from", () => {
+    const out = renderElectedAppendix([
+      {
+        name: "demo",
+        version: "1.0.0",
+        license: "MIT OR Apache-2.0",
+        elected: "MIT",
+        files: [{ name: "LICENSE-MIT", text: "terms\n" }],
+        synthesized: false,
+      },
+    ]);
+
+    expect(out).toContain("## Appendix B: Notices for elected licenses");
+    expect(out).toContain("### demo 1.0.0 — elected MIT (from MIT OR Apache-2.0)");
+    expect(out).toContain("#### LICENSE-MIT");
+    expect(out).not.toContain("ships no license file");
+  });
+
+  it("flags a reconstructed text so a reader knows the crate did not ship it", () => {
+    const out = renderElectedAppendix([
+      {
+        name: "demo",
+        version: "1.0.0",
+        license: "MIT",
+        elected: "MIT",
+        files: [{ name: "MIT (reconstructed)", text: "terms\n" }],
+        synthesized: true,
+      },
+    ]);
+
+    expect(out).toContain("This crate ships no license file");
+    expect(out).toContain("#### MIT (reconstructed)");
+  });
+});
+
 describe("committed THIRD-PARTY-LICENSES.md", () => {
   const doc = readFileSync(join(REPO_ROOT, "THIRD-PARTY-LICENSES.md"), "utf-8");
+  const rows = [...doc.matchAll(/^\| (\S+) \| (\S+) \| (.+?) \|$/gm)]
+    .filter(([, name]) => name !== "Crate" && !name.startsWith("-"))
+    .map(([, name, version, license]) => ({ name, version, license }));
 
   it("reproduces the Apache-2.0 body in full", () => {
     // Both ends of the license, so a truncated reproduction fails too.
@@ -329,16 +652,14 @@ describe("committed THIRD-PARTY-LICENSES.md", () => {
     expect(doc).toContain("END OF TERMS AND CONDITIONS");
   });
 
-  it("carries the appendix section", () => {
-    expect(doc).toContain("## Appendix: License texts and notices for non-electable obligations");
+  it("carries both appendix sections", () => {
+    expect(doc).toContain("## Appendix A: License texts and notices for non-electable obligations");
+    expect(doc).toContain("## Appendix B: Notices for elected licenses");
   });
 
-  it("has an appendix heading for every top-level-AND row in the crate table", () => {
+  it("has an Appendix A heading for every top-level-AND row in the crate table", () => {
     // Drives off the committed table rather than a hardcoded crate list, so a
     // newly added AND-licensed dependency without a reproduced notice fails.
-    const rows = [...doc.matchAll(/^\| (\S+) \| (\S+) \| (.+?) \|$/gm)]
-      .filter(([, name]) => name !== "Crate" && !name.startsWith("-"))
-      .map(([, name, version, license]) => ({ name, version, license }));
     expect(rows.length).toBeGreaterThan(0);
 
     const obligated = rows.filter((r) => hasNonElectableObligation(r.license));
@@ -348,5 +669,42 @@ describe("committed THIRD-PARTY-LICENSES.md", () => {
       .filter((r) => !doc.includes(`### ${r.name} ${r.version} — ${r.license}`))
       .map((r) => `${r.name} ${r.version}`);
     expect(missing).toEqual([]);
+  });
+
+  it("has an Appendix B heading for every row whose elected license obligates", () => {
+    // The strong invariant: every crate the election leaves with an attribution
+    // duty must have its elected text reproduced. A crate silently dropped from
+    // Appendix B is exactly the compliance gap this file exists to close.
+    const electable = rows
+      .map((r) => ({ ...r, elected: electLicense(r.license) }))
+      .filter((r) => r.elected !== null);
+    expect(electable.length).toBeGreaterThan(100);
+
+    const missing = electable
+      .filter((r) => !doc.includes(`### ${r.name} ${r.version} — elected ${r.elected} (from `))
+      .map((r) => `${r.name} ${r.version}`);
+    expect(missing).toEqual([]);
+  });
+
+  it("omits crates whose election sheds every obligation", () => {
+    const exempt = rows.filter((r) => !hasNonElectableObligation(r.license))
+      .filter((r) => electLicense(r.license) === null);
+    expect(exempt.length).toBeGreaterThan(0);
+
+    const present = exempt
+      .filter((r) => doc.includes(`### ${r.name} ${r.version} — elected `))
+      .map((r) => `${r.name} ${r.version}`);
+    expect(present).toEqual([]);
+  });
+
+  it("reproduces the MIT permission grant for representative elected crates", () => {
+    for (const crate of ["bytes", "console", "indicatif"]) {
+      const start = doc.indexOf(`### ${crate} `);
+      expect(start, `${crate} has no appendix section`).toBeGreaterThan(-1);
+      const section = doc.slice(start, doc.indexOf("\n### ", start + 1));
+      expect(section, `${crate} section lacks the MIT grant`).toContain(
+        "Permission is hereby granted",
+      );
+    }
   });
 });

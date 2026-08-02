@@ -12,8 +12,15 @@
  *
  * Crates whose SPDX expression is a top-level `AND` conjunction impose
  * obligations that cannot be side-stepped by electing one arm of an `OR`
- * (Apache-2.0's §4 notice requirement, most notably). For those the appendix
+ * (Apache-2.0's §4 notice requirement, most notably). For those Appendix A
  * reproduces the crate's own LICENSE/NOTICE files verbatim.
+ *
+ * Electing an arm of an `OR` does not make the appendix unnecessary: the
+ * elected license is itself almost always MIT or another attribution license,
+ * whose grant is conditioned on reproducing the copyright notice and permission
+ * text in distributions. Appendix B therefore reproduces the text of the
+ * *elected* license for every such crate. Only arms that impose no notice
+ * obligation at all (Unlicense, CC0-1.0, MIT-0, 0BSD) let a crate out entirely.
  *
  * Usage:
  *   bun run scripts/generate-third-party-licenses.ts          # write the file
@@ -25,7 +32,7 @@
 import { readFile, readdir, writeFile, lstat, realpath } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { dirname, join, relative, isAbsolute } from "node:path";
+import { dirname, relative, resolve, isAbsolute } from "node:path";
 
 const execFileAsync = promisify(execFile);
 
@@ -44,6 +51,8 @@ interface CargoPackage {
   license: string | null;
   license_file: string | null;
   manifest_path: string;
+  /** Used only to build a copyright line when a crate ships no license file. */
+  authors: string[];
 }
 
 interface CargoMetadata {
@@ -56,12 +65,25 @@ export interface NoticeFile {
   text: string;
 }
 
-/** One appendix entry: a crate with a non-electable obligation, plus its notices. */
+/** One Appendix A entry: a crate with a non-electable obligation, plus its notices. */
 export interface NoticeEntry {
   name: string;
   version: string;
   license: string;
   files: NoticeFile[];
+}
+
+/** One Appendix B entry: a crate whose elected license still requires attribution. */
+export interface ElectedEntry {
+  name: string;
+  version: string;
+  /** The crate's full SPDX expression, as declared. */
+  license: string;
+  /** The single license ID elected out of that expression. */
+  elected: string;
+  files: NoticeFile[];
+  /** True when `files` was synthesized from a template, not shipped by the crate. */
+  synthesized: boolean;
 }
 
 // --- SPDX ------------------------------------------------------------------
@@ -188,41 +210,176 @@ export function hasNonElectableObligation(expr: string): boolean {
   return parseSpdx(expr).kind === "and";
 }
 
+// --- Election --------------------------------------------------------------
+
+/**
+ * Licenses that grant permission unconditionally: no copyright notice, no
+ * permission text, nothing to carry downstream. Electing one of these ends the
+ * crate's obligations, so it needs no appendix entry at all.
+ */
+const NO_ATTRIBUTION_LICENSES = new Set(["Unlicense", "CC0-1.0", "MIT-0", "0BSD"]);
+
+/**
+ * Preference order among attribution licenses, most to least convenient.
+ *
+ * Why not elect the first arm as written: crates order their `OR` arms
+ * arbitrarily (`MIT OR Apache-2.0` and `Apache-2.0 OR MIT` are both common for
+ * the identical pair of files), and Apache-2.0 drags in §4(d) NOTICE handling
+ * and a 200-line body. A fixed preference makes the election deterministic and
+ * keeps the reproduced text short wherever the crate offers the choice.
+ */
+const ELECTION_PREFERENCE = [
+  "MIT",
+  "ISC",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "Zlib",
+  "Unicode-3.0",
+  "CDLA-Permissive-2.0",
+  "Apache-2.0",
+];
+
+/** `Apache-2.0 WITH LLVM-exception` obligates exactly as `Apache-2.0` does. */
+function baseLicenseId(id: string): string {
+  return id.split(" WITH ")[0].trim();
+}
+
+/**
+ * Elect one license out of a crate's SPDX expression.
+ *
+ * Returns `null` in two cases the caller treats identically — nothing to
+ * reproduce: a top-level `AND` (handled by Appendix A instead), or an arm that
+ * imposes no attribution obligation.
+ *
+ * Why throw on an unrecognized or compound arm rather than skipping the crate:
+ * a silent skip is indistinguishable from "this crate has no obligations", and
+ * the failure mode is shipping a binary that omits a required notice. Every
+ * expression in today's graph resolves, so a throw means the graph gained
+ * something new that a human must classify.
+ */
+export function electLicense(expr: string): string | null {
+  const node = parseSpdx(expr);
+  const isNonElectable = node.kind === "and";
+  if (isNonElectable) {
+    return null;
+  }
+
+  const arms = node.kind === "or" ? node.operands : [node];
+  const ids: string[] = [];
+  for (const arm of arms) {
+    const isCompoundArm = arm.kind !== "license";
+    if (isCompoundArm) {
+      throw new Error(
+        `cannot elect from SPDX expression '${expr}': an OR arm is itself a conjunction, ` +
+          `which requires deciding whether the compound arm is cheaper than its siblings`,
+      );
+    }
+    ids.push(baseLicenseId(arm.id));
+  }
+
+  const hasFreeArm = ids.some((id) => NO_ATTRIBUTION_LICENSES.has(id));
+  if (hasFreeArm) {
+    return null;
+  }
+
+  const elected = ELECTION_PREFERENCE.find((candidate) => ids.includes(candidate));
+  if (elected === undefined) {
+    throw new Error(
+      `cannot elect from SPDX expression '${expr}': none of [${ids.join(", ")}] is a known ` +
+        `attribution license; add it to ELECTION_PREFERENCE (with its obligations reviewed)`,
+    );
+  }
+  return elected;
+}
+
 // --- Notice files ----------------------------------------------------------
+
+/**
+ * Why a named file is unsafe to reproduce, or `null` when it is fine.
+ *
+ * Shared by the two ways a notice file is reached — directory scan and a
+ * manifest's `license_file` pointer — so the manifest-driven path cannot end up
+ * with weaker checks than the scan. The distinction between them is only what
+ * happens on rejection: the scan skips the entry, the pointer throws.
+ */
+async function noticeFileRejection(crateDir: string, name: string): Promise<string | null> {
+  // A `license_file` may name a subdirectory path or, hostilely, `../../..`.
+  // resolve() collapses those before the containment check below sees them.
+  const abs = resolve(crateDir, name);
+  const stats = await lstat(abs).catch(() => null);
+  if (stats === null) {
+    return "does not exist";
+  }
+  // Symlinks are excluded outright rather than resolved: a crate tarball that
+  // pointed LICENSE at /etc/shadow (or at the checkout's git credentials) would
+  // otherwise have its target inlined into a committed, published document.
+  if (stats.isSymbolicLink()) {
+    return "is a symlink";
+  }
+  if (!stats.isFile()) {
+    return "is not a regular file";
+  }
+  const real = await realpath(abs).catch(() => null);
+  if (real === null) {
+    return "could not be resolved";
+  }
+  // Second layer, covering a crate root that is itself reached through a link
+  // and a `license_file` that walks out with `../`.
+  const crateReal = await realpath(crateDir).catch(() => null);
+  if (crateReal === null) {
+    return "crate directory could not be resolved";
+  }
+  const rel = relative(crateReal, real);
+  const escapesCrate = rel === "" || rel.startsWith("..") || isAbsolute(rel);
+  if (escapesCrate) {
+    return "resolves outside the crate directory";
+  }
+  return null;
+}
 
 /**
  * List the license/notice files a crate ships at its root, sorted by name.
  *
- * Symlinks are excluded outright rather than resolved: a crate tarball that
- * pointed LICENSE at /etc/shadow would otherwise have its target inlined into a
- * committed, published document. The realpath containment check is the second
- * layer, covering a root that is itself reached through a link.
+ * Anything that fails containment is skipped rather than fatal: the scan is
+ * speculative (it asks what a crate happens to ship), so an odd entry is not
+ * evidence that a required notice is missing.
  */
 export async function discoverNoticeFiles(crateDir: string): Promise<string[]> {
   const entries = await readdir(crateDir).catch(() => [] as string[]);
   const candidates = entries.filter((name) => NOTICE_FILE_PATTERN.test(name)).sort();
 
-  const crateReal = await realpath(crateDir);
   const found: string[] = [];
   for (const name of candidates) {
-    const abs = join(crateDir, name);
-    const stats = await lstat(abs).catch(() => null);
-    const isPlainFile = stats !== null && stats.isFile() && !stats.isSymbolicLink();
-    if (!isPlainFile) {
-      continue;
-    }
-    const real = await realpath(abs).catch(() => null);
-    if (real === null) {
-      continue;
-    }
-    const rel = relative(crateReal, real);
-    const escapesCrate = rel.startsWith("..") || isAbsolute(rel);
-    if (escapesCrate) {
+    const rejection = await noticeFileRejection(crateDir, name);
+    if (rejection !== null) {
       continue;
     }
     found.push(name);
   }
   return found;
+}
+
+/**
+ * Resolve a manifest's `license_file` pointer, refusing anything that escapes
+ * the crate.
+ *
+ * Why throw where discoverNoticeFiles skips: this path is not speculative. The
+ * manifest declares that these are the crate's only terms, so a pointer we will
+ * not follow means the document would ship a crate with no reproduced license
+ * at all — exactly the silent omission this generator exists to prevent. The
+ * error names the crate and the declared path but never the resolved target,
+ * which would echo an attacker-chosen filesystem path into CI logs.
+ */
+export async function resolveLicenseFile(
+  crateDir: string,
+  name: string,
+  label: string,
+): Promise<string> {
+  const rejection = await noticeFileRejection(crateDir, name);
+  if (rejection !== null) {
+    throw new Error(`${label}: declared license_file '${name}' ${rejection}`);
+  }
+  return name;
 }
 
 /**
@@ -271,8 +428,179 @@ export function normalizeNoticeText(raw: Buffer, label: string): string {
 }
 
 async function readNoticeFile(crateDir: string, name: string, label: string): Promise<NoticeFile> {
-  const raw = await readFile(join(crateDir, name));
+  // resolve() rather than join(): callers pass names that reached them from a
+  // manifest, and only the resolved form is what noticeFileRejection vetted.
+  const raw = await readFile(resolve(crateDir, name));
   return { name, text: normalizeNoticeText(raw, `${label}/${name}`) };
+}
+
+/** `LICENSE` / `LICENCE` / `COPYING` with no license-naming suffix. */
+const UNQUALIFIED_NOTICE_PATTERN = /^(LICENSE|LICENCE|COPYING)(\.(txt|md))?$/i;
+
+/** Split a license id or filename suffix into comparable lowercase tokens. */
+function licenseTokens(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/\.(txt|md)$/, "")
+    .split(/[-._ ]+/)
+    .filter((token) => token.length > 0);
+}
+
+/**
+ * True when a token sequence spells out a license ID this script knows by name.
+ *
+ * Drawn from the two ID tables rather than a separate list, so a license added
+ * to either automatically becomes something a filename can unambiguously mean.
+ */
+function namesAKnownLicense(tokens: string[]): boolean {
+  const joined = tokens.join("-");
+  const known = [...ELECTION_PREFERENCE, ...NO_ATTRIBUTION_LICENSES];
+  return known.some((id) => licenseTokens(id).join("-") === joined);
+}
+
+/**
+ * Rank a crate's notice files against an elected license ID.
+ *
+ * The suffix match is deliberately loose (`LICENSE-MIT`, `license-mit`,
+ * `LICENSE_MIT`, `LICENSE-Apache-2.0_WITH_LLVM-exception`, `license-apache-2.0`
+ * all appear in the current graph). Why not require an exact `LICENSE-<ID>`
+ * form: crates spell the suffix in at least five ways, and a stricter matcher
+ * would silently fall through to the unqualified branch — reproducing, say, a
+ * dual-license COPYING where the crate shipped the exact MIT text next to it.
+ *
+ * Matching compares TOKEN SEQUENCES, and only in one direction: the file's
+ * tokens must be a prefix of the elected ID's. That admits the version-eliding
+ * shorthand crates actually use (`LICENSE-APACHE` [apache] for Apache-2.0
+ * [apache, 2, 0], `LICENSE-BSD` for BSD-3-Clause) while rejecting the reverse.
+ *
+ * Why not a plain string prefix test on the concatenated letters, as this first
+ * did: `LICENSE-MIT-0` flattens to "mit0", which has "mit" as a prefix, so
+ * electing MIT would have reproduced the MIT-0 text — a different license with
+ * no attribution clause at all. Tokens keep `mit-0` and `mit` distinct.
+ *
+ * The abbreviation is additionally refused when the shortened form is itself a
+ * license we know by name: `LICENSE-MIT` must not satisfy an elected MIT-0,
+ * because that file is far likelier to be the actual MIT text sitting next to
+ * it than an abbreviation of MIT-0. Eliding is only ever a guess, so it is
+ * declined wherever a more specific reading exists.
+ */
+export function selectNoticeFiles(names: string[], elected: string): string[] {
+  const wanted = licenseTokens(elected);
+  const matchesElected = (name: string): boolean => {
+    if (wanted.length === 0) {
+      return false;
+    }
+    const suffix = name.replace(/^(license|licence|copying)[-._]?/i, "");
+    const isUnqualified = suffix === "" || suffix.toLowerCase() === name.toLowerCase();
+    if (isUnqualified) {
+      return false;
+    }
+    const tokens = licenseTokens(suffix);
+    const isLongerThanId = tokens.length === 0 || tokens.length > wanted.length;
+    if (isLongerThanId) {
+      return false;
+    }
+    const isPrefix = tokens.every((token, index) => token === wanted[index]);
+    if (!isPrefix) {
+      return false;
+    }
+
+    const isExact = tokens.length === wanted.length;
+    if (isExact) {
+      return true;
+    }
+    return !namesAKnownLicense(tokens);
+  };
+
+  const qualified = names.filter((name) => matchesElected(name));
+  if (qualified.length > 0) {
+    // Apache-2.0 §4(d) makes a shipped NOTICE part of the license's own terms,
+    // so it travels with the elected text rather than being an optional extra.
+    const isApache = elected === "Apache-2.0";
+    const notices = isApache ? names.filter((name) => /^NOTICE([-._].*)?$/i.test(name)) : [];
+    return [...qualified, ...notices];
+  }
+
+  return names.filter((name) => UNQUALIFIED_NOTICE_PATTERN.test(name));
+}
+
+/**
+ * Canonical bodies for licenses we may have to reproduce without a file from
+ * the crate. `%COPYRIGHT%` is substituted with the crate's copyright line.
+ *
+ * Why not a generic "see the SPDX registry" pointer: MIT conditions the grant
+ * on the permission notice being *included* in the distribution, so a reference
+ * does not discharge it. Only licenses actually reached by the fallback are
+ * implemented; anything else throws rather than shipping an approximation.
+ */
+const LICENSE_TEMPLATES: Record<string, string> = {
+  MIT: `MIT License
+
+%COPYRIGHT%
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+`,
+};
+
+/**
+ * Build the copyright line for a synthesized notice from `cargo metadata`'s
+ * `authors`. Falls back to the collective form when the manifest declares none,
+ * which is both true and the convention crates use when authorship is a group.
+ *
+ * Why not reproduce the upstream notice's own copyright line, years and all:
+ * the crate published to crates.io does not contain one — that is the whole
+ * reason this path exists. The upstream *repository* usually does carry a
+ * dated LICENSE, but reaching for it would make the generated document depend
+ * on network fetches and on a repository revision that no longer corresponds to
+ * the packaged version, so the output would stop being deterministic and
+ * offline-reproducible. `authors` is the only attribution the packaged artifact
+ * actually ships, so it is what the reconstructed notice is built from, and the
+ * rendered section says so rather than passing it off as a verbatim copy.
+ */
+export function copyrightLine(crate: string, authors: string[]): string {
+  const named = authors.map((author) => author.trim()).filter((author) => author.length > 0);
+  if (named.length === 0) {
+    return `Copyright (c) The ${crate} Authors`;
+  }
+  return `Copyright (c) ${named.join(", ")}`;
+}
+
+/**
+ * Reproduce the canonical text of `elected` for a crate that ships no license
+ * file, attributed from its manifest.
+ */
+export function synthesizeNoticeFile(
+  crate: string,
+  authors: string[],
+  elected: string,
+): NoticeFile {
+  const template = LICENSE_TEMPLATES[elected];
+  if (template === undefined) {
+    throw new Error(
+      `${crate} elects ${elected} but ships no license file, and no canonical ${elected} ` +
+        `text is available; add it to LICENSE_TEMPLATES`,
+    );
+  }
+  return {
+    name: `${elected} (reconstructed)`,
+    text: template.replace("%COPYRIGHT%", copyrightLine(crate, authors)),
+  };
 }
 
 // --- Rendering -------------------------------------------------------------
@@ -291,17 +619,28 @@ export function fenceFor(content: string): string {
   return "`".repeat(Math.max(3, longest + 1));
 }
 
-/** Render the appendix reproducing each obligated crate's shipped notices. */
+function pushNoticeBlocks(lines: string[], files: NoticeFile[]): void {
+  for (const file of files) {
+    const fence = fenceFor(file.text);
+    lines.push(`#### ${file.name}`);
+    lines.push("");
+    lines.push(fence);
+    lines.push(file.text.replace(/\n$/, ""));
+    lines.push(fence);
+    lines.push("");
+  }
+}
+
+/** Render Appendix A: crates whose obligations survive any `OR` election. */
 export function renderNoticeAppendix(entries: NoticeEntry[]): string {
   const lines: string[] = [];
-  lines.push("## Appendix: License texts and notices for non-electable obligations");
+  lines.push("## Appendix A: License texts and notices for non-electable obligations");
   lines.push("");
-  lines.push("Most crates above are offered under an `OR` choice, and vibe's distribution");
-  lines.push("elects the permissive arm. The crates in this appendix are different: their");
-  lines.push("SPDX expression is a top-level `AND` conjunction, so every conjunct binds and");
-  lines.push("no election can shed it. Their obligations therefore travel with the shipped");
-  lines.push("binary, and the license and notice files each crate distributes are reproduced");
-  lines.push("below verbatim, exactly as published on crates.io.");
+  lines.push("The crates in this appendix have an SPDX expression whose top-level operator");
+  lines.push("is `AND`, so every conjunct binds and no election can shed any of them. Their");
+  lines.push("obligations travel with the shipped binary in full, and every license and");
+  lines.push("notice file each crate distributes is reproduced below verbatim, exactly as");
+  lines.push("published on crates.io.");
   lines.push("");
   lines.push("Like the table above, this appendix is drawn from the conservative full");
   lines.push("dependency graph, so it may reproduce notices for crates that are not linked");
@@ -312,22 +651,70 @@ export function renderNoticeAppendix(entries: NoticeEntry[]): string {
   for (const entry of entries) {
     lines.push(`### ${entry.name} ${entry.version} — ${entry.license}`);
     lines.push("");
-    for (const file of entry.files) {
-      const fence = fenceFor(file.text);
-      lines.push(`#### ${file.name}`);
-      lines.push("");
-      lines.push(fence);
-      lines.push(file.text.replace(/\n$/, ""));
-      lines.push(fence);
-      lines.push("");
-    }
+    pushNoticeBlocks(lines, entry.files);
   }
 
   return lines.join("\n");
 }
 
-/** Render the whole document: preamble, crate table, and the notice appendix. */
-export function render(deps: CargoPackage[], entries: NoticeEntry[]): string {
+/** Render Appendix B: the elected license text for every attribution-bearing crate. */
+export function renderElectedAppendix(entries: ElectedEntry[]): string {
+  const lines: string[] = [];
+  lines.push("## Appendix B: Notices for elected licenses");
+  lines.push("");
+  lines.push("Electing the permissive arm of an `OR` narrows a crate's terms to one license;");
+  lines.push("it does not end its obligations. MIT, ISC, the BSD licenses, Zlib and");
+  lines.push("Apache-2.0 all condition their grant on the copyright notice and permission");
+  lines.push("text being reproduced in distributions of the software, and vibe's shipped");
+  lines.push("binaries link many of these crates statically. This appendix therefore");
+  lines.push("reproduces, for each such crate, the text of the license vibe elected out of");
+  lines.push("its SPDX expression.");
+  lines.push("");
+  lines.push("Crates offering an arm that imposes no attribution obligation at all");
+  lines.push("(`Unlicense`, `CC0-1.0`, `MIT-0`, `0BSD`) elect that arm and are omitted here.");
+  lines.push("Crates with a top-level `AND` are covered by Appendix A instead.");
+  lines.push("");
+  lines.push("Like the table above, this appendix is drawn from the conservative full");
+  lines.push("dependency graph, so it may reproduce a license for a crate that is not linked");
+  lines.push("into any shipped binary — platform-gated crates (e.g. Windows/wasm) among");
+  lines.push("them. Reproducing a license is not a representation that the crate is present");
+  lines.push("in a given build.");
+  lines.push("");
+  lines.push("Where a crate publishes no license file of its own, the canonical text of the");
+  lines.push("license it declares in `Cargo.toml` is reproduced instead, with the copyright");
+  lines.push("line composed from that manifest's `authors` metadata rather than copied from");
+  lines.push("an upstream notice — the published crate contains none to copy. Such sections");
+  lines.push("are marked `(reconstructed)` and say so individually.");
+  lines.push("");
+
+  for (const entry of entries) {
+    lines.push(
+      `### ${entry.name} ${entry.version} — elected ${entry.elected} (from ${entry.license})`,
+    );
+    lines.push("");
+    if (entry.synthesized) {
+      lines.push(
+        `This crate ships no license file, so the canonical ${entry.elected} text is reproduced`,
+      );
+      lines.push("below from the license it declares in `Cargo.toml`. The copyright line is");
+      lines.push("**not** a verbatim copy of an upstream notice: it is composed from that");
+      lines.push("manifest's `authors` metadata, because the published crate contains no");
+      lines.push("notice to copy. The upstream repository may carry a dated copyright line");
+      lines.push("that differs from the one shown here.");
+      lines.push("");
+    }
+    pushNoticeBlocks(lines, entry.files);
+  }
+
+  return lines.join("\n");
+}
+
+/** Render the whole document: preamble, crate table, and both appendices. */
+export function render(
+  deps: CargoPackage[],
+  entries: NoticeEntry[],
+  elected: ElectedEntry[],
+): string {
   const lines: string[] = [];
   lines.push("# Third-Party Licenses");
   lines.push("");
@@ -335,11 +722,20 @@ export function render(deps: CargoPackage[], entries: NoticeEntry[]): string {
   lines.push("below. Each is distributed under a permissive license (MIT, Apache-2.0, ISC,");
   lines.push("BSD-3-Clause, Zlib, Unlicense, CC0-1.0, Unicode-3.0, CDLA-Permissive-2.0, or a");
   lines.push("dual/multi-license `OR` of these). Where a crate is multi-licensed with `OR`,");
-  lines.push("vibe's distribution elects the permissive option.");
+  lines.push("vibe's distribution elects one arm.");
   lines.push("");
-  lines.push("Some crates are licensed under a top-level `AND` conjunction instead. Those");
-  lines.push("obligations cannot be elected away, so the license and notice files those");
-  lines.push("crates ship are reproduced in full in the appendix at the end of this file.");
+  lines.push("Electing an arm narrows the terms but rarely ends them: MIT, ISC, the BSD");
+  lines.push("licenses, Zlib and Apache-2.0 each require their copyright notice and");
+  lines.push("permission text to be reproduced in distributions. This file therefore carries");
+  lines.push("two appendices:");
+  lines.push("");
+  lines.push("- **Appendix A** — crates whose SPDX expression is a top-level `AND`");
+  lines.push("  conjunction, where no election can shed any conjunct. Every license and");
+  lines.push("  notice file those crates ship is reproduced in full.");
+  lines.push("- **Appendix B** — crates where an arm was elected and that elected license");
+  lines.push("  still requires attribution. The text of the elected license is reproduced");
+  lines.push("  for each. Crates offering an obligation-free arm (`Unlicense`, `CC0-1.0`,");
+  lines.push("  `MIT-0`, `0BSD`) elect that arm and appear in neither appendix.");
   lines.push("");
   lines.push("This list is generated from `cargo metadata` over `rust/Cargo.lock` by");
   lines.push("`scripts/generate-third-party-licenses.ts`. It is the full dependency graph,");
@@ -353,6 +749,7 @@ export function render(deps: CargoPackage[], entries: NoticeEntry[]): string {
   }
   lines.push("");
   lines.push(renderNoticeAppendix(entries));
+  lines.push(renderElectedAppendix(elected));
   return lines.join("\n");
 }
 
@@ -406,6 +803,75 @@ async function collectNoticeEntries(deps: CargoPackage[]): Promise<NoticeEntry[]
 }
 
 /**
+ * Collect Appendix B entries: one per dependency whose elected license still
+ * carries an attribution obligation, in the same name→version order as the
+ * table so the rendered document is byte-stable across runs and platforms.
+ */
+async function collectElectedEntries(deps: CargoPackage[]): Promise<ElectedEntry[]> {
+  const entries: ElectedEntry[] = [];
+  for (const dep of deps) {
+    const label = `${dep.name} ${dep.version}`;
+    const crateDir = dirname(dep.manifest_path);
+
+    // A crate declaring only `license_file` points at terms with no SPDX name,
+    // so there is nothing to elect — the referenced file is the whole grant.
+    const hasOnlyLicenseFile = dep.license === null && dep.license_file !== null;
+    if (hasOnlyLicenseFile) {
+      // The pointer comes straight from a third-party manifest, so it is vetted
+      // for symlinks and `../` escapes before anything is read off disk.
+      const name = await resolveLicenseFile(crateDir, dep.license_file as string, label);
+      const files = [await readNoticeFile(crateDir, name, label)];
+      entries.push({
+        name: dep.name,
+        version: dep.version,
+        license: `see ${name}`,
+        elected: `see ${name}`,
+        files,
+        synthesized: false,
+      });
+      continue;
+    }
+
+    if (dep.license === null) {
+      throw new Error(`${label} declares neither 'license' nor 'license_file'`);
+    }
+
+    const elected = electLicense(dep.license);
+    if (elected === null) {
+      continue;
+    }
+
+    const names = await discoverNoticeFiles(crateDir);
+    const selected = selectNoticeFiles(names, elected);
+    if (selected.length === 0) {
+      entries.push({
+        name: dep.name,
+        version: dep.version,
+        license: dep.license,
+        elected,
+        files: [synthesizeNoticeFile(dep.name, dep.authors, elected)],
+        synthesized: true,
+      });
+      continue;
+    }
+
+    const files: NoticeFile[] = [];
+    for (const name of selected) {
+      files.push(await readNoticeFile(crateDir, name, label));
+    }
+    entries.push({
+      name: dep.name,
+      version: dep.version,
+      license: dep.license,
+      elected,
+      files,
+      synthesized: false,
+    });
+  }
+  return entries;
+}
+
+/**
  * Locate the first differing line between the committed and regenerated
  * documents. The file runs past a thousand lines of reproduced license text, so
  * a bare "is stale" leaves the reader diffing by hand to find what moved.
@@ -430,6 +896,7 @@ async function main(): Promise<void> {
   const checkOnly = process.argv.slice(2).includes("--check");
   const deps = await loadDependencies();
   const entries = await collectNoticeEntries(deps);
+  const elected = await collectElectedEntries(deps);
 
   // Why not tolerate an empty appendix: today's graph has four obligated
   // crates, so zero means the SPDX parser regressed and stopped recognizing
@@ -442,7 +909,17 @@ async function main(): Promise<void> {
     );
   }
 
-  const content = render(deps, entries);
+  // The same reasoning for Appendix B, which is the far larger of the two: the
+  // graph is overwhelmingly `MIT OR Apache-2.0`, so an empty election means the
+  // elect path stopped firing rather than that the obligations went away.
+  if (elected.length === 0) {
+    throw new Error(
+      "no crate with an elected attribution license was found; the election analysis has " +
+        "regressed (the dependency graph is expected to be dominated by MIT/Apache-2.0 crates)",
+    );
+  }
+
+  const content = render(deps, entries, elected);
 
   if (checkOnly) {
     const raw = await readFile(OUTPUT, "utf-8").catch(() => "");
@@ -458,13 +935,17 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     console.log(
-      `${OUTPUT} is up to date (${deps.length} crates, ${entries.length} reproduced notices).`,
+      `${OUTPUT} is up to date (${deps.length} crates, ${entries.length} non-electable, ` +
+        `${elected.length} elected).`,
     );
     return;
   }
 
   await writeFile(OUTPUT, content, "utf-8");
-  console.log(`Wrote ${OUTPUT} (${deps.length} crates, ${entries.length} reproduced notices).`);
+  console.log(
+    `Wrote ${OUTPUT} (${deps.length} crates, ${entries.length} non-electable, ` +
+      `${elected.length} elected).`,
+  );
 }
 
 if (import.meta.main) {
