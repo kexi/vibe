@@ -40,19 +40,38 @@ pub trait GitRunner {
     fn run(&self, args: &[&str]) -> Result<String>;
 }
 
+/// Environment pinned on every `git` invocation, forcing the C locale.
+///
+/// `is_unsupported_option_error` decides the `-z` fallback by matching git's
+/// English diagnostic text, and git translates its messages: under `ja_JP.UTF-8`
+/// a pre-2.36 git answers `-z` with a translated "unknown option", the match
+/// fails, and every worktree-enumerating command breaks instead of degrading.
+///
+/// Pinned here — on the one place a `git` process is constructed — rather than
+/// only on the probe invocation: the [`GitRunner`] seam takes just an argument
+/// vector, so a probe-only override would mean widening the trait or bypassing
+/// it for one call, and there is nothing to protect on the other callers. Every
+/// other invocation reads machine-stable output (`--porcelain`, `rev-parse`,
+/// `config --get`), which git does not translate, so the C locale changes
+/// nothing for them.
+///
+/// `LC_ALL` alone is not enough: `LANGUAGE` overrides it for message
+/// translation in gettext, so both must be set.
+const GIT_C_LOCALE_ENV: [(&str, &str); 2] = [("LC_ALL", "C"), ("LANGUAGE", "C")];
+
 /// Production [`GitRunner`] that shells out to the real `git` binary.
 pub struct RealGit;
 
 impl GitRunner for RealGit {
     fn run(&self, args: &[&str]) -> Result<String> {
-        let output =
-            Command::new("git")
-                .args(args)
-                .output()
-                .map_err(|e| VibeError::GitOperation {
-                    command: args.join(" "),
-                    message: e.to_string(),
-                })?;
+        let output = Command::new("git")
+            .args(args)
+            .envs(GIT_C_LOCALE_ENV)
+            .output()
+            .map_err(|e| VibeError::GitOperation {
+                command: args.join(" "),
+                message: e.to_string(),
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -117,6 +136,10 @@ fn run_worktree_list(runner: &impl GitRunner) -> Result<String> {
 /// broken". Matching on the message rather than the exit status because git uses
 /// 129 for usage errors only on some paths, and the [`GitRunner`] abstraction
 /// intentionally carries the message, not the raw status.
+///
+/// The markers are git's untranslated English wording, which is only what
+/// [`RealGit`] sees because it pins [`GIT_C_LOCALE_ENV`]; without that pinning
+/// this predicate would silently stop matching under a non-English locale.
 fn is_unsupported_option_error(err: &VibeError) -> bool {
     let VibeError::GitOperation { message, .. } = err else {
         return false;
@@ -592,6 +615,81 @@ mod tests {
             ],
             "the fallback must retry without -z, and only after -z was rejected"
         );
+    }
+
+    #[test]
+    fn real_git_runs_git_under_the_c_locale() {
+        // What it guarantees: the `-z` fallback probe keeps working on a
+        // non-English system. `is_unsupported_option_error` matches git's
+        // English diagnostics, so `RealGit` must force the C locale onto the
+        // child regardless of the ambient environment — otherwise a pre-2.36
+        // git under e.g. ja_JP.UTF-8 answers with a translated "unknown option"
+        // and the fallback never fires.
+        //
+        // Asserted by making git echo the locale variables it was launched
+        // with, rather than by comparing translated output: whether any given
+        // machine has git's translations installed is not something a test can
+        // rely on, so a message-text assertion would silently pass everywhere.
+        let ambient = [("LC_ALL", "ja_JP.UTF-8"), ("LANGUAGE", "ja")];
+        let output = Command::new("git")
+            .args([
+                "-c",
+                "alias.vibeshowlocale=!printf '%s|%s' \"$LC_ALL\" \"$LANGUAGE\"",
+                "vibeshowlocale",
+            ])
+            .envs(ambient)
+            .envs(GIT_C_LOCALE_ENV)
+            .output()
+            .expect("git must be runnable in the test environment");
+
+        assert!(
+            output.status.success(),
+            "probe alias failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout).trim(),
+            "C|C",
+            "RealGit's pinned env must override an ambient non-English locale"
+        );
+    }
+
+    #[test]
+    fn c_locale_pinning_covers_both_gettext_variables() {
+        // What it guarantees: LC_ALL alone is insufficient — gettext lets
+        // LANGUAGE override it for message translation, so dropping LANGUAGE
+        // would reintroduce the translated-diagnostic bug on systems that set
+        // it.
+        let pinned: std::collections::HashMap<_, _> = GIT_C_LOCALE_ENV.into_iter().collect();
+        assert_eq!(pinned.get("LC_ALL"), Some(&"C"));
+        assert_eq!(pinned.get("LANGUAGE"), Some(&"C"));
+    }
+
+    #[test]
+    fn unsupported_option_match_is_case_insensitive_over_git_wordings() {
+        // What it guarantees: the marker set covers the wordings git actually
+        // emits for an unparsed flag, in the C locale the runner pins.
+        for message in [
+            "failed: error: unknown option `z'",
+            "failed: error: unknown switch `z'",
+            "failed: usage: git worktree list [-v | --porcelain [-z]]",
+            "failed: ERROR: Unknown Option `z'",
+        ] {
+            let err = VibeError::GitOperation {
+                command: "worktree list --porcelain -z".to_string(),
+                message: message.to_string(),
+            };
+            assert!(
+                is_unsupported_option_error(&err),
+                "must be treated as an unsupported-option rejection: {message}"
+            );
+        }
+
+        let genuine = VibeError::GitOperation {
+            command: "worktree list --porcelain -z".to_string(),
+            message: "failed: fatal: not a git repository".to_string(),
+        };
+        assert!(!is_unsupported_option_error(&genuine));
     }
 
     #[test]
