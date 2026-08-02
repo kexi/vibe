@@ -106,6 +106,12 @@ pub struct StartArgs {
     /// Skip file/directory copying.
     #[arg(long = "no-copy")]
     pub no_copy: bool,
+    /// Also copy untracked, non-ignored files.
+    #[arg(long = "copy-untracked")]
+    pub copy_untracked: bool,
+    /// Also copy locally modified tracked files.
+    #[arg(long = "copy-modified")]
+    pub copy_modified: bool,
     /// Show what would happen without doing it.
     #[arg(short = 'n', long = "dry-run")]
     pub dry_run: bool,
@@ -131,6 +137,10 @@ pub struct ScratchArgs {
     pub no_hooks: bool,
     #[arg(long = "no-copy")]
     pub no_copy: bool,
+    #[arg(long = "copy-untracked")]
+    pub copy_untracked: bool,
+    #[arg(long = "copy-modified")]
+    pub copy_modified: bool,
     #[arg(short = 'n', long = "dry-run")]
     pub dry_run: bool,
     #[arg(long)]

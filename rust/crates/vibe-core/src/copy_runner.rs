@@ -73,13 +73,42 @@ pub fn copy_files(
     dry_run: bool,
 ) {
     let files = expand_copy_patterns(io, patterns, repo_root);
+    copy_resolved_files(
+        io,
+        executor,
+        tracker,
+        &files,
+        repo_root,
+        worktree_path,
+        dry_run,
+    );
+}
+
+/// Copy an ALREADY-RESOLVED list of repo-relative files.
+///
+/// Split out of [`copy_files`] for sources that are not patterns: git-derived
+/// paths (`[copy] untracked` / `modified`) are literal filenames, and a filename
+/// containing `[`, `{`, `*` or `?` would be misread as a glob if it went through
+/// the pattern expander. Callers that mix both concatenate the expanded patterns
+/// with their literal paths and call this once, so a single progress phase and a
+/// single dedup pass cover everything.
+#[allow(clippy::too_many_arguments)]
+pub fn copy_resolved_files(
+    io: &impl Io,
+    executor: &impl CopyExecutor,
+    tracker: &dyn ProgressTracker,
+    files: &[String],
+    repo_root: &str,
+    worktree_path: &str,
+    dry_run: bool,
+) {
     if files.is_empty() {
         return;
     }
 
     if dry_run {
         log_dry_run(io, "Would copy files:");
-        for file in &files {
+        for file in files {
             log_dry_run(io, &format!("  - {file}"));
         }
         return;

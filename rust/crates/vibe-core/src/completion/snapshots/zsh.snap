@@ -40,6 +40,8 @@ _vibe_start() {
     '--track[Set upstream tracking when using --base]' \
     '--no-hooks[Skip pre-start and post-start hooks]' \
     '--no-copy[Skip copying files and directories]' \
+    '--copy-untracked[Also copy untracked, non-ignored files]' \
+    '--copy-modified[Also copy locally modified tracked files]' \
     '(-n --dry-run)'{-n,--dry-run}'[Show what would be executed]' \
     '(-f --force)'{-f,--force}'[Skip confirmation prompts]' \
     '1: :_vibe_branches'
@@ -52,6 +54,8 @@ _vibe_scratch() {
     '--track[Set upstream tracking when using --base]' \
     '--no-hooks[Skip pre-start and post-start hooks]' \
     '--no-copy[Skip copying files and directories]' \
+    '--copy-untracked[Also copy untracked, non-ignored files]' \
+    '--copy-modified[Also copy locally modified tracked files]' \
     '(-n --dry-run)'{-n,--dry-run}'[Show what would be executed]'
 }
 

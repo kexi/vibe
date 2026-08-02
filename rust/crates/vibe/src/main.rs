@@ -130,6 +130,10 @@ fn dispatch(
                 args.reuse,
                 args.no_hooks,
                 args.no_copy,
+                commands::CopySources {
+                    untracked: args.copy_untracked,
+                    modified: args.copy_modified,
+                },
                 args.dry_run,
                 args.base,
                 args.track,
@@ -141,6 +145,10 @@ fn dispatch(
             args.reuse,
             args.no_hooks,
             args.no_copy,
+            commands::CopySources {
+                untracked: args.copy_untracked,
+                modified: args.copy_modified,
+            },
             args.dry_run,
             args.base,
             args.track,

@@ -32,6 +32,8 @@ complete -c vibe -n '__fish_seen_subcommand_from start' -l base -r -d 'Base bran
 complete -c vibe -n '__fish_seen_subcommand_from start' -l track -d 'Set upstream tracking when using --base'
 complete -c vibe -n '__fish_seen_subcommand_from start' -l no-hooks -d 'Skip pre-start and post-start hooks'
 complete -c vibe -n '__fish_seen_subcommand_from start' -l no-copy -d 'Skip copying files and directories'
+complete -c vibe -n '__fish_seen_subcommand_from start' -l copy-untracked -d 'Also copy untracked, non-ignored files'
+complete -c vibe -n '__fish_seen_subcommand_from start' -l copy-modified -d 'Also copy locally modified tracked files'
 complete -c vibe -n '__fish_seen_subcommand_from start' -s n -l dry-run -d 'Show what would be executed'
 complete -c vibe -n '__fish_seen_subcommand_from start' -s f -l force -d 'Skip confirmation prompts'
 
@@ -41,6 +43,8 @@ complete -c vibe -n '__fish_seen_subcommand_from scratch' -l base -r -d 'Base br
 complete -c vibe -n '__fish_seen_subcommand_from scratch' -l track -d 'Set upstream tracking when using --base'
 complete -c vibe -n '__fish_seen_subcommand_from scratch' -l no-hooks -d 'Skip pre-start and post-start hooks'
 complete -c vibe -n '__fish_seen_subcommand_from scratch' -l no-copy -d 'Skip copying files and directories'
+complete -c vibe -n '__fish_seen_subcommand_from scratch' -l copy-untracked -d 'Also copy untracked, non-ignored files'
+complete -c vibe -n '__fish_seen_subcommand_from scratch' -l copy-modified -d 'Also copy locally modified tracked files'
 complete -c vibe -n '__fish_seen_subcommand_from scratch' -s n -l dry-run -d 'Show what would be executed'
 
 # rename flags

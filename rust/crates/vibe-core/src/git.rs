@@ -34,6 +34,16 @@ pub struct RepoInfo {
 /// trimmed stdout on success and a [`VibeError::GitOperation`] on failure.
 pub trait GitRunner {
     fn run(&self, args: &[&str]) -> Result<String>;
+
+    /// Run git and return stdout VERBATIM (no trimming).
+    ///
+    /// Required for `-z` (NUL-delimited) plumbing output, where trimming would
+    /// corrupt a path whose name legitimately begins or ends with whitespace.
+    /// Defaults to [`GitRunner::run`] so the many test doubles in this crate keep
+    /// compiling; [`RealGit`] overrides it with the untrimmed capture.
+    fn run_raw(&self, args: &[&str]) -> Result<String> {
+        self.run(args)
+    }
 }
 
 /// Production [`GitRunner`] that shells out to the real `git` binary.
@@ -60,6 +70,27 @@ impl GitRunner for RealGit {
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    fn run_raw(&self, args: &[&str]) -> Result<String> {
+        let output =
+            Command::new("git")
+                .args(args)
+                .output()
+                .map_err(|e| VibeError::GitOperation {
+                    command: args.join(" "),
+                    message: e.to_string(),
+                })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(VibeError::GitOperation {
+                command: args.join(" "),
+                message: format!("failed: {}", stderr.trim()),
+            });
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
     }
 }
 
@@ -306,6 +337,46 @@ pub fn branch_exists(runner: &impl GitRunner, branch_name: &str) -> bool {
             &format!("refs/heads/{branch_name}"),
         ])
         .is_ok()
+}
+
+/// Split NUL-delimited `git ... -z` output into non-empty entries.
+///
+/// `-z` terminates every record with a NUL (including the last), so the split
+/// yields a trailing empty element that is dropped here. Entries are NOT trimmed:
+/// a path may legitimately start or end with whitespace.
+pub fn split_nul(output: &str) -> Vec<String> {
+    output
+        .split('\0')
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// Repo-relative paths of untracked, non-ignored files
+/// (`git ls-files -z --others --exclude-standard`).
+///
+/// `-z` is mandatory: without it git would quote paths per `core.quotePath` and
+/// break on embedded newlines. Paths are relative to the repository root because
+/// the command runs with `--full-name` against the top level.
+pub fn list_untracked_files(runner: &impl GitRunner) -> Result<Vec<String>> {
+    let out = runner.run_raw(&[
+        "ls-files",
+        "-z",
+        "--others",
+        "--exclude-standard",
+        "--full-name",
+    ])?;
+    Ok(split_nul(&out))
+}
+
+/// Repo-relative paths of tracked files with local modifications
+/// (`git ls-files -z --modified`).
+///
+/// `--modified` also reports DELETED tracked files; the caller filters those out
+/// by existence (a deleted file has nothing to copy).
+pub fn list_modified_files(runner: &impl GitRunner) -> Result<Vec<String>> {
+    let out = runner.run_raw(&["ls-files", "-z", "--modified", "--full-name"])?;
+    Ok(split_nul(&out))
 }
 
 /// Result of [`detect_broken_worktree_link`].
@@ -629,6 +700,60 @@ branch refs/heads/main
                     branch: "feat".into()
                 },
             ]
+        );
+    }
+
+    /// A runner that answers `ls-files` from a canned NUL-delimited payload via
+    /// `run_raw`, and would CORRUPT the payload if `run` (which trims) were used.
+    struct LsFilesGit {
+        raw: String,
+    }
+    impl GitRunner for LsFilesGit {
+        fn run(&self, _args: &[&str]) -> Result<String> {
+            Ok(self.raw.trim().to_string())
+        }
+        fn run_raw(&self, _args: &[&str]) -> Result<String> {
+            Ok(self.raw.clone())
+        }
+    }
+
+    #[test]
+    fn split_nul_drops_the_trailing_terminator_only() {
+        assert_eq!(split_nul("a\0b\0"), vec!["a".to_string(), "b".to_string()]);
+        assert_eq!(split_nul(""), Vec::<String>::new());
+    }
+
+    #[test]
+    fn split_nul_preserves_paths_with_newlines_and_spaces() {
+        // A NUL-delimited record may itself contain a newline or leading/trailing
+        // spaces; neither may be treated as a separator or stripped.
+        assert_eq!(
+            split_nul("we ird\nname.txt\0 padded \0"),
+            vec!["we ird\nname.txt".to_string(), " padded ".to_string()]
+        );
+    }
+
+    #[test]
+    fn untracked_listing_keeps_non_ascii_and_spaced_paths() {
+        let git = LsFilesGit {
+            raw: "notes/メモ.txt\0my file.txt\0".to_string(),
+        };
+        assert_eq!(
+            list_untracked_files(&git).unwrap(),
+            vec!["notes/メモ.txt".to_string(), "my file.txt".to_string()]
+        );
+    }
+
+    #[test]
+    fn modified_listing_reads_raw_untrimmed_output() {
+        // Trailing whitespace inside the final record survives because the helper
+        // reads `run_raw`, not the trimming `run`.
+        let git = LsFilesGit {
+            raw: "src/main.rs\0trailing \0".to_string(),
+        };
+        assert_eq!(
+            list_modified_files(&git).unwrap(),
+            vec!["src/main.rs".to_string(), "trailing ".to_string()]
         );
     }
 
