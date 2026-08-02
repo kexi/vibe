@@ -214,7 +214,7 @@ mod tests {
     use crate::io::FakeIo;
     use crate::settings::SettingsWorktree;
     use std::cell::RefCell;
-    use vibe_test_support::{fake_root, fake_root_str, Fixture};
+    use vibe_test_support::{fake_root, fake_root_str, to_slash, Fixture};
 
     /// Records the cmd + the (key, value) env overlays a script was asked to run.
     type SeenInvocation = (String, Vec<(String, String)>);
@@ -456,7 +456,12 @@ mod tests {
         let settings = settings_with_script(Some("~/s.sh"));
         resolve_worktree_path(&io, &runner, None, &settings, &ctx(&fake_root_str("repo"))).unwrap();
         let (cmd, _) = runner.seen.borrow().clone().unwrap();
-        assert_eq!(cmd, script.to_string_lossy());
+        // `~` expansion is a plain `format!("{home}{rest}")` (kept for TS parity,
+        // see `execute_path_script`), so the tilde's own `/` survives into the
+        // expanded path: `C:\...\tmp/s.sh` on Windows. It names the same file the
+        // fixture wrote — Windows accepts `/` as a separator when opening — so
+        // the identity under test is the resolved file, not its punctuation.
+        assert_eq!(to_slash(&cmd), to_slash(&script));
     }
 
     #[test]

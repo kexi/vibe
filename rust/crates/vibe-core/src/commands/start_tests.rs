@@ -27,6 +27,25 @@ static REPO_FROM_STDIN: LazyLock<String> =
     LazyLock::new(|| fake_root_str("home/u/repo-from-stdin"));
 static REPO_CLI_NAME: LazyLock<String> = LazyLock::new(|| fake_root_str("home/u/repo-cli-name"));
 
+/// `git worktree list --porcelain` output listing only the main worktree.
+///
+/// Built from [`REPO`] rather than written inline: `start` matches the paths in
+/// this listing against the target path it computes with `Path::join`, so a
+/// `/`-joined literal here would never match on Windows — the conflict would go
+/// undetected and the command would silently take the plain-create branch.
+fn main_only() -> String {
+    format!("worktree {}\nbranch refs/heads/main\n\n", *REPO)
+}
+
+/// The listing above plus a second worktree at the resolved default path
+/// ([`REPO_FEAT`]) on `branch`, i.e. the path-conflict fixture.
+fn main_and_feat_path_on(branch: &str) -> String {
+    format!(
+        "worktree {}\nbranch refs/heads/main\n\nworktree {}\nbranch refs/heads/{branch}\n\n",
+        *REPO, *REPO_FEAT
+    )
+}
+
 /// A git mock that records calls, serves a worktree list / repo-root / branch
 /// existence, and can fail a configured arg prefix.
 struct MockGit {
@@ -424,7 +443,7 @@ fn existing_branch_dry_run_does_not_navigate() {
 fn new_branch_creates_worktree_and_cds() {
     let (_fx, io) = io_with_home();
     // Only main worktree; no branch "feat" anywhere → brand new.
-    let git = MockGit::new(&REPO, "worktree /home/u/repo\nbranch refs/heads/main\n\n");
+    let git = MockGit::new(&REPO, &main_only());
     let (r, s, p, sin, fk) = (
         NoResolver,
         NoScript,
@@ -444,7 +463,7 @@ fn new_branch_creates_worktree_and_cds() {
 #[test]
 fn new_branch_dry_run_emits_no_cd_and_logs() {
     let (_fx, io) = io_with_home();
-    let git = MockGit::new(&REPO, "worktree /home/u/repo\nbranch refs/heads/main\n\n");
+    let git = MockGit::new(&REPO, &main_only());
     let (r, s, p, sin, fk) = (
         NoResolver,
         NoScript,
@@ -541,8 +560,7 @@ fn base_with_empty_value_errors() {
 #[test]
 fn base_creates_with_base_when_revision_exists() {
     let (_fx, io) = io_with_home();
-    let git = MockGit::new(&REPO, "worktree /home/u/repo\nbranch refs/heads/main\n\n")
-        .with_revision("main");
+    let git = MockGit::new(&REPO, &main_only()).with_revision("main");
     let (r, s, p, sin, fk) = (
         NoResolver,
         NoScript,
@@ -574,7 +592,7 @@ fn same_branch_at_target_is_idempotent_cd() {
         // Note: branch "feat" must NOT appear as used by another path, else the
         // earlier existing-branch guard fires. So this worktree's branch is feat
         // and path is the resolved default path → same-branch conflict.
-        "worktree /home/u/repo\nbranch refs/heads/main\n\nworktree /home/u/repo-feat\nbranch refs/heads/feat\n\n",
+        &main_and_feat_path_on("feat"),
     );
     // But validate_branch_for_worktree would find feat used by /home/u/repo-feat
     // → existing-branch path, navigating. To exercise SAME-BRANCH conflict we
@@ -601,10 +619,7 @@ fn conflicting_git() -> MockGit {
     // The resolved default path /home/u/repo-feat holds a DIFFERENT branch
     // "other" (so different-branch conflict), and branch feat is brand new (not
     // used by any worktree → passes validate_branch_for_worktree).
-    MockGit::new(
-        &REPO,
-        "worktree /home/u/repo\nbranch refs/heads/main\n\nworktree /home/u/repo-feat\nbranch refs/heads/other\n\n",
-    )
+    MockGit::new(&REPO, &main_and_feat_path_on("other"))
 }
 
 #[test]
@@ -1262,7 +1277,7 @@ fn submodule_config_requires_its_own_trust() {
 #[test]
 fn worktree_hook_mode_outputs_path_to_stdout() {
     let (_fx, io) = io_with_home();
-    let git = MockGit::new(&REPO, "worktree /home/u/repo\nbranch refs/heads/main\n\n");
+    let git = MockGit::new(&REPO, &main_only());
     let s = NoScript;
     let p = ScriptPrompt::confirming(true);
     let sin = FakeStdin::text(r#"{"name": "from-stdin"}"#);
@@ -1289,7 +1304,7 @@ fn worktree_hook_mode_outputs_path_to_stdout() {
 #[test]
 fn worktree_hook_mode_requires_a_name() {
     let (_fx, io) = io_with_home();
-    let git = MockGit::new(&REPO, "worktree /home/u/repo\nbranch refs/heads/main\n\n");
+    let git = MockGit::new(&REPO, &main_only());
     let s = NoScript;
     let p = ScriptPrompt::confirming(true);
     let sin = FakeStdin::none(); // no stdin name, no CLI name.
@@ -1312,8 +1327,7 @@ fn base_without_track_emits_no_track_flag() {
     // `--no-track` (TS `createWorktree` emits `--no-track` when track is false and
     // a base is given; `--track` when true).
     let (_fx, io) = io_with_home();
-    let git = MockGit::new(&REPO, "worktree /home/u/repo\nbranch refs/heads/main\n\n")
-        .with_revision("origin/main");
+    let git = MockGit::new(&REPO, &main_only()).with_revision("origin/main");
     let (r, s, p, sin, fk) = (
         NoResolver,
         NoScript,
@@ -1356,8 +1370,7 @@ fn base_without_track_emits_no_track_flag() {
 fn base_with_track_emits_track_flag() {
     // The complementary half of G-6: track=true → `--track`, never `--no-track`.
     let (_fx, io) = io_with_home();
-    let git = MockGit::new(&REPO, "worktree /home/u/repo\nbranch refs/heads/main\n\n")
-        .with_revision("origin/main");
+    let git = MockGit::new(&REPO, &main_only()).with_revision("origin/main");
     let (r, s, p, sin, fk) = (
         NoResolver,
         NoScript,
@@ -1469,7 +1482,7 @@ fn worktree_hook_mode_post_setup_failure_is_non_fatal() {
 #[test]
 fn worktree_hook_mode_cli_name_wins_over_stdin() {
     let (_fx, io) = io_with_home();
-    let git = MockGit::new(&REPO, "worktree /home/u/repo\nbranch refs/heads/main\n\n");
+    let git = MockGit::new(&REPO, &main_only());
     let s = NoScript;
     let p = ScriptPrompt::confirming(true);
     let sin = FakeStdin::text(r#"{"name": "stdin-name"}"#);
