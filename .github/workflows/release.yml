@@ -63,6 +63,14 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
+      # The era rule (2.x = Apache-2.0, >=3.0.0 = MIT, #553) lives in the
+      # shared composite action so this workflow and beta-release.yml cannot
+      # drift apart; see the action for the full fail-closed rationale.
+      - name: Assert LICENSE matches the release version's licensing era
+        uses: ./.github/actions/assert-license-era
+        with:
+          version: ${{ steps.version.outputs.version }}
+
       - name: Determine release state
         id: state
         env:
@@ -234,6 +242,17 @@ jobs:
         run: |
           chmod +x "$BINARY"
           bun run scripts/build-deb.ts "$VERSION" "$ARCH" "$BINARY"
+
+      # Inspect the archive before it becomes a release asset: the .deb must
+      # carry usr/share/doc/vibe/copyright and THIRD-PARTY-LICENSES.md, neither
+      # of which any other release check would notice missing.
+      - name: Verify .deb contents
+        env:
+          ARCH: ${{ matrix.arch }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          bun run scripts/verify-deb.ts "vibe_${VERSION}_${ARCH}.deb"
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -478,6 +497,12 @@ jobs:
             exit 1
           fi
 
+          # The tap is a separately-published statement of vibe's license; a
+          # formula still claiming the pre-v3 Apache-2.0 terms must not ship.
+          # The check itself is shared with beta-release.yml (../vibe-source is
+          # this repo's checkout — the same tree the formula was copied from).
+          bash ../vibe-source/scripts/assert-formula-license.sh "Formula/${FORMULA_TEMPLATE}"
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add "Formula/${FORMULA_TEMPLATE}"
@@ -506,6 +531,8 @@ jobs:
             grep "PLACEHOLDER" "Formula/${VERSIONED_FORMULA}"
             exit 1
           fi
+
+          bash ../vibe-source/scripts/assert-formula-license.sh "Formula/${VERSIONED_FORMULA}"
 
           git add "Formula/${VERSIONED_FORMULA}"
 

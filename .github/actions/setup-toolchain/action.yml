@@ -8,22 +8,18 @@ runs:
   using: composite
   steps:
     # --- Linux/macOS: Nix flake dev shell ---
-    - name: Install Nix
+    # Keyed on the flake inputs so the cache invalidates only when the
+    # toolchain changes; the restore prefix lets unrelated changes still reuse
+    # the previous store. runner.arch is in the key because ci.yml runs both
+    # x64 (ubuntu-latest) and arm64 (ubuntu-24.04-arm) Linux runners, whose
+    # stores share no paths — an os-only key would let one arch win the save
+    # and leave the other permanently cold.
+    - name: Install Nix and cache the store
       if: runner.os != 'Windows'
-      uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
-    # Cache the Nix store via the standard GitHub Actions cache (actions/cache
-    # under the hood). Unlike magic-nix-cache, this does not reverse-engineer
-    # GitHub's cache API, so it is not subject to the 418/429 throttling that
-    # made CI flaky. Keyed on the flake inputs so the cache invalidates only
-    # when the toolchain changes; restore-prefixes lets unrelated changes still
-    # reuse the previous store. purge is left off so no `actions: write`
-    # permission is required.
-    - name: Nix store cache
-      if: runner.os != 'Windows'
-      uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
+      uses: ./.github/actions/setup-nix
       with:
-        primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
-        restore-prefixes-first-match: nix-${{ runner.os }}-
+        primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+        restore-prefix: nix-${{ runner.os }}-${{ runner.arch }}-
     - name: Load dev shell into environment
       if: runner.os != 'Windows'
       shell: bash
@@ -47,17 +43,17 @@ runs:
     # --- Windows: individual setup actions (Nix does not run on Windows) ---
     - name: Setup Bun (Windows)
       if: runner.os == 'Windows'
-      uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       with:
         bun-version: 1.3.8
     - name: Setup Node.js (Windows)
       if: runner.os == 'Windows'
-      uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version: 24.13.0
     - name: Setup pnpm (Windows)
       if: runner.os == 'Windows'
-      uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+      uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
       with:
         version: 10.26.2
     # Rust is provided by Nix on Linux/macOS, but Nix does not run on Windows, so

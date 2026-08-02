@@ -31,6 +31,10 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
           label: "日本語",
           lang: "ja",
         },
+        zh: {
+          label: "简体中文",
+          lang: "zh-CN",
+        },
       },
       social: [
         {
@@ -45,60 +49,60 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       sidebar: [
         {
           label: "Introduction",
-          translations: { ja: "はじめに" },
+          translations: { ja: "はじめに", zh: "简介" },
           items: [
             {
               slug: "index",
               label: "Welcome",
-              translations: { ja: "ようこそ" },
+              translations: { ja: "ようこそ", zh: "欢迎" },
             },
             {
               slug: "getting-started",
               label: "Getting Started",
-              translations: { ja: "クイックスタート" },
+              translations: { ja: "クイックスタート", zh: "快速开始" },
             },
           ],
         },
         {
           label: "Installation",
-          translations: { ja: "インストール" },
+          translations: { ja: "インストール", zh: "安装" },
           items: [
             {
               slug: "installation",
               label: "Installation",
-              translations: { ja: "インストール" },
+              translations: { ja: "インストール", zh: "安装" },
             },
             {
               slug: "setup",
               label: "Shell Setup",
-              translations: { ja: "シェル設定" },
+              translations: { ja: "シェル設定", zh: "Shell 设置" },
             },
           ],
         },
         {
           label: "Configuration",
-          translations: { ja: "設定" },
+          translations: { ja: "設定", zh: "配置" },
           items: [{ autogenerate: { directory: "configuration" } }],
         },
         {
           label: "Commands",
-          translations: { ja: "コマンド" },
+          translations: { ja: "コマンド", zh: "命令" },
           items: [{ autogenerate: { directory: "commands" } }],
         },
         {
           label: "Recipes",
-          translations: { ja: "レシピ集" },
+          translations: { ja: "レシピ集", zh: "实用方案" },
           items: [{ autogenerate: { directory: "recipes" } }],
         },
         {
           label: "Security",
-          translations: { ja: "セキュリティ" },
+          translations: { ja: "セキュリティ", zh: "安全" },
           items: [{ autogenerate: { directory: "security" } }],
         },
         {
           slug: "changelog",
           label: "Changelog",
-          translations: { ja: "変更履歴" },
+          translations: { ja: "変更履歴", zh: "更新日志" },
         },
       ],
     }),

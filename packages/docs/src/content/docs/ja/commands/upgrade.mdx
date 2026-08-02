@@ -81,7 +81,12 @@ vibe 0.8.0
 You are using the latest version.
 ```
 
+### 古いシェルラッパーの通知
+
+`$SHELL` が nushell か PowerShell の場合（または Windows の場合）で、vibe を呼び出しているラッパーが現行のものでないとき、`upgrade` は [`vibe doctor`](/ja/commands/doctor/) を案内する1行の注記を追記します。ラッパー自身が現行のものだと申告している場合、この注記は表示されません。
+
 ## 関連
 
 - [インストール](/ja/installation/) - インストール方法
+- [doctor](/ja/commands/doctor/) - 古いシェルラッパーがないか環境をチェック
 - [変更履歴](/ja/changelog/) - バージョン履歴

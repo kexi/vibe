@@ -1,0 +1,716 @@
+---
+title: 更新日志
+description: vibe 的版本历史与发行说明
+---
+
+vibe 的所有重要变更都记录在这里。
+
+## v3.0.0
+
+**发布日期：** 2026年8月2日
+
+### 变更
+
+- vibe 的发布许可证由 Apache-2.0 变更为 **MIT License**。你作为使用者获得的授权只会更宽松，无需做任何调整。伴随此次许可证变更，发布产物现在会完整附带第三方许可证文本：`THIRD-PARTY-LICENSES.md` 会逐字收录所有需要保留声明的内置依赖的 notice 文件，`.deb` 软件包则会在 `/usr/share/doc/vibe/copyright` 提供机器可读的 Debian `copyright` 文件。
+
+### 新增
+
+- `vibe doctor` —— 用于排查环境中已知问题的新命令。目前它负责检测过时的 nushell 或 PowerShell 包装函数：在 vibe 2.2.0 之前粘贴到 `config.nu` 或 PowerShell 配置文件中的包装函数不会随升级自动重新生成，因此这些用户会在毫不知情的情况下一直沿用旧的、有问题的行为。`vibe doctor` 会读取已知的配置文件位置，逐个报告已粘贴的包装函数是最新还是过时的，对过时的包装函数给出重新生成的命令，并在发现问题时以退出码 1 结束。它绝不会改写你的 shell 配置。详见 [`vibe doctor`](/zh/commands/doctor/)。
+- `vibe upgrade` 现在会在可能存在过时包装函数时，追加一行指向 `vibe doctor` 的提示 —— 即当你的 `$SHELL` 指向 nushell 或 PowerShell，或者你在 Windows 上时。该提示在 `--quiet` 下同样会显示，因为在脚本中使用 `vibe upgrade -q` 的用户，恰恰最没有机会通过其他途径得知自己的包装函数已经失效。
+- zsh 和 fish 补全现在包含 `doctor` 子命令。重新运行 `vibe shell-setup --shell zsh --with-completion`（fish 请使用对应命令）即可生效。**注意：** 这会改变生成的补全脚本的字节内容，因此连同许可证变更一起，本次发布采用主版本号升级，而并非因为任何既有命令的行为发生了变化。
+- 新增全站简体中文文档。文档、README 和规范文档现在除英文和日文外也提供中文版本，可通过站点顶部的语言切换器访问。
+
+### 修复
+
+- `vibe doctor` 不会再在本应报告问题时给出「一切正常」的结论。它现在会检查 macOS 上的 nushell 配置目录（`~/Library/Application Support/nushell`），能够解码以 UTF-16 或带 UTF-8 BOM 保存的 PowerShell 配置文件（Windows PowerShell 5.1 的默认格式），可以识别 `export def` 形式的包装函数，并且在找不到任何可用的配置文件位置时报告错误而非「一切正常」。
+- `vibe doctor` 不会再要求你替换本已是最新的包装函数。包装函数的判定现在能理解引号、注释和 PowerShell 的 here-string，因此出现在字符串字面量或注释中的标记不会再被误判为真实代码（反之亦然）。对较长的配置文件会扫描得更深入，若仍无法判定，则会如实说明而不是妄加猜测。
+
+---
+
+## v2.2.0
+
+**发布日期：** 2026年7月26日
+
+### 修复
+
+- nushell 包装函数现在真正可以工作了。此前的包装函数从来无法切换你所在 shell 的目录（`nu -c` 是在子进程中执行 `cd` 的），会拒绝所有带标志的调用（例如 `vibe start --dry-run`，因为缺少 `--wrapped`），也无法处理包含单引号的路径。新的包装函数以纯数据的形式接收 worktree 路径，因此 `vibe start` / `vibe jump` 能让你的 nushell 会话切换到正确的目录 —— 包含引号的路径也没问题。**需要你操作：** 请将 `config.nu` 中已粘贴的包装函数替换为 `vibe shell-setup --shell nushell` 输出的新代码片段（需要 vibe 2.2.0 或更高版本；旧的包装函数仍保持旧有行为）。
+- PowerShell 包装函数现在能正确处理包含单引号或通配符字符（`[`、`]`）的路径，并且在命令没有产生任何输出时（例如 `vibe config`）不再报错。**需要你操作：** 请从安装设置文档中重新粘贴包装函数（需要 vibe 2.2.0 或更高版本）。
+- bash、zsh 和 fish 不受影响：它们的包装函数和输出与之前的版本逐字节完全一致。
+
+---
+
+## v2.1.1
+
+**发布日期：** 2026年7月17日
+
+### 修复
+
+- GitHub Releases 的可下载资源中不再混入多余的 `package.json` 和 `THIRD-PARTY-LICENSES.md` 文件。发行页面现在只列出预编译的二进制文件和 `.deb` 软件包，因此不会再让人纠结该下载哪一个。
+
+---
+
+## v2.1.0
+
+**发布日期：** 2026年6月23日
+
+### 新增
+
+- 现在可以完整加载 git 子模块内的 `.vibe.toml` 文件。已信任的子模块配置会被读取，配置会从 worktree 内部（而不仅仅是原始 checkout）被识别，并且子模块目录会从正确的来源复制，因此子模块的内容会出现在 worktree 路径下。如果你的仓库使用了子模块，它们的 `.vibe.toml` 文件现在会如你所期望地参与到合并后的配置中。
+
+### 修复
+
+- 创建 worktree 时会再次显示进度树。此前交互式进度显示出现了回归，会一直隐藏直到操作结束；现在它会在 worktree 创建过程中实时输出。
+
+---
+
+## v2.0.0
+
+**发布日期：** 2026年6月19日
+
+### 新增
+
+- 原生支持 Windows（x64）。现在在 Windows 上通过 npm 安装 `@kexi/vibe`，会拉取 `@kexi/vibe-win32-x64` 二进制软件包并运行原生二进制文件。Windows 上无法使用写时复制克隆，因此创建 worktree 时会回退为标准的文件复制；除此之外，所有命令和行为都与 Linux 和 macOS 一致。
+
+### 变更
+
+- vibe 现在是一个独立的 Rust 二进制程序，而不再是 Node.js/Bun 应用。npm 软件包（`@kexi/vibe`）附带一个轻量启动器 shim，用于运行适用于你所在平台的预编译二进制文件，该二进制文件会作为按平台划分的 `optionalDependency` 被拉取。所有命令、标志、输出以及 SHA-256 信任模型均保持不变 —— 你现有的 `eval "$(vibe start ...)"` 设置和 `.vibe.toml` 文件都会像以前一样继续工作。这次主版本号的提升是为了标记运行时与分发方式的全面改造，而不是因为 CLI 行为有任何变化。
+
+### 移除
+
+- 不再发布 Deno / JSR 分发渠道（`deno install jsr:@kexi/vibe`）。请改用 npm、Homebrew、`.deb` 软件包或预编译二进制文件进行安装。
+
+### 修复
+
+- `vibe start --force` 现在会真正遵循该标志。此前它虽然会被解析但被忽略；现在它会跳过确认提示 —— 无论是导航到已有分支的 worktree，还是覆盖某个属于其他分支的冲突 worktree。
+- `vibe start --reuse`（以及 `vibe scratch --reuse`）现在会真正遵循该标志。此前它虽然会被解析但被忽略；现在当目标路径与另一个分支冲突时，它会自动选择「复用已有的 worktree」（与 `--force` 相反）。同时传入 `--force` 和 `--reuse` 会因相互矛盾而被拒绝。
+- `vibe scratch` 现在能在 Windows 上生成日期正确的分支名。此前在 Windows 二进制文件上，时间戳会回退到一个错误的日期（始终是 1970 年）；现在它会生成有效的 `scratch/YYYYMMDD-HHMMSS` 名称。
+- 加固了 stdout 上输出的 worktree 路径，使其能够抵御换行符注入，与 `cd` 输出上已有的防护保持一致，因此包含换行符的路径不再能注入第二条 shell 命令。
+
+---
+
+## v1.8.1
+
+**发布日期：** 2026年6月2日
+
+### 修复
+
+- 通过 Homebrew 分发的二进制文件在非 Nix 主机上启动时不再因 dyld 错误而中止。发行版二进制文件现在使用官方 Bun 工具链构建，因此不再依赖 `/nix/store` 中的动态库。
+
+---
+
+## v1.8.0
+
+**发布日期：** 2026年6月1日
+
+### 新增
+
+- Windows 现在拥有原生的 `robocopy` 复制策略。当写时复制不可用时，vibe 会回退到 `robocopy`，从而在 Windows 上更快、更可靠地复制 worktree 文件。
+
+### 变更
+
+- 文档化了如何在 WSL2 中挂载 Btrfs 卷，以便在 Windows 上启用写时复制。请参阅[安装](/zh/installation/)。
+
+### 修复
+
+- Windows 上的复制失败现在会在错误信息中输出底层 `robocopy` 的 stdout，让复制失败更容易诊断。
+
+---
+
+## v1.7.1
+
+**发布日期：** 2026年5月31日
+
+这是一个维护版本，用于加固 Nix 发布流水线。flake 版本号现在从 `package.json` 推导（单一信息来源），而不再是硬编码的字面量，因此发布标签不会再携带过时的版本号。发布后的 flake 更新也被限定了范围，不再改动 pnpm / native 的工具版本锁定 —— 此前一次无差别的版本重写曾导致 v1.7.0 的源码构建失败。对用户没有可见变化。
+
+---
+
+## v1.7.0
+
+**发布日期：** 2026年5月31日
+
+### 新增
+
+- 新增将 vibe 与外部工具集成的实用指南文档 —— [tmux](/zh/recipes/tmux/)、[cmux](/zh/recipes/cmux/) 和 [direnv](/zh/recipes/direnv/)。概览请参阅[实用指南](/zh/recipes/)。
+
+### 变更
+
+- Nix flake 的默认软件包（`nix run github:kexi/vibe`、`nix profile install github:kexi/vibe`）现在会从源码构建 vibe 以实现可复现的安装，而不再下载预编译的发行版二进制文件。如果你更希望使用预编译的快速路径，请使用 `#binary` 输出（例如 `nix run github:kexi/vibe#binary`）。请参阅[安装 → Nix](/zh/installation/)。
+
+---
+
+## v1.6.0
+
+**发布日期：** 2026年5月16日
+
+### 新增
+
+- 为 `vibe` 新增 zsh shell 自动补全。在 `~/.zshrc` 中依次添加 `autoload -Uz compinit && compinit` 和 `eval "$(vibe shell-setup --shell zsh --with-completion)"`（必须按此顺序 —— `compinit` 要在 `eval` 之前执行），即可获得子命令、标志、`vibe start <Tab>` 的本地分支名以及 `vibe jump <Tab>` 的 worktree 分支名的 Tab 补全。详情请参阅 [Shell 设置](/zh/setup/)和 [`vibe shell-setup`](/zh/commands/shell-setup/)。
+
+---
+
+## v1.5.2
+
+**发布日期：** 2026年5月16日
+
+这是一个用于挽救 v1.5.1 的维护版本。第一次尝试修复 CI（`--force npm@11`）仍然失败，因为 Node 22.22 内置的 npm 10.x 缺少 `@npmcli/arborist` 的 `promise-retry` 依赖，无法自我升级。本次发布将发布任务切换到 Node 24，其内置的 npm 11.x 已经支持 OIDC 可信发布 —— 无需自我升级。v1.5.0 / v1.5.1 中面向用户的变更（fish shell 自动补全）在此首次真正发布。
+
+---
+
+## v1.5.1
+
+**发布日期：** 2026年5月16日
+
+这是一个用于挽救 v1.5.0 的维护版本。v1.5.0 的标签虽然打出来了，但从未真正发布到 npm 仓库 —— 发布工作流在 `npm install -g npm@latest` 期间失败（npm 自我升级的竞态问题，表现为 `Cannot find module 'promise-retry'`）。本次发布将升级固定为 `npm@11` 并加上 `--force`，同时首次发布 v1.5.0 的内容（fish shell 自动补全）。功能说明请参阅下方的 v1.5.0 条目。
+
+---
+
+## v1.5.0
+
+**发布日期：** 2026年5月16日
+
+### 新增
+
+- 为 `vibe` 新增 fish shell 自动补全。运行 `vibe shell-setup --shell fish --with-completion | source`（或将该行添加到 `~/.config/fish/config.fish`），即可获得子命令、标志、`vibe start <Tab>` 的本地分支名以及 `vibe jump <Tab>` 的 worktree 分支名的 Tab 补全。详情请参阅 [Shell 设置](/zh/setup/)和 [`vibe shell-setup`](/zh/commands/shell-setup/)。
+
+---
+
+## v1.4.3
+
+**发布日期：** 2026年5月12日
+
+维护版本。参考近期 npm 供应链投毒事件的模式，加固了发布与 CI 流水线以抵御供应链攻击。对用户没有可见变化。
+
+---
+
+## v1.4.2
+
+**发布日期：** 2026年4月29日
+
+维护版本。确认在修正 PAT 权限之后，Nix flake 自动更新流水线可以完整执行。对用户没有可见变化。
+
+---
+
+## v1.4.1
+
+**发布日期：** 2026年4月29日
+
+维护版本。端到端验证了已恢复的 Nix flake 自动更新流水线。对用户没有可见变化。
+
+---
+
+## v1.4.0
+
+**发布日期：** 2026年4月29日
+
+### 变更
+
+- 恢复了每次发布之后自动更新 Nix flake 的流程 —— Nix 用户将再次能在 `develop` 分支上获得每个版本对应的最新 `flake.nix` / `flake.lock`
+
+---
+
+## v1.3.0
+
+**发布日期：** 2026年4月28日
+
+### 新增
+
+- `vibe scratch` 命令 —— 创建一个分支名自动生成为 `scratch/<YYYYMMDD-HHMMSS>` 的 worktree，便于快速试验
+- `vibe rename` 命令 —— 一步完成当前 worktree 的分支重命名和目录移动，适合把 `vibe scratch` 创建的 worktree 提升为正式名称
+- `vibe jump` 现在在非精确匹配时会排除 scratch worktree，以免临时的 scratch 出现在跳转候选中
+
+### 修复
+
+- `vibe rename feat/hoge` 现在会保留分支名中的斜杠（此前会被净化为 `feat-hoge`）
+- `vibe rename` 现在可以在次级 worktree 中运行
+
+---
+
+## v1.2.0
+
+**发布日期：** 2026年4月27日
+
+### 新增
+
+- 支持通过 Nix 安装 —— 现在可以使用 Nix flakes 安装 vibe，实现可复现的安装
+
+---
+
+## v1.1.1
+
+**发布日期：** 2026年4月8日
+
+### 修复
+
+- 修正了删除 worktree 命令中 `--force` 标志的位置
+
+---
+
+## v1.1.0
+
+**发布日期：** 2026年3月8日
+
+### 新增
+
+- `vibe start` 通过 DWIM（Do What I Mean）支持检出远程分支 —— 自动检测并检出远程分支
+
+---
+
+## v1.0.0
+
+**发布日期：** 2026年2月26日
+
+### 变更
+
+- 移除 `vibe copy` 命令
+
+---
+
+## v0.23.0
+
+**发布日期：** 2026年2月26日
+
+### 新增
+
+- `vibe copy` 命令，使用写时复制从主 worktree 复制文件和目录
+- Claude Code worktree 钩子集成（`start` 和 `clean` 命令的 `--claude-code-worktree-hook` 模式）
+- 为 Claude Code 提供 `WorktreeCreate` / `WorktreeRemove` 钩子支持
+
+### 修复
+
+- `--target` 选项的路径校验
+- 删除 worktree 之前，在钩子模式下进行防御性的目录切换
+
+---
+
+## v0.22.2
+
+**发布日期：** 2026年2月13日
+
+### 修复
+
+- 将原生模块（vibe-native）嵌入到编译后的发行版二进制文件中
+- 为 Bun 编译的二进制文件添加直接 require `.node` 的回退方案
+
+---
+
+## v0.22.1
+
+**发布日期：** 2026年2月12日
+
+### 修复
+
+- 在 Bun 运行时上启用 CoW（写时复制）原生克隆
+
+---
+
+## v0.22.0
+
+**发布日期：** 2026年2月10日
+
+### 新增
+
+- `jump` 命令支持模糊匹配（即使有拼写错误或只输入部分内容也能匹配）
+- `jump` 命令支持 MRU（最近使用）排序（最近使用过的 worktree 会排在前面）
+
+---
+
+## v0.21.0
+
+**发布日期：** 2026年2月8日
+
+### 新增
+
+- `vibe shell-setup` 命令，用于自动生成 shell 包装函数
+
+### 修复
+
+- 修正 `start` 命令中 console.log 语句的缩进
+
+---
+
+## v0.20.0
+
+**发布日期：** 2026年2月8日
+
+### 新增
+
+- `vibe jump` 命令，可通过分支名快速导航到 worktree（支持部分匹配、词边界匹配和交互式选择）
+- `vibe home` 命令，用于返回主 worktree
+
+### 修复
+
+- 防止 shell 注入：对 `cd` 输出中的单引号和特殊字符进行转义
+- 成功消息现在以绿色显示，而不再看起来像是错误输出
+- 支持 `NO_COLOR` 环境变量以控制 ANSI 彩色输出
+
+---
+
+## v0.19.2
+
+**发布日期：** 2026年2月8日
+
+### 修复
+
+- 修正 `brew upgrade` 命令，使其使用完整限定的 tap 名称
+
+---
+
+## v0.19.1
+
+**发布日期：** 2026年2月7日
+
+### 修复
+
+- 为兼容 tsdown 而进行的内部构建配置修复
+
+---
+
+## v0.19.0
+
+**发布日期：** 2026年2月7日
+
+### 新增
+
+- `start` 命令新增 `--track` 选项：与 `--base` 搭配时可显式启用远程跟踪分支的创建
+- 使用 `--base` 时默认行为改为 `--no-track`，避免自动创建远程跟踪分支
+
+### 修复
+
+- Homebrew formula 不再与 `vibe-beta` 冲突，稳定版和 beta 版可以共存
+
+---
+
+## v0.18.0
+
+**发布日期：** 2026年2月2日
+
+### 新增
+
+- **Deno/JSR 分发**：现在可以通过 `deno run jsr:@kexi/vibe` 直接运行 vibe
+- **Beta 渠道**：提供名为 `vibe-beta` 的 Homebrew beta formula，用于提前试用新功能
+
+---
+
+## v0.17.0
+
+**发布日期：** 2026年1月31日
+
+### 新增
+
+- 可通过 `vibe.concurrency.copy` 配置项调整复制并发度
+
+---
+
+## v0.16.1
+
+**发布日期：** 2026年1月26日
+
+### 修复
+
+- 为兼容 tsdown v0.20.1 而进行的内部构建配置修复
+
+---
+
+## v0.16.0
+
+**发布日期：** 2026年1月26日
+
+### 新增
+
+- 检测主 worktree 已被删除的情况，并给出可操作的错误提示
+
+### 修复
+
+- 通过正确的 import map 配置，原生克隆支持现在可以正常工作
+
+---
+
+## v0.15.1
+
+**发布日期：** 2026年1月24日
+
+### 修复
+
+- npm 软件包的内部构建配置修复
+
+---
+
+## v0.15.0
+
+**发布日期：** 2026年1月24日
+
+### 新增
+
+- `vibe start` 命令新增 `--base` 选项，用于显式指定基准分支
+
+### 修复
+
+- 通过限制渲染调用频率提升了 spinner 的稳定性，避免卡死
+
+---
+
+## v0.14.0
+
+**发布日期：** 2026年1月19日
+
+### 新增
+
+- **XDG 回收站支持**：`vibe clean` 现在会使用系统回收站
+  - Linux：符合 XDG Base Directory 规范的回收站
+  - macOS：与 Finder 的废纸篓集成
+
+### 修复
+
+- 提升了 `vibe clean` 的幂等性，使并发执行更加稳定
+
+---
+
+## v0.13.0
+
+**发布日期：** 2026年1月18日
+
+### 新增
+
+- 发布工作流的 Twitter 公告模板
+- Markdown 文件同步规则（_.md / _.ja.md 成对）
+- 用于引导式发布的 `vibe-release-new-version` Claude Code 命令
+
+### 修复
+
+- 处理了 PR 评审意见
+- 将 JSR 依赖移动到 devDependencies 以便正确构建
+- 打包 JSR 依赖，以便在没有仓库配置的情况下也能通过 npx 使用
+
+---
+
+## v0.12.0
+
+**发布日期：** 2026年1月18日
+
+### 新增
+
+- **多运行时支持**：可在 Node.js/npm/npx 和 Bun 环境中运行 vibe
+- **RuntimeAbstractionLayer**：面向 Node.js 和 Bun 的统一运行时抽象
+- **AppContext 依赖注入**：通过 DI 模式提升可测试性
+
+### 变更
+
+- **vibe-native**：从 C 迁移到 Rust（napi-rs），以获得更好的安全性和可维护性
+- **vibe-native**：将多个软件包整合为一个统一的软件包
+
+### 修复
+
+- 改进了原生模块的错误处理
+- 更好的 Windows 检测逻辑
+- 为较慢的网络连接延长了 mise 的 HTTP 超时时间
+- 各种 e2e 测试的修复与改进
+
+---
+
+## v0.9.0
+
+**发布日期：** 2026年1月16日
+
+### 新增
+
+- 符合 GNU 编码标准的 CLI 选项
+  - `--verbose` / `-V`：启用详细输出
+  - `--quiet` / `-q`：抑制非必要输出
+  - `--dry-run` 的短选项别名 `-n`
+  - 检测未知选项并给出有帮助的错误信息
+- `vibe clean` 命令的**快速删除**
+  - 通过重命名为 `.vibe-trash-*` 实现 O(1) 的瞬时目录删除
+  - 后台清理，改善使用体验
+  - 基准测试：29 秒 → 2 秒（34.2 万个文件，快 14 倍）
+  - `[clean] fast_remove` 配置项（默认启用）
+
+### 变更
+
+- 使用 `errorLog` 函数改进了帮助文本的排版
+
+### 修复
+
+- 防止 `clean` 命令中的 shell 注入
+- 针对 clean 操作的安全性改进
+
+---
+
+## v0.8.0
+
+**发布日期：** 2026年1月14日
+
+### 新增
+
+- `vibe upgrade` 命令，用于检查更新并显示升级说明
+- `vibe start` 新增 `--dry-run` 选项，可在不实际执行的情况下预览操作
+- `vibe clean` 命令新增 `--delete-branch` / `--keep-branch` 选项
+- `vibe clean` 新增 `--force` / `-f` 选项，用于跳过确认提示
+- `.vibe.toml` 中新增 `[clean] delete_branch` 配置项
+
+### 变更
+
+- Claude Actions 从 OAuth 切换为 API key 认证
+
+### 修复
+
+- 删除包含未提交更改的 worktree 时添加 `--force` 标志
+
+---
+
+## v0.7.0
+
+**发布日期：** 2026年1月13日
+
+### 新增
+
+- 为文档站点添加 OGP meta 标签，以便在社交网络上生成预览
+
+### 变更
+
+- 改为 pnpm workspace，并加入文档的 CI 检查
+- 为供应链安全配置了最小发布时长（minimum release age）
+
+### 修复
+
+- `vibe clean` 现在会输出返回主 worktree 的 cd 命令
+
+---
+
+## v0.6.0
+
+**发布日期：** 2026年1月13日
+
+### 新增
+
+- 通过外部脚本**自定义 worktree 路径**
+  - 配置 `path_script` 以动态决定 worktree 的目录路径
+  - 环境变量：`VIBE_REPO_NAME`、`VIBE_BRANCH_NAME`、`VIBE_SANITIZED_BRANCH`、`VIBE_REPO_ROOT`
+
+### 变更
+
+- 将 deno compile 命令统一到 deno task 中
+
+---
+
+## v0.5.2
+
+**发布日期：** 2026年1月13日
+
+### 修复
+
+- 为 CI/发布工作流中的所有 compile 命令添加了 `--allow-ffi` 标志
+
+---
+
+## v0.5.1
+
+**发布日期：** 2026年1月13日
+
+### 新增
+
+- 文档站点（基于 Starlight）
+- 页头的 GitHub Star 按钮
+- Windows、Nushell、PowerShell 和 Linux 的安装指南
+- 通过 GitHub Actions 自动部署文档
+
+### 变更
+
+- 并行化目录复制以提升性能
+- 在文件操作过程中显示复制策略的名称
+
+---
+
+## v0.5.0
+
+**发布日期：** 2026年1月10日
+
+### 新增
+
+- `--no-hooks` 选项，用于在 `vibe start` 时跳过钩子执行
+- `--no-copy` 选项，用于在 `vibe start` 时跳过文件复制
+- GitHub Sponsors 和 Patreon 赞助配置
+
+### 变更
+
+- 改进了开发工作流的文档
+
+---
+
+## v0.4.0
+
+**发布日期：** 2026年1月8日
+
+### 新增
+
+- 带性能优化的**复制策略**
+  - 使用 FFI 的原生克隆（macOS 上的 `clonefile`、Linux 上的 `FICLONE`）
+  - 为 APFS 和 Btrfs/XFS 提供写时复制（CoW）支持
+  - 跨文件系统复制时回退到 rsync
+- 支持使用 glob 模式的**目录复制**
+- 采用新标记格式改进进度显示
+
+### 变更
+
+- 重构 CopyService 以提升性能
+- 增强进度显示，输出更加清爽
+
+### 修复
+
+- CopyService 测试中的资源泄漏
+- 进度显示中的空标记行
+
+---
+
+## v0.3.0
+
+**发布日期：** 2026年1月2日
+
+### 新增
+
+- 面向仓库安全的**信任系统**
+  - 仓库必须被显式信任之后才能运行钩子
+  - `vibe trust` 命令，用于管理受信任的仓库
+  - 以安全优先的方式防止恶意钩子被执行
+- 幂等的 `vibe start` —— 在已存在的 worktree 上运行时会直接复用它
+
+### 变更
+
+- 将日文界面消息替换为英文，以面向国际用户
+- 改进了仓库根路径的规范化
+
+### 修复
+
+- 仓库根路径规范化的问题
+
+---
+
+## v0.2.0
+
+**发布日期：** 2025年12月28日
+
+### 新增
+
+- 面向自动化工作流的**钩子系统**
+  - `pre_start`、`post_start`、`pre_clean`、`post_clean` 钩子
+  - 用于向 worktree 复制文件的 `files` 配置
+- 支持本地配置（`.vibe.local.toml`）
+- `vibe config` 命令，用于管理设置
+
+### 变更
+
+- 增强了 worktree 管理
+- 改进了 shell 集成
+
+---
+
+## v0.1.0
+
+**发布日期：** 2025年12月28日
+
+### 新增
+
+- 首个版本
+- 通过 `vibe start` 实现基本的 worktree 创建
+- 通过 `vibe clean` 清理 worktree
+- 多 shell 支持（Bash、Zsh、Fish、Nushell、PowerShell）
+- 支持 `.vibe.toml` 配置文件

@@ -79,6 +79,7 @@ vibe needs a shell wrapper function to change directories after creating or clea
     because `nu -c` runs `cd` in a child process, and it rejected any command carrying a
     flag. Both `--wrapped` and `for` are required: `--wrapped` lets flags through to
     `...args`, and nushell discards environment changes made inside an `each` closure.
+    Run `vibe doctor` to check whether a previously pasted wrapper is current.
     :::
 
   </TabItem>
@@ -93,6 +94,7 @@ vibe needs a shell wrapper function to change directories after creating or clea
     Requires vibe 2.2.0 or later. If you previously pasted the older
     `Invoke-Expression (& vibe.exe $args)` snippet, replace it — that version mishandled
     paths containing a single quote and threw an error whenever vibe produced no output.
+    Run `vibe doctor` to check whether a previously pasted wrapper is current.
     :::
 
   </TabItem>

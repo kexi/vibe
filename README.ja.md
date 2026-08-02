@@ -2,7 +2,7 @@
 
 Git Worktreeを簡単かつ超高速に管理するCLIツール。
 
-[English](README.md)
+[English](README.md) | [简体中文](README.zh.md)
 
 ## ドキュメント
 
@@ -23,6 +23,7 @@ Git Worktreeを簡単かつ超高速に管理するCLIツール。
 | `vibe verify`                      | 信頼ステータスとハッシュ履歴を検証                                       |
 | `vibe config`                      | 現在の設定を表示                                                         |
 | `vibe upgrade [options]`           | アップデートを確認しアップグレード方法を表示                             |
+| `vibe doctor`                      | 古い nushell / PowerShell ラッパーがないか環境をチェック                  |
 
 ### 例
 
@@ -635,4 +636,6 @@ Vibe は CLI ツールのセキュリティベストプラクティスに従っ�
 
 ## ライセンス
 
-Apache-2.0
+MIT — [LICENSE](./LICENSE) を参照してください。
+
+v2.x までのリリースは Apache-2.0 で公開されています。MIT ライセンスは v3.0.0 以降に適用されます（[#553](https://github.com/kexi/vibe/issues/553) 参照）。

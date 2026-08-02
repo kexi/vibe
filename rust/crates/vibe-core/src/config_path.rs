@@ -8,22 +8,30 @@
 use crate::error::{Result, VibeError};
 use std::path::{Component, Path, PathBuf};
 
-/// `$HOME/.config/vibe`, after validating `home`.
+/// Whether an environment-supplied directory root may be joined onto.
 ///
-/// Why walk `Path::components()` for `..` instead of `home.contains("..")`: a
+/// Non-empty, absolute, and free of `..` components. Shared with `vibe doctor`
+/// (which layers a Windows prefix restriction on top) so the two commands cannot
+/// disagree about which HOME values are usable.
+///
+/// Why walk `Path::components()` for `..` instead of `value.contains("..")`: a
 /// substring check would wrongly reject a legitimate directory like `a..b`,
 /// while a component walk rejects only a real parent-dir segment.
+pub(crate) fn is_valid_abs_root(value: &str) -> bool {
+    let path = Path::new(value);
+
+    let is_non_empty = !value.is_empty();
+    let is_absolute = path.is_absolute();
+    let has_parent_dir = path.components().any(|c| matches!(c, Component::ParentDir));
+
+    is_non_empty && is_absolute && !has_parent_dir
+}
+
+/// `$HOME/.config/vibe`, after validating `home`.
 pub fn config_dir(home: &str) -> Result<PathBuf> {
     let home_path = Path::new(home);
 
-    let is_non_empty = !home.is_empty();
-    let is_absolute = home_path.is_absolute();
-    let has_parent_dir = home_path
-        .components()
-        .any(|c| matches!(c, Component::ParentDir));
-
-    let is_valid_home = is_non_empty && is_absolute && !has_parent_dir;
-    if !is_valid_home {
+    if !is_valid_abs_root(home) {
         return Err(VibeError::Configuration(
             "Invalid HOME environment variable. \
              HOME must be an absolute path without '..' components."
@@ -75,11 +83,14 @@ fn set_dir_permissions_0700(_dir: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use vibe_test_support::{fake_root, fake_root_str};
 
     #[test]
     fn builds_expected_path() {
-        let dir = config_dir("/home/user").unwrap();
-        assert_eq!(dir, PathBuf::from("/home/user/.config/vibe"));
+        // A per-host root: `/home/user` carries no drive prefix, so on Windows it
+        // is relative and `config_dir` would (correctly) reject it.
+        let dir = config_dir(&fake_root_str("home/user")).unwrap();
+        assert_eq!(dir, fake_root("home/user").join(".config").join("vibe"));
     }
 
     #[test]
@@ -94,14 +105,17 @@ mod tests {
 
     #[test]
     fn rejects_parent_dir_component() {
-        assert!(config_dir("/home/../etc").is_err());
+        // Absolute on both hosts, so it is the ParentDir component — not the
+        // absoluteness check — that does the rejecting. A bare `/home/../etc` is
+        // relative on Windows and would never reach the guard under test.
+        assert!(config_dir(&fake_root_str("home/../etc")).is_err());
     }
 
     #[test]
     fn allows_dotdot_substring_in_a_name() {
         // `a..b` is a single, legitimate path segment, not a parent-dir ref.
-        let dir = config_dir("/home/a..b").unwrap();
-        assert_eq!(dir, PathBuf::from("/home/a..b/.config/vibe"));
+        let dir = config_dir(&fake_root_str("home/a..b")).unwrap();
+        assert_eq!(dir, fake_root("home/a..b").join(".config").join("vibe"));
     }
 
     #[cfg(unix)]

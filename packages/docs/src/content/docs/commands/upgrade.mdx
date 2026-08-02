@@ -81,7 +81,15 @@ vibe 0.8.0
 You are using the latest version.
 ```
 
+### Stale shell wrapper notice
+
+If your `$SHELL` is nushell or PowerShell (or you are on Windows) and the wrapper
+calling vibe is not the current one, `upgrade` appends a one-line note pointing at
+[`vibe doctor`](/commands/doctor/). The note is skipped when the wrapper already
+identifies itself as the current one.
+
 ## Related
 
 - [Installation](/installation/) - Installation methods
+- [doctor](/commands/doctor/) - Check the environment for a stale shell wrapper
 - [Changelog](/changelog/) - Version history

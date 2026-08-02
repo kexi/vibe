@@ -1,0 +1,98 @@
+---
+title: vibe doctor
+description: 古いシェルラッパーなど、環境の問題をチェックする
+sidebar:
+  order: 6
+---
+
+`doctor`コマンドは既知の環境問題をチェックします。現時点での役割は1つで、シェルプロファイルにあるnushell/PowerShellのラッパーが最新かどうかを教えてくれます。
+
+v3.0.0で追加されました。
+
+## 使い方
+
+```bash
+vibe doctor
+```
+
+### `-V`, `--verbose`
+
+存在しないものも含め、チェックしたすべてのパスを一覧表示します。
+
+```bash
+vibe doctor --verbose
+```
+
+## なぜ必要か
+
+vibe 2.2.0より前に配布していたnushell/PowerShellのラッパーは壊れていました。nushell版は`cd`を子プロセスで実行していたため（ディレクトリが実際には変わらない）、さらにフラグ付きの呼び出しをすべて拒否していました。PowerShell版はシングルクォートを含むパスを正しく扱えず、vibeが何も出力しないときにエラーを投げていました。
+
+vibeはユーザーのシェル設定を書き換えないため、それらのスニペットを貼り付けたままなら今も壊れたままです。`vibe doctor`はそれを見つけて、置き換え方を案内します。
+
+bash・zsh・fishのラッパーは壊れていなかったため、チェック対象外です。
+
+## チェック内容
+
+現行のラッパーは`--eval-dialect`フラグを渡しますが、古いラッパーは渡しません。`doctor`は以下の各プロファイルから`vibe`関数の定義を探し、その定義がdialectを要求しているかを報告します。
+
+| シェル     | プラットフォーム | パス                                                                                                                                                       |
+| ---------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| nushell    | Linux            | `XDG_CONFIG_HOME`が設定されていれば`$XDG_CONFIG_HOME/nushell/config.nu`、そうでなければ`~/.config/nushell/config.nu`                                       |
+| nushell    | macOS            | `XDG_CONFIG_HOME`が設定されていれば`$XDG_CONFIG_HOME/nushell/config.nu`、そうでなければ`~/Library/Application Support/nushell/config.nu`（nuのmacOS既定）  |
+| nushell    | Windows          | `%APPDATA%\nushell\config.nu`                                                                                                                              |
+| PowerShell | macOS / Linux    | `XDG_CONFIG_HOME`が設定されていれば`$XDG_CONFIG_HOME/powershell/…`、そうでなければ`~/.config/powershell/…`                                                 |
+| PowerShell | Windows          | `%USERPROFILE%\Documents\{PowerShell,WindowsPowerShell}\*.ps1`、および`%OneDrive%`が設定されている場合は`%OneDrive%\Documents\`配下の同じ2つのディレクトリ |
+
+どちらのシェルも設定ディレクトリを1つだけ解決するため、チェックするのもその1つだけです。Unixではどちらも`XDG_CONFIG_HOME`が設定されていればそれに従い（nushellは独自の規則により、PowerShellは.NETの`ApplicationData`フォルダがそこへ解決されるため）、設定されていなければプラットフォーム既定の場所を使います。有効でない方のディレクトリに残っているファイルは、シェルが読み込むことのないファイルです。それを報告してしまうと、環境に何の影響もないファイルのために実行が失敗してしまいます。
+
+存在しないファイルは報告されません。報告される各ファイルには次のいずれかが付きます。
+
+| ステータス                                     | 意味                                                                          |
+| ---------------------------------------------- | ----------------------------------------------------------------------------- |
+| `current`                                      | ラッパーがdialectを要求している（対応不要）                                   |
+| `stale`                                        | 2.2.0より前のラッパー。置き換えが必要                                         |
+| `no vibe wrapper`                              | ファイルは存在するが`vibe`関数の定義がない                                    |
+| `could not determine (wrapper block too long)` | ラッパーの`{ ... }`ブロックが走査上限内で閉じなかった。手動で比較してください |
+| `not checked (not a regular file)`             | パスがディレクトリ・ソケット・デバイスである                                  |
+| `unreadable`                                   | ファイルは存在するが読み取れない（権限・I/Oエラー）                           |
+
+`<変数名>: skipped (invalid value)`という行は、その環境変数は設定されているものの、ディレクトリの起点としては使えない値であることを表します。値は`..`を含まない絶対パスである必要があります（Windowsではさらにドライブレターのパスであることが必要で、UNC共有やデバイスパスは拒否されます）。表示されるのは変数名だけで、その値が出力されることはありません。単に*未設定*の変数については行自体が出ません。`XDG_CONFIG_HOME`や`%OneDrive%`が未設定なのは通常の状態だからです。
+
+UTF-16で保存されたプロファイル（Windows PowerShellの`Out-File`が既定で生成していた形式）や、UTF-8のバイトオーダーマーク付きのプロファイルは、判定前にデコードされます。バイトオーダーマークのないUTF-16ファイルは検出できません。
+
+## 出力
+
+```
+$ vibe doctor
+Checking shell wrappers for nushell and PowerShell...
+  /Users/you/.config/nushell/config.nu: stale
+    Fix: run 'vibe shell-setup --shell nushell' and replace the vibe function in /Users/you/.config/nushell/config.nu
+If your wrapper is sourced from another file, compare it with 'vibe shell-setup --shell <nushell|powershell>'.
+```
+
+すべての出力は標準エラー出力に書き出されます。標準出力はシェルのeval用プロトコルに予約されているため、そこにレポートを出すとラッパーによって*実行*されてしまいます。
+
+## 終了コード
+
+| コード | 意味                                                                                      |
+| ------ | ----------------------------------------------------------------------------------------- |
+| `0`    | 古いラッパーは見つからなかった（プロファイル自体がない場合も含む）                        |
+| `1`    | 古いラッパーが1つ以上見つかった、**または**利用できるプロファイルの起点がない（下記参照） |
+
+`HOME`と`XDG_CONFIG_HOME`の両方が未設定または不正な場合（Windowsでは`APPDATA`・`USERPROFILE`・`OneDrive`）、探す場所そのものが存在しません。その場合`doctor`は、一度も検査していないファイルについて「問題なし」と報告する代わりに、理由を示して失敗します。
+
+レポートは`--quiet`でも表示されるため、終了コードが0以外のときに何も表示されない状況は起きません。
+
+スクリプトから終了コードを取得したい場合は、シェルラッパーではなくバイナリを直接呼び出してください。POSIXなら`command vibe doctor`、nushellなら`^vibe doctor`、PowerShellなら`vibe.exe doctor`（または`& vibe.exe doctor`）です。POSIXのラッパーはvibeを`eval "$(...)"`の中で実行するため終了コードが失われ、nushellのラッパーは外部コマンドが0以外で終了すると呼び出し元のスクリプトを中断してしまいます。
+
+## 注意点
+
+- **別ファイルから読み込んでいるラッパーは検出できません。** プロファイルが別のファイルを`source`して`vibe`を定義している場合、`doctor`は`no vibe wrapper`と報告します。その場合は`vibe shell-setup --shell nushell`（または`powershell`）の出力と手動で比較してください。
+- **特殊な文字列構文は`stale`と判定されることがあります。** 判定の前に、`doctor`は文字列リテラル、PowerShellの`<# … #>`ブロックコメント、PowerShellのヒアストリング（`@"…"@`、`@'…'@`）、nushellの生文字列（`r#'…'#`）を空白で塗りつぶします。これらはいずれも改行をまたいで追跡されるため、その内部にある波かっこや`--eval-dialect`という記述が判定を左右することはありません。残る制約は次の2つです。コード中で引用符の対応が取れていない場合はラッパーの残り全体が塗りつぶされること、そしてdialectの値そのものを引用符で囲んだ場合（`--eval-dialect "powershell"`）に値が隠れてしまうことです。いずれも`stale`と判定されます。判定の誤りは常にこちら側に倒れ、壊れたラッパーを正常と見なすことはありません。なお`vibe shell-setup`は値を引用符なしで出力します。
+- **OneDriveのKnown Folderリダイレクト。** `%OneDrive%`が設定されていれば`%OneDrive%\Documents`もチェックしますが、`Documents`フォルダが他の場所にリダイレクトされている場合は見つけられません。
+
+## 関連
+
+- [shell-setup](/ja/commands/shell-setup/) - 現行のシェルラッパーを出力
+- [upgrade](/ja/commands/upgrade/) - 更新の確認
+- [シェルセットアップ](/ja/setup/) - 対応シェルごとのラッパースニペット

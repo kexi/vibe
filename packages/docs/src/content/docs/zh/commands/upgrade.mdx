@@ -1,0 +1,92 @@
+---
+title: vibe upgrade
+description: 检查更新并显示升级方法
+sidebar:
+  order: 5
+---
+
+`upgrade` 命令会检查新版本，并根据你的安装方式显示相应的升级方法。
+
+## 使用方法
+
+```bash
+vibe upgrade
+```
+
+## 选项
+
+### `--check`
+
+仅检查是否有新版本可用，不显示升级方法。
+
+```bash
+vibe upgrade --check
+```
+
+### `-V`, `--verbose`
+
+显示详细输出，包括所访问的 registry URL。
+
+```bash
+vibe upgrade --verbose
+```
+
+### `-q`, `--quiet`
+
+抑制非必要的输出。仅在有可用更新时才显示内容。
+
+```bash
+vibe upgrade --quiet
+```
+
+## 行为
+
+### 版本检查
+
+该命令会从 npm registry 获取最新版本，并与你当前的版本进行比较：
+
+```
+$ vibe upgrade
+vibe 0.8.0
+
+A new version is available: 0.8.1
+
+To upgrade:
+  brew upgrade kexi/tap/vibe
+
+Release notes:
+  https://github.com/kexi/vibe/releases/tag/v0.8.1
+```
+
+### 安装方式的自动检测
+
+vibe 会自动检测它的安装方式，并显示相应的升级命令：
+
+| 方式     | 升级命令                                   |
+| -------- | ------------------------------------------ |
+| npm      | `npm install -g @kexi/vibe@latest`         |
+| Homebrew | `brew upgrade kexi/tap/vibe`               |
+| Deb      | `sudo apt update && sudo apt upgrade vibe` |
+| Binary   | 显示 GitHub releases 的下载链接            |
+| Dev      | `pnpm run build:rust`                      |
+
+### 已是最新版本
+
+如果你已经在使用最新版本：
+
+```
+$ vibe upgrade
+vibe 0.8.0
+
+You are using the latest version.
+```
+
+### 过时 shell 包装函数的提示
+
+如果你的 `$SHELL` 是 nushell 或 PowerShell（或者你正在 Windows 上），并且调用 vibe 的包装函数不是当前版本，`upgrade` 会追加一行提示，引导你使用 [`vibe doctor`](/zh/commands/doctor/)。当包装函数已表明自己是当前版本时，这行提示会被跳过。
+
+## 相关内容
+
+- [安装](/zh/installation/) - 安装方式
+- [doctor](/zh/commands/doctor/) - 检查环境中是否存在过时的 shell 包装函数
+- [变更历史](/zh/changelog/) - 版本历史

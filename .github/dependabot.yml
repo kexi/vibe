@@ -1,6 +1,11 @@
 version: 2
 updates:
   - package-ecosystem: "github-actions"
-    directory: "/"
+    # "/" covers .github/workflows only; composite actions must be listed
+    # explicitly or their `uses:` pins are never bumped (the SHA-pinned
+    # third-party actions now live in .github/actions/setup-nix).
+    directories:
+      - "/"
+      - "/.github/actions/*"
     schedule:
       interval: "weekly"

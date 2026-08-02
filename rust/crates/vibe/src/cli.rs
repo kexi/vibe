@@ -86,6 +86,8 @@ pub enum Command {
     Config,
     /// Check for updates and show upgrade instructions.
     Upgrade(UpgradeArgs),
+    /// Check the environment for problems (stale nushell/PowerShell wrappers).
+    Doctor,
     /// Print shell wrapper function for eval.
     #[command(name = "shell-setup")]
     ShellSetup(ShellSetupArgs),
@@ -363,6 +365,38 @@ mod consistency_tests {
             .filter(|k| !clap_longs.contains(**k))
             .collect();
         assert!(dead.is_empty(), "dead internal-flag allowlist: {dead:?}");
+    }
+
+    /// Drift guard for the `--eval-dialect` vocabulary.
+    ///
+    /// `vibe doctor` decides whether a pasted wrapper is current by matching the
+    /// dialect value in the wrapper's text against
+    /// `EvalDialect::accepted_values()`. If clap gained an alias that list did not
+    /// know about, every user of the new spelling would be told their correct
+    /// wrapper is stale — so the two vocabularies must stay identical.
+    #[test]
+    fn eval_dialect_spellings_match_the_core_vocabulary() {
+        use clap::ValueEnum;
+        use std::collections::BTreeSet;
+        use vibe_core::shell::EvalDialect;
+
+        for variant in super::EvalDialectArg::value_variants() {
+            let value = variant
+                .to_possible_value()
+                .expect("every dialect variant is selectable");
+            let clap_spellings: BTreeSet<&str> = std::iter::once(value.get_name())
+                .chain(value.get_name_and_aliases())
+                .collect();
+            let core_spellings: BTreeSet<&str> = EvalDialect::from(*variant)
+                .accepted_values()
+                .iter()
+                .copied()
+                .collect();
+            assert_eq!(
+                clap_spellings, core_spellings,
+                "--eval-dialect spellings drifted for {variant:?}"
+            );
+        }
     }
 
     /// Per-subcommand cross-check: each subcommand's clap flags must exactly

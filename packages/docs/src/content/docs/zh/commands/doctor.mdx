@@ -1,0 +1,98 @@
+---
+title: vibe doctor
+description: 检查环境中的问题，例如过时的 shell 包装函数
+sidebar:
+  order: 6
+---
+
+`doctor` 命令用于检查环境中的已知问题。目前它只做一件事：告诉你 shell 配置文件中的 nushell 或 PowerShell 包装函数是否为当前版本。
+
+自 v3.0.0 起提供。
+
+## 使用方法
+
+```bash
+vibe doctor
+```
+
+### `-V`, `--verbose`
+
+同时列出所有被检查过的路径，包括那些并不存在的路径。
+
+```bash
+vibe doctor --verbose
+```
+
+## 为什么需要它
+
+vibe 2.2.0 之前分发的 nushell 与 PowerShell 包装函数是有缺陷的 —— nushell 版本在子进程中执行 `cd`（因此从未真正改变过你的目录），并且会拒绝任何标志；PowerShell 版本无法正确处理包含单引号的路径，并且在 vibe 没有产生任何输出时会抛出错误。
+
+vibe 绝不会改写你的 shell 配置，所以如果你粘贴过其中某个代码片段，它至今仍在那里、也仍然是坏的。`vibe doctor` 会找到它，并告诉你如何替换。
+
+bash、zsh 与 fish 的包装函数从未出现过问题，因此不在检查范围内。
+
+## 检查内容
+
+当前的包装函数会传递 `--eval-dialect` 标志，而旧的包装函数不会。`doctor` 会在下列各个配置文件中查找 `vibe` 函数的定义，并报告该定义是否请求了自己的 dialect。
+
+| Shell      | 平台          | 路径                                                                                                                                                     |
+| ---------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| nushell    | Linux         | 设置了 `XDG_CONFIG_HOME` 时为 `$XDG_CONFIG_HOME/nushell/config.nu`，否则为 `~/.config/nushell/config.nu`                                                 |
+| nushell    | macOS         | 设置了 `XDG_CONFIG_HOME` 时为 `$XDG_CONFIG_HOME/nushell/config.nu`，否则为 `~/Library/Application Support/nushell/config.nu`（nu 在 macOS 上的默认位置） |
+| nushell    | Windows       | `%APPDATA%\nushell\config.nu`                                                                                                                            |
+| PowerShell | macOS / Linux | 设置了 `XDG_CONFIG_HOME` 时为 `$XDG_CONFIG_HOME/powershell/…`，否则为 `~/.config/powershell/…`                                                           |
+| PowerShell | Windows       | `%USERPROFILE%\Documents\{PowerShell,WindowsPowerShell}\*.ps1`，以及在设置了 `%OneDrive%` 时 `%OneDrive%\Documents\` 下的同样两个目录                    |
+
+每种 shell 都只会解析出唯一一个配置目录，因此也只检查那一个。在 Unix 上两者都遵循 `XDG_CONFIG_HOME`（nushell 依据自身的规则，PowerShell 则是因为 .NET 的 `ApplicationData` 文件夹会解析到那里），未设置时则使用各自的平台默认位置。留在*未生效*的那个目录中的文件是你的 shell 根本不会加载的，报告它只会让检查因为一个对你的环境毫无影响的文件而失败。
+
+不存在的文件不会被报告。每个被报告的文件会得到以下状态之一：
+
+| 状态                                           | 含义                                                            |
+| ---------------------------------------------- | --------------------------------------------------------------- |
+| `current`                                      | 包装函数请求了自己的 dialect —— 无需处理                        |
+| `stale`                                        | 2.2.0 之前的包装函数；需要替换                                  |
+| `no vibe wrapper`                              | 文件存在，但其中没有定义 `vibe` 函数                            |
+| `could not determine (wrapper block too long)` | 包装函数的 `{ ... }` 代码块在扫描上限内始终没有闭合；请手动比较 |
+| `not checked (not a regular file)`             | 该路径是目录、套接字或设备                                      |
+| `unreadable`                                   | 文件存在但无法读取（权限、I/O 错误）                            |
+
+形如 `<变量名>: skipped (invalid value)` 的行表示该环境变量虽然已设置，但其取值无法用作目录根：它必须是不含 `..` 的绝对路径（在 Windows 上还必须是带盘符的路径，UNC 共享或设备路径都会被拒绝）。输出中只会出现变量名，其取值绝不会被打印。而对于根本*未设置*的变量，则不会产生任何行，因为 `XDG_CONFIG_HOME` 与 `%OneDrive%` 未设置本就是常态。
+
+以 UTF-16 保存的配置文件（Windows PowerShell 的 `Out-File` 默认生成的格式）以及带 UTF-8 字节顺序标记的配置文件，都会在判定前先行解码。没有字节顺序标记的 UTF-16 文件则无法识别。
+
+## 输出
+
+```
+$ vibe doctor
+Checking shell wrappers for nushell and PowerShell...
+  /Users/you/.config/nushell/config.nu: stale
+    Fix: run 'vibe shell-setup --shell nushell' and replace the vibe function in /Users/you/.config/nushell/config.nu
+If your wrapper is sourced from another file, compare it with 'vibe shell-setup --shell <nushell|powershell>'.
+```
+
+所有输出都写入标准错误。标准输出保留给 shell 的 eval 协议使用，因此把报告打印到那里会被你的包装函数*执行*。
+
+## 退出码
+
+| 退出码 | 含义                                                                       |
+| ------ | -------------------------------------------------------------------------- |
+| `0`    | 未发现过时的包装函数（包括完全没有配置文件）                               |
+| `1`    | 发现了至少一个过时的包装函数，**或者**不存在可用的配置文件根目录（见下文） |
+
+如果 `HOME` 与 `XDG_CONFIG_HOME` 都未设置或取值无效（在 Windows 上则是 `APPDATA`、`USERPROFILE` 与 `OneDrive`），就根本无处可查。此时 `doctor` 会给出说明并失败，而不是对一个从未检查过的环境宣称一切正常。
+
+即使指定了 `--quiet`，报告也依然会输出，因此非零退出码绝不会悄无声息。
+
+若要在脚本中获取退出码，请直接调用二进制文件，而不要经过 shell 包装函数 —— POSIX 用 `command vibe doctor`，nushell 用 `^vibe doctor`，PowerShell 用 `vibe.exe doctor`（或 `& vibe.exe doctor`）。POSIX 的包装函数在 `eval "$(...)"` 中运行 vibe，会丢弃其退出码；而 nushell 的包装函数在外部命令以非零状态退出时会中断调用它的脚本。
+
+## 注意事项
+
+- **从其他文件加载的包装函数无法被发现。** 如果你的配置文件通过 `source` 加载了另一个定义 `vibe` 的文件，`doctor` 会报告 `no vibe wrapper`。请手动将该文件与 `vibe shell-setup --shell nushell`（或 `powershell`）的输出进行比较。
+- **不常见的字符串语法可能被判定为 `stale`。** 在做出判断之前，`doctor` 会把字符串字面量、PowerShell 的 `<# … #>` 块注释、PowerShell 的 here-string（`@"…"@`、`@'…'@`）以及 nushell 的原始字符串（`r#'…'#`）涂成空白，并且这些状态都会跨行跟踪。因此它们内部的花括号或 `--eval-dialect` 字样都无法左右判定结果。剩下的限制有两点：代码中出现不成对的引号时，包装函数的剩余部分都会被涂白；给 dialect 取值本身加引号（`--eval-dialect "powershell"`）会让取值被隐藏。这两种情况都会被判为 `stale`。判断出错时总是倒向这一侧，绝不会把有缺陷的包装函数当作正常；另外 `vibe shell-setup` 输出的是不带引号的形式。
+- **OneDrive 的已知文件夹重定向。** 设置了 `%OneDrive%` 时会检查 `%OneDrive%\Documents`，但如果 `Documents` 文件夹被重定向到了其他位置，则无法找到。
+
+## 相关内容
+
+- [shell-setup](/zh/commands/shell-setup/) - 输出当前的 shell 包装函数
+- [upgrade](/zh/commands/upgrade/) - 检查更新
+- [Shell 设置](/zh/setup/) - 各受支持 shell 的包装函数代码片段

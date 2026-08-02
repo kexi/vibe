@@ -21,6 +21,7 @@ vibeはGit Worktreeを管理するためのシンプルなコマンドセット�
 | `vibe untrust`                       | 設定ファイルの信頼を解除                           |
 | `vibe config`                        | 現在の設定を表示                                   |
 | `vibe upgrade`                       | アップデートを確認しアップグレード方法表示         |
+| `vibe doctor`                        | 古いシェルラッパーがないか環境をチェック           |
 | `vibe shell-setup`                   | シェルラッパー関数（および任意で補完）を出力       |
 
 ## クイックリファレンス
@@ -49,6 +50,9 @@ vibe config
 
 # アップデートを確認
 vibe upgrade
+
+# 古いシェルラッパーがないか環境をチェック
+vibe doctor
 ```
 
 ## グローバルオプション
@@ -73,4 +77,5 @@ vibe upgrade
 - [trust](/ja/commands/trust/) - 設定の信頼管理
 - [config](/ja/commands/config/) - 設定の表示
 - [upgrade](/ja/commands/upgrade/) - アップデートの確認
+- [doctor](/ja/commands/doctor/) - 古いシェルラッパーがないか環境をチェック
 - [shell-setup](/ja/commands/shell-setup/) - シェルラッパー関数と fish 補完を出力

@@ -303,7 +303,7 @@ jobs:
           bun run scripts/stage-platform-package.ts \
             --platform "$PLATFORM" --arch "$ARCH" --binary "dist-bin/$ARTIFACT"
 
-      - name: Assert tarball contents (bin/vibe + THIRD-PARTY-LICENSES.md) (G-3)
+      - name: Assert tarball contents (bin/vibe + LICENSE + THIRD-PARTY-LICENSES.md) (G-3)
         if: steps.guard.outputs.skip != 'true'
         env:
           PLATFORM: ${{ matrix.platform }}
@@ -409,6 +409,25 @@ jobs:
           fi
 
           echo "Version validation passed: $TAG_VERSION"
+
+      - name: Stage LICENSE into the shim package
+        if: steps.guard.outputs.skip != 'true'
+        # npm includes a top-level LICENSE in the tarball irrespective of
+        # `files`, so copying it here is enough to publish vibe's terms. Not
+        # committed under packages/npm/: the root LICENSE is canonical and a
+        # checked-in copy would be a second place to keep in sync.
+        run: |
+          cp LICENSE packages/npm/LICENSE
+          test -s packages/npm/LICENSE
+
+      - name: Assert shim tarball contents (bin/vibe.cjs + LICENSE) (G-3)
+        if: steps.guard.outputs.skip != 'true'
+        # Asserting the source file exists only proves the cp ran; this checks
+        # what npm will actually pack. `files` does not list LICENSE, so the
+        # tarball's contents rest entirely on npm's implicit-inclusion
+        # behaviour — verify it here rather than trusting it, with the same
+        # unit-tested script the platform packages use.
+        run: bun run scripts/verify-platform-tarball.ts --package npm
 
       - name: Publish @kexi/vibe
         if: steps.guard.outputs.skip != 'true'

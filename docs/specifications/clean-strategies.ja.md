@@ -1,4 +1,4 @@
-> 🇺🇸 [English](./clean-strategies.md)
+> 🇺🇸 [English](./clean-strategies.md) | 🇨🇳 [简体中文](./clean-strategies.zh.md)
 
 # Clean Strategies
 

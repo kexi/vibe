@@ -1,0 +1,43 @@
+name: Assert LICENSE matches the licensing era
+description: >-
+  Fail-closed guard for the two-era licensing boundary drawn by the relicense
+  (#553): releases on the 2.x line were published under Apache-2.0 and must
+  stay that way; everything from 3.0.0 on is MIT. Both arms assert the license
+  text they REQUIRE rather than the one they reject. Why not "fail if 2.x sees
+  MIT": that shape passes a 3.x built from a stale Apache tree, and any
+  rewording of LICENSE (e.g. "The MIT License (MIT)") silently disables it — a
+  missing match would mean "allowed" instead of "stop". Requiring a positive
+  match fails closed on both an unexpected version/license pairing and on
+  wording drift. This action is the single home of the era rule so the stable
+  and beta release workflows cannot drift apart.
+
+inputs:
+  version:
+    description: >-
+      The version being released, without a leading "v". A -beta.N suffix
+      never affects the 2.* prefix match.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Assert LICENSE matches the release version's licensing era
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        case "$VERSION" in
+          2.*)
+            EXPECTED="Apache License"
+            ERA="the 2.x line is Apache-2.0"
+            ;;
+          *)
+            EXPECTED="MIT License"
+            ERA="releases from 3.0.0 on are MIT"
+            ;;
+        esac
+        if ! grep -q "$EXPECTED" LICENSE; then
+          echo "::error::Refusing to release v$VERSION: LICENSE does not contain \"$EXPECTED\" ($ERA — see #553)."
+          exit 1
+        fi
+        echo "License/version consistency check passed for $VERSION (LICENSE contains \"$EXPECTED\")"

@@ -47,7 +47,7 @@ mod tests {
     use super::*;
     use crate::git::RepoInfo;
     use crate::io::FakeIo;
-    use vibe_test_support::Fixture;
+    use vibe_test_support::{to_slash, Fixture};
 
     struct NoResolver;
     impl RepoResolver for NoResolver {
@@ -68,7 +68,9 @@ mod tests {
 
         let text = io.stderr_text();
         assert!(text.contains("Settings file:"));
-        assert!(text.contains(".config/vibe/settings.json"));
+        // The rendered path uses the host separator (`.config\vibe\...` on
+        // Windows); what this asserts is the location, not the punctuation.
+        assert!(to_slash(&text).contains(".config/vibe/settings.json"));
         // Default settings serialize without `$schema`.
         assert!(text.contains("\"version\": 3"));
         assert!(!text.contains("$schema"));

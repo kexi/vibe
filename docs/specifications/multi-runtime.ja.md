@@ -1,4 +1,4 @@
-> 🇺🇸 [English](./multi-runtime.md)
+> 🇺🇸 [English](./multi-runtime.md) | 🇨🇳 [简体中文](./multi-runtime.zh.md)
 
 # Multi-Runtime Support
 

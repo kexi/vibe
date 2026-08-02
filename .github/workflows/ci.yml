@@ -5,6 +5,16 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+    # `labeled` is not one of the default activity types (opened/synchronize/
+    # reopened), so without it applying `ci-full` to an open PR would not start a
+    # run — the label would only take effect on the next push, which defeats the
+    # point of being able to opt a finished PR into the Windows leg.
+    #
+    # The cost is a duplicate full run whenever ANY label is added to an open PR
+    # (the filter is per-event, not per-label). There is no `concurrency` group on
+    # this workflow, so those runs do not cancel each other; labels are applied
+    # rarely enough here that this is cheaper than the alternative.
+    types: [opened, synchronize, reopened, labeled]
 
 # Least privilege: CI only reads the repository. Jobs that need more must
 # request it explicitly at the job level.
@@ -30,6 +40,24 @@ jobs:
         run: bun run fmt:check
       - name: Run linter
         run: bun run lint
+      # Documentation i18n (en/ja/zh): triplet completeness, docs-site locale
+      # mirroring, and cross-language header links. Pure filesystem inspection —
+      # no cargo, no build — so it belongs in the cheap lint job rather than the
+      # docs job, which is skipped when nothing under packages/docs/ changed and
+      # would therefore miss a root README/docs translation going stale.
+      - name: Check documentation i18n sync
+        run: pnpm run check:i18n
+      # The npm-package tests (launcher shim + the release/packaging scripts)
+      # otherwise run only in publish-npm.yml, i.e. after the merge that would
+      # have broken them. This job already has pnpm install, so they gate the PR.
+      - name: Run npm package tests
+        run: pnpm run test:npm
+      # THIRD-PARTY-LICENSES.md freshness + the `ring` link guard. Needs cargo
+      # (cargo metadata / cargo tree), which setup-toolchain provides here.
+      # publish-npm.yml also runs --check, but only immediately before publish —
+      # too late to be a PR gate.
+      - name: Check third-party license notices
+        run: pnpm run check:licenses
 
   rust-linux:
     if: github.event_name == 'push' || github.base_ref == 'main'
@@ -81,6 +109,49 @@ jobs:
         env:
           VIBE_REQUIRE_SHELLS: bash,zsh,fish,nu,pwsh
         run: cargo test --manifest-path rust/Cargo.toml --workspace
+
+  # The Windows-only coverage the other jobs structurally cannot provide, in two
+  # parts:
+  #
+  # 1. The whole vibe-core unit suite. Its `#[cfg(windows)]`-only tests
+  #    (path-prefix validation, the Windows profile locations, the fast-remove
+  #    argv) are compiled AND run nowhere else — on linux/macos they are cfg'd
+  #    out entirely, so a break in them would otherwise reach a release. The rest
+  #    of the crate runs here too now that its fixtures are platform-portable
+  #    (#570); shared tests with internal `cfg(windows)` assertion branches are
+  #    only actually exercised by this job.
+  # 2. The PowerShell wrapper round-trip: rust-linux/rust-macos run the pwsh leg
+  #    on Unix pwsh, which cannot exercise Windows path semantics, vibe.exe
+  #    resolution, or `& vibe.exe ... @args` splatting where PowerShell users
+  #    actually live.
+  #
+  # `-p vibe`'s integration suites (eval_contract and friends) are deliberately
+  # left out: they spawn the binary and git repeatedly, which is slow on the
+  # Windows runner, and they carry no cfg(windows) code of their own. Windows
+  # PowerShell 5.1 is not exercised either (the wrapper targets pwsh 7).
+  rust-windows:
+    # Normally full-run-only (push / release PRs into main), but the `ci-full`
+    # label opts a develop PR in, so a change touching Windows-only behavior can
+    # prove this leg BEFORE merge rather than discovering it on the push to
+    # develop. The workflow is read from the PR's merge commit, so labelling a PR
+    # that edits this file takes effect within that same PR.
+    if: github.event_name == 'push' || github.base_ref == 'main' || contains(github.event.pull_request.labels.*.name, 'ci-full')
+    runs-on: windows-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-toolchain
+      # The whole crate runs: its fixtures are platform-portable as of #570, so
+      # there is nothing left to scope around.
+      - name: vibe-core unit tests
+        run: cargo test --manifest-path rust/Cargo.toml -p vibe-core
+      - name: Wrapper round-trip test (Windows-native pwsh)
+        env:
+          VIBE_REQUIRE_SHELLS: pwsh
+        run: cargo test --manifest-path rust/Cargo.toml -p vibe --test wrapper_round_trip
 
   # Compile the shipped Rust binary for every supported target so a
   # target-specific build break is caught before release. The
@@ -172,6 +243,15 @@ jobs:
         run: |
           VERSION=$(bun run scripts/get-version.ts)
           bun run scripts/build-deb.ts "$VERSION" ${{ matrix.arch }} "rust/target/${{ matrix.target }}/release/vibe"
+
+      # Inspect the archive (no install, no sudo): a package that drops
+      # usr/share/doc/vibe/copyright or THIRD-PARTY-LICENSES.md still passes the
+      # smoke test below, so the contents are asserted separately.
+      - name: Verify .deb contents
+        run: |
+          set -euo pipefail
+          VERSION=$(bun run scripts/get-version.ts)
+          bun run scripts/verify-deb.ts "vibe_${VERSION}_${{ matrix.arch }}.deb"
 
       # G-11: install the freshly built .deb and run the installed binary, so a
       # broken package layout (wrong install path, missing exec bit, bad control
@@ -332,22 +412,31 @@ jobs:
             --platform "$PLATFORM" --arch "$ARCH" \
             --binary "$BIN"
 
-      # G-3: the published tarball MUST contain bin/vibe (executable) and
-      # THIRD-PARTY-LICENSES.md. Assert it before packing so a bad `files` glob
-      # fails here rather than shipping an empty package.
+      # G-3: the published tarball MUST contain bin/vibe (executable), LICENSE
+      # and THIRD-PARTY-LICENSES.md. Assert it before packing so a bad `files`
+      # glob fails here rather than shipping an empty package.
       #
       # Skipped on Windows: the assertion is platform-INDEPENDENT (the `files`
       # glob is the same package.json on every OS, already verified by the
-      # ubuntu/macos legs), and the script's `npm pack` spawn does not work under
+      # ubuntu/macos legs; LICENSE is not in `files` at all — npm's implicit
+      # top-level-LICENSE rule is equally OS-independent, and a missing staged
+      # LICENSE already fails stage-platform-package.ts on every leg, Windows
+      # included), and the script's `npm pack` spawn does not work under
       # Bun on Windows (Bun's execFile cannot launch the npm.cmd shim). The
       # Windows leg's real purpose — that the shim execs the binary — is covered
       # by the steps below, which run npm/pnpm through Git Bash, not Bun.
-      - name: Assert platform tarball contents (G-3)
+      - name: Assert platform and shim tarball contents (G-3)
         if: runner.os != 'Windows'
         env:
           PLATFORM: ${{ matrix.platform }}
           ARCH: ${{ matrix.arch }}
-        run: bun run scripts/verify-platform-tarball.ts --package "vibe-${PLATFORM}-${ARCH}"
+        run: |
+          bun run scripts/verify-platform-tarball.ts --package "vibe-${PLATFORM}-${ARCH}"
+          # Mirror publish-npm.yml's shim staging so the shim leg of G-3 (npm's
+          # implicit top-level-LICENSE inclusion actually firing for this
+          # package.json) is proven here in PR CI, not first at publish time.
+          cp LICENSE packages/npm/LICENSE
+          bun run scripts/verify-platform-tarball.ts --package npm
 
       - name: Pack shim and platform tarballs
         id: pack
@@ -550,6 +639,7 @@ jobs:
         lint,
         rust-linux,
         rust-macos,
+        rust-windows,
         build-rust-binaries,
         build-deb,
         e2e-test,
@@ -571,6 +661,7 @@ jobs:
           LINT: ${{ needs.lint.result }}
           RUST_LINUX: ${{ needs.rust-linux.result }}
           RUST_MACOS: ${{ needs.rust-macos.result }}
+          RUST_WINDOWS: ${{ needs.rust-windows.result }}
           BUILD_RUST_BINARIES: ${{ needs.build-rust-binaries.result }}
           BUILD_DEB: ${{ needs.build-deb.result }}
           E2E_TEST: ${{ needs.e2e-test.result }}
@@ -583,11 +674,12 @@ jobs:
           set -euo pipefail
 
           failed=0
-          full_only_jobs=" RUST_LINUX BUILD_RUST_BINARIES BUILD_DEB E2E_TEST NPM_INSTALL_MATRIX "
+          full_only_jobs=" RUST_LINUX RUST_WINDOWS BUILD_RUST_BINARIES BUILD_DEB E2E_TEST NPM_INSTALL_MATRIX "
           for job in \
             LINT \
             RUST_LINUX \
             RUST_MACOS \
+            RUST_WINDOWS \
             BUILD_RUST_BINARIES \
             BUILD_DEB \
             E2E_TEST \

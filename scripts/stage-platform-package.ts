@@ -28,7 +28,7 @@
  */
 
 import { copyFile, mkdir, chmod, stat } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const SUPPORTED_PLATFORMS = ["linux", "darwin", "win32"] as const;
 const SUPPORTED_ARCHES = ["x64", "arm64"] as const;
@@ -100,17 +100,26 @@ Options:
 }
 
 export interface StageOptions {
-  /** Repo root the `packages/` tree and THIRD-PARTY-LICENSES.md resolve under. */
+  /** Repo root the `packages/` tree, LICENSE and THIRD-PARTY-LICENSES.md resolve under. */
   root?: string;
-  /** Sink for the not-found-license warning; defaults to console.error. */
+  /** Sink for the not-found-notice warning; defaults to console.error. */
   warn?: (msg: string) => void;
 }
 
 /**
  * Copy the built binary into `packages/vibe-<platform>-<arch>/bin/vibe`
- * (`bin/vibe.exe` on win32, 0o755) and stage THIRD-PARTY-LICENSES.md beside it.
- * Returns the staged binary path. Throws if the source binary does not exist.
- * The root is injected so tests run against a temp dir instead of the real repo.
+ * (`bin/vibe.exe` on win32, 0o755) and stage LICENSE + THIRD-PARTY-LICENSES.md
+ * beside it. Returns the staged binary path. Throws if the source binary or the
+ * root LICENSE does not exist. The root is injected so tests run against a temp
+ * dir instead of the real repo.
+ *
+ * Why LICENSE throws but THIRD-PARTY-LICENSES.md only warns: LICENSE is a
+ * committed file, so its absence never means "not generated yet" — it means the
+ * checkout is broken, and continuing would stage a package that ships no terms
+ * at all. THIRD-PARTY-LICENSES.md is a build product that a caller may legitimately
+ * not have generated yet, and verify-platform-tarball.ts is the gate that stops it
+ * from reaching a release. That gate is skipped on the Windows CI leg, which is
+ * the other reason LICENSE cannot rely on it.
  */
 export async function stagePlatformPackage(
   args: Args,
@@ -140,21 +149,41 @@ export async function stagePlatformPackage(
 
   // The platform package's `files` list includes THIRD-PARTY-LICENSES.md (the
   // statically-linked Rust crates' notices), so stage it alongside the binary.
-  const licenseSource = join(root, "THIRD-PARTY-LICENSES.md");
-  const licenseExists = await stat(licenseSource).then(
-    (s) => s.isFile(),
-    () => false,
-  );
-  if (licenseExists) {
-    await copyFile(licenseSource, join(pkgDir, "THIRD-PARTY-LICENSES.md"));
-  } else {
+  const stagedNotices = await copyIfPresent(root, pkgDir, "THIRD-PARTY-LICENSES.md");
+  if (!stagedNotices) {
     warn(
-      `stage-platform-package: warning: THIRD-PARTY-LICENSES.md not found; ` +
+      "stage-platform-package: warning: THIRD-PARTY-LICENSES.md not found; " +
         "run scripts/generate-third-party-licenses.ts first",
     );
   }
 
+  // vibe's own LICENSE. Not listed in `files`: npm includes a top-level LICENSE
+  // in the tarball irrespective of `files`, and the canonical copy lives at the
+  // repo root — checking a duplicate into each package dir would be N copies to
+  // keep in sync.
+  const stagedLicense = await copyIfPresent(root, pkgDir, "LICENSE");
+  if (!stagedLicense) {
+    throw new Error(`LICENSE not found at ${resolve(root, "LICENSE")}`);
+  }
+
   return dest;
+}
+
+/**
+ * Copy `<root>/<name>` into the package dir. Returns false (without copying)
+ * when the source is absent, leaving the caller to decide whether that is fatal.
+ */
+async function copyIfPresent(root: string, pkgDir: string, name: string): Promise<boolean> {
+  const source = join(root, name);
+  const exists = await stat(source).then(
+    (s) => s.isFile(),
+    () => false,
+  );
+  if (!exists) {
+    return false;
+  }
+  await copyFile(source, join(pkgDir, name));
+  return true;
 }
 
 async function main(): Promise<void> {

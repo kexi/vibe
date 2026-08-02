@@ -1,6 +1,6 @@
 {
   "name": "@kexi/vibe-linux-arm64",
-  "version": "2.2.0",
+  "version": "3.0.0",
   "description": "Linux arm64 binary for the vibe CLI",
   "os": [
     "linux"
@@ -12,7 +12,7 @@
     "bin/",
     "THIRD-PARTY-LICENSES.md"
   ],
-  "license": "Apache-2.0",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kexi/vibe.git"

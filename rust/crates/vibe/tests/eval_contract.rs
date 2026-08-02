@@ -25,13 +25,39 @@ fn vibe_bin() -> &'static str {
     env!("CARGO_BIN_EXE_vibe")
 }
 
+/// An empty file used as `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`, created in
+/// `cwd`'s PARENT (the fixture root, outside any working tree) and returned.
+///
+/// Why not `/dev/null`: it does not exist on Windows, and git treats an
+/// unreadable config path as *absent* — so the isolation would silently vanish
+/// and the developer's real `~/.gitconfig` would be read. An empty regular file
+/// is a valid, empty config on every OS.
+///
+/// Why the parent and not `cwd`: `cwd` is the repo under test, and an untracked
+/// file there would make `clean`'s uncommitted-changes check fire.
+///
+/// Created once per fixture: the file is content-free, so re-writing it on every
+/// `git()` call would be pure churn.
+fn empty_git_config(cwd: &Path) -> PathBuf {
+    let dir = cwd.parent().unwrap_or(cwd);
+    let path = dir.join("empty.gitconfig");
+    if !path.exists() {
+        std::fs::write(&path, "").unwrap();
+    }
+    path
+}
+
 /// Run `git <args>` in `cwd`, panicking on failure (test setup must succeed).
+///
+/// The isolating empty config lives beside the repo under test, so callers do
+/// not have to thread a second path through every helper.
 fn git(cwd: &Path, args: &[&str]) {
+    let config = empty_git_config(cwd);
     let status = Command::new("git")
         .args(args)
         .current_dir(cwd)
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .env("GIT_CONFIG_GLOBAL", &config)
+        .env("GIT_CONFIG_SYSTEM", &config)
         .status()
         .expect("failed to spawn git");
     assert!(status.success(), "git {args:?} failed in {cwd:?}");
@@ -53,15 +79,27 @@ fn git_available() -> bool {
 /// redirected to an isolated dir so MRU/settings writes never touch the real
 /// home (and stay off both streams).
 fn run_vibe(cwd: &Path, home: &Path, args: &[&str]) -> Output {
-    Command::new(vibe_bin())
-        .args(args)
+    let mut cmd = Command::new(vibe_bin());
+    cmd.args(args)
         .current_dir(cwd)
         .env("HOME", home)
         // Keep color codes out of asserted bytes regardless of the CI terminal.
         .env_remove("FORCE_COLOR")
-        .env("NO_COLOR", "1")
-        .output()
-        .expect("failed to spawn vibe")
+        .env("NO_COLOR", "1");
+    isolate_config_env(&mut cmd, home);
+    cmd.output().expect("failed to spawn vibe")
+}
+
+/// Point every config-discovery variable vibe reads at the isolated `home`.
+///
+/// `HOME` alone is not enough: `doctor` also consults `XDG_CONFIG_HOME` (and,
+/// on the Windows branch, `APPDATA`/`USERPROFILE`/`OneDrive`). A developer with
+/// `XDG_CONFIG_HOME` exported and a stale wrapper in it would otherwise see these
+/// tests go red for reasons that have nothing to do with the change under test.
+fn isolate_config_env(cmd: &mut Command, home: &Path) {
+    for key in ["XDG_CONFIG_HOME", "APPDATA", "USERPROFILE", "OneDrive"] {
+        cmd.env(key, home);
+    }
 }
 
 /// Run the vibe binary with `stdin_data` piped to its stdin, returning the
@@ -86,6 +124,8 @@ fn run_vibe_stdin(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    isolate_config_env(&mut cmd, home);
+    // Applied after the isolation so a case can deliberately override it.
     for (k, v) in extra_env {
         cmd.env(k, v);
     }
@@ -937,4 +977,109 @@ fn bogus_eval_dialect_exits_two_with_empty_stdout() {
         !stderr.is_empty(),
         "parse error must explain itself on stderr"
     );
+}
+
+/// `vibe doctor` is a diagnostics command, and diagnostics conventionally go to
+/// stdout — but here stdout IS the eval channel, so a report there would be
+/// EXECUTED by the POSIX wrapper. With an empty HOME (no profiles to find) the
+/// command must still write ZERO bytes to stdout and exit 0.
+#[test]
+fn doctor_writes_nothing_to_stdout() {
+    let home = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+
+    let out = run_vibe(tmp.path(), home.path(), &["doctor"]);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert!(
+        stdout.is_empty(),
+        "doctor must keep the eval channel empty: {stdout:?}"
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "a clean doctor run must exit 0; stderr={stderr:?}"
+    );
+    assert!(
+        !stderr.is_empty(),
+        "doctor must report on stderr, not stdout"
+    );
+}
+
+/// The failing branch of the same invariant: a STALE wrapper makes `doctor` exit
+/// 1 after printing a multi-line report, and that report must stay off stdout
+/// too. This is the branch most at risk — an error path is where a stray
+/// `println!` usually lands, and here it would be executed by the wrapper.
+#[test]
+fn doctor_with_a_stale_wrapper_exits_one_with_still_empty_stdout() {
+    let home = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+
+    // The pre-2.2.0 nushell wrapper, in the location doctor looks at:
+    // `isolate_config_env` points `XDG_CONFIG_HOME` at `home` itself, and
+    // doctor prefers that over `$HOME/.config`.
+    let nushell_dir = home.path().join("nushell");
+    std::fs::create_dir_all(&nushell_dir).unwrap();
+    std::fs::write(
+        nushell_dir.join("config.nu"),
+        "def --env vibe [...args] { ^vibe ...$args | lines | each { |line| nu -c $line } }\n",
+    )
+    .unwrap();
+
+    let out = run_vibe(tmp.path(), home.path(), &["doctor"]);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert!(
+        stdout.is_empty(),
+        "doctor's failure path must keep the eval channel empty: {stdout:?}"
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "a stale wrapper must exit 1; stderr={stderr:?}"
+    );
+    assert!(stderr.contains("stale"), "got: {stderr:?}");
+    assert!(stderr.contains("Fix: run"), "got: {stderr:?}");
+    // AlreadyReported must not add a second, contentless `Error:` line.
+    assert!(!stderr.contains("Error:"), "got: {stderr:?}");
+}
+
+/// The third doctor branch: with no usable profile root at all, nothing was
+/// inspected, so the command fails with an explanation instead of reporting a
+/// clean bill of health. It is a `Configuration` error rather than
+/// `AlreadyReported`, so the binary's `Error:` line IS the report — and that line
+/// still has to go to stderr, leaving the eval channel empty.
+#[cfg(unix)]
+#[test]
+fn doctor_without_any_profile_root_exits_one_with_empty_stdout() {
+    let tmp = tempfile::tempdir().unwrap();
+
+    // Not `run_vibe`: that helper's whole job is to POINT the root variables at an
+    // isolated home, and this case needs them gone.
+    let out = Command::new(vibe_bin())
+        .arg("doctor")
+        .current_dir(tmp.path())
+        .env_remove("FORCE_COLOR")
+        .env("NO_COLOR", "1")
+        .env_remove("HOME")
+        .env_remove("XDG_CONFIG_HOME")
+        .output()
+        .expect("failed to spawn vibe");
+
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert!(
+        stdout.is_empty(),
+        "doctor's no-root path must keep the eval channel empty: {stdout:?}"
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "no usable profile root must exit 1; stderr={stderr:?}"
+    );
+    assert!(stderr.contains("Error:"), "got: {stderr:?}");
+    assert!(stderr.contains("HOME"), "got: {stderr:?}");
 }

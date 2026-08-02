@@ -208,7 +208,7 @@ mod tests {
     use crate::copy::types::{CopyError, CopyStrategyKind};
     use crate::io::FakeIo;
     use crate::progress::NullTracker;
-    use vibe_test_support::Fixture;
+    use vibe_test_support::{fake_root, Fixture};
 
     fn pats(items: &[&str]) -> Vec<String> {
         items.iter().map(|s| s.to_string()).collect()
@@ -271,19 +271,22 @@ mod tests {
         let io = FakeIo::new();
         let exec = FakeCopyExecutor::new(CopyStrategyKind::Standard);
         let tracker = NullTracker;
+        let worktree = fake_root("wt");
         copy_files(
             &io,
             &exec,
             &tracker,
             &pats(&[".env", "config.toml"]),
             fx.path().to_str().unwrap(),
-            "/wt",
+            worktree.to_str().unwrap(),
             false,
         );
         let copies = exec.file_copies.lock().unwrap();
         assert_eq!(copies.len(), 2);
         assert!(copies[0].0.ends_with(".env"));
-        assert!(copies[0].1.ends_with("/wt/.env") || copies[0].1.ends_with("\\wt\\.env"));
+        // Built the same way the product builds it, so the assertion states the
+        // destination rather than a separator convention.
+        assert_eq!(copies[0].1, worktree.join(".env").to_string_lossy());
     }
 
     #[test]

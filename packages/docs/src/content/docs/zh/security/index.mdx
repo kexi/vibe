@@ -1,0 +1,131 @@
+---
+title: 安全性
+description: 哈希校验与安全特性
+sidebar:
+  order: 1
+---
+
+vibe 内置了多项安全特性，用于防止配置文件被未经授权地修改。
+
+## 哈希校验
+
+vibe 会使用 SHA-256 哈希自动校验 `.vibe.toml` 和 `.vibe.local.toml` 文件的完整性。
+
+### 工作原理
+
+1. 当你运行 `vibe trust` 时，vibe 会计算并保存 SHA-256 哈希
+2. 当你运行 `vibe start` 时，vibe 会校验文件是否被修改过
+3. 如果哈希不匹配，vibe 会报错并退出
+
+### 信任流程
+
+```
+首次使用：
+  vibe trust → 保存哈希 → 准备就绪
+
+后续使用：
+  vibe start → 校验哈希 → ✓ 匹配 → 运行钩子
+                        → ✗ 不匹配 → 报错（需要重新信任）
+```
+
+## 设置文件
+
+信任信息保存在 `~/.config/vibe/settings.json` 中：
+
+```json
+{
+  "version": 3,
+  "permissions": {
+    "allow": [
+      {
+        "repoId": {
+          "remoteUrl": "github.com/user/repo",
+          "repoRoot": "/path/to/repo"
+        },
+        "relativePath": ".vibe.toml",
+        "hashes": ["abc123..."]
+      }
+    ],
+    "deny": []
+  }
+}
+```
+
+### 基于仓库的信任
+
+版本 3 采用基于仓库的信任标识：
+
+- 信任会在同一仓库的所有 worktree 之间共享
+- 首次加载时，设置会自动从 v2 迁移到 v3
+
+## 跳过哈希检查
+
+:::caution
+只有在你理解相应的安全影响之后，才应该关闭哈希校验。
+:::
+
+### 全局设置
+
+为所有仓库关闭校验：
+
+```json
+{
+  "version": 3,
+  "skipHashCheck": true,
+  "permissions": { "allow": [], "deny": [] }
+}
+```
+
+### 按文件设置
+
+仅为某个特定文件关闭校验：
+
+```json
+{
+  "version": 3,
+  "permissions": {
+    "allow": [
+      {
+        "repoId": {
+          "remoteUrl": "github.com/user/repo",
+          "repoRoot": "/path/to/repo"
+        },
+        "relativePath": ".vibe.toml",
+        "hashes": ["abc123..."],
+        "skipHashCheck": true
+      }
+    ],
+    "deny": []
+  }
+}
+```
+
+## 分支切换
+
+vibe 会为每个文件保存多个哈希（最多 100 个），因此你可以在分支之间切换而无需重新信任：
+
+- 每个已信任版本的哈希都会被保存
+- 切换分支时，vibe 会对照所有已保存的哈希进行检查
+- 只要当前哈希与任意一个已保存的哈希匹配，校验即通过
+
+## 安全注意事项
+
+信任机制只校验配置文件自你信任之后是否被修改过。但请注意以下几点：
+
+- **信任是一种意愿声明**：当你运行 `vibe trust` 时，即表示你已经审阅并批准了这些配置文件，包括其中包含的所有钩子命令。
+- **钩子会执行任意命令**：在 `hooks.pre_start`、`hooks.post_start` 等中定义的命令会在你的 shell 中执行。vibe 不会对这些命令进行沙箱隔离或限制。
+- **信任之前先审阅**：在运行 `vibe trust` 之前，请务必审阅 `.vibe.toml` 和 `.vibe.local.toml` 文件，尤其是在你无法掌控的仓库中。
+- **哈希校验不是恶意软件防护**：哈希检查只能检测出你已信任文件的变更，并不会评估这些命令本身是否安全。
+
+## 最佳实践
+
+1. 在运行 `vibe trust` 之前**务必审阅变更**
+2. 在生产环境中**不要跳过哈希检查**
+3. **将 `.vibe.local.toml` 保留在本地** —— 它已被自动加入 gitignore
+4. 在代码评审时**审阅团队对 `.vibe.toml` 的变更**
+5. **对不受信任的仓库保持警惕** —— 信任之前请先审阅钩子命令
+
+## 相关内容
+
+- [trust](/zh/commands/trust/) - 信任管理命令
+- [配置](/zh/configuration/) - 配置文件格式

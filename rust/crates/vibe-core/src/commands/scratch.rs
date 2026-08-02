@@ -104,7 +104,7 @@ mod tests {
     use crate::timestamp::LocalTime;
     use crate::worktree_path::ScriptOutput;
     use std::cell::RefCell;
-    use vibe_test_support::Fixture;
+    use vibe_test_support::{fake_root_str, Fixture};
 
     const V: &str = "1.8.1+test";
 
@@ -251,9 +251,13 @@ mod tests {
     #[test]
     fn delegates_to_start_and_prints_promote_hint() {
         let (_fx, io) = io_with_home();
+        // A per-host repo root: scratch derives the worktree path with
+        // `dirname` + `join`, so a `/`-joined literal would come back mixed on
+        // Windows (and is not absolute there at all). See #570.
+        let repo = fake_root_str("home/u/repo");
         let git = MockGit::new(
-            "/home/u/repo",
-            "worktree /home/u/repo\nbranch refs/heads/main\n\n",
+            &repo,
+            &format!("worktree {repo}\nbranch refs/heads/main\n\n"),
             "",
         );
         let clock = FakeClock::new(0, lt());
@@ -276,7 +280,10 @@ mod tests {
         let outcome =
             scratch_command(&d, &clock, &StartFlags::default(), OutputOptions::default()).unwrap();
         // Created a worktree for the scratch branch and cd'd into it.
-        assert_eq!(outcome, Outcome::cd("/home/u/repo-scratch-20260606-090503"));
+        assert_eq!(
+            outcome,
+            Outcome::cd(fake_root_str("home/u/repo-scratch-20260606-090503"))
+        );
         // The branch name carries the scratch prefix.
         let adds = git.add_calls();
         assert!(adds

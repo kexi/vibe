@@ -2,7 +2,7 @@
 
 A super fast CLI tool for easy Git Worktree management.
 
-[日本語](README.ja.md)
+[日本語](README.ja.md) | [简体中文](README.zh.md)
 
 ## Documentation
 
@@ -23,6 +23,7 @@ A super fast CLI tool for easy Git Worktree management.
 | `vibe verify`                      | Verify trust status and hash history                                              |
 | `vibe config`                      | Show current settings                                                             |
 | `vibe upgrade [options]`           | Check for updates and show upgrade instructions                                   |
+| `vibe doctor`                      | Check the environment for a stale nushell/PowerShell shell wrapper                |
 
 ### Examples
 
@@ -635,4 +636,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
 ## License
 
-Apache-2.0
+MIT — see [LICENSE](./LICENSE).
+
+Releases up to and including v2.x were published under Apache-2.0.
+The MIT license applies from v3.0.0 onward (see [#553](https://github.com/kexi/vibe/issues/553)).

@@ -139,4 +139,7 @@ See the [full documentation](https://vibe.kexi.dev).
 
 ## License
 
-Apache-2.0
+MIT
+
+Releases up to and including v2.x were published under Apache-2.0.
+The MIT license applies from v3.0.0 onward (see [#553](https://github.com/kexi/vibe/issues/553)).

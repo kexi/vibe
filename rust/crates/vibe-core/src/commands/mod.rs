@@ -9,6 +9,7 @@
 
 pub mod clean;
 pub mod config;
+pub mod doctor;
 pub mod home;
 pub mod jump;
 pub mod rename;
