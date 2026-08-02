@@ -9,6 +9,8 @@ use super::*;
 use crate::commands::shell_setup::shell_function;
 use crate::io::FakeIo;
 use std::collections::BTreeMap;
+use std::sync::LazyLock;
+use vibe_test_support::{fake_root, fake_root_str, to_slash};
 
 /// The pre-2.2.0 wrapper texts, recovered from git history (the commit before
 /// `feat: emit shell-dialect-aware eval output via --eval-dialect`). These are
@@ -83,7 +85,7 @@ fn paths(io: &FakeIo, platform: HostPlatform) -> Vec<String> {
     candidate_profiles(io, platform)
         .profiles
         .into_iter()
-        .map(|(_, p)| p.to_string_lossy().replace('\\', "/"))
+        .map(|(_, p)| to_slash(p))
         .collect()
 }
 
@@ -91,17 +93,52 @@ fn skipped(io: &FakeIo, platform: HostPlatform) -> Vec<&'static str> {
     candidate_profiles(io, platform).skipped_roots
 }
 
+/// An absolute fake root for a `HOME`/`XDG_CONFIG_HOME` value, as a `String`.
+///
+/// The unix-branch tests below feed these roots to `candidate_profiles` with
+/// `is_windows: false`, but the *validation* they must survive
+/// (`is_valid_abs_root` + `has_safe_prefix`) is compiled for the host. A literal
+/// `"/home/u"` is relative on Windows and would be rejected before the branch
+/// under test ever ran, so the roots are built per-host instead. See #570.
+fn root(segments: &str) -> String {
+    fake_root_str(segments)
+}
+
+/// The `/`-rendered form of [`root`] joined with `rel`, for path assertions.
+///
+/// `paths()` renders candidates with `/`, so expectations are written the same
+/// way: `expect("home/u", ".config/nushell/config.nu")` is
+/// `/home/u/.config/nushell/config.nu` on unix and
+/// `C:/home/u/.config/nushell/config.nu` on Windows.
+fn expect(segments: &str, rel: &str) -> String {
+    to_slash(fake_root(segments).join(rel.replace('/', std::path::MAIN_SEPARATOR_STR)))
+}
+
+/// The native-separator path a [`FakeProfileFs`] entry is keyed by.
+///
+/// `candidate_profiles` builds candidates with `Path::join`, so the fake FS must
+/// be keyed with host-native separators for lookups to hit.
+fn profile_path(segments: &str, rel: &str) -> String {
+    fake_root(segments)
+        .join(rel.replace('/', std::path::MAIN_SEPARATOR_STR))
+        .to_string_lossy()
+        .into_owned()
+}
+
 // --- candidate_profiles: env matrix ---
 
 #[test]
 fn unix_defaults_to_home_dot_config() {
-    let io = FakeIo::new().with_env("HOME", "/home/u");
+    let io = FakeIo::new().with_env("HOME", &root("home/u"));
     assert_eq!(
         paths(&io, UNIX),
         vec![
-            "/home/u/.config/nushell/config.nu",
-            "/home/u/.config/powershell/Microsoft.PowerShell_profile.ps1",
-            "/home/u/.config/powershell/profile.ps1",
+            expect("home/u", ".config/nushell/config.nu"),
+            expect(
+                "home/u",
+                ".config/powershell/Microsoft.PowerShell_profile.ps1"
+            ),
+            expect("home/u", ".config/powershell/profile.ps1"),
         ]
     );
 }
@@ -113,27 +150,30 @@ fn xdg_redirects_both_shells_to_exactly_one_root() {
     // otherwise — the same rule nu follows, so no `~/.config` candidate is probed
     // while XDG is set.
     let io = FakeIo::new()
-        .with_env("HOME", "/home/u")
-        .with_env("XDG_CONFIG_HOME", "/xdg");
+        .with_env("HOME", &root("home/u"))
+        .with_env("XDG_CONFIG_HOME", &root("xdg"));
     assert_eq!(
         paths(&io, UNIX),
         vec![
-            "/xdg/nushell/config.nu",
-            "/xdg/powershell/Microsoft.PowerShell_profile.ps1",
-            "/xdg/powershell/profile.ps1",
+            expect("xdg", "nushell/config.nu"),
+            expect("xdg", "powershell/Microsoft.PowerShell_profile.ps1"),
+            expect("xdg", "powershell/profile.ps1"),
         ]
     );
 }
 
 #[test]
 fn powershell_falls_back_to_dot_config_when_xdg_is_unset() {
-    let io = FakeIo::new().with_env("HOME", "/home/u");
+    let io = unix_io();
     assert_eq!(
         paths(&io, UNIX),
         vec![
-            "/home/u/.config/nushell/config.nu",
-            "/home/u/.config/powershell/Microsoft.PowerShell_profile.ps1",
-            "/home/u/.config/powershell/profile.ps1",
+            expect("home/u", ".config/nushell/config.nu"),
+            expect(
+                "home/u",
+                ".config/powershell/Microsoft.PowerShell_profile.ps1"
+            ),
+            expect("home/u", ".config/powershell/profile.ps1"),
         ]
     );
 }
@@ -144,10 +184,12 @@ fn a_stale_powershell_leftover_under_home_is_ignored_when_xdg_points_elsewhere()
     // not the directory PowerShell loads, so a stale file there is inert and must
     // not fail the run.
     let io = FakeIo::new()
-        .with_env("HOME", "/home/u")
-        .with_env("XDG_CONFIG_HOME", "/xdg");
-    let fs = FakeProfileFs::new()
-        .with_content("/home/u/.config/powershell/profile.ps1", OLD_PWSH_WRAPPER);
+        .with_env("HOME", &root("home/u"))
+        .with_env("XDG_CONFIG_HOME", &root("xdg"));
+    let fs = FakeProfileFs::new().with_content(
+        &profile_path("home/u", ".config/powershell/profile.ps1"),
+        OLD_PWSH_WRAPPER,
+    );
     let outcome = doctor_command(&io, &fs, UNIX, OutputOptions::default()).unwrap();
     assert_eq!(outcome, Outcome::none());
     assert!(!io.stderr_text().contains("stale"));
@@ -156,13 +198,11 @@ fn a_stale_powershell_leftover_under_home_is_ignored_when_xdg_points_elsewhere()
 #[test]
 fn a_stale_powershell_profile_under_dot_config_is_found_when_xdg_is_unset() {
     let io = unix_io();
-    let fs = FakeProfileFs::new()
-        .with_content("/home/u/.config/powershell/profile.ps1", OLD_PWSH_WRAPPER);
+    let profile = profile_path("home/u", ".config/powershell/profile.ps1");
+    let fs = FakeProfileFs::new().with_content(&profile, OLD_PWSH_WRAPPER);
     let err = doctor_command(&io, &fs, UNIX, OutputOptions::default()).unwrap_err();
     assert_eq!(err.exit_code(), 1);
-    assert!(io
-        .stderr_text()
-        .contains("/home/u/.config/powershell/profile.ps1: stale"));
+    assert!(io.stderr_text().contains(&format!("{profile}: stale")));
 }
 
 #[test]
@@ -188,13 +228,16 @@ fn unsafe_env_roots_are_rejected() {
 fn unsafe_xdg_falls_back_to_a_safe_home() {
     let io = FakeIo::new()
         .with_env("XDG_CONFIG_HOME", "../evil")
-        .with_env("HOME", "/home/u");
+        .with_env("HOME", &root("home/u"));
     assert_eq!(
         paths(&io, UNIX),
         vec![
-            "/home/u/.config/nushell/config.nu",
-            "/home/u/.config/powershell/Microsoft.PowerShell_profile.ps1",
-            "/home/u/.config/powershell/profile.ps1",
+            expect("home/u", ".config/nushell/config.nu"),
+            expect(
+                "home/u",
+                ".config/powershell/Microsoft.PowerShell_profile.ps1"
+            ),
+            expect("home/u", ".config/powershell/profile.ps1"),
         ]
     );
 }
@@ -202,10 +245,9 @@ fn unsafe_xdg_falls_back_to_a_safe_home() {
 #[test]
 fn unix_dotdot_substring_in_a_directory_name_is_allowed() {
     // `a..b` is one legitimate segment, not a parent-dir reference.
-    let io = FakeIo::new().with_env("HOME", "/home/a..b");
-    assert!(paths(&io, UNIX)
-        .iter()
-        .any(|p| p == "/home/a..b/.config/nushell/config.nu"));
+    let io = FakeIo::new().with_env("HOME", &root("home/a..b"));
+    let wanted = expect("home/a..b", ".config/nushell/config.nu");
+    assert!(paths(&io, UNIX).iter().any(|p| p == &wanted));
 }
 
 #[cfg(windows)]
@@ -257,33 +299,40 @@ fn unix_and_windows_branches_are_selected_by_the_flag_not_the_host() {
     // The same env map yields different candidates purely from `HostPlatform`, so
     // the platform facts really do arrive as a parameter.
     let io = FakeIo::new()
-        .with_env("HOME", "/home/u")
-        .with_env("APPDATA", "/appdata");
-    assert!(paths(&io, UNIX)
-        .iter()
-        .any(|p| p.contains("/home/u/.config/nushell")));
-    assert!(!paths(&io, WINDOWS)
-        .iter()
-        .any(|p| p.contains("/home/u/.config/nushell")));
+        .with_env("HOME", &root("home/u"))
+        .with_env("APPDATA", &root("appdata"));
+    let unix_marker = expect("home/u", ".config/nushell");
+    assert!(paths(&io, UNIX).iter().any(|p| p.contains(&unix_marker)));
+    assert!(!paths(&io, WINDOWS).iter().any(|p| p.contains(&unix_marker)));
 }
 
 // --- candidate_profiles: the macOS nushell location ---
 
-const MACOS_NU_PATH: &str = "/home/u/Library/Application Support/nushell/config.nu";
+const MACOS_NU_REL: &str = "Library/Application Support/nushell/config.nu";
+
+/// The macOS nu candidate as a fake-FS key (host-native separators).
+fn macos_nu_path() -> String {
+    profile_path("home/u", MACOS_NU_REL)
+}
+
+/// The macOS nu candidate as `paths()` renders it (`/` separators).
+fn macos_nu_rendered() -> String {
+    expect("home/u", MACOS_NU_REL)
+}
 
 #[test]
 fn macos_probes_application_support_when_xdg_is_unset() {
     // With no XDG_CONFIG_HOME, nu on macOS reads the Apple convention path — so
     // that, and not `~/.config`, is where the live config sits.
-    let io = FakeIo::new().with_env("HOME", "/home/u");
+    let io = unix_io();
     let found = paths(&io, MACOS);
-    assert!(found.contains(&MACOS_NU_PATH.to_string()), "got: {found:?}");
+    assert!(found.contains(&macos_nu_rendered()), "got: {found:?}");
 }
 
 #[test]
 fn non_macos_unix_does_not_probe_application_support() {
-    let io = FakeIo::new().with_env("HOME", "/home/u");
-    assert!(!paths(&io, UNIX).contains(&MACOS_NU_PATH.to_string()));
+    let io = unix_io();
+    assert!(!paths(&io, UNIX).contains(&macos_nu_rendered()));
 }
 
 #[test]
@@ -292,15 +341,12 @@ fn macos_skips_application_support_once_xdg_is_set() {
     // Application Support is one nu never loads. Reporting it would exit 1 over a
     // file that has no effect on the user's shell.
     let io = FakeIo::new()
-        .with_env("HOME", "/home/u")
-        .with_env("XDG_CONFIG_HOME", "/xdg");
+        .with_env("HOME", &root("home/u"))
+        .with_env("XDG_CONFIG_HOME", &root("xdg"));
     let found = paths(&io, MACOS);
+    assert!(!found.contains(&macos_nu_rendered()), "got: {found:?}");
     assert!(
-        !found.contains(&MACOS_NU_PATH.to_string()),
-        "got: {found:?}"
-    );
-    assert!(
-        found.contains(&"/xdg/nushell/config.nu".to_string()),
+        found.contains(&expect("xdg", "nushell/config.nu")),
         "got: {found:?}"
     );
 }
@@ -310,11 +356,14 @@ fn a_stale_application_support_leftover_is_ignored_when_xdg_is_current() {
     // The exit-code consequence of the rule above: the wrapper nu actually loads
     // is current, so the run is clean despite the stale file on disk.
     let io = FakeIo::new()
-        .with_env("HOME", "/home/u")
-        .with_env("XDG_CONFIG_HOME", "/xdg");
+        .with_env("HOME", &root("home/u"))
+        .with_env("XDG_CONFIG_HOME", &root("xdg"));
     let fs = FakeProfileFs::new()
-        .with_content(MACOS_NU_PATH, OLD_NU_WRAPPER)
-        .with_content("/xdg/nushell/config.nu", shell_function(ShellName::Nushell));
+        .with_content(&macos_nu_path(), OLD_NU_WRAPPER)
+        .with_content(
+            &profile_path("xdg", "nushell/config.nu"),
+            shell_function(ShellName::Nushell),
+        );
     let outcome = doctor_command(&io, &fs, MACOS, OutputOptions::default()).unwrap();
     assert_eq!(outcome, Outcome::none());
     let text = io.stderr_text();
@@ -324,24 +373,21 @@ fn a_stale_application_support_leftover_is_ignored_when_xdg_is_current() {
 #[test]
 fn a_stale_wrapper_in_application_support_exits_one_on_macos() {
     let io = unix_io();
-    let fs = FakeProfileFs::new().with_content(MACOS_NU_PATH, OLD_NU_WRAPPER);
+    let nu = macos_nu_path();
+    let fs = FakeProfileFs::new().with_content(&nu, OLD_NU_WRAPPER);
     let err = doctor_command(&io, &fs, MACOS, OutputOptions::default()).unwrap_err();
     assert_eq!(err.exit_code(), 1);
     let text = io.stderr_text();
-    assert!(
-        text.contains(&format!("{MACOS_NU_PATH}: stale")),
-        "got: {text}"
-    );
+    assert!(text.contains(&format!("{nu}: stale")), "got: {text}");
 }
 
 #[test]
 fn a_shipped_wrapper_in_application_support_is_clean_on_macos() {
     let io = unix_io();
-    let fs = FakeProfileFs::new().with_content(MACOS_NU_PATH, shell_function(ShellName::Nushell));
+    let nu = macos_nu_path();
+    let fs = FakeProfileFs::new().with_content(&nu, shell_function(ShellName::Nushell));
     doctor_command(&io, &fs, MACOS, OutputOptions::default()).unwrap();
-    assert!(io
-        .stderr_text()
-        .contains(&format!("{MACOS_NU_PATH}: current")));
+    assert!(io.stderr_text().contains(&format!("{nu}: current")));
 }
 
 // --- candidate_profiles: invalid roots are named, never echoed ---
@@ -350,7 +396,7 @@ fn a_shipped_wrapper_in_application_support_is_clean_on_macos() {
 fn a_set_but_invalid_root_is_recorded_by_name() {
     let io = FakeIo::new()
         .with_env("XDG_CONFIG_HOME", "../evil")
-        .with_env("HOME", "/home/u");
+        .with_env("HOME", &root("home/u"));
     assert_eq!(skipped(&io, UNIX), vec!["XDG_CONFIG_HOME"]);
 }
 
@@ -358,7 +404,7 @@ fn a_set_but_invalid_root_is_recorded_by_name() {
 fn an_unset_root_is_not_recorded_as_skipped() {
     // An absent XDG_CONFIG_HOME is the normal state; calling it "skipped" would
     // make a healthy setup read as broken.
-    let io = FakeIo::new().with_env("HOME", "/home/u");
+    let io = unix_io();
     assert!(skipped(&io, UNIX).is_empty());
 }
 
@@ -366,7 +412,7 @@ fn an_unset_root_is_not_recorded_as_skipped() {
 fn an_invalid_root_produces_a_skip_row_and_a_normal_report() {
     let io = FakeIo::new()
         .with_env("XDG_CONFIG_HOME", "relative/dir")
-        .with_env("HOME", "/home/u");
+        .with_env("HOME", &root("home/u"));
     let fs = FakeProfileFs::new();
     let outcome = doctor_command(&io, &fs, UNIX, OutputOptions::default()).unwrap();
     assert_eq!(outcome, Outcome::none());
@@ -1258,23 +1304,39 @@ fn a_nu_def_that_is_not_vibe_is_ignored() {
 // --- doctor_command ---
 
 fn unix_io() -> FakeIo {
-    FakeIo::new().with_env("HOME", "/home/u")
+    FakeIo::new().with_env("HOME", &root("home/u"))
 }
 
-const NU_PATH: &str = "/home/u/.config/nushell/config.nu";
-const PWSH_PATH: &str = "/home/u/.config/powershell/Microsoft.PowerShell_profile.ps1";
+/// The two profile paths under the fake HOME, keyed the way `candidate_profiles`
+/// builds them (host-native separators) so the fake FS lookups hit and the report
+/// lines they appear in compare equal.
+///
+/// `LazyLock` rather than `const`: the value depends on the host separator, so it
+/// cannot be a literal, yet it stays a single shared definition the way the `&str`
+/// consts these replaced did.
+static NU_PATH: LazyLock<String> =
+    LazyLock::new(|| profile_path("home/u", ".config/nushell/config.nu"));
+static PWSH_PATH: LazyLock<String> = LazyLock::new(|| {
+    profile_path(
+        "home/u",
+        ".config/powershell/Microsoft.PowerShell_profile.ps1",
+    )
+});
 
 #[test]
 fn stale_wrapper_exits_one_and_prints_the_fix() {
     let io = unix_io();
-    let fs = FakeProfileFs::new().with_content(NU_PATH, OLD_NU_WRAPPER);
+    let fs = FakeProfileFs::new().with_content(&NU_PATH, OLD_NU_WRAPPER);
     let err = doctor_command(&io, &fs, UNIX, OutputOptions::default()).unwrap_err();
     assert_eq!(err.exit_code(), 1);
     // AlreadyReported so the binary adds no second, contentless error line.
     assert!(matches!(err, VibeError::AlreadyReported));
 
     let text = io.stderr_text();
-    assert!(text.contains(&format!("{NU_PATH}: stale")), "got: {text}");
+    assert!(
+        text.contains(&format!("{}: stale", *NU_PATH)),
+        "got: {text}"
+    );
     assert!(
         text.contains("vibe shell-setup --shell nushell"),
         "got: {text}"
@@ -1284,11 +1346,14 @@ fn stale_wrapper_exits_one_and_prints_the_fix() {
 #[test]
 fn current_wrapper_is_clean_and_produces_no_stdout() {
     let io = unix_io();
-    let fs = FakeProfileFs::new().with_content(NU_PATH, shell_function(ShellName::Nushell));
+    let fs = FakeProfileFs::new().with_content(&NU_PATH, shell_function(ShellName::Nushell));
     let outcome = doctor_command(&io, &fs, UNIX, OutputOptions::default()).unwrap();
     assert_eq!(outcome, Outcome::none());
     let text = io.stderr_text();
-    assert!(text.contains(&format!("{NU_PATH}: current")), "got: {text}");
+    assert!(
+        text.contains(&format!("{}: current", *NU_PATH)),
+        "got: {text}"
+    );
     assert!(!text.contains("Fix:"), "got: {text}");
 }
 
@@ -1306,28 +1371,28 @@ fn no_profiles_at_all_is_clean() {
 #[test]
 fn a_profile_without_a_wrapper_is_clean_but_still_reported() {
     let io = unix_io();
-    let fs = FakeProfileFs::new().with_content(NU_PATH, "$env.EDITOR = 'hx'\n");
+    let fs = FakeProfileFs::new().with_content(&NU_PATH, "$env.EDITOR = 'hx'\n");
     doctor_command(&io, &fs, UNIX, OutputOptions::default()).unwrap();
     assert!(io
         .stderr_text()
-        .contains(&format!("{NU_PATH}: no vibe wrapper")));
+        .contains(&format!("{}: no vibe wrapper", *NU_PATH)));
 }
 
 #[test]
 fn unreadable_and_non_regular_files_are_reported_without_failing() {
     let io = unix_io();
     let fs = FakeProfileFs::new()
-        .with_read(NU_PATH, ProfileRead::Rejected)
-        .with_read(PWSH_PATH, ProfileRead::Unreadable);
+        .with_read(&NU_PATH, ProfileRead::Rejected)
+        .with_read(&PWSH_PATH, ProfileRead::Unreadable);
     let outcome = doctor_command(&io, &fs, UNIX, OutputOptions::default()).unwrap();
     assert_eq!(outcome, Outcome::none());
     let text = io.stderr_text();
     assert!(
-        text.contains(&format!("{NU_PATH}: not checked (not a regular file)")),
+        text.contains(&format!("{}: not checked (not a regular file)", *NU_PATH)),
         "got: {text}"
     );
     assert!(
-        text.contains(&format!("{PWSH_PATH}: unreadable")),
+        text.contains(&format!("{}: unreadable", *PWSH_PATH)),
         "got: {text}"
     );
 }
@@ -1336,24 +1401,32 @@ fn unreadable_and_non_regular_files_are_reported_without_failing() {
 fn two_stale_profiles_each_get_their_own_row_and_fix_line() {
     let io = unix_io();
     let fs = FakeProfileFs::new()
-        .with_content(NU_PATH, OLD_NU_WRAPPER)
-        .with_content(PWSH_PATH, OLD_PWSH_WRAPPER);
+        .with_content(&NU_PATH, OLD_NU_WRAPPER)
+        .with_content(&PWSH_PATH, OLD_PWSH_WRAPPER);
     let err = doctor_command(&io, &fs, UNIX, OutputOptions::default()).unwrap_err();
     assert_eq!(err.exit_code(), 1);
 
     let text = io.stderr_text();
-    assert!(text.contains(&format!("{NU_PATH}: stale")), "got: {text}");
-    assert!(text.contains(&format!("{PWSH_PATH}: stale")), "got: {text}");
+    assert!(
+        text.contains(&format!("{}: stale", *NU_PATH)),
+        "got: {text}"
+    );
+    assert!(
+        text.contains(&format!("{}: stale", *PWSH_PATH)),
+        "got: {text}"
+    );
     // Each Fix line must name the shell belonging to ITS path, not the other's.
     assert!(
         text.contains(&format!(
-            "Fix: run 'vibe shell-setup --shell nushell' and replace the vibe function in {NU_PATH}"
+            "Fix: run 'vibe shell-setup --shell nushell' and replace the vibe function in {}",
+            *NU_PATH
         )),
         "got: {text}"
     );
     assert!(
         text.contains(&format!(
-            "Fix: run 'vibe shell-setup --shell powershell' and replace the vibe function in {PWSH_PATH}"
+            "Fix: run 'vibe shell-setup --shell powershell' and replace the vibe function in {}",
+            *PWSH_PATH
         )),
         "got: {text}"
     );
@@ -1403,13 +1476,14 @@ fn an_indeterminate_wrapper_is_reported_without_failing_the_run() {
     let io = unix_io();
     let filler = "print 'x'\n".repeat(1200);
     let content = format!("def --env vibe [...args] {{ if true {{\n{filler}");
-    let fs = FakeProfileFs::new().with_content(NU_PATH, &content);
+    let fs = FakeProfileFs::new().with_content(&NU_PATH, &content);
     let outcome = doctor_command(&io, &fs, UNIX, OutputOptions::default()).unwrap();
     assert_eq!(outcome, Outcome::none());
     let text = io.stderr_text();
     assert!(
         text.contains(&format!(
-            "{NU_PATH}: could not determine (wrapper block too long)"
+            "{}: could not determine (wrapper block too long)",
+            *NU_PATH
         )),
         "got: {text}"
     );
@@ -1422,13 +1496,16 @@ fn a_stale_wrapper_elsewhere_still_fails_the_run_alongside_an_indeterminate_one(
     let filler = "print 'x'\n".repeat(1200);
     let indeterminate = format!("def --env vibe [...args] {{ if true {{\n{filler}");
     let fs = FakeProfileFs::new()
-        .with_content(NU_PATH, &indeterminate)
-        .with_content(PWSH_PATH, OLD_PWSH_WRAPPER);
+        .with_content(&NU_PATH, &indeterminate)
+        .with_content(&PWSH_PATH, OLD_PWSH_WRAPPER);
     let err = doctor_command(&io, &fs, UNIX, OutputOptions::default()).unwrap_err();
     assert_eq!(err.exit_code(), 1);
     let text = io.stderr_text();
     assert!(text.contains("could not determine"), "got: {text}");
-    assert!(text.contains(&format!("{PWSH_PATH}: stale")), "got: {text}");
+    assert!(
+        text.contains(&format!("{}: stale", *PWSH_PATH)),
+        "got: {text}"
+    );
 }
 
 // --- profile decoding ---
@@ -1537,11 +1614,14 @@ fn a_real_profile_file_is_read_and_classified() {
 #[test]
 fn an_oversized_profile_is_classified_and_flagged() {
     let io = unix_io();
-    let fs = FakeProfileFs::new().with_truncated(NU_PATH, OLD_NU_WRAPPER);
+    let fs = FakeProfileFs::new().with_truncated(&NU_PATH, OLD_NU_WRAPPER);
     let err = doctor_command(&io, &fs, UNIX, OutputOptions::default()).unwrap_err();
     assert_eq!(err.exit_code(), 1);
     let text = io.stderr_text();
-    assert!(text.contains(&format!("{NU_PATH}: stale")), "got: {text}");
+    assert!(
+        text.contains(&format!("{}: stale", *NU_PATH)),
+        "got: {text}"
+    );
     assert!(
         text.contains("file too large; checked first 1 MB"),
         "got: {text}"
@@ -1553,11 +1633,14 @@ fn quiet_still_prints_the_report_and_keeps_the_exit_code() {
     // `vibe doctor -q` exiting 1 in silence would be unexplainable, so the
     // report must survive --quiet.
     let io = unix_io();
-    let fs = FakeProfileFs::new().with_content(NU_PATH, OLD_NU_WRAPPER);
+    let fs = FakeProfileFs::new().with_content(&NU_PATH, OLD_NU_WRAPPER);
     let err = doctor_command(&io, &fs, UNIX, OutputOptions::new(false, true)).unwrap_err();
     assert_eq!(err.exit_code(), 1);
     let text = io.stderr_text();
-    assert!(text.contains(&format!("{NU_PATH}: stale")), "got: {text}");
+    assert!(
+        text.contains(&format!("{}: stale", *NU_PATH)),
+        "got: {text}"
+    );
     assert!(text.contains("Fix: run"), "got: {text}");
 }
 
@@ -1571,11 +1654,11 @@ fn verbose_names_every_path_it_looked_at_including_absent_ones() {
     doctor_command(&io, &fs, UNIX, OutputOptions::new(true, false)).unwrap();
     let text = io.stderr_text();
     assert!(
-        text.contains(&format!("[verbose] checking {NU_PATH}")),
+        text.contains(&format!("[verbose] checking {}", *NU_PATH)),
         "got: {text}"
     );
     assert!(
-        text.contains(&format!("[verbose] checking {PWSH_PATH}")),
+        text.contains(&format!("[verbose] checking {}", *PWSH_PATH)),
         "got: {text}"
     );
 }
@@ -1585,11 +1668,11 @@ fn only_the_stale_line_is_colored() {
     // A passing check painted yellow reads as a problem, so the warning color is
     // reserved for the finding itself.
     let io = FakeIo::new()
-        .with_env("HOME", "/home/u")
+        .with_env("HOME", &root("home/u"))
         .with_env("FORCE_COLOR", "1");
     let fs = FakeProfileFs::new()
-        .with_content(NU_PATH, OLD_NU_WRAPPER)
-        .with_content(PWSH_PATH, shell_function(ShellName::Powershell));
+        .with_content(&NU_PATH, OLD_NU_WRAPPER)
+        .with_content(&PWSH_PATH, shell_function(ShellName::Powershell));
     doctor_command(&io, &fs, UNIX, OutputOptions::default()).unwrap_err();
 
     let colored: Vec<String> = io
@@ -1613,8 +1696,10 @@ fn only_the_stale_line_is_colored() {
 #[test]
 fn control_characters_in_a_reported_path_are_sanitized() {
     // The path comes from the environment, so a hostile HOME must not be able to
-    // emit raw escape sequences into the operator's terminal.
-    let io = FakeIo::new().with_env("HOME", "/home/u\x1b[2Kfake");
+    // emit raw escape sequences into the operator's terminal. The escape sits in a
+    // path SEGMENT so the root still validates as absolute and actually gets
+    // reported — that is the point of the test.
+    let io = FakeIo::new().with_env("HOME", &root("home/u\x1b[2Kfake"));
     let fs = FakeProfileFs::new();
     doctor_command(&io, &fs, UNIX, OutputOptions::default()).unwrap();
     assert!(!io.stderr_text().contains('\x1b'));
@@ -1623,7 +1708,7 @@ fn control_characters_in_a_reported_path_are_sanitized() {
 #[test]
 fn a_stale_powershell_wrapper_names_the_powershell_shell_in_the_fix() {
     let io = unix_io();
-    let fs = FakeProfileFs::new().with_content(PWSH_PATH, OLD_PWSH_WRAPPER);
+    let fs = FakeProfileFs::new().with_content(&PWSH_PATH, OLD_PWSH_WRAPPER);
     doctor_command(&io, &fs, UNIX, OutputOptions::default()).unwrap_err();
     assert!(io
         .stderr_text()

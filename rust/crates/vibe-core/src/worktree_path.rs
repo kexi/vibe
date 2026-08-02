@@ -214,7 +214,7 @@ mod tests {
     use crate::io::FakeIo;
     use crate::settings::SettingsWorktree;
     use std::cell::RefCell;
-    use vibe_test_support::Fixture;
+    use vibe_test_support::{fake_root, fake_root_str, Fixture};
 
     /// Records the cmd + the (key, value) env overlays a script was asked to run.
     type SeenInvocation = (String, Vec<(String, String)>);
@@ -283,9 +283,13 @@ mod tests {
         let io = FakeIo::new();
         let runner = FakeScriptRunner::ok("");
         let settings = settings_with_script(None);
+        let repo = fake_root("home/u/myrepo");
         let path =
-            resolve_worktree_path(&io, &runner, None, &settings, &ctx("/home/u/myrepo")).unwrap();
-        assert_eq!(path, "/home/u/myrepo-feat-x");
+            resolve_worktree_path(&io, &runner, None, &settings, &ctx(repo.to_str().unwrap()))
+                .unwrap();
+        // The default path is the repo dir with a `-<sanitized-branch>` suffix, so
+        // it is built from the same root rather than a `/`-joined literal.
+        assert_eq!(path, format!("{}-feat-x", repo.display()));
         // The script was never invoked.
         assert!(runner.seen.borrow().is_none());
     }
@@ -296,7 +300,10 @@ mod tests {
         // An absolute, existing script file.
         let script = fx.write("from-config.sh", "#!/bin/sh\n");
         let io = FakeIo::new();
-        let runner = FakeScriptRunner::ok("/abs/output");
+        // The script's OUTPUT must satisfy the product's absoluteness check, which
+        // is host-defined — hence a fake root rather than a `/abs/...` literal.
+        let output = fake_root_str("abs/output");
+        let runner = FakeScriptRunner::ok(&output);
         let config = VibeConfig {
             worktree: Some(WorktreeConfig {
                 path_script: Some(script.to_string_lossy().into_owned()),
@@ -304,10 +311,11 @@ mod tests {
             ..Default::default()
         };
         // settings ALSO has a script, but config wins.
-        let settings = settings_with_script(Some("/never/used.sh"));
-        let path =
-            resolve_worktree_path(&io, &runner, Some(&config), &settings, &ctx("/repo")).unwrap();
-        assert_eq!(path, "/abs/output");
+        let settings = settings_with_script(Some(&fake_root_str("never/used.sh")));
+        let repo_root = fake_root_str("repo");
+        let path = resolve_worktree_path(&io, &runner, Some(&config), &settings, &ctx(&repo_root))
+            .unwrap();
+        assert_eq!(path, output);
         // It ran the CONFIG script, with the four VIBE_* overlays.
         let (cmd, env) = runner.seen.borrow().clone().unwrap();
         assert_eq!(cmd, script.to_string_lossy());
@@ -322,7 +330,7 @@ mod tests {
             .any(|(k, v)| k == "VIBE_SANITIZED_BRANCH" && v == "feat-x"));
         assert!(env
             .iter()
-            .any(|(k, v)| k == "VIBE_REPO_ROOT" && v == "/repo"));
+            .any(|(k, v)| k == "VIBE_REPO_ROOT" && v == &repo_root));
     }
 
     #[test]
@@ -330,10 +338,12 @@ mod tests {
         let fx = Fixture::new();
         let script = fx.write("s.sh", "#!/bin/sh\n");
         let io = FakeIo::new();
-        let runner = FakeScriptRunner::ok("/from/settings");
+        let output = fake_root_str("from/settings");
+        let runner = FakeScriptRunner::ok(&output);
         let settings = settings_with_script(Some(script.to_str().unwrap()));
-        let path = resolve_worktree_path(&io, &runner, None, &settings, &ctx("/repo")).unwrap();
-        assert_eq!(path, "/from/settings");
+        let repo_root = fake_root_str("repo");
+        let path = resolve_worktree_path(&io, &runner, None, &settings, &ctx(&repo_root)).unwrap();
+        assert_eq!(path, output);
 
         // R-6: the SETTINGS-script path also gets all four VIBE_* overlays, with
         // the raw branch (`feat/x`) and the sanitized one (`feat-x`) DISTINCT.
@@ -345,7 +355,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("missing env {k}"))
         };
         assert_eq!(get("VIBE_REPO_NAME"), "myrepo");
-        assert_eq!(get("VIBE_REPO_ROOT"), "/repo");
+        assert_eq!(get("VIBE_REPO_ROOT"), repo_root);
         // The raw vs sanitized distinction is load-bearing: `/` → `-`.
         assert_eq!(get("VIBE_BRANCH_NAME"), "feat/x");
         assert_eq!(get("VIBE_SANITIZED_BRANCH"), "feat-x");
@@ -362,7 +372,7 @@ mod tests {
         let repo = fx.mkdir("repo");
         let _ = fx.write("repo/script.sh", "#!/bin/sh\n");
         let io = FakeIo::new();
-        let runner = FakeScriptRunner::ok("/out");
+        let runner = FakeScriptRunner::ok(&fake_root_str("out"));
         let settings = settings_with_script(Some("script.sh")); // relative
         resolve_worktree_path(&io, &runner, None, &settings, &ctx(repo.to_str().unwrap())).unwrap();
         let (cmd, _) = runner.seen.borrow().clone().unwrap();
@@ -442,9 +452,9 @@ mod tests {
         let home = fx.path().to_str().unwrap();
         let script = fx.write("s.sh", "#!/bin/sh\n");
         let io = FakeIo::new().with_env("HOME", home);
-        let runner = FakeScriptRunner::ok("/out");
+        let runner = FakeScriptRunner::ok(&fake_root_str("out"));
         let settings = settings_with_script(Some("~/s.sh"));
-        resolve_worktree_path(&io, &runner, None, &settings, &ctx("/repo")).unwrap();
+        resolve_worktree_path(&io, &runner, None, &settings, &ctx(&fake_root_str("repo"))).unwrap();
         let (cmd, _) = runner.seen.borrow().clone().unwrap();
         assert_eq!(cmd, script.to_string_lossy());
     }

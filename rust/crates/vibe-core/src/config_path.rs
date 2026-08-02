@@ -83,11 +83,14 @@ fn set_dir_permissions_0700(_dir: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use vibe_test_support::{fake_root, fake_root_str};
 
     #[test]
     fn builds_expected_path() {
-        let dir = config_dir("/home/user").unwrap();
-        assert_eq!(dir, PathBuf::from("/home/user/.config/vibe"));
+        // A per-host root: `/home/user` carries no drive prefix, so on Windows it
+        // is relative and `config_dir` would (correctly) reject it.
+        let dir = config_dir(&fake_root_str("home/user")).unwrap();
+        assert_eq!(dir, fake_root("home/user").join(".config").join("vibe"));
     }
 
     #[test]
@@ -108,8 +111,8 @@ mod tests {
     #[test]
     fn allows_dotdot_substring_in_a_name() {
         // `a..b` is a single, legitimate path segment, not a parent-dir ref.
-        let dir = config_dir("/home/a..b").unwrap();
-        assert_eq!(dir, PathBuf::from("/home/a..b/.config/vibe"));
+        let dir = config_dir(&fake_root_str("home/a..b")).unwrap();
+        assert_eq!(dir, fake_root("home/a..b").join(".config").join("vibe"));
     }
 
     #[cfg(unix)]

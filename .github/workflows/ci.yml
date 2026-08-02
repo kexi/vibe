@@ -103,13 +103,13 @@ jobs:
   # The Windows-only coverage the other jobs structurally cannot provide, in two
   # parts:
   #
-  # 1. The `#[cfg(windows)]`-only vibe-core unit tests (path-prefix validation,
-  #    the Windows profile locations, the fast-remove argv), which are compiled
-  #    AND run nowhere else. On linux/macos they are cfg'd out entirely, so a
-  #    break in them would otherwise reach a release. Only these six run — the
-  #    wider vibe-core suite still assumes Unix paths in its fixtures and fails
-  #    wholesale on Windows (83 tests, see #570); until that lands this job
-  #    cannot run the full crate.
+  # 1. The whole vibe-core unit suite. Its `#[cfg(windows)]`-only tests
+  #    (path-prefix validation, the Windows profile locations, the fast-remove
+  #    argv) are compiled AND run nowhere else — on linux/macos they are cfg'd
+  #    out entirely, so a break in them would otherwise reach a release. The rest
+  #    of the crate runs here too now that its fixtures are platform-portable
+  #    (#570); shared tests with internal `cfg(windows)` assertion branches are
+  #    only actually exercised by this job.
   # 2. The PowerShell wrapper round-trip: rust-linux/rust-macos run the pwsh leg
   #    on Unix pwsh, which cannot exercise Windows path semantics, vibe.exe
   #    resolution, or `& vibe.exe ... @args` splatting where PowerShell users
@@ -120,7 +120,12 @@ jobs:
   # Windows runner, and they carry no cfg(windows) code of their own. Windows
   # PowerShell 5.1 is not exercised either (the wrapper targets pwsh 7).
   rust-windows:
-    if: github.event_name == 'push' || github.base_ref == 'main'
+    # Normally full-run-only (push / release PRs into main), but the `ci-full`
+    # label opts a develop PR in, so a change touching Windows-only behavior can
+    # prove this leg BEFORE merge rather than discovering it on the push to
+    # develop. The workflow is read from the PR's merge commit, so labelling a PR
+    # that edits this file takes effect within that same PR.
+    if: github.event_name == 'push' || github.base_ref == 'main' || contains(github.event.pull_request.labels.*.name, 'ci-full')
     runs-on: windows-latest
     steps:
       - name: Harden Runner
@@ -129,39 +134,10 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-toolchain
-      # Exact names, not a substring filter: `windows_` would also catch the
-      # unix-branch test `unix_and_windows_branches_...`, which (like the rest
-      # of the suite, #570) is not yet Windows-portable. libtest silently runs
-      # nothing when an --exact name goes stale, so the count guard below turns
-      # a renamed test into a hard failure instead of a vacuous pass. The whole
-      # crate still COMPILES for the test binary; only the run set is scoped.
-      - name: vibe-core cfg(windows) unit tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          # --lib: a single test target, so exactly one `test result:` line and
-          # the count below cannot accidentally read a doc-test summary.
-          # Capture then print (no `tee /dev/stderr` — Git Bash on the Windows
-          # runner has no /dev/stderr, and under pipefail the dead tee fails
-          # the step before cargo's exit code is even seen).
-          status=0
-          out=$(cargo test --manifest-path rust/Cargo.toml -p vibe-core --lib -- --exact \
-            commands::doctor::tests::windows_uses_appdata_and_userprofile_documents \
-            commands::doctor::tests::windows_also_probes_onedrive_documents_when_set \
-            commands::doctor::tests::windows_rejects_unc_and_device_namespace_roots \
-            commands::doctor::tests::windows_continues_past_an_invalid_appdata \
-            commands::doctor::tests::the_windows_no_root_message_names_the_windows_variables \
-            fast_remove::tests::background_delete_passes_path_as_own_argv_element_on_windows \
-            2>&1) || status=$?
-          printf '%s\n' "$out"
-          if [ "$status" -ne 0 ]; then
-            exit "$status"
-          fi
-          passed=$(printf '%s\n' "$out" | sed -n 's/^test result: ok\. \([0-9][0-9]*\) passed.*/\1/p' | tail -n1)
-          if [ -z "$passed" ] || [ "$passed" -lt 6 ]; then
-            echo "::error::expected 6 cfg(windows) tests to run, got '${passed:-none}' — a test was renamed or removed"
-            exit 1
-          fi
+      # The whole crate runs: its fixtures are platform-portable as of #570, so
+      # there is nothing left to scope around.
+      - name: vibe-core unit tests
+        run: cargo test --manifest-path rust/Cargo.toml -p vibe-core
       - name: Wrapper round-trip test (Windows-native pwsh)
         env:
           VIBE_REQUIRE_SHELLS: pwsh

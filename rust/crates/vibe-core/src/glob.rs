@@ -240,7 +240,7 @@ pub fn expand_directory_patterns(
 mod tests {
     use super::*;
     use crate::io::FakeIo;
-    use vibe_test_support::Fixture;
+    use vibe_test_support::{fake_root_str, to_slash, Fixture};
 
     fn pats(items: &[&str]) -> Vec<String> {
         items.iter().map(|s| s.to_string()).collect()
@@ -302,8 +302,14 @@ mod tests {
         fx.mkdir(".cache/b");
         fx.write(".cache/file.txt", "x");
         let io = FakeIo::new();
-        let mut dirs =
-            expand_directory_patterns(&io, &pats(&[".cache/*"]), fx.path().to_str().unwrap());
+        let mut dirs: Vec<String> =
+            expand_directory_patterns(&io, &pats(&[".cache/*"]), fx.path().to_str().unwrap())
+                .iter()
+                // Repo-relative results carry the host separator (`.cache\a` on
+                // Windows); the identity under test is which entries matched, not
+                // how they are punctuated.
+                .map(to_slash)
+                .collect();
         dirs.sort();
         assert_eq!(dirs, vec![".cache/a".to_string(), ".cache/b".to_string()]);
     }
@@ -393,7 +399,11 @@ mod tests {
     fn absolute_pattern_is_skipped_with_warning() {
         let fx = Fixture::new();
         let io = FakeIo::new();
-        let files = expand_copy_patterns(&io, &pats(&["/etc/passwd"]), fx.path().to_str().unwrap());
+        // Absoluteness is host-defined: `/etc/passwd` is a RELATIVE path on
+        // Windows (no drive prefix), so the pattern must carry the host's own
+        // notion of "absolute" for the rejection under test to be exercised.
+        let absolute = fake_root_str("etc/passwd");
+        let files = expand_copy_patterns(&io, &pats(&[&absolute]), fx.path().to_str().unwrap());
         assert!(files.is_empty());
         assert!(io.stderr_text().contains("Skipping invalid pattern"));
     }
@@ -420,8 +430,11 @@ mod tests {
     fn absolute_glob_pattern_is_skipped() {
         let fx = Fixture::new();
         let io = FakeIo::new();
-        // An absolute glob must be rejected too (defense vs `/etc/*`).
-        let files = expand_copy_patterns(&io, &pats(&["/etc/*"]), fx.path().to_str().unwrap());
+        // An absolute glob must be rejected too (defense vs `/etc/*`), using the
+        // host's own notion of absolute — see the exact-path case above.
+        let absolute_glob = fake_root_str("etc/*");
+        let files =
+            expand_copy_patterns(&io, &pats(&[&absolute_glob]), fx.path().to_str().unwrap());
         assert!(files.is_empty());
         assert!(io.stderr_text().contains("Skipping invalid pattern"));
     }

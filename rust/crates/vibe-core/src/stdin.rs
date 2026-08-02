@@ -182,6 +182,7 @@ mod fake {
 mod tests {
     use super::*;
     use crate::io::FakeIo;
+    use vibe_test_support::fake_root_str;
 
     #[test]
     fn parses_a_json_object() {
@@ -263,11 +264,12 @@ mod tests {
     #[test]
     fn reads_valid_absolute_path() {
         let io = FakeIo::new();
-        let r = FakeStdin::text(r#"{"worktree_path": "/home/u/wt"}"#);
-        assert_eq!(
-            read_worktree_hook_path(&io, &r),
-            Some("/home/u/wt".to_string())
-        );
+        // JSON-escaped: on Windows the fake root is `C:\home\u\wt`, whose
+        // backslashes are not legal raw inside a JSON string.
+        let path = fake_root_str("home/u/wt");
+        let json = serde_json::json!({ "worktree_path": path }).to_string();
+        let r = FakeStdin::text(&json);
+        assert_eq!(read_worktree_hook_path(&io, &r), Some(path));
     }
 
     #[test]
