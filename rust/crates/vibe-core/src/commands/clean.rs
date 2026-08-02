@@ -135,7 +135,10 @@ where
         success_log(deps.io, "Worktree already removed.", opts);
         return Ok(Outcome::cd(main_path));
     };
-    let current_branch = worktree_info.branch;
+    // A detached worktree has no branch to delete; the empty name makes
+    // `maybe_delete_branch` skip via its existing `branch.is_empty()` guard,
+    // while the worktree itself is still removed normally.
+    let current_branch = worktree_info.branch.unwrap_or_default();
 
     let config = load_vibe_config(deps.io, deps.resolver, deps.version, &current_worktree_path)?;
 
@@ -540,7 +543,10 @@ where
         verbose_log(deps.io, "[cc-worktree-hook] Worktree already removed", opts);
         return Ok(Outcome::none());
     };
-    let current_branch = worktree_info.branch;
+    // A detached worktree has no branch to delete; the empty name makes
+    // `maybe_delete_branch` skip via its existing `branch.is_empty()` guard,
+    // while the worktree itself is still removed normally.
+    let current_branch = worktree_info.branch.unwrap_or_default();
 
     let config = load_vibe_config(deps.io, deps.resolver, deps.version, &worktree_path)?;
 

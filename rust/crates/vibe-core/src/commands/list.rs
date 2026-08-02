@@ -18,6 +18,7 @@ use crate::io::Io;
 use crate::mru::{load_mru_data, sort_by_mru};
 use crate::output::{report_log, sanitize_for_display, verbose_log, OutputOptions};
 use serde::Serialize;
+use unicode_width::UnicodeWidthStr;
 
 /// Marker printed in the first column for the worktree the user is standing in.
 const CURRENT_MARKER: &str = "*";
@@ -26,11 +27,16 @@ const CURRENT_MARKER: &str = "*";
 /// easy to spot (and easy to clean up).
 const SCRATCH_LABEL: &str = "(scratch)";
 
+/// Placeholder shown in the branch column for a detached-HEAD worktree, which
+/// has no branch to name.
+const DETACHED_LABEL: &str = "(detached)";
+
 /// One rendered row of the listing. `Serialize` drives `--json`, so the field
 /// names are the stable public schema of that output.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ListEntry {
-    pub branch: String,
+    /// `None` for a detached-HEAD worktree (JSON emits `null`).
+    pub branch: Option<String>,
     pub path: String,
     /// Whether this is the worktree the command was invoked from.
     pub current: bool,
@@ -65,11 +71,6 @@ where
     }
 
     let entries = collect_entries(deps)?;
-    verbose_log(
-        deps.io,
-        &format!("Found {} worktree(s)", entries.len()),
-        opts,
-    );
 
     if json {
         let text = serde_json::to_string_pretty(&entries).map_err(|e| {
@@ -77,9 +78,20 @@ where
         })?;
         // `report_log`, not `log`: the listing is the whole point of the command,
         // so `--quiet` must not turn `vibe list` into a silent no-op.
+        //
+        // The diagnostic is deliberately NOT emitted here: `--json` writes its
+        // payload to the same stderr stream, so a `[verbose]` line would prepend
+        // non-JSON bytes to the document and break `vibe --verbose list --json |
+        // jq`. In JSON mode the payload is the only thing on the stream.
         report_log(deps.io, &text);
         return Ok(Outcome::none());
     }
+
+    verbose_log(
+        deps.io,
+        &format!("Found {} worktree(s)", entries.len()),
+        opts,
+    );
 
     if entries.is_empty() {
         report_log(deps.io, "No worktrees found.");
@@ -108,11 +120,23 @@ where
     let sorted = sort_by_mru(&worktrees, &mru);
 
     let cwd = lexical_normalize_path(deps.cwd);
+    // Worktrees CAN nest (`git worktree add <wt>/inner` is accepted), so several
+    // rows may contain `cwd`. The innermost one — the longest containing path —
+    // is the worktree the user is actually standing in.
+    let current_path = sorted
+        .iter()
+        .map(|w| lexical_normalize_path(&w.path))
+        .filter(|base| is_within(&cwd, base))
+        .max_by_key(|base| base.len());
+
     let mut entries: Vec<ListEntry> = sorted
         .into_iter()
         .map(|w| ListEntry {
-            current: is_within(&cwd, &w.path),
-            scratch: w.branch.starts_with(SCRATCH_PREFIX),
+            current: current_path.as_deref() == Some(lexical_normalize_path(&w.path).as_str()),
+            scratch: w
+                .branch
+                .as_deref()
+                .is_some_and(|b| b.starts_with(SCRATCH_PREFIX)),
             branch: w.branch,
             path: w.path,
         })
@@ -124,22 +148,25 @@ where
     Ok(entries)
 }
 
-/// Whether `cwd` is the worktree at `path` or a directory inside it.
+/// Whether `cwd` is the worktree at the already-normalized `base`, or inside it.
 ///
 /// Comparison is lexical (like [`get_worktree_by_path`]): no filesystem access,
 /// so a worktree that has just been moved out from under the process still
-/// compares sanely instead of erroring. Nested worktrees are impossible in git,
-/// so a prefix match cannot mark two rows.
+/// compares sanely instead of erroring.
+///
+/// This answers *containment* only. Containment alone does NOT identify the
+/// current worktree: git permits nesting (`git worktree add <wt>/inner`
+/// succeeds), so a cwd inside `inner` is contained by both rows. The caller
+/// resolves that by taking the longest containing path.
 ///
 /// [`get_worktree_by_path`]: crate::git::get_worktree_by_path
-fn is_within(cwd: &str, path: &str) -> bool {
-    let base = lexical_normalize_path(path);
+fn is_within(cwd: &str, base: &str) -> bool {
     if cwd == base {
         return true;
     }
     // Require a separator so `/repo/feature-2` is not read as inside `/repo/feature`.
     let with_sep = if base.ends_with('/') {
-        base.clone()
+        base.to_string()
     } else {
         format!("{base}/")
     };
@@ -149,24 +176,28 @@ fn is_within(cwd: &str, path: &str) -> bool {
 /// Render the aligned plain-text table (one `String` per line).
 ///
 /// Column width is computed from the *sanitized* branch text so a branch name
-/// carrying control characters cannot skew the alignment of the other rows.
+/// carrying control characters cannot skew the alignment of the other rows, and
+/// in terminal *display* cells rather than codepoints: a CJK or emoji branch
+/// name occupies two cells per character, so padding by `chars().count()` would
+/// leave the path column ragged.
 fn render_table(entries: &[ListEntry]) -> Vec<String> {
     let branches: Vec<String> = entries
         .iter()
-        .map(|e| sanitize_for_display(&e.branch))
+        .map(|e| match &e.branch {
+            Some(b) => sanitize_for_display(b),
+            None => DETACHED_LABEL.to_string(),
+        })
         .collect();
-    let width = branches
-        .iter()
-        .map(|b| b.chars().count())
-        .max()
-        .unwrap_or(0);
+    let width = branches.iter().map(|b| b.width()).max().unwrap_or(0);
 
     entries
         .iter()
         .zip(&branches)
         .map(|(entry, branch)| {
             let marker = if entry.current { CURRENT_MARKER } else { " " };
-            let pad = " ".repeat(width - branch.chars().count());
+            // `saturating_sub` because `width` is the max over this same set, so
+            // the difference can never actually go negative.
+            let pad = " ".repeat(width.saturating_sub(branch.width()));
             let path = sanitize_for_display(&entry.path);
             let mut line = format!("{marker} {branch}{pad}  {path}");
             if entry.scratch {
@@ -190,11 +221,21 @@ mod tests {
     }
     impl ListGit {
         fn with(entries: &[(&str, &str)]) -> Self {
+            let owned: Vec<(&str, Option<&str>)> =
+                entries.iter().map(|(p, b)| (*p, Some(*b))).collect();
+            ListGit::with_optional_branches(&owned)
+        }
+
+        /// Same, but `None` renders the detached-HEAD porcelain shape (a bare
+        /// `detached` line and no `branch` line), exactly as real git emits it.
+        fn with_optional_branches(entries: &[(&str, Option<&str>)]) -> Self {
             let mut porcelain = String::new();
             for (path, branch) in entries {
-                porcelain.push_str(&format!(
-                    "worktree {path}\nHEAD abc\nbranch refs/heads/{branch}\n\n"
-                ));
+                porcelain.push_str(&format!("worktree {path}\nHEAD abc\n"));
+                match branch {
+                    Some(b) => porcelain.push_str(&format!("branch refs/heads/{b}\n\n")),
+                    None => porcelain.push_str("detached\n\n"),
+                }
             }
             ListGit {
                 porcelain,
@@ -475,5 +516,137 @@ mod tests {
         assert!(is_within("/repo/feat/src", "/repo/feat"));
         assert!(!is_within("/repo/feat-2", "/repo/feat"));
         assert!(!is_within("/repo", "/repo/feat"));
+    }
+
+    #[test]
+    fn detached_worktrees_are_listed_not_dropped() {
+        // git emits no `branch` line for a detached HEAD; the worktree still
+        // exists and must appear in the listing.
+        let io = no_home();
+        let git =
+            ListGit::with_optional_branches(&[("/repo/main", Some("main")), ("/repo/det", None)]);
+        run(&io, &git, "/repo/main", false).unwrap();
+
+        let lines: Vec<String> = io.stderr.borrow().clone();
+        assert_eq!(lines.len(), 2, "detached row missing: {lines:?}");
+        let det = lines
+            .iter()
+            .find(|l| l.contains("/repo/det"))
+            .expect("detached row present");
+        assert!(det.contains(DETACHED_LABEL), "got: {det}");
+    }
+
+    #[test]
+    fn a_detached_worktree_is_marked_current_and_serializes_as_null() {
+        let io = no_home();
+        let git =
+            ListGit::with_optional_branches(&[("/repo/main", Some("main")), ("/repo/det", None)]);
+        run(&io, &git, "/repo/det", true).unwrap();
+
+        let parsed: serde_json::Value = serde_json::from_str(&io.stderr_text()).unwrap();
+        assert_eq!(
+            parsed,
+            serde_json::json!([
+                {
+                    "branch": null,
+                    "path": "/repo/det",
+                    "current": true,
+                    "scratch": false,
+                },
+                {
+                    "branch": "main",
+                    "path": "/repo/main",
+                    "current": false,
+                    "scratch": false,
+                },
+            ])
+        );
+    }
+
+    #[test]
+    fn a_nested_worktree_marks_only_the_innermost_row() {
+        // `git worktree add <wt>/inner` is accepted by git, so `/repo/feat` and
+        // `/repo/feat/inner` can both contain the cwd. Only the innermost is
+        // the worktree the user is standing in.
+        let io = no_home();
+        let git = ListGit::with(&[
+            ("/repo/main", "main"),
+            ("/repo/feat", "feat"),
+            ("/repo/feat/inner", "inner"),
+        ]);
+        run(&io, &git, "/repo/feat/inner/src", false).unwrap();
+
+        let lines: Vec<String> = io.stderr.borrow().clone();
+        let marked: Vec<&String> = lines.iter().filter(|l| l.starts_with('*')).collect();
+        assert_eq!(marked.len(), 1, "exactly one row is marked: {lines:?}");
+        assert!(marked[0].contains("/repo/feat/inner"), "got: {marked:?}");
+    }
+
+    #[test]
+    fn a_nested_worktree_outside_the_inner_tree_marks_the_outer_row() {
+        // The complement: standing in the outer worktree but NOT inside the
+        // nested one still marks the outer row (and only it).
+        let io = no_home();
+        let git = ListGit::with(&[("/repo/feat", "feat"), ("/repo/feat/inner", "inner")]);
+        run(&io, &git, "/repo/feat/src", false).unwrap();
+
+        let lines: Vec<String> = io.stderr.borrow().clone();
+        let marked: Vec<&String> = lines.iter().filter(|l| l.starts_with('*')).collect();
+        assert_eq!(marked.len(), 1, "exactly one row is marked: {lines:?}");
+        assert!(!marked[0].contains("inner"), "got: {marked:?}");
+    }
+
+    #[test]
+    fn verbose_does_not_prepend_a_diagnostic_to_the_json_payload() {
+        // `--json` writes to the same stderr stream as the diagnostics, so a
+        // `[verbose]` line would make the payload unparseable.
+        let io = no_home();
+        let git = ListGit::with(&[("/repo/main", "main")]);
+        let deps = ListDeps {
+            io: &io,
+            git: &git,
+            cwd: "/repo/main",
+        };
+        list_command(&deps, true, OutputOptions::new(true, false)).unwrap();
+
+        let text = io.stderr_text();
+        assert!(!text.contains("[verbose]"), "diagnostic leaked: {text}");
+        // The whole stream parses as JSON, byte for byte.
+        serde_json::from_str::<serde_json::Value>(&text).expect("stderr must be pure JSON");
+    }
+
+    #[test]
+    fn verbose_still_reports_the_count_in_text_mode() {
+        let io = no_home();
+        let git = ListGit::with(&[("/repo/main", "main")]);
+        let deps = ListDeps {
+            io: &io,
+            git: &git,
+            cwd: "/repo/main",
+        };
+        list_command(&deps, false, OutputOptions::new(true, false)).unwrap();
+        assert!(io.stderr_text().contains("[verbose] Found 1 worktree(s)"));
+    }
+
+    #[test]
+    fn wide_branch_names_align_by_display_width_not_codepoints() {
+        // Each CJK character occupies two terminal cells. Padding by codepoint
+        // count would leave the path column ragged.
+        let io = no_home();
+        let git = ListGit::with(&[("/repo/a", "機能/ログイン"), ("/repo/b", "main")]);
+        run(&io, &git, "/repo/a", false).unwrap();
+
+        let lines: Vec<String> = io.stderr.borrow().clone();
+        let widths: Vec<usize> = lines
+            .iter()
+            .map(|l| {
+                let idx = l.find("/repo/").expect("every row shows a path");
+                l[..idx].width()
+            })
+            .collect();
+        assert!(
+            widths.windows(2).all(|w| w[0] == w[1]),
+            "paths not aligned by display width: {lines:?} -> {widths:?}"
+        );
     }
 }

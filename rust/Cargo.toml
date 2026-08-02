@@ -41,6 +41,11 @@ uuid = { version = "1", features = ["v4"] }
 # silently re-sorts keys, diverging from the shipping TS CLI's file format.
 serde_json = { version = "1", features = ["preserve_order"] }
 toml = "0.8"
+# Terminal display width for column alignment (`vibe list`). Codepoint counts
+# misalign columns for CJK/emoji branch names, which occupy two cells. Already
+# in the tree transitively (indicatif -> console), so this adds no new
+# third-party code — only a direct edge to it.
+unicode-width = "0.2"
 sha2 = "0.10"
 thiserror = "2.0"
 anyhow = "1"

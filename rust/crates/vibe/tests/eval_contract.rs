@@ -979,6 +979,80 @@ fn bogus_eval_dialect_exits_two_with_empty_stdout() {
     );
 }
 
+/// `vibe list` renders a TABLE, which is the exact shape that would be
+/// catastrophic on the eval channel: the POSIX wrapper would execute every row
+/// as a command line (branch names and paths are attacker-influenced). The E2E
+/// suite drives a PTY, which MERGES the two streams, so only this test can prove
+/// the split. STDOUT must be byte-exact empty while the rows land on STDERR.
+#[test]
+fn list_writes_the_table_to_stderr_leaving_stdout_empty() {
+    if !git_available() {
+        eprintln!("skipping: git unavailable");
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let (main_path, secondary_path) = setup_worktrees(tmp.path(), "feat", "feature");
+
+    let out = run_vibe(&main_path, home.path(), &["list"]);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert!(out.status.success(), "list failed; stderr={stderr:?}");
+    assert!(
+        stdout.is_empty(),
+        "the listing must never reach the eval channel: {stdout:?}"
+    );
+    // The rows really were produced — otherwise an empty stdout proves nothing.
+    assert!(
+        stderr.contains("feature") && stderr.contains(&secondary_path.display().to_string()),
+        "listing missing from stderr: {stderr:?}"
+    );
+}
+
+/// The same invariant for `--json`: the payload is machine-readable and belongs
+/// on stderr too, and stdout must stay byte-exact empty. `--verbose` is passed
+/// as well, because a diagnostic line prepended to the payload would both
+/// corrupt the JSON and be the kind of stray write that lands on stdout.
+#[test]
+fn list_json_keeps_stdout_empty_and_stderr_pure_json() {
+    if !git_available() {
+        eprintln!("skipping: git unavailable");
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let (main_path, _secondary_path) = setup_worktrees(tmp.path(), "feat", "feature");
+
+    let out = run_vibe(&main_path, home.path(), &["--verbose", "list", "--json"]);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert!(
+        out.status.success(),
+        "list --json failed; stderr={stderr:?}"
+    );
+    assert!(
+        stdout.is_empty(),
+        "the JSON payload must never reach the eval channel: {stdout:?}"
+    );
+    // Every byte on stderr is the payload: no `[verbose]` preamble before it and
+    // nothing after it. (Parsing is covered by the unit tests; here the point is
+    // that the stream STARTS with the document, which a diagnostic would break.)
+    assert!(
+        !stderr.contains("[verbose]"),
+        "a diagnostic corrupted the payload: {stderr:?}"
+    );
+    assert!(
+        stderr.starts_with('[') && stderr.trim_end().ends_with(']'),
+        "stderr is not exactly the JSON document: {stderr:?}"
+    );
+    assert!(
+        stderr.contains("\"branch\": \"feature\""),
+        "payload missing the worktree: {stderr:?}"
+    );
+}
+
 /// `vibe doctor` is a diagnostics command, and diagnostics conventionally go to
 /// stdout — but here stdout IS the eval channel, so a report there would be
 /// EXECUTED by the POSIX wrapper. With an empty HOME (no profiles to find) the

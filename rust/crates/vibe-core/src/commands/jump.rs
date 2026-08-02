@@ -28,6 +28,37 @@ impl HasPath for Worktree {
     }
 }
 
+/// A worktree that is checked out on a branch.
+///
+/// `jump` matches a query against branch names, so a detached-HEAD worktree
+/// (`Worktree::branch == None`) has nothing to match and is filtered out up
+/// front. Narrowing once here — rather than threading `Option` through all seven
+/// matching tiers — keeps every tier operating on a plain `String`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BranchedWorktree {
+    path: String,
+    branch: String,
+}
+
+impl HasPath for BranchedWorktree {
+    fn path(&self) -> &str {
+        &self.path
+    }
+}
+
+/// Keep only the worktrees that are on a branch.
+fn branched(worktrees: Vec<Worktree>) -> Vec<BranchedWorktree> {
+    worktrees
+        .into_iter()
+        .filter_map(|w| {
+            w.branch.map(|branch| BranchedWorktree {
+                path: w.path,
+                branch,
+            })
+        })
+        .collect()
+}
+
 /// Inputs the jump command pulls from the binary (so the clock stays injected).
 pub struct JumpDeps<'a, I, G, P, S>
 where
@@ -63,7 +94,7 @@ where
         return Err(VibeError::Worktree("Branch name is required".to_string()));
     }
 
-    let worktrees = get_worktree_list(deps.git)?;
+    let worktrees = branched(get_worktree_list(deps.git)?);
     verbose_log(
         deps.io,
         &format!("Found {} worktree(s)", worktrees.len()),
@@ -104,7 +135,7 @@ where
     }
 
     // For non-exact matching, optionally drop scratch worktrees.
-    let pool: Vec<&Worktree> = if should_filter_out_scratch(trimmed) {
+    let pool: Vec<&BranchedWorktree> = if should_filter_out_scratch(trimmed) {
         worktrees
             .iter()
             .filter(|w| !is_scratch(&w.branch))
@@ -114,7 +145,7 @@ where
     };
 
     // 3. Word boundary (CS).
-    let wb_cs: Vec<Worktree> = pool
+    let wb_cs: Vec<BranchedWorktree> = pool
         .iter()
         .filter(|w| is_word_boundary_match(&w.branch, trimmed))
         .map(|w| (*w).clone())
@@ -124,7 +155,7 @@ where
     }
 
     // 4. Word boundary (CI).
-    let wb_ci: Vec<Worktree> = pool
+    let wb_ci: Vec<BranchedWorktree> = pool
         .iter()
         .filter(|w| is_word_boundary_match(&w.branch.to_lowercase(), &lower_query))
         .map(|w| (*w).clone())
@@ -134,7 +165,7 @@ where
     }
 
     // 5. Substring (CS).
-    let sub_cs: Vec<Worktree> = pool
+    let sub_cs: Vec<BranchedWorktree> = pool
         .iter()
         .filter(|w| w.branch.contains(trimmed))
         .map(|w| (*w).clone())
@@ -144,7 +175,7 @@ where
     }
 
     // 6. Substring (CI).
-    let sub_ci: Vec<Worktree> = pool
+    let sub_ci: Vec<BranchedWorktree> = pool
         .iter()
         .filter(|w| w.branch.to_lowercase().contains(&lower_query))
         .map(|w| (*w).clone())
@@ -156,13 +187,13 @@ where
     // 7. Fuzzy (≥ 3 chars), sorted by score descending (stable).
     let has_enough = trimmed.chars().count() >= FUZZY_MATCH_MIN_LENGTH;
     if has_enough {
-        let mut scored: Vec<(Worktree, f64)> = pool
+        let mut scored: Vec<(BranchedWorktree, f64)> = pool
             .iter()
             .filter_map(|w| fuzzy_match(&w.branch, trimmed).map(|r| ((*w).clone(), r.score)))
             .collect();
         // Stable sort by score descending (TS `b.score - a.score`).
         scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        let fuzzy: Vec<Worktree> = scored.into_iter().map(|(w, _)| w).collect();
+        let fuzzy: Vec<BranchedWorktree> = scored.into_iter().map(|(w, _)| w).collect();
         if let Some(outcome) = handle_partial(deps, &fuzzy, trimmed, &mru_entries, opts)? {
             return Ok(outcome);
         }
@@ -185,7 +216,7 @@ where
 /// Handle a candidate set: single → jump; multiple → prompt; empty → `None`.
 fn handle_partial<I, G, P, S>(
     deps: &JumpDeps<I, G, P, S>,
-    matches: &[Worktree],
+    matches: &[BranchedWorktree],
     query: &str,
     mru_entries: &[MruEntry],
     opts: OutputOptions,

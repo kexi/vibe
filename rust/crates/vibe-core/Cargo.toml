@@ -27,6 +27,7 @@ globset.workspace = true
 walkdir.workspace = true
 indicatif.workspace = true
 uuid.workspace = true
+unicode-width.workspace = true
 # rustls for the upgrade command's HTTPS check. `default-features = false` drops
 # ureq's default `gzip`. Why not the plain `rustls` feature: it pulls in ureq's
 # `_ring` (rustls/ring) crypto provider. We require aws-lc-rs, so we take

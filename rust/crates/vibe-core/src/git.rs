@@ -11,10 +11,14 @@ use std::path::Path;
 use std::process::Command;
 
 /// A single worktree entry parsed from `git worktree list --porcelain`.
+///
+/// `branch` is `None` for a detached-HEAD worktree: git emits a bare `detached`
+/// line instead of `branch refs/heads/…` for those, and they are real worktrees
+/// a user can be standing in, so they must be representable rather than dropped.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Worktree {
     pub path: String,
-    pub branch: String,
+    pub branch: Option<String>,
 }
 
 /// Repository information extracted from a file path.
@@ -73,20 +77,43 @@ pub fn sanitize_branch_name(branch_name: &str) -> String {
 /// git emits entries in a stable order (main worktree first), so we preserve
 /// the emitted order rather than re-sorting — and we never depend on
 /// nondeterministic filesystem `read_dir` order anywhere.
+///
+/// An entry is accumulated from its `worktree <path>` line and flushed when the
+/// next one starts (or at EOF), so a detached-HEAD worktree — which carries a
+/// bare `detached` line and NO `branch` line — yields `branch: None` instead of
+/// vanishing. A `bare` entry is dropped: a bare repository has no working tree
+/// to stand in or `cd` to, so it is not a worktree for any of our purposes.
 pub fn parse_worktree_list(output: &str) -> Vec<Worktree> {
     let mut worktrees = Vec::new();
-    let mut current_path = String::new();
+    let mut current: Option<Worktree> = None;
+    let mut is_bare = false;
+
+    // Push the entry accumulated so far, unless it is a bare repository.
+    fn flush(out: &mut Vec<Worktree>, current: Option<Worktree>, is_bare: bool) {
+        if let Some(wt) = current {
+            if !is_bare {
+                out.push(wt);
+            }
+        }
+    }
 
     for line in output.split('\n') {
         if let Some(rest) = line.strip_prefix("worktree ") {
-            current_path = rest.to_string();
-        } else if let Some(rest) = line.strip_prefix("branch refs/heads/") {
-            worktrees.push(Worktree {
-                path: current_path.clone(),
-                branch: rest.to_string(),
+            flush(&mut worktrees, current.take(), is_bare);
+            is_bare = false;
+            current = Some(Worktree {
+                path: rest.to_string(),
+                branch: None,
             });
+        } else if let Some(rest) = line.strip_prefix("branch refs/heads/") {
+            if let Some(wt) = current.as_mut() {
+                wt.branch = Some(rest.to_string());
+            }
+        } else if line.trim() == "bare" {
+            is_bare = true;
         }
     }
+    flush(&mut worktrees, current.take(), is_bare);
 
     worktrees
 }
@@ -157,7 +184,7 @@ pub fn find_worktree_by_branch(
     let worktrees = parse_worktree_list(&output);
     Ok(worktrees
         .into_iter()
-        .find(|w| w.branch == branch_name)
+        .find(|w| w.branch.as_deref() == Some(branch_name))
         .map(|w| w.path))
 }
 
@@ -504,7 +531,7 @@ mod tests {
         let wt = get_worktree_by_path(&git, "/test/repo/../wt/./feat")
             .unwrap()
             .unwrap();
-        assert_eq!(wt.branch, "feature");
+        assert_eq!(wt.branch.as_deref(), Some("feature"));
         assert_eq!(wt.path, "/test/wt/feat");
     }
 
@@ -544,10 +571,10 @@ mod tests {
     // start/clean over real git) cannot silently change how worktrees are read.
 
     #[test]
-    fn parse_skips_detached_head_entry_without_branch_line() {
+    fn parse_keeps_detached_head_entry_with_no_branch() {
         // A detached-HEAD worktree emits `detached` instead of a `branch` line.
-        // The parser pushes only on a `branch refs/heads/` line, so the detached
-        // entry is intentionally OMITTED from the result.
+        // It is still a real worktree the user can stand in, so it is reported
+        // with `branch: None` rather than dropped.
         let out = "\
 worktree /repo/main
 HEAD aaaa
@@ -560,11 +587,30 @@ detached
 ";
         assert_eq!(
             parse_worktree_list(out),
+            vec![
+                Worktree {
+                    path: "/repo/main".into(),
+                    branch: Some("main".into()),
+                },
+                Worktree {
+                    path: "/repo/detached".into(),
+                    branch: None,
+                },
+            ],
+            "detached entry must be reported with no branch"
+        );
+    }
+
+    #[test]
+    fn parse_keeps_a_trailing_detached_entry_at_eof() {
+        // No trailing blank line: the last entry is flushed at EOF, not lost.
+        let out = "worktree /repo/detached\nHEAD bbbb\ndetached";
+        assert_eq!(
+            parse_worktree_list(out),
             vec![Worktree {
-                path: "/repo/main".into(),
-                branch: "main".into(),
-            }],
-            "detached entry (no branch line) must be skipped"
+                path: "/repo/detached".into(),
+                branch: None,
+            }]
         );
     }
 
@@ -581,7 +627,7 @@ branch refs/heads/feat
             parse_worktree_list(out),
             vec![Worktree {
                 path: "/repo/my worktree dir".into(),
-                branch: "feat".into(),
+                branch: Some("feat".into()),
             }]
         );
     }
@@ -603,7 +649,7 @@ branch refs/heads/main
             parse_worktree_list(out),
             vec![Worktree {
                 path: "/repo/wt".into(),
-                branch: "main".into(),
+                branch: Some("main".into()),
             }]
         );
     }
@@ -622,11 +668,11 @@ branch refs/heads/main
             vec![
                 Worktree {
                     path: "/a".into(),
-                    branch: "main".into()
+                    branch: Some("main".into())
                 },
                 Worktree {
                     path: "/b".into(),
-                    branch: "feat".into()
+                    branch: Some("feat".into())
                 },
             ]
         );

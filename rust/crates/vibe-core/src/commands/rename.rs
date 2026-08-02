@@ -77,7 +77,16 @@ where
         return Err(VibeError::AlreadyReported);
     }
 
-    let old_name = current.branch.clone();
+    // `rename` renames the checked-out BRANCH (plus the directory), so a
+    // detached-HEAD worktree has nothing to rename. Refuse explicitly rather
+    // than inventing a branch name.
+    let Some(old_name) = current.branch.clone() else {
+        error_log(
+            deps.io,
+            "Error: Cannot rename a detached HEAD worktree (no branch to rename)",
+        );
+        return Err(VibeError::AlreadyReported);
+    };
     let old_path = current.path.clone();
 
     // The branch name is kept verbatim (slashes are valid git namespacing); only
