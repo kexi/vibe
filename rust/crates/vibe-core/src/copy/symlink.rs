@@ -15,7 +15,11 @@
 //! rejected outright: a symlink entry names one directory to share, and expanding
 //! a glob would silently share whatever happens to match. The link
 //! DESTINATION is likewise required to stay inside the worktree so a hostile
-//! pattern cannot plant a link outside it.
+//! pattern cannot plant a link outside it; since the destination does not exist
+//! yet it cannot be canonicalized, so its existing ancestors are additionally
+//! walked with `symlink_metadata` right before the syscall
+//! ([`ancestors_are_contained`]) — a lexical `starts_with` alone would let a
+//! symlinked intermediate directory redirect the creation.
 //!
 //! Failures are never fatal: a missing target, an escaping path, or an OS refusal
 //! (Windows without Developer Mode / `SeCreateSymbolicLinkPrivilege`) warns and
@@ -66,33 +70,40 @@ impl SymlinkCreator for RealSymlinkCreator {
     }
 }
 
-/// True if `pattern` names exactly one of the `symlink` entries.
+/// True if `path` is a `symlink` entry, or lives under one, or contains one.
 ///
 /// Comparison is on normalized path components, so `.cache` and `./.cache`
-/// (and `a/b` vs `a\b` on Windows) are recognized as the same entry. Callers use
-/// this to give a `symlink` entry precedence over a `dirs`/`files` pattern
-/// naming the same path.
-pub fn is_symlinked_pattern(symlinks: &[String], pattern: &str) -> bool {
-    let Some(normalized) = normalize_relative(pattern) else {
+/// (and `a/b` vs `a\b` on Windows) are recognized as the same entry.
+///
+/// The relation is checked in BOTH directions on purpose:
+/// - `path` == the entry, or under it (`.cache/pkg` under `.cache`): copying it
+///   would write THROUGH the freshly created link into the origin worktree,
+///   corrupting the shared directory rather than merely wasting time.
+/// - `path` is an ANCESTOR of the entry (`.` -> unreachable, but `a` when
+///   `a/b` is shared): copying it would recreate `a/b` as a real directory and
+///   either clobber the link or, with a merging strategy, write through it.
+pub fn is_symlinked_path(symlinks: &[String], path: &str) -> bool {
+    let Some(normalized) = normalize_relative(path) else {
         return false;
     };
     symlinks
         .iter()
         .filter_map(|s| normalize_relative(s))
-        .any(|s| s == normalized)
+        .any(|s| normalized.starts_with(&s[..]) || s.starts_with(&normalized[..]))
 }
 
-/// Drop the `dirs`/`files` patterns that a `symlink` entry already covers.
+/// Drop the copy entries that a `symlink` entry already covers.
 ///
-/// Returns the retained patterns; the symlinked ones are warned about by the
-/// caller only in dry-run (a normal run just shows the symlink phase).
-pub fn without_symlinked(symlinks: &[String], patterns: &[String]) -> Vec<String> {
+/// Callers MUST apply this AFTER glob expansion: a pattern like `.*` does not
+/// compare equal to `.cache`, but expands to it, so filtering the raw patterns
+/// alone would let the expansion copy straight over (and through) the link.
+pub fn without_symlinked(symlinks: &[String], paths: &[String]) -> Vec<String> {
     if symlinks.is_empty() {
-        return patterns.to_vec();
+        return paths.to_vec();
     }
-    patterns
+    paths
         .iter()
-        .filter(|p| !is_symlinked_pattern(symlinks, p))
+        .filter(|p| !is_symlinked_path(symlinks, p))
         .cloned()
         .collect()
 }
@@ -134,6 +145,76 @@ struct Plan {
     target: PathBuf,
     /// Where the link is created inside the new worktree.
     link: PathBuf,
+    /// Canonical worktree root `link` must stay inside (re-checked at creation).
+    worktree_root: PathBuf,
+}
+
+/// Delete an existing symlink at `link`.
+///
+/// Unix has one unlink for both flavors, but a Windows DIRECTORY symlink is a
+/// reparse point on a directory entry and needs `remove_dir`; calling
+/// `remove_file` on it fails, and the caller would then hit `AlreadyExists` and
+/// leave the stale link behind. Try the type-appropriate call first and fall
+/// back to the other, since a re-entry can find either flavor.
+fn remove_symlink(link: &Path, meta: &std::fs::Metadata) -> std::io::Result<()> {
+    if cfg!(windows) && meta.is_dir() {
+        // `is_dir()` on symlink_metadata is false for a FILE symlink, so this
+        // only takes the directory branch for a real directory reparse point.
+        return std::fs::remove_dir(link).or_else(|_| std::fs::remove_file(link));
+    }
+    std::fs::remove_file(link).or_else(|e| {
+        if cfg!(windows) {
+            std::fs::remove_dir(link)
+        } else {
+            Err(e)
+        }
+    })
+}
+
+/// SECURITY: confirm no existing ancestor of `link` is a symlink that could
+/// redirect the creation outside `root`.
+///
+/// `plan_symlinks` can only compare the link path LEXICALLY (it does not exist
+/// yet, so it cannot be canonicalized). That leaves the classic hole: for
+/// `a/b`, if `a` is a symlink to somewhere else, the lexical check passes but
+/// the syscall follows `a` and plants the link outside the worktree. Walking the
+/// ancestors with `symlink_metadata` (never following) closes it; each existing
+/// ancestor is additionally canonicalized so a chain of in-worktree links cannot
+/// walk out either.
+fn ancestors_are_contained(link: &Path, root: &Path) -> Result<(), String> {
+    let Some(parent) = link.parent() else {
+        return Err("link has no parent directory".to_string());
+    };
+    // Only the segments BELOW the root are attacker-influenced; the root itself
+    // was canonicalized by the caller.
+    let Ok(relative) = parent.strip_prefix(root) else {
+        return Err(format!("{} escapes the worktree", link.display()));
+    };
+
+    let mut current = root.to_path_buf();
+    for component in relative.components() {
+        current.push(component);
+        let Ok(meta) = std::fs::symlink_metadata(&current) else {
+            // Does not exist: nothing can be followed through it.
+            continue;
+        };
+        if meta.file_type().is_symlink() {
+            return Err(format!(
+                "{} is a symlink, which could redirect the link outside the worktree",
+                current.display()
+            ));
+        }
+        let Ok(canonical) = std::fs::canonicalize(&current) else {
+            return Err(format!("cannot resolve {}", current.display()));
+        };
+        if !canonical.starts_with(root) {
+            return Err(format!(
+                "{} resolves outside the worktree",
+                current.display()
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Create the `[copy] symlink` entries in `worktree_path`, pointing at
@@ -180,7 +261,20 @@ pub fn create_symlinks(
         // symlink, never a real directory the user may have filled.
         if let Ok(meta) = std::fs::symlink_metadata(&plan.link) {
             if meta.file_type().is_symlink() {
-                let _ = std::fs::remove_file(&plan.link);
+                if let Err(e) = remove_symlink(&plan.link, &meta) {
+                    // Recreating over a link we could not delete would fail with
+                    // AlreadyExists and leave the STALE link in place, silently
+                    // pointing the worktree at the wrong directory; say so.
+                    tracker.fail_task(task_ids[i], &e.to_string());
+                    warn_log(
+                        io,
+                        &format!(
+                            "Warning: Failed to remove the existing symlink {}: {e}",
+                            plan.label
+                        ),
+                    );
+                    continue;
+                }
             } else {
                 tracker.complete_task(task_ids[i]);
                 warn_log(
@@ -195,6 +289,18 @@ pub fn create_symlinks(
         }
         if let Some(parent) = plan.link.parent() {
             let _ = std::fs::create_dir_all(parent);
+        }
+        // SECURITY: `create_dir_all` above (and any hook that ran earlier) is the
+        // last thing to touch the path, so re-verify containment right before the
+        // syscall — a nested entry (`a/b`) whose parent is a symlink would
+        // otherwise plant the link wherever that parent points.
+        if let Err(reason) = ancestors_are_contained(&plan.link, &plan.worktree_root) {
+            tracker.fail_task(task_ids[i], &reason);
+            warn_log(
+                io,
+                &format!("Warning: Skipping symlink {}: {reason}", plan.label),
+            );
+            continue;
         }
 
         match creator.symlink_dir(&plan.target, &plan.link) {
@@ -301,6 +407,7 @@ fn plan_symlinks(
             label: pattern.clone(),
             target,
             link,
+            worktree_root: canonical_worktree.clone(),
         });
     }
 
@@ -379,20 +486,56 @@ mod tests {
         (origin, worktree)
     }
 
+    /// True if this host can actually create a directory symlink.
+    ///
+    /// Production treats a privilege-denied `symlink_dir` as non-fatal (Windows
+    /// without Developer Mode / `SeCreateSymbolicLinkPrivilege`), so a
+    /// round-trip test that asserts unconditional SUCCESS would report a host
+    /// limitation as a product bug. Probe the capability instead of hard-coding
+    /// a platform: the denied path has its own test below.
+    fn can_create_symlinks() -> bool {
+        let probe = Fixture::new();
+        let target = probe.mkdir("target");
+        RealSymlinkCreator
+            .symlink_dir(&target, &probe.path().join("link"))
+            .is_ok()
+    }
+
     // --- precedence over dirs/files ---
 
     #[test]
     fn symlinked_pattern_is_recognized_regardless_of_dot_slash() {
         let symlinks = pats(&[".cache"]);
-        assert!(is_symlinked_pattern(&symlinks, ".cache"));
-        assert!(is_symlinked_pattern(&symlinks, "./.cache"));
-        assert!(!is_symlinked_pattern(&symlinks, ".cache2"));
+        assert!(is_symlinked_path(&symlinks, ".cache"));
+        assert!(is_symlinked_path(&symlinks, "./.cache"));
+        assert!(!is_symlinked_path(&symlinks, ".cache2"));
     }
 
     #[test]
     fn without_symlinked_drops_matching_dirs_only() {
         let kept = without_symlinked(&pats(&[".turbo"]), &pats(&["node_modules", ".turbo"]));
         assert_eq!(kept, pats(&["node_modules"]));
+    }
+
+    /// A path UNDER a shared directory would be copied THROUGH the link into the
+    /// origin worktree, so it is excluded too.
+    #[test]
+    fn descendants_of_a_symlinked_entry_are_excluded() {
+        let symlinks = pats(&[".cache"]);
+        assert!(is_symlinked_path(&symlinks, ".cache/pkg"));
+        assert!(is_symlinked_path(&symlinks, ".cache/pkg/index.json"));
+        // A sibling with a shared name PREFIX is not a descendant.
+        assert!(!is_symlinked_path(&symlinks, ".cachex"));
+    }
+
+    /// Copying an ANCESTOR would recreate the shared child as a real directory
+    /// (or write through the link), so it is excluded as well.
+    #[test]
+    fn ancestors_of_a_symlinked_entry_are_excluded() {
+        let symlinks = pats(&["packages/app/node_modules"]);
+        assert!(is_symlinked_path(&symlinks, "packages/app"));
+        assert!(is_symlinked_path(&symlinks, "packages"));
+        assert!(!is_symlinked_path(&symlinks, "packages/other"));
     }
 
     #[test]
@@ -434,6 +577,9 @@ mod tests {
 
     #[test]
     fn real_creator_produces_a_symlink_resolving_to_the_origin() {
+        if !can_create_symlinks() {
+            return;
+        }
         let (origin, worktree) = origin_and_worktree(".cache");
         origin.write(".cache/data.bin", "shared");
         let io = FakeIo::new();
@@ -595,6 +741,9 @@ mod tests {
 
     #[test]
     fn a_stale_symlink_is_replaced_on_re_entry() {
+        if !can_create_symlinks() {
+            return;
+        }
         let (origin, worktree) = origin_and_worktree(".cache");
         let io = FakeIo::new();
         // Two runs in a row (the `start` re-entry / --reuse path).
@@ -618,7 +767,124 @@ mod tests {
         );
     }
 
+    /// A DIRECTORY symlink left over from a previous run must be refreshed to
+    /// the current origin. On Windows the removal needs directory semantics, so
+    /// this pins that a re-entry actually re-points the link rather than
+    /// silently keeping the stale one.
+    #[test]
+    fn a_stale_directory_link_is_repointed_at_the_current_origin() {
+        if !can_create_symlinks() {
+            return;
+        }
+        let old_origin = Fixture::new();
+        old_origin.write(".cache/marker.txt", "old");
+        let new_origin = Fixture::new();
+        new_origin.write(".cache/marker.txt", "new");
+        let worktree = Fixture::new();
+
+        let io = FakeIo::new();
+        for origin in [&old_origin, &new_origin] {
+            create_symlinks(
+                &io,
+                &RealSymlinkCreator,
+                &NullTracker,
+                &pats(&[".cache"]),
+                origin.path().to_str().unwrap(),
+                worktree.path().to_str().unwrap(),
+                false,
+            );
+        }
+
+        let link = worktree.path().join(".cache");
+        assert!(std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        // The stale link was actually removed and recreated, not left in place.
+        assert_eq!(
+            std::fs::read_to_string(link.join("marker.txt")).unwrap(),
+            "new",
+            "stale link was not refreshed: {}",
+            io.stderr_text()
+        );
+        assert!(
+            !io.stderr_text().contains("Failed to"),
+            "refresh must not warn: {}",
+            io.stderr_text()
+        );
+    }
+
     // --- SECURITY: containment ---
+
+    /// A nested entry whose PARENT inside the worktree is a symlink pointing
+    /// out must not be created: the lexical containment check on the not-yet-
+    /// existing link path passes, but the syscall would follow the parent and
+    /// plant the link outside the worktree.
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_intermediate_directory_in_the_worktree_is_rejected() {
+        use std::os::unix::fs::symlink;
+        let origin = Fixture::new();
+        origin.mkdir("packages/app/node_modules");
+
+        let outside = Fixture::new();
+        outside.mkdir("packages/app");
+
+        let worktree = Fixture::new();
+        // `packages` inside the worktree is a link OUT of it (e.g. planted by a
+        // pre_start hook or left by a previous tool).
+        symlink(outside.path().join("packages"), worktree.join("packages")).unwrap();
+
+        let io = FakeIo::new();
+        let creator = FakeSymlinkCreator::new();
+        create_symlinks(
+            &io,
+            &creator,
+            &NullTracker,
+            &pats(&["packages/app/node_modules"]),
+            origin.path().to_str().unwrap(),
+            worktree.path().to_str().unwrap(),
+            false,
+        );
+
+        assert!(
+            creator.links.lock().unwrap().is_empty(),
+            "must not create a link through a symlinked parent"
+        );
+        assert!(
+            io.stderr_text().contains("is a symlink"),
+            "stderr: {}",
+            io.stderr_text()
+        );
+        // And nothing was planted in the outside directory.
+        assert!(!outside.path().join("packages/app/node_modules").exists());
+    }
+
+    /// The nested case with an ordinary (non-symlinked) parent still works, so
+    /// the guard above rejects the attack and not the feature.
+    #[test]
+    fn nested_entry_with_a_real_parent_is_linked() {
+        let origin = Fixture::new();
+        origin.mkdir("packages/app/node_modules");
+        let worktree = Fixture::new();
+        let io = FakeIo::new();
+        let creator = FakeSymlinkCreator::new();
+        create_symlinks(
+            &io,
+            &creator,
+            &NullTracker,
+            &pats(&["packages/app/node_modules"]),
+            origin.path().to_str().unwrap(),
+            worktree.path().to_str().unwrap(),
+            false,
+        );
+        assert_eq!(
+            creator.links.lock().unwrap().len(),
+            1,
+            "{}",
+            io.stderr_text()
+        );
+    }
 
     #[test]
     fn absolute_pattern_is_rejected() {

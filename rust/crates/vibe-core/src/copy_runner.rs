@@ -10,6 +10,7 @@
 
 use crate::config::VibeConfig;
 use crate::copy::strategies::CopyExecutor;
+use crate::copy::symlink::without_symlinked;
 use crate::glob::{expand_copy_patterns, expand_directory_patterns};
 use crate::io::Io;
 use crate::output::{log_dry_run, warn_log};
@@ -63,16 +64,22 @@ fn join(a: &str, b: &str) -> String {
 ///
 /// Sequential, glob-expanded, one progress task per file. A per-file failure is
 /// warned and the task failed, but the overall op continues (TS parity).
+///
+/// `symlinked` are the `[copy] symlink` entries; anything expanding to one of
+/// them (or under one) is dropped AFTER expansion, because a glob only reveals
+/// the overlap once expanded — see [`without_symlinked`].
+#[allow(clippy::too_many_arguments)]
 pub fn copy_files(
     io: &impl Io,
     executor: &impl CopyExecutor,
     tracker: &dyn ProgressTracker,
     patterns: &[String],
+    symlinked: &[String],
     repo_root: &str,
     worktree_path: &str,
     dry_run: bool,
 ) {
-    let files = expand_copy_patterns(io, patterns, repo_root);
+    let files = without_symlinked(symlinked, &expand_copy_patterns(io, patterns, repo_root));
     if files.is_empty() {
         return;
     }
@@ -107,12 +114,16 @@ pub fn copy_files(
 /// Returns the FIRST per-directory error (aggregated like `Promise.all`), or
 /// `Ok(())`. (Unlike `copy_files`, the TS `copyDirectories` lets a per-dir error
 /// reject the batch — here we surface it so the caller can react.)
+///
+/// `symlinked` are the `[copy] symlink` entries; see [`copy_files`] for why the
+/// exclusion has to happen after expansion.
 #[allow(clippy::too_many_arguments)]
 pub fn copy_directories<E, T>(
     io: &impl Io,
     executor: &E,
     tracker: &T,
     patterns: &[String],
+    symlinked: &[String],
     repo_root: &str,
     worktree_path: &str,
     dry_run: bool,
@@ -122,7 +133,10 @@ where
     E: CopyExecutor + Sync,
     T: ProgressTracker + Sync,
 {
-    let dirs = expand_directory_patterns(io, patterns, repo_root);
+    let dirs = without_symlinked(
+        symlinked,
+        &expand_directory_patterns(io, patterns, repo_root),
+    );
     if dirs.is_empty() {
         return Ok(());
     }
@@ -277,6 +291,7 @@ mod tests {
             &exec,
             &tracker,
             &pats(&[".env", "config.toml"]),
+            &[],
             fx.path().to_str().unwrap(),
             worktree.to_str().unwrap(),
             false,
@@ -303,6 +318,7 @@ mod tests {
             &exec,
             &tracker,
             &pats(&["good.txt", "bad.txt"]),
+            &[],
             fx.path().to_str().unwrap(),
             "/wt",
             false,
@@ -324,6 +340,7 @@ mod tests {
             &exec,
             &tracker,
             &pats(&[".env"]),
+            &[],
             fx.path().to_str().unwrap(),
             "/wt",
             true,
@@ -331,6 +348,84 @@ mod tests {
         assert!(exec.file_copies.lock().unwrap().is_empty());
         assert!(io.stderr_text().contains("[dry-run] Would copy files:"));
         assert!(io.stderr_text().contains("  - .env"));
+    }
+
+    // --- `[copy] symlink` exclusion happens AFTER glob expansion ---
+
+    /// `dirs = [".*"]` does not compare equal to `symlink = [".cache"]`, but it
+    /// EXPANDS to it. Copying it would run the strategy into the destination
+    /// that was just symlinked at the origin's `.cache`, writing through the
+    /// link and corrupting the shared directory.
+    #[test]
+    fn copy_directories_drops_a_glob_match_that_is_symlinked() {
+        let fx = Fixture::new();
+        fx.mkdir(".cache");
+        fx.mkdir(".turbo");
+        let io = FakeIo::new();
+        let exec = FakeCopyExecutor::new(CopyStrategyKind::Clone);
+        let res = copy_directories(
+            &io,
+            &exec,
+            &NullTracker,
+            &pats(&[".*"]),
+            &pats(&[".cache"]),
+            fx.path().to_str().unwrap(),
+            "/wt",
+            false,
+            4,
+        );
+        assert!(res.is_ok());
+        let copied: Vec<String> = exec
+            .dir_copies
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(src, _)| src.clone())
+            .collect();
+        assert!(
+            copied.iter().all(|s| !s.ends_with(".cache")),
+            "the symlinked directory must not be copied: {copied:?}"
+        );
+        assert!(
+            copied.iter().any(|s| s.ends_with(".turbo")),
+            "the other glob matches must still be copied: {copied:?}"
+        );
+    }
+
+    /// The same hole on the file side: a file UNDER a shared directory would be
+    /// copied through the link into the origin worktree.
+    #[test]
+    fn copy_files_drops_a_glob_match_under_a_symlinked_directory() {
+        let fx = Fixture::new();
+        fx.write(".cache/secret.json", "shared");
+        fx.write("keep.json", "mine");
+        let io = FakeIo::new();
+        let exec = FakeCopyExecutor::new(CopyStrategyKind::Standard);
+        copy_files(
+            &io,
+            &exec,
+            &NullTracker,
+            &pats(&["**/*.json"]),
+            &pats(&[".cache"]),
+            fx.path().to_str().unwrap(),
+            "/wt",
+            false,
+        );
+        let copied: Vec<String> = exec
+            .file_copies
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(src, _)| src.clone())
+            .collect();
+        assert!(
+            copied.iter().all(|s| !s.contains(".cache")),
+            "must not copy through the shared link: {copied:?}"
+        );
+        assert!(
+            copied.iter().any(|s| s.ends_with("keep.json")),
+            "unrelated matches must survive: {copied:?}"
+        );
     }
 
     // --- copy_directories concurrency + error aggregation ---
@@ -348,6 +443,7 @@ mod tests {
             &exec,
             &tracker,
             &pats(&["node_modules", ".cache"]),
+            &[],
             fx.path().to_str().unwrap(),
             "/wt",
             false,
@@ -371,6 +467,7 @@ mod tests {
             &exec,
             &tracker,
             &pats(&["ok_dir", "bad_dir"]),
+            &[],
             fx.path().to_str().unwrap(),
             "/wt",
             // concurrency 1 makes ordering deterministic for the assertion.
@@ -403,6 +500,7 @@ mod tests {
             &exec,
             &tracker,
             &names,
+            &[],
             fx.path().to_str().unwrap(),
             "/wt",
             false,
@@ -435,6 +533,7 @@ mod tests {
             &exec,
             &tracker,
             &pats(&["node_modules"]),
+            &[],
             fx.path().to_str().unwrap(),
             "/wt",
             true,

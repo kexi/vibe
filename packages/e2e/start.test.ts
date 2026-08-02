@@ -625,6 +625,62 @@ symlink = [".cache"]
     }
   });
 
+  test("[copy] symlink wins over a dirs GLOB that expands to it", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+
+    mkdirSync(join(repoPath, "shared/.cache"), { recursive: true });
+    writeFileSync(join(repoPath, "shared/.cache/data.bin"), "origin\n");
+    mkdirSync(join(repoPath, "shared/.turbo"), { recursive: true });
+    writeFileSync(join(repoPath, "shared/.turbo/data.bin"), "copied\n");
+    writeFileSync(join(repoPath, ".gitignore"), "shared\n");
+    // The glob MATCHES `shared/.cache` without naming it, so the exclusion has
+    // to survive glob expansion; otherwise the copy runs over (and through) the
+    // link and writes into the origin worktree. Scoped under `shared/` so the
+    // glob cannot wander into `.git`.
+    writeFileSync(
+      join(repoPath, ".vibe.toml"),
+      `
+[copy]
+dirs = ["shared/.*"]
+symlink = ["shared/.cache"]
+`,
+    );
+    execFileSync("git", ["add", ".vibe.toml", ".gitignore"], { cwd: repoPath, stdio: "pipe" });
+    execFileSync("git", ["commit", "-m", "Add glob copy config overlapping a symlink"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    await trustConfig(vibePath, repoPath, homePath);
+
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
+    try {
+      await runner.spawn(["start", "feat/test-symlink-glob"]);
+      await runner.waitForExit();
+      assertExitCode(runner.getExitCode(), 0, runner.getOutput());
+
+      const parentDir = dirname(repoPath);
+      const repoName = basename(repoPath);
+      const worktreePath = `${parentDir}/${repoName}-feat-test-symlink-glob`;
+
+      // `shared/.cache` stayed a link even though the glob matched it.
+      const shared = join(worktreePath, "shared/.cache");
+      expect(lstatSync(shared).isSymbolicLink()).toBe(true);
+      expect(realpathSync(shared)).toBe(realpathSync(join(repoPath, "shared/.cache")));
+      // The origin was not written through the link.
+      expect(readFileSync(join(repoPath, "shared/.cache/data.bin"), "utf8")).toBe("origin\n");
+      // The other glob match was still copied as a real directory.
+      const copied = join(worktreePath, "shared/.turbo");
+      expect(lstatSync(copied).isSymbolicLink()).toBe(false);
+      expect(lstatSync(copied).isDirectory()).toBe(true);
+    } finally {
+      runner.dispose();
+    }
+  });
+
   test("[copy] symlink with a missing target warns but still creates the worktree", async () => {
     const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
