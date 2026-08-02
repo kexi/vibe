@@ -73,6 +73,21 @@ pub fn jump(branch_name: &str, opts: OutputOptions) -> Result<Outcome> {
     commands::jump::jump_command(&deps, branch_name, opts)
 }
 
+/// `vibe list [--json]`.
+pub fn list(json: bool, opts: OutputOptions) -> Result<Outcome> {
+    let io = RealIo;
+    let git = RealGit;
+    let cwd = std::env::current_dir()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let deps = commands::list::ListDeps {
+        io: &io,
+        git: &git,
+        cwd: &cwd,
+    };
+    commands::list::list_command(&deps, json, opts)
+}
+
 /// `vibe trust`.
 pub fn trust(opts: OutputOptions) -> Result<Outcome> {
     let io = RealIo;

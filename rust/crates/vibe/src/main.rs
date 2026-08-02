@@ -150,6 +150,7 @@ fn dispatch(
             let branch = args.branch_name.unwrap_or_default();
             commands::jump(&branch, opts)
         }
+        Command::List(args) => commands::list(args.json, opts),
         Command::Rename(args) => {
             let new_name = args.new_name.unwrap_or_default();
             commands::rename(&new_name, args.dry_run, opts)

@@ -12,6 +12,7 @@ pub mod config;
 pub mod doctor;
 pub mod home;
 pub mod jump;
+pub mod list;
 pub mod rename;
 pub mod scratch;
 pub mod shell_setup;

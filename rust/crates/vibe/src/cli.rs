@@ -70,6 +70,8 @@ pub enum Command {
     Scratch(ScratchArgs),
     /// Jump to an existing worktree by branch name.
     Jump(JumpArgs),
+    /// List all worktrees of the current repository.
+    List(ListArgs),
     /// Rename the current worktree's branch and directory.
     Rename(RenameArgs),
     /// Remove current worktree and return to main.
@@ -143,6 +145,13 @@ pub struct ScratchArgs {
 pub struct JumpArgs {
     /// Branch name (or partial/fuzzy match) of the worktree to jump to.
     pub branch_name: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct ListArgs {
+    /// Emit the listing as JSON for scripting and tool integrations.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Args)]

@@ -125,6 +125,12 @@ pub const SUBCOMMANDS: &[CommandSpec] = &[
         flags: &[],
     },
     CommandSpec {
+        name: "list",
+        description: "List all worktrees of the current repository",
+        positional_completion: None,
+        flags: &[FlagSpec::flag("json", "Output the listing as JSON")],
+    },
+    CommandSpec {
         name: "rename",
         description: "Rename the current worktree's branch and directory",
         positional_completion: None,
