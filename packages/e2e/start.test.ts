@@ -1,5 +1,5 @@
 import { execFileSync } from "child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "fs";
 import { basename, dirname, join } from "path";
 import { afterEach, describe, expect, test } from "vitest";
 import { getVibePath, VibeCommandRunner } from "./helpers/pty.js";
@@ -516,6 +516,151 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.hook-ran"]
 
       expect(existsSync(hookMarker)).toBe(false);
       expect(existsSync(copiedFile)).toBe(false);
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test("[copy] symlink shares a directory instead of copying it", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+
+    // A cache directory to SHARE and a dependency directory to COPY, both
+    // untracked so their presence in the worktree proves vibe put them there.
+    mkdirSync(join(repoPath, ".turbo"), { recursive: true });
+    writeFileSync(join(repoPath, ".turbo/cache.bin"), "shared-cache\n");
+    mkdirSync(join(repoPath, "node_modules"), { recursive: true });
+    writeFileSync(join(repoPath, "node_modules/dep.txt"), "copied-dep\n");
+    writeFileSync(join(repoPath, ".gitignore"), ".turbo\nnode_modules\n");
+    writeFileSync(
+      join(repoPath, ".vibe.toml"),
+      `
+[copy]
+dirs = ["node_modules"]
+symlink = [".turbo"]
+`,
+    );
+    execFileSync("git", ["add", ".vibe.toml", ".gitignore"], { cwd: repoPath, stdio: "pipe" });
+    execFileSync("git", ["commit", "-m", "Add .vibe.toml with a symlink entry"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    await trustConfig(vibePath, repoPath, homePath);
+
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
+    try {
+      await runner.spawn(["start", "feat/test-symlink"]);
+      await runner.waitForExit();
+      assertExitCode(runner.getExitCode(), 0, runner.getOutput());
+
+      const parentDir = dirname(repoPath);
+      const repoName = basename(repoPath);
+      const worktreePath = `${parentDir}/${repoName}-feat-test-symlink`;
+      await assertDirectoryExists(worktreePath);
+
+      // The shared entry is a symlink pointing back into the origin worktree.
+      const shared = join(worktreePath, ".turbo");
+      expect(lstatSync(shared).isSymbolicLink()).toBe(true);
+      expect(realpathSync(shared)).toBe(realpathSync(join(repoPath, ".turbo")));
+      // Reading through it sees the origin's content — that is the sharing.
+      expect(readFileSync(join(shared, "cache.bin"), "utf-8")).toBe("shared-cache\n");
+      // A write through the link is visible from the origin (shared state).
+      writeFileSync(join(shared, "from-worktree.bin"), "written\n");
+      expect(existsSync(join(repoPath, ".turbo/from-worktree.bin"))).toBe(true);
+
+      // The plain `dirs` entry is still a real, independent copy.
+      const copied = join(worktreePath, "node_modules");
+      expect(lstatSync(copied).isSymbolicLink()).toBe(false);
+      expect(readFileSync(join(copied, "dep.txt"), "utf-8")).toBe("copied-dep\n");
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test("[copy] symlink takes precedence over the same dirs entry", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+
+    mkdirSync(join(repoPath, ".cache"), { recursive: true });
+    writeFileSync(join(repoPath, ".cache/data.bin"), "origin\n");
+    writeFileSync(join(repoPath, ".gitignore"), ".cache\n");
+    // `.cache` is listed in BOTH dirs and symlink.
+    writeFileSync(
+      join(repoPath, ".vibe.toml"),
+      `
+[copy]
+dirs = [".cache"]
+symlink = [".cache"]
+`,
+    );
+    execFileSync("git", ["add", ".vibe.toml", ".gitignore"], { cwd: repoPath, stdio: "pipe" });
+    execFileSync("git", ["commit", "-m", "Add overlapping copy config"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    await trustConfig(vibePath, repoPath, homePath);
+
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
+    try {
+      await runner.spawn(["start", "feat/test-symlink-precedence"]);
+      await runner.waitForExit();
+      assertExitCode(runner.getExitCode(), 0, runner.getOutput());
+
+      const parentDir = dirname(repoPath);
+      const repoName = basename(repoPath);
+      const worktreePath = `${parentDir}/${repoName}-feat-test-symlink-precedence`;
+
+      // The symlink entry wins: `.cache` is a link, not a copied directory.
+      const shared = join(worktreePath, ".cache");
+      expect(lstatSync(shared).isSymbolicLink()).toBe(true);
+      expect(realpathSync(shared)).toBe(realpathSync(join(repoPath, ".cache")));
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test("[copy] symlink with a missing target warns but still creates the worktree", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+
+    writeFileSync(
+      join(repoPath, ".vibe.toml"),
+      `
+[copy]
+symlink = ["never-created"]
+`,
+    );
+    execFileSync("git", ["add", ".vibe.toml"], { cwd: repoPath, stdio: "pipe" });
+    execFileSync("git", ["commit", "-m", "Add symlink config with a missing target"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    await trustConfig(vibePath, repoPath, homePath);
+
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
+    try {
+      await runner.spawn(["start", "feat/test-symlink-missing"]);
+      await runner.waitForExit();
+
+      const output = runner.getOutput();
+      // Non-fatal: the worktree is created and the run succeeds.
+      assertExitCode(runner.getExitCode(), 0, output);
+      assertOutputContains(output, "target does not exist");
+
+      const parentDir = dirname(repoPath);
+      const repoName = basename(repoPath);
+      const worktreePath = `${parentDir}/${repoName}-feat-test-symlink-missing`;
+      await assertDirectoryExists(worktreePath);
+      expect(existsSync(join(worktreePath, "never-created"))).toBe(false);
     } finally {
       runner.dispose();
     }

@@ -20,6 +20,7 @@ use crate::commands::Outcome;
 use crate::config::VibeConfig;
 use crate::config_loader::{load_vibe_config, VIBE_TOML};
 use crate::copy::strategies::CopyExecutor;
+use crate::copy::symlink::{create_symlinks, without_symlinked, SymlinkCreator};
 use crate::copy_runner::{copy_directories, copy_files, resolve_copy_concurrency};
 use crate::error::{Result, VibeError};
 use crate::git::{get_repo_name, get_repo_root, revision_exists, sanitize_branch_name, GitRunner};
@@ -85,6 +86,10 @@ where
     // `+ Sync` so `copy_directories` can fan the executor/tracker across worker
     // threads (the live IndicatifTracker uses a Mutex; FakeCopyExecutor too).
     pub executor: &'a (dyn CopyExecutor + Sync),
+    /// Creates the `[copy] symlink` shared-directory links. Not `Sync`-bound:
+    /// symlink creation is a cheap metadata operation run sequentially, unlike
+    /// the fanned-out directory copies.
+    pub symlink_creator: &'a dyn SymlinkCreator,
     pub tracker: &'a (dyn ProgressTracker + Sync),
     pub version: &'a str,
 }
@@ -611,27 +616,54 @@ where
         )?;
     }
 
-    // copy files + directories.
+    // symlink shared directories, then copy files + directories.
     if !options.skip_copy {
-        copy_files(
+        let symlinks = config
+            .copy
+            .as_ref()
+            .and_then(|c| c.symlink.as_deref())
+            .unwrap_or(&[]);
+
+        // Symlinks first: a shared directory must exist before a post_start hook
+        // or a later copy could observe a half-set-up worktree.
+        create_symlinks(
             deps.io,
-            &deps.executor,
+            &deps.symlink_creator,
             deps.tracker,
-            config
-                .copy
-                .as_ref()
-                .and_then(|c| c.files.as_deref())
-                .unwrap_or(&[]),
+            symlinks,
             copy_source_root,
             worktree_path,
             options.dry_run,
         );
 
-        let dirs = config
-            .copy
-            .as_ref()
-            .and_then(|c| c.dirs.as_deref())
-            .unwrap_or(&[]);
+        // A `symlink` entry WINS over a `files`/`dirs` pattern naming the same
+        // path: the point of sharing is to not duplicate it.
+        let files = without_symlinked(
+            symlinks,
+            config
+                .copy
+                .as_ref()
+                .and_then(|c| c.files.as_deref())
+                .unwrap_or(&[]),
+        );
+        copy_files(
+            deps.io,
+            &deps.executor,
+            deps.tracker,
+            &files,
+            copy_source_root,
+            worktree_path,
+            options.dry_run,
+        );
+
+        let dirs = without_symlinked(
+            symlinks,
+            config
+                .copy
+                .as_ref()
+                .and_then(|c| c.dirs.as_deref())
+                .unwrap_or(&[]),
+        );
         if !dirs.is_empty() {
             let concurrency = resolve_copy_concurrency(deps.io, Some(config));
             // The injected `&dyn CopyExecutor` / `&dyn ProgressTracker` are
@@ -640,7 +672,7 @@ where
                 deps.io,
                 &deps.executor,
                 &deps.tracker,
-                dirs,
+                &dirs,
                 copy_source_root,
                 worktree_path,
                 options.dry_run,
@@ -696,6 +728,7 @@ fn config_has_operations(config: &VibeConfig, options: &ConfigAndHooks) -> bool 
             .map(|c| {
                 c.files.as_ref().map(|v| v.len()).unwrap_or(0)
                     + c.dirs.as_ref().map(|v| v.len()).unwrap_or(0)
+                    + c.symlink.as_ref().map(|v| v.len()).unwrap_or(0)
             })
             .unwrap_or(0)
     };

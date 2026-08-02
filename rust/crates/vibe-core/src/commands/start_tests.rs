@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::copy::strategies::FakeCopyExecutor;
+use crate::copy::symlink::FakeSymlinkCreator;
 use crate::copy::types::CopyStrategyKind;
 use crate::error::VibeError;
 use crate::git::RepoInfo;
@@ -250,6 +251,7 @@ impl Prompt for PanicPrompt {
 struct Fakes {
     hooks: FakeHookRunner,
     exec: FakeCopyExecutor,
+    symlinks: FakeSymlinkCreator,
     tracker: RecordingTracker,
 }
 impl Fakes {
@@ -257,6 +259,7 @@ impl Fakes {
         Fakes {
             hooks: FakeHookRunner::ok(),
             exec: FakeCopyExecutor::new(CopyStrategyKind::Standard),
+            symlinks: FakeSymlinkCreator::new(),
             tracker: RecordingTracker::new(),
         }
     }
@@ -281,6 +284,7 @@ fn deps<'a>(
         stdin,
         hook_runner: &fakes.hooks,
         executor: &fakes.exec,
+        symlink_creator: &fakes.symlinks,
         tracker: &fakes.tracker,
         version: V,
     }
@@ -404,6 +408,7 @@ fn existing_branch_force_navigates_without_prompt() {
         stdin: &sin,
         hook_runner: &fk.hooks,
         executor: &fk.exec,
+        symlink_creator: &fk.symlinks,
         tracker: &fk.tracker,
         version: V,
     };
@@ -662,6 +667,7 @@ fn different_branch_force_overwrites_without_prompt() {
         stdin: &sin,
         hook_runner: &fk.hooks,
         executor: &fk.exec,
+        symlink_creator: &fk.symlinks,
         tracker: &fk.tracker,
         version: V,
     };
@@ -696,6 +702,7 @@ fn different_branch_reuse_flag_reuses_without_prompt() {
         stdin: &sin,
         hook_runner: &fk.hooks,
         executor: &fk.exec,
+        symlink_creator: &fk.symlinks,
         tracker: &fk.tracker,
         version: V,
     };
@@ -763,6 +770,7 @@ fn different_branch_conflict_menu_text_and_order() {
         stdin: &sin,
         hook_runner: &fk.hooks,
         executor: &fk.exec,
+        symlink_creator: &fk.symlinks,
         tracker: &fk.tracker,
         version: V,
     };
@@ -955,6 +963,7 @@ fn start_with_config(
             stdin: &sin,
             hook_runner: &fk.hooks,
             executor: &fk.exec,
+            symlink_creator: &fk.symlinks,
             tracker: &fk.tracker,
             version: V,
         };
@@ -997,6 +1006,7 @@ fn runs_pre_then_copy_then_post_with_correct_cwds() {
         stdin: &sin,
         hook_runner: &fk.hooks,
         executor: &fk.exec,
+        symlink_creator: &fk.symlinks,
         tracker: &fk.tracker,
         version: V,
     };
@@ -1038,6 +1048,7 @@ fn no_hooks_and_no_copy_skip_operations() {
         stdin: &sin,
         hook_runner: &fk.hooks,
         executor: &fk.exec,
+        symlink_creator: &fk.symlinks,
         tracker: &fk.tracker,
         version: V,
     };
@@ -1049,6 +1060,226 @@ fn no_hooks_and_no_copy_skip_operations() {
     start_command(&d, "feat", &flags, OutputOptions::default()).unwrap();
     assert!(fk.hooks.calls.borrow().is_empty());
     assert!(fk.exec.file_copies.lock().unwrap().is_empty());
+}
+
+// --- [copy] symlink: shared directories instead of copies ---
+
+/// A trusted repo whose config also has a `[copy] symlink` list, with `.cache`
+/// and `node_modules` present in the origin and the target worktree directory
+/// already on disk (MockGit does not really run `git worktree add`, but the
+/// symlink step needs a real destination to canonicalize).
+fn trusted_symlink_repo(content: &str) -> (Fixture, FakeIo, TrustResolver, String) {
+    let (fx, io, resolver, repo_root) = trusted_config_repo_with_content(content);
+    fx.mkdir("repo/.cache");
+    fx.mkdir("repo/node_modules");
+    // The default worktree path is `<repo parent>/<repo name>-<sanitized branch>`.
+    fx.mkdir("repo-feat");
+    (fx, io, resolver, repo_root)
+}
+
+#[test]
+fn symlink_entries_are_linked_instead_of_copied() {
+    let (fx, io, resolver, repo_root) =
+        trusted_symlink_repo("[copy]\ndirs = [\"node_modules\"]\nsymlink = [\".cache\"]\n");
+    let _ = &fx;
+    let git = MockGit::new(
+        &repo_root,
+        &format!("worktree {repo_root}\nbranch refs/heads/main\n\n"),
+    );
+    let (s, p, sin, fk) = (
+        NoScript,
+        ScriptPrompt::confirming(true),
+        FakeStdin::none(),
+        Fakes::new(),
+    );
+    let d = StartDeps {
+        io: &io,
+        git: &git,
+        resolver: &resolver,
+        script_runner: &s,
+        prompt: &p,
+        stdin: &sin,
+        hook_runner: &fk.hooks,
+        executor: &fk.exec,
+        symlink_creator: &fk.symlinks,
+        tracker: &fk.tracker,
+        version: V,
+    };
+    start_command(&d, "feat", &StartFlags::default(), OutputOptions::default()).unwrap();
+
+    // `.cache` was linked, `node_modules` was still copied.
+    let links = fk.symlinks.links.lock().unwrap();
+    assert_eq!(links.len(), 1, "expected exactly one symlink: {links:?}");
+    assert!(links[0].0.ends_with(".cache"), "target: {}", links[0].0);
+    let dir_copies = fk.exec.dir_copies.lock().unwrap();
+    assert_eq!(dir_copies.len(), 1);
+    assert!(
+        dir_copies[0].0.ends_with("node_modules"),
+        "src: {}",
+        dir_copies[0].0
+    );
+}
+
+#[test]
+fn symlink_entry_takes_precedence_over_the_same_dirs_entry() {
+    let (fx, io, resolver, repo_root) = trusted_symlink_repo(
+        "[copy]\ndirs = [\"node_modules\", \".cache\"]\nsymlink = [\".cache\"]\n",
+    );
+    let _ = &fx;
+    let git = MockGit::new(
+        &repo_root,
+        &format!("worktree {repo_root}\nbranch refs/heads/main\n\n"),
+    );
+    let (s, p, sin, fk) = (
+        NoScript,
+        ScriptPrompt::confirming(true),
+        FakeStdin::none(),
+        Fakes::new(),
+    );
+    let d = StartDeps {
+        io: &io,
+        git: &git,
+        resolver: &resolver,
+        script_runner: &s,
+        prompt: &p,
+        stdin: &sin,
+        hook_runner: &fk.hooks,
+        executor: &fk.exec,
+        symlink_creator: &fk.symlinks,
+        tracker: &fk.tracker,
+        version: V,
+    };
+    start_command(&d, "feat", &StartFlags::default(), OutputOptions::default()).unwrap();
+
+    // `.cache` is listed in BOTH dirs and symlink: it must be linked, not copied.
+    assert_eq!(fk.symlinks.links.lock().unwrap().len(), 1);
+    let dir_copies = fk.exec.dir_copies.lock().unwrap();
+    assert_eq!(
+        dir_copies.len(),
+        1,
+        "the symlinked dir must not also be copied: {dir_copies:?}"
+    );
+    assert!(dir_copies[0].0.ends_with("node_modules"));
+}
+
+#[test]
+fn no_copy_skips_symlinks_too() {
+    let (fx, io, resolver, repo_root) = trusted_symlink_repo("[copy]\nsymlink = [\".cache\"]\n");
+    let _ = &fx;
+    let git = MockGit::new(
+        &repo_root,
+        &format!("worktree {repo_root}\nbranch refs/heads/main\n\n"),
+    );
+    let (s, p, sin, fk) = (
+        NoScript,
+        ScriptPrompt::confirming(true),
+        FakeStdin::none(),
+        Fakes::new(),
+    );
+    let d = StartDeps {
+        io: &io,
+        git: &git,
+        resolver: &resolver,
+        script_runner: &s,
+        prompt: &p,
+        stdin: &sin,
+        hook_runner: &fk.hooks,
+        executor: &fk.exec,
+        symlink_creator: &fk.symlinks,
+        tracker: &fk.tracker,
+        version: V,
+    };
+    let flags = StartFlags {
+        no_copy: true,
+        ..Default::default()
+    };
+    start_command(&d, "feat", &flags, OutputOptions::default()).unwrap();
+    assert!(
+        fk.symlinks.links.lock().unwrap().is_empty(),
+        "--no-copy must skip the symlink step as well"
+    );
+}
+
+#[test]
+fn dry_run_reports_symlinks_without_creating_them() {
+    let (fx, io, resolver, repo_root) = trusted_symlink_repo("[copy]\nsymlink = [\".cache\"]\n");
+    let _ = &fx;
+    let git = MockGit::new(
+        &repo_root,
+        &format!("worktree {repo_root}\nbranch refs/heads/main\n\n"),
+    );
+    let (s, p, sin, fk) = (
+        NoScript,
+        ScriptPrompt::confirming(true),
+        FakeStdin::none(),
+        Fakes::new(),
+    );
+    let d = StartDeps {
+        io: &io,
+        git: &git,
+        resolver: &resolver,
+        script_runner: &s,
+        prompt: &p,
+        stdin: &sin,
+        hook_runner: &fk.hooks,
+        executor: &fk.exec,
+        symlink_creator: &fk.symlinks,
+        tracker: &fk.tracker,
+        version: V,
+    };
+    let flags = StartFlags {
+        dry_run: true,
+        ..Default::default()
+    };
+    start_command(&d, "feat", &flags, OutputOptions::default()).unwrap();
+    assert!(fk.symlinks.links.lock().unwrap().is_empty());
+    assert!(
+        io.stderr_text().contains("Would symlink directories:"),
+        "stderr: {}",
+        io.stderr_text()
+    );
+}
+
+#[test]
+fn a_failing_symlink_does_not_abort_start() {
+    let (fx, io, resolver, repo_root) =
+        trusted_symlink_repo("[copy]\ndirs = [\"node_modules\"]\nsymlink = [\".cache\"]\n");
+    let _ = &fx;
+    let git = MockGit::new(
+        &repo_root,
+        &format!("worktree {repo_root}\nbranch refs/heads/main\n\n"),
+    );
+    let (s, p, sin) = (NoScript, ScriptPrompt::confirming(true), FakeStdin::none());
+    // Emulates Windows without Developer Mode.
+    let fk = Fakes {
+        symlinks: FakeSymlinkCreator::failing("A required privilege is not held"),
+        ..Fakes::new()
+    };
+    let d = StartDeps {
+        io: &io,
+        git: &git,
+        resolver: &resolver,
+        script_runner: &s,
+        prompt: &p,
+        stdin: &sin,
+        hook_runner: &fk.hooks,
+        executor: &fk.exec,
+        symlink_creator: &fk.symlinks,
+        tracker: &fk.tracker,
+        version: V,
+    };
+    let outcome =
+        start_command(&d, "feat", &StartFlags::default(), OutputOptions::default()).unwrap();
+
+    // The worktree is still usable: start succeeded, the copies still ran, and
+    // the failure was only a warning.
+    assert!(outcome.cd_path.is_some());
+    assert_eq!(fk.exec.dir_copies.lock().unwrap().len(), 1);
+    assert!(
+        io.stderr_text().contains("Failed to symlink .cache"),
+        "stderr: {}",
+        io.stderr_text()
+    );
 }
 
 #[test]
@@ -1072,6 +1303,7 @@ fn submodule_configs_run_before_parent_pre_start_with_submodule_roots() {
         stdin: &sin,
         hook_runner: &fk.hooks,
         executor: &fk.exec,
+        symlink_creator: &fk.symlinks,
         tracker: &fk.tracker,
         version: V,
     };
@@ -1134,6 +1366,7 @@ fn submodule_configs_respect_no_hooks_and_no_copy() {
         stdin: &sin,
         hook_runner: &fk.hooks,
         executor: &fk.exec,
+        symlink_creator: &fk.symlinks,
         tracker: &fk.tracker,
         version: V,
     };
@@ -1171,6 +1404,7 @@ fn submodule_configs_dry_run_logs_without_running_git() {
         stdin: &sin,
         hook_runner: &fk.hooks,
         executor: &fk.exec,
+        symlink_creator: &fk.symlinks,
         tracker: &fk.tracker,
         version: V,
     };
@@ -1209,6 +1443,7 @@ fn submodule_config_update_failure_aborts_remaining_operations() {
         stdin: &sin,
         hook_runner: &fk.hooks,
         executor: &fk.exec,
+        symlink_creator: &fk.symlinks,
         tracker: &fk.tracker,
         version: V,
     };
@@ -1260,6 +1495,7 @@ fn submodule_config_requires_its_own_trust() {
         stdin: &sin,
         hook_runner: &fk.hooks,
         executor: &fk.exec,
+        symlink_creator: &fk.symlinks,
         tracker: &fk.tracker,
         version: V,
     };
@@ -1448,6 +1684,7 @@ fn worktree_hook_mode_post_setup_failure_is_non_fatal() {
     // The post_start hook ("echo post") fails with a nonzero exit.
     let hooks = FakeHookRunner::failing_on("post", 1, "boom");
     let exec = FakeCopyExecutor::new(CopyStrategyKind::Standard);
+    let symlink_creator = FakeSymlinkCreator::new();
     let tracker = RecordingTracker::new();
     let d = StartDeps {
         io: &io,
@@ -1458,6 +1695,7 @@ fn worktree_hook_mode_post_setup_failure_is_non_fatal() {
         stdin: &sin,
         hook_runner: &hooks,
         executor: &exec,
+        symlink_creator: &symlink_creator,
         tracker: &tracker,
         version: V,
     };

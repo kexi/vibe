@@ -67,6 +67,51 @@ dirs = [
 - Directory structure is preserved when copying matched files
   :::
 
+### Shared Directories (symlink) <Badge text="v3.1.0+" />
+
+Instead of copying a directory into every worktree, point the worktree at the
+one in the origin repository with a symlink:
+
+```toml
+[copy]
+dirs = ["node_modules"]
+symlink = [".cache", ".turbo"]
+```
+
+**Why:** Copy-on-Write cloning makes `dirs` fast on APFS/Btrfs/XFS, but on a
+filesystem without reflink support (or on Windows) a full copy of a large
+dependency or cache tree is slow and wastes disk. Some directories also do not
+need per-worktree isolation at all — a shared build or download cache is fine,
+or even preferable.
+
+:::caution[Shared state vs isolation]
+A symlinked directory is **shared**, not copied: every worktree — and the origin
+repository — reads and writes the same files. Use it only where concurrent
+access is safe.
+
+| Use `symlink` for                                    | Use `dirs` for                                    |
+| ---------------------------------------------------- | ------------------------------------------------- |
+| Content-addressed caches (`.turbo`, download caches) | `node_modules`, whose contents differ per branch  |
+| Large, regenerable data you do not want duplicated   | Anything a build mutates in a branch-specific way |
+
+Two worktrees running a build at the same time write into the same shared
+directory. If a tool is not safe under concurrent access, copy it instead.
+:::
+
+**Rules:**
+
+- Entries are **exact directory paths** relative to the repository root. Glob
+  patterns are not supported (a symlink names one directory to share).
+- A `symlink` entry **takes precedence** over a `files`/`dirs` entry naming the
+  same path — the path is linked, not copied.
+- The target must exist in the origin repository and stay inside it. A missing
+  target, a path escaping the repository, or an OS refusal to create the link
+  (Windows without Developer Mode) prints a warning and `vibe start` continues —
+  the worktree stays usable.
+- An existing **real** file or directory at that path in the worktree is never
+  replaced; only a stale symlink is refreshed.
+- `vibe clean` removes the link, never the directory it points at.
+
 ### Concurrency <Badge text="v0.17.0+" />
 
 Control the number of parallel directory copy operations:
