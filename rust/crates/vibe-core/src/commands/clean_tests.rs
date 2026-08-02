@@ -23,6 +23,9 @@ struct MockGit {
     main_path: String,
     worktree_list: String,
     uncommitted: bool,
+    /// What `symbolic-ref refs/remotes/origin/HEAD --short` answers; `None` →
+    /// the ref is missing, so `get_default_branch` falls through to `master`.
+    origin_head: Option<String>,
     pub calls: RefCell<Vec<Vec<String>>>,
 }
 impl MockGit {
@@ -32,11 +35,17 @@ impl MockGit {
             main_path: main_path.to_string(),
             worktree_list: worktree_list.to_string(),
             uncommitted: false,
+            origin_head: None,
             calls: RefCell::new(vec![]),
         }
     }
     fn with_uncommitted(mut self, yes: bool) -> Self {
         self.uncommitted = yes;
+        self
+    }
+    /// Make `origin/HEAD` resolve to `branch`, i.e. declare it the default.
+    fn with_default_branch(mut self, branch: &str) -> Self {
+        self.origin_head = Some(format!("origin/{branch}"));
         self
     }
     fn calls_contain(&self, prefix: &[&str]) -> bool {
@@ -60,6 +69,23 @@ impl GitRunner for MockGit {
         }
         if args.contains(&"status") {
             return Ok(if self.uncommitted { " M file" } else { "" }.to_string());
+        }
+        if args.contains(&"symbolic-ref") {
+            return match &self.origin_head {
+                Some(h) => Ok(h.clone()),
+                None => Err(VibeError::GitOperation {
+                    command: args.join(" "),
+                    message: "failed: is not a symbolic ref".into(),
+                }),
+            };
+        }
+        if args.contains(&"init.defaultBranch") {
+            // Unconfigured → `get_default_branch` lands on `master`, which no
+            // fixture branch here is named.
+            return Err(VibeError::GitOperation {
+                command: args.join(" "),
+                message: "failed: key missing".into(),
+            });
         }
         // worktree remove / branch -d succeed.
         Ok(String::new())
@@ -497,6 +523,105 @@ fn default_does_not_delete_branch() {
     let d = deps(&io, &git, &r, &p, &proc, &sin, &fk, &wt_path);
     clean_command(&d, &CleanFlags::default(), OutputOptions::default()).unwrap();
     assert!(!git.calls_contain(&["-C", "/main", "branch", "-d"]));
+}
+
+// --- default-branch guard (#578) ---
+
+#[test]
+fn delete_branch_is_skipped_for_the_default_branch_but_the_worktree_still_goes() {
+    // A worktree on the default branch: `--delete-branch` must remove the
+    // worktree and KEEP the branch, saying why, and still exit successfully.
+    let fx = Fixture::new();
+    let wt = fx.mkdir("wt-develop");
+    let wt_path = wt.to_string_lossy().into_owned();
+    let io = FakeIo::new().with_env("HOME", fx.path().to_str().unwrap());
+    let git = MockGit::new(
+        &wt_path,
+        "/main",
+        &two_worktrees("/main", &wt_path, "develop"),
+    )
+    .with_default_branch("develop");
+    let (r, p, sin, fk) = (
+        NoResolver,
+        ScriptPrompt { confirm: true },
+        FakeStdin::none(),
+        Fakes::new(),
+    );
+    let proc = FakeProcess::new(&wt_path);
+    let d = deps(&io, &git, &r, &p, &proc, &sin, &fk, &wt_path);
+    let flags = CleanFlags {
+        delete_branch: true,
+        ..Default::default()
+    };
+    let outcome = clean_command(&d, &flags, OutputOptions::default()).unwrap();
+
+    assert_eq!(outcome, Outcome::cd("/main"));
+    assert!(git.calls_contain(&["-C", "/main", "worktree", "remove"]));
+    assert!(
+        !git.calls_contain(&["-C", "/main", "branch", "-d"]),
+        "the default branch must survive"
+    );
+    let out = io.stderr_text();
+    assert!(
+        out.contains("Skipped deleting branch develop"),
+        "stderr: {out}"
+    );
+    assert!(out.contains("--allow-default-branch"), "stderr: {out}");
+}
+
+#[test]
+fn allow_default_branch_deletes_the_default_branch() {
+    let fx = Fixture::new();
+    let wt = fx.mkdir("wt-develop");
+    let wt_path = wt.to_string_lossy().into_owned();
+    let io = FakeIo::new().with_env("HOME", fx.path().to_str().unwrap());
+    let git = MockGit::new(
+        &wt_path,
+        "/main",
+        &two_worktrees("/main", &wt_path, "develop"),
+    )
+    .with_default_branch("develop");
+    let (r, p, sin, fk) = (
+        NoResolver,
+        ScriptPrompt { confirm: true },
+        FakeStdin::none(),
+        Fakes::new(),
+    );
+    let proc = FakeProcess::new(&wt_path);
+    let d = deps(&io, &git, &r, &p, &proc, &sin, &fk, &wt_path);
+    let flags = CleanFlags {
+        delete_branch: true,
+        allow_default_branch: true,
+        ..Default::default()
+    };
+    clean_command(&d, &flags, OutputOptions::default()).unwrap();
+    assert!(git.calls_contain(&["-C", "/main", "branch", "-d", "--", "develop"]));
+}
+
+#[test]
+fn the_guard_leaves_non_default_branches_alone() {
+    // Regression fence: with `develop` declared default, deleting `feat` still
+    // happens exactly as before.
+    let fx = Fixture::new();
+    let wt = fx.mkdir("wt-feat");
+    let wt_path = wt.to_string_lossy().into_owned();
+    let io = FakeIo::new().with_env("HOME", fx.path().to_str().unwrap());
+    let git = MockGit::new(&wt_path, "/main", &two_worktrees("/main", &wt_path, "feat"))
+        .with_default_branch("develop");
+    let (r, p, sin, fk) = (
+        NoResolver,
+        ScriptPrompt { confirm: true },
+        FakeStdin::none(),
+        Fakes::new(),
+    );
+    let proc = FakeProcess::new(&wt_path);
+    let d = deps(&io, &git, &r, &p, &proc, &sin, &fk, &wt_path);
+    let flags = CleanFlags {
+        delete_branch: true,
+        ..Default::default()
+    };
+    clean_command(&d, &flags, OutputOptions::default()).unwrap();
+    assert!(git.calls_contain(&["-C", "/main", "branch", "-d", "--", "feat"]));
 }
 
 // --- G-10: delete-branch 4-tier precedence boundaries ---
