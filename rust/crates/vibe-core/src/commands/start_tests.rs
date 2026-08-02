@@ -205,10 +205,11 @@ impl GitRunner for MockGit {
         Ok(String::new())
     }
 
-    // `-z` output must not be trimmed; the mock serves the same payload either
-    // way, but overriding here keeps the double honest about the real contract.
-    fn run_raw(&self, args: &[&str]) -> Result<String> {
-        self.run(args)
+    // `-z` output must not be trimmed and is raw bytes; the mock serves the same
+    // payload either way, but overriding here keeps the double honest about the
+    // real contract.
+    fn run_raw(&self, args: &[&str]) -> Result<Vec<u8>> {
+        self.run(args).map(String::into_bytes)
     }
 }
 

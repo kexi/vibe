@@ -135,11 +135,17 @@ pub fn copy_resolved_files(
         match executor.copy_file(&src, &dest) {
             Ok(()) => tracker.complete_task(task_ids[i]),
             Err(e) => {
-                tracker.fail_task(task_ids[i], &e.to_string());
+                // The error text is sanitized too, not just the label: the copy
+                // strategies build their messages as `... failed: {src} -> {dest}:
+                // {io_error}`, which re-embeds the very filename the label took
+                // care to neutralize. Sanitizing only the label would leave the
+                // escape sequence a few characters further along the same line.
+                let msg = sanitize_for_display(&e.to_string());
+                tracker.fail_task(task_ids[i], &msg);
                 warn_log(
                     io,
                     &format!(
-                        "Warning: Failed to copy {}: {e}",
+                        "Warning: Failed to copy {}: {msg}",
                         sanitize_for_display(file)
                     ),
                 );
@@ -220,7 +226,9 @@ where
                 match executor.copy_directory(&src, &dest) {
                     Ok(()) => tracker.complete_task(task_ids[i]),
                     Err(e) => {
-                        let msg = e.to_string();
+                        // Sanitized for the same reason as in `copy_resolved_files`:
+                        // the message embeds `src`/`dest`, i.e. a repo-derived name.
+                        let msg = sanitize_for_display(&e.to_string());
                         tracker.fail_task(task_ids[i], &msg);
                         failures
                             .lock()
@@ -259,7 +267,7 @@ mod tests {
     use crate::copy::strategies::FakeCopyExecutor;
     use crate::copy::types::{CopyError, CopyStrategyKind};
     use crate::io::FakeIo;
-    use crate::progress::NullTracker;
+    use crate::progress::{NodeId, NullTracker};
     use vibe_test_support::{fake_root, Fixture};
 
     fn pats(items: &[&str]) -> Vec<String> {
@@ -438,6 +446,79 @@ mod tests {
         // The copy itself still used the real, unsanitized name.
         let copies = exec.file_copies.lock().unwrap();
         assert!(copies[0].0.contains(nasty), "{:?}", copies[0].0);
+    }
+
+    #[test]
+    fn copy_failure_neutralizes_control_characters_inside_the_error_text() {
+        // The real strategies phrase failures as `... failed: {src} -> {dest}: {e}`,
+        // so the attacker-controlled filename appears a SECOND time inside the
+        // error message. Sanitizing only the label would still let an ESC reach the
+        // terminal, a few characters further along the same warning line.
+        let fx = Fixture::new();
+        let nasty = "bad\u{1b}[2Kname.txt";
+        fx.write(nasty, "x");
+        let io = FakeIo::new();
+        let exec = FakeCopyExecutor::new(CopyStrategyKind::Standard).fail_on(
+            nasty,
+            CopyError::Failed(format!(
+                "Standard copy failed: /repo/{nasty} -> /wt/{nasty}: No space left on device"
+            )),
+        );
+        let tracker = RecordingTracker::default();
+        copy_resolved_files(
+            &io,
+            &exec,
+            &tracker,
+            &[nasty.to_string()],
+            fx.path().to_str().unwrap(),
+            "/wt",
+            false,
+        );
+        let out = io.stderr_text();
+        assert!(
+            !out.contains('\u{1b}'),
+            "the error text leaked a control character: {out:?}"
+        );
+        // The message is still there and still names the file, just neutralized.
+        assert!(
+            out.contains("Standard copy failed: /repo/bad\u{fffd}[2Kname.txt"),
+            "{out:?}"
+        );
+        // The same text is handed to the progress tracker, which renders it to the
+        // terminal on its own, so it must be neutralized there too.
+        let failures = tracker.failures.lock().unwrap();
+        assert_eq!(failures.len(), 1);
+        assert!(
+            !failures[0].contains('\u{1b}'),
+            "fail_task received an unsanitized message: {:?}",
+            failures[0]
+        );
+    }
+
+    /// A tracker that captures the message passed to `fail_task`, so a test can
+    /// assert on what the live renderer would draw.
+    #[derive(Default)]
+    struct RecordingTracker {
+        failures: Mutex<Vec<String>>,
+    }
+
+    impl ProgressTracker for RecordingTracker {
+        fn add_phase(&self, _label: &str) -> NodeId {
+            NodeId(0)
+        }
+        fn add_task(&self, _parent: NodeId, _label: &str) -> NodeId {
+            NodeId(0)
+        }
+        fn start_task(&self, _id: NodeId) {}
+        fn complete_task(&self, _id: NodeId) {}
+        fn fail_task(&self, _id: NodeId, err: &str) {
+            self.failures
+                .lock()
+                .expect("failures mutex poisoned")
+                .push(err.to_string());
+        }
+        fn start(&self) {}
+        fn finish(&self) {}
     }
 
     // --- copy_directories concurrency + error aggregation ---

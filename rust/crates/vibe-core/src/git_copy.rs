@@ -20,11 +20,13 @@
 //!
 //! A filename that is not valid UTF-8 cannot survive the `String` path seam this
 //! crate uses end to end, so it is reported and skipped instead of being dropped
-//! on the existence check (see `is_lossily_decoded`).
+//! on the existence check. That verdict comes from decoding each NUL-delimited
+//! record on its own (`git::split_nul` → `GitPathRecord`), so it is driven by the
+//! actual bytes rather than by looking for U+FFFD in an already-lossy string.
 
 use crate::config::VibeConfig;
 use crate::error::Result;
-use crate::git::{list_modified_files, list_untracked_files, GitRunner};
+use crate::git::{list_modified_files, list_untracked_files, GitPathRecord, GitRunner};
 use crate::io::Io;
 use crate::output::{sanitize_for_display, warn_log};
 use std::collections::HashSet;
@@ -75,20 +77,6 @@ fn is_safe_relative_path(path: &str) -> bool {
     !Path::new(path)
         .components()
         .any(|c| matches!(c, Component::ParentDir))
-}
-
-/// True if git's output for this path was mangled by the lossy UTF-8 decode in
-/// [`crate::git::GitRunner::run_raw`].
-///
-/// A non-UTF-8 filename comes back with U+FFFD in place of the offending bytes,
-/// so the name no longer refers to anything on disk and the existence check below
-/// would drop it without a word. U+FFFD is not a plausible deliberate filename
-/// character, so treating its presence as "undecodable" costs nothing and turns a
-/// silent omission into a visible warning. It stays a warning rather than an
-/// error because one unreadable name must not abort a copy of dozens of good
-/// ones.
-fn is_lossily_decoded(rel: &str) -> bool {
-    rel.contains('\u{fffd}')
 }
 
 /// Keep a candidate only if it is a real, contained, non-symlink regular file.
@@ -160,7 +148,7 @@ pub fn collect_git_copy_files(
         return Ok(Vec::new());
     };
 
-    let mut candidates: Vec<String> = Vec::new();
+    let mut candidates: Vec<GitPathRecord> = Vec::new();
     if selection.untracked {
         candidates.extend(list_untracked_files(git)?);
     }
@@ -170,17 +158,25 @@ pub fn collect_git_copy_files(
 
     let mut seen: HashSet<String> = HashSet::new();
     let mut out = Vec::new();
-    for rel in candidates {
-        if is_lossily_decoded(&rel) {
-            warn_log(
-                io,
-                &format!(
-                    "Warning: Skipping file whose name is not valid UTF-8: {}",
-                    sanitize_for_display(&rel)
-                ),
-            );
-            continue;
-        }
+    for candidate in candidates {
+        // A name that is not valid UTF-8 cannot be carried through this crate's
+        // `String` path seam, so it is named in a warning rather than dropped
+        // silently on the existence check below. It stays a warning rather than an
+        // error because one unreadable name must not abort a copy of dozens of
+        // good ones.
+        let rel = match candidate {
+            GitPathRecord::Valid(rel) => rel,
+            GitPathRecord::Undecodable(lossy) => {
+                warn_log(
+                    io,
+                    &format!(
+                        "Warning: Skipping file whose name is not valid UTF-8: {}",
+                        sanitize_for_display(&lossy)
+                    ),
+                );
+                continue;
+            }
+        };
         if !is_safe_relative_path(&rel) {
             warn_log(
                 io,
@@ -212,26 +208,33 @@ mod tests {
 
     /// A git double that answers `ls-files` from canned NUL-delimited payloads
     /// and records the argv it was asked to run.
+    ///
+    /// Payloads are BYTES so a test can serve a filename that is genuinely not
+    /// valid UTF-8 — the thing the production decode has to distinguish from a
+    /// name that merely contains U+FFFD.
     struct LsFilesGit {
-        untracked: String,
-        modified: String,
+        untracked: Vec<u8>,
+        modified: Vec<u8>,
         calls: RefCell<Vec<String>>,
         fail: bool,
     }
 
     impl LsFilesGit {
         fn new(untracked: &str, modified: &str) -> Self {
+            Self::from_bytes(untracked.as_bytes(), modified.as_bytes())
+        }
+        fn from_bytes(untracked: &[u8], modified: &[u8]) -> Self {
             Self {
-                untracked: untracked.to_string(),
-                modified: modified.to_string(),
+                untracked: untracked.to_vec(),
+                modified: modified.to_vec(),
                 calls: RefCell::new(Vec::new()),
                 fail: false,
             }
         }
         fn failing() -> Self {
             Self {
-                untracked: String::new(),
-                modified: String::new(),
+                untracked: Vec::new(),
+                modified: Vec::new(),
                 calls: RefCell::new(Vec::new()),
                 fail: true,
             }
@@ -241,8 +244,9 @@ mod tests {
     impl GitRunner for LsFilesGit {
         fn run(&self, args: &[&str]) -> Result<String> {
             self.run_raw(args)
+                .map(|out| String::from_utf8_lossy(&out).into_owned())
         }
-        fn run_raw(&self, args: &[&str]) -> Result<String> {
+        fn run_raw(&self, args: &[&str]) -> Result<Vec<u8>> {
             self.calls.borrow_mut().push(args.join(" "));
             if self.fail {
                 return Err(VibeError::GitOperation {
@@ -478,13 +482,17 @@ mod tests {
 
     #[test]
     fn non_utf8_names_are_reported_rather_than_dropped_silently() {
-        // `run_raw` decodes with `from_utf8_lossy`, so a filename with invalid
-        // UTF-8 bytes arrives carrying U+FFFD and matches nothing on disk. It must
-        // be named in a warning, not vanish on the existence check.
+        // A filename carrying invalid UTF-8 bytes cannot cross this crate's
+        // `String` path seam and matches nothing on disk. It must be named in a
+        // warning, not vanish on the existence check.
         let fx = Fixture::new();
         fx.write("good.txt", "x");
         let io = FakeIo::new();
-        let git = LsFilesGit::new("good.txt\0bad\u{fffd}name.txt\0", "");
+        // 0xFF is never valid UTF-8 anywhere in a sequence.
+        let mut payload = b"good.txt\0bad".to_vec();
+        payload.push(0xff);
+        payload.extend_from_slice(b"name.txt\0");
+        let git = LsFilesGit::from_bytes(&payload, b"");
         let files = collect_git_copy_files(
             &io,
             &git,
@@ -503,6 +511,35 @@ mod tests {
         assert!(
             io.stderr_text().contains("is not valid UTF-8"),
             "{}",
+            io.stderr_text()
+        );
+    }
+
+    #[test]
+    fn a_filename_genuinely_containing_u_fffd_is_still_copied() {
+        // U+FFFD is a legal filename character. Because each NUL-delimited record
+        // is decoded on its own, such a name decodes cleanly and must be treated
+        // as an ordinary file — not mistaken for the lossy rendering of invalid
+        // bytes and silently excluded.
+        let fx = Fixture::new();
+        let legit = "report\u{fffd}v2.txt";
+        fx.write(legit, "x");
+        let io = FakeIo::new();
+        let git = LsFilesGit::new(&format!("{legit}\0"), "");
+        let files = collect_git_copy_files(
+            &io,
+            &git,
+            fx.path().to_str().unwrap(),
+            GitCopySelection {
+                untracked: true,
+                modified: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(files, vec![legit.to_string()]);
+        assert!(
+            !io.stderr_text().contains("is not valid UTF-8"),
+            "a decodable name must not be reported as undecodable: {}",
             io.stderr_text()
         );
     }
