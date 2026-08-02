@@ -20,9 +20,13 @@ use crate::commands::Outcome;
 use crate::config::VibeConfig;
 use crate::config_loader::{load_vibe_config, VIBE_TOML};
 use crate::copy::strategies::CopyExecutor;
-use crate::copy_runner::{copy_directories, copy_files, resolve_copy_concurrency};
+use crate::copy_runner::{
+    copy_directories, copy_files, copy_resolved_files, resolve_copy_concurrency,
+};
 use crate::error::{Result, VibeError};
 use crate::git::{get_repo_name, get_repo_root, revision_exists, sanitize_branch_name, GitRunner};
+use crate::git_copy::{collect_git_copy_files, resolve_selection, GitCopySelection};
+use crate::glob::expand_copy_patterns;
 use crate::hooks::{run_hooks, HookEnv, HookRunner, HookTrackerInfo};
 use crate::io::Io;
 use crate::output::{error_log, log, log_dry_run, verbose_log, warn_log, OutputOptions};
@@ -46,6 +50,10 @@ use std::path::{Component, Path, PathBuf};
 pub struct StartFlags {
     pub no_hooks: bool,
     pub no_copy: bool,
+    /// `--copy-untracked`: force `[copy] untracked` on for this run.
+    pub copy_untracked: bool,
+    /// `--copy-modified`: force `[copy] modified` on for this run.
+    pub copy_modified: bool,
     pub dry_run: bool,
     /// `--base <ref>` value (already trimmed by the caller is fine; we re-trim).
     pub base: Option<String>,
@@ -93,6 +101,9 @@ where
 struct ConfigAndHooks {
     skip_hooks: bool,
     skip_copy: bool,
+    /// CLI `--copy-untracked` / `--copy-modified`, ORed with the config toggles.
+    copy_untracked: bool,
+    copy_modified: bool,
     dry_run: bool,
 }
 
@@ -241,6 +252,8 @@ where
         &ConfigAndHooks {
             skip_hooks: flags.no_hooks,
             skip_copy: flags.no_copy,
+            copy_untracked: flags.copy_untracked,
+            copy_modified: flags.copy_modified,
             dry_run: flags.dry_run,
         },
     )?;
@@ -408,6 +421,8 @@ where
             &ConfigAndHooks {
                 skip_hooks: flags.no_hooks,
                 skip_copy: flags.no_copy,
+                copy_untracked: flags.copy_untracked,
+                copy_modified: flags.copy_modified,
                 dry_run: true,
             },
         )?;
@@ -431,6 +446,8 @@ where
         &ConfigAndHooks {
             skip_hooks: flags.no_hooks,
             skip_copy: flags.no_copy,
+            copy_untracked: flags.copy_untracked,
+            copy_modified: flags.copy_modified,
             dry_run: false,
         },
     )?;
@@ -530,6 +547,8 @@ where
         &ConfigAndHooks {
             skip_hooks: flags.no_hooks,
             skip_copy: flags.no_copy,
+            copy_untracked: flags.copy_untracked,
+            copy_modified: flags.copy_modified,
             dry_run: false,
         },
     )?;
@@ -557,19 +576,56 @@ where
 {
     // No `OutputOptions` param: the TS `runConfigAndHooks` does not verbose-log
     // (its inner copy/hook helpers own their own progress output via the tracker).
-    let Some(config) = config else {
-        // No config → nothing to copy, but pre_start hooks could still be absent.
-        return Ok(());
+    //
+    // `--copy-untracked` / `--copy-modified` are meaningful in a repo with NO
+    // `.vibe.toml` — carrying work in progress into a new worktree is exactly the
+    // ad-hoc case where nobody has written a config yet. So an absent config
+    // short-circuits only when neither flag asks for git-derived files; otherwise
+    // an empty config stands in and the normal copy path runs.
+    let empty_config;
+    let config = match config {
+        Some(config) => config,
+        None if options.skip_copy || !(options.copy_untracked || options.copy_modified) => {
+            return Ok(())
+        }
+        None => {
+            empty_config = VibeConfig::default();
+            &empty_config
+        }
     };
 
-    let has_ops = !options.dry_run && config_has_operations(config, options);
+    // Resolved here, but NOT enumerated here: `git ls-files` runs inside
+    // `run_config_body`, after `pre_start`, so a file a hook creates or edits in
+    // the origin repo is carried over. `config_has_operations` therefore only
+    // gets the boolean "a git source is enabled" — a pre-enumeration signal — so
+    // the tracker still starts for a run whose only work is the git-derived copy,
+    // without moving the `ls-files` call back ahead of the hooks.
+    //
+    // Only the top-level repo is enumerated: `deps.git` runs in the process cwd,
+    // so a submodule's own `[copy] untracked` would list the parent repo's files,
+    // not the submodule's.
+    let git_selection = if options.skip_copy {
+        GitCopySelection::default()
+    } else {
+        resolve_selection(Some(config), options.copy_untracked, options.copy_modified)
+    };
+
+    let has_ops = !options.dry_run && config_has_operations(config, options, git_selection);
     if has_ops {
         deps.tracker.start();
     }
 
     run_submodule_configs(deps, config, repo_root, worktree_path, options)?;
 
-    run_config_body(deps, config, repo_root, worktree_path, repo_root, options)?;
+    run_config_body(
+        deps,
+        config,
+        repo_root,
+        worktree_path,
+        repo_root,
+        git_selection,
+        options,
+    )?;
 
     if has_ops {
         deps.tracker.finish();
@@ -581,12 +637,16 @@ where
 /// Run hooks/copy for one already-loaded config. Submodule configs use this
 /// helper directly so their own `[submodules]` section is intentionally not
 /// followed recursively.
+#[allow(clippy::too_many_arguments)]
 fn run_config_body<I, G, R, S, P, Sr>(
     deps: &StartDeps<I, G, R, S, P, Sr>,
     config: &VibeConfig,
     repo_root: &str,
     worktree_path: &str,
     copy_source_root: &str,
+    // Which git-derived sources to enumerate once `pre_start` has run. Empty for
+    // submodule bodies (see `run_config_and_hooks`).
+    git_selection: GitCopySelection,
     options: &ConfigAndHooks,
 ) -> Result<()>
 where
@@ -611,21 +671,55 @@ where
         )?;
     }
 
+    // Enumerate the git-derived sources HERE — after `pre_start`, immediately
+    // before the copy — so the documented `pre_start` → copy → `post_start`
+    // ordering holds for them too: a hook that writes a scratch file or edits a
+    // tracked one in the origin repo must have that file carried over, and an
+    // enumeration taken before the hooks ran could not see it.
+    let git_copy_files =
+        collect_git_copy_files(deps.io, deps.git, copy_source_root, git_selection)?;
+
     // copy files + directories.
     if !options.skip_copy {
-        copy_files(
-            deps.io,
-            &deps.executor,
-            deps.tracker,
-            config
-                .copy
-                .as_ref()
-                .and_then(|c| c.files.as_deref())
-                .unwrap_or(&[]),
-            copy_source_root,
-            worktree_path,
-            options.dry_run,
-        );
+        let patterns = config
+            .copy
+            .as_ref()
+            .and_then(|c| c.files.as_deref())
+            .unwrap_or(&[]);
+
+        if git_copy_files.is_empty() {
+            copy_files(
+                deps.io,
+                &deps.executor,
+                deps.tracker,
+                patterns,
+                copy_source_root,
+                worktree_path,
+                options.dry_run,
+            );
+        } else {
+            // Configured patterns are expanded here (not inside `copy_files`) so
+            // the git-derived paths can join the SAME list: they are literal
+            // filenames, and a name containing `[`/`{`/`*`/`?` would be misread as
+            // a glob by the expander. One combined list also means one progress
+            // phase and one dedup pass across both sources.
+            let mut files = expand_copy_patterns(deps.io, patterns, copy_source_root);
+            let mut seen: HashSet<String> = files.iter().cloned().collect();
+            for file in git_copy_files {
+                if seen.insert(file.clone()) {
+                    files.push(file);
+                }
+            }
+            copy_resolved_files(
+                deps.io,
+                &deps.executor,
+                deps.tracker,
+                &files,
+                copy_source_root,
+                worktree_path,
+                options.dry_run,
+            );
+        }
 
         let dirs = config
             .copy
@@ -672,7 +766,17 @@ where
 }
 
 /// Whether config has any hook/copy operation (drives starting the tracker).
-fn config_has_operations(config: &VibeConfig, options: &ConfigAndHooks) -> bool {
+///
+/// `git_selection` counts as one pending operation when either source is on, so
+/// a run whose only work is copying untracked/modified files still gets a
+/// progress UI. It is deliberately the *selection*, not an enumerated count:
+/// enumeration happens after `pre_start` (see `run_config_body`), which is later
+/// than this decision.
+fn config_has_operations(
+    config: &VibeConfig,
+    options: &ConfigAndHooks,
+    git_selection: GitCopySelection,
+) -> bool {
     let has_submodule_configs =
         submodule_config_paths(config).is_some_and(|paths| !paths.is_empty());
     let hooks_count = if options.skip_hooks {
@@ -698,6 +802,7 @@ fn config_has_operations(config: &VibeConfig, options: &ConfigAndHooks) -> bool 
                     + c.dirs.as_ref().map(|v| v.len()).unwrap_or(0)
             })
             .unwrap_or(0)
+            + usize::from(!git_selection.is_empty())
     };
     has_submodule_configs || hooks_count + copy_count > 0
 }
@@ -753,6 +858,10 @@ where
             config_root,
             &roots.worktree,
             &roots.origin,
+            // No git-derived files for a submodule: `deps.git` runs in the
+            // process cwd (the superproject), so `ls-files` there would enumerate
+            // the parent repo, not this submodule.
+            GitCopySelection::default(),
             options,
         )?;
     }
@@ -1155,6 +1264,8 @@ where
             &ConfigAndHooks {
                 skip_hooks: flags.no_hooks,
                 skip_copy: flags.no_copy,
+                copy_untracked: flags.copy_untracked,
+                copy_modified: flags.copy_modified,
                 dry_run: flags.dry_run,
             },
         );
@@ -1210,6 +1321,8 @@ where
         &ConfigAndHooks {
             skip_hooks: flags.no_hooks,
             skip_copy: flags.no_copy,
+            copy_untracked: flags.copy_untracked,
+            copy_modified: flags.copy_modified,
             dry_run: flags.dry_run,
         },
     ) {

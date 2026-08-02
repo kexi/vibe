@@ -38,6 +38,28 @@ pub struct RepoInfo {
 /// trimmed stdout on success and a [`VibeError::GitOperation`] on failure.
 pub trait GitRunner {
     fn run(&self, args: &[&str]) -> Result<String>;
+
+    /// Run git and return stdout VERBATIM: untrimmed, and as raw BYTES.
+    ///
+    /// Untrimmed because `-z` (NUL-delimited) plumbing output may contain a path
+    /// whose name legitimately begins or ends with whitespace. Bytes rather than
+    /// `String` because a lossy decode of the whole stream cannot be undone per
+    /// record: a filename with invalid UTF-8 and a filename that genuinely
+    /// contains U+FFFD both come back as U+FFFD, so the copy layer could not tell
+    /// "undecodable, must warn and skip" from "decodable, copy it". Splitting on
+    /// NUL first and decoding each record separately keeps that distinction (see
+    /// [`split_nul`]).
+    ///
+    /// The decoded records are still `String`, not `OsString`: every path seam in
+    /// this crate (config, glob, `CopyExecutor`, the `Io` trait) is `String`/`&str`,
+    /// so a genuinely non-UTF-8 filename is out of scope and is warned about
+    /// rather than silently dropped.
+    ///
+    /// Defaults to [`GitRunner::run`] so the many test doubles in this crate keep
+    /// compiling; [`RealGit`] overrides it with the untrimmed byte capture.
+    fn run_raw(&self, args: &[&str]) -> Result<Vec<u8>> {
+        self.run(args).map(String::into_bytes)
+    }
 }
 
 /// Environment pinned on every `git` invocation, forcing the C locale.
@@ -83,6 +105,27 @@ impl GitRunner for RealGit {
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    fn run_raw(&self, args: &[&str]) -> Result<Vec<u8>> {
+        let output = Command::new("git")
+            .args(args)
+            .envs(GIT_C_LOCALE_ENV)
+            .output()
+            .map_err(|e| VibeError::GitOperation {
+                command: args.join(" "),
+                message: e.to_string(),
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(VibeError::GitOperation {
+                command: args.join(" "),
+                message: format!("failed: {}", stderr.trim()),
+            });
+        }
+
+        Ok(output.stdout)
     }
 }
 
@@ -436,6 +479,83 @@ pub fn branch_exists(runner: &impl GitRunner, branch_name: &str) -> bool {
             &format!("refs/heads/{branch_name}"),
         ])
         .is_ok()
+}
+
+/// One record of NUL-delimited `git ... -z` output, after per-record decoding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GitPathRecord {
+    /// The record was valid UTF-8 and is usable as a path.
+    Valid(String),
+    /// The record was NOT valid UTF-8. Carries the lossy rendering, which is only
+    /// good enough to name the file in a warning — it does not refer to anything
+    /// on disk and must never be used as a copy source.
+    Undecodable(String),
+}
+
+/// Split NUL-delimited `git ... -z` output into non-empty entries, decoding each
+/// record independently.
+///
+/// `-z` terminates every record with a NUL (including the last), so the split
+/// yields a trailing empty element that is dropped here. Entries are NOT trimmed:
+/// a path may legitimately start or end with whitespace.
+///
+/// The decode is per record rather than over the whole stream so that only bytes
+/// that are actually invalid UTF-8 yield [`GitPathRecord::Undecodable`]. A
+/// filename that genuinely contains U+FFFD decodes cleanly and stays
+/// [`GitPathRecord::Valid`] — a whole-stream `from_utf8_lossy` would make the two
+/// cases indistinguishable and wrongly exclude the legitimate file.
+pub fn split_nul(output: &[u8]) -> Vec<GitPathRecord> {
+    output
+        .split(|b| *b == 0)
+        .filter(|s| !s.is_empty())
+        .map(|record| match std::str::from_utf8(record) {
+            Ok(s) => GitPathRecord::Valid(s.to_string()),
+            Err(_) => GitPathRecord::Undecodable(String::from_utf8_lossy(record).into_owned()),
+        })
+        .collect()
+}
+
+/// Pathspec that widens `git ls-files` from "under the current directory" to
+/// "the whole repository".
+///
+/// `--full-name` only fixes the path FORMAT (repo-root-relative instead of
+/// cwd-relative); it does not widen the SCOPE. Without a pathspec, a run from a
+/// subdirectory lists only that subtree, so `vibe start` invoked from e.g.
+/// `packages/docs/` would silently carry over just that subtree's files. `:/`
+/// is the magic "from the repository root" pathspec, and the preceding `--`
+/// stops git from mistaking it for an option.
+const REPO_WIDE_PATHSPEC: [&str; 2] = ["--", ":/"];
+
+/// Repo-relative paths of untracked, non-ignored files
+/// (`git ls-files -z --others --exclude-standard`).
+///
+/// `-z` is mandatory: without it git would quote paths per `core.quotePath` and
+/// break on embedded newlines. `--full-name` makes the emitted paths relative to
+/// the repository root, and [`REPO_WIDE_PATHSPEC`] makes the listing cover the
+/// whole repository regardless of the process's current directory.
+pub fn list_untracked_files(runner: &impl GitRunner) -> Result<Vec<GitPathRecord>> {
+    let mut args = vec![
+        "ls-files",
+        "-z",
+        "--others",
+        "--exclude-standard",
+        "--full-name",
+    ];
+    args.extend_from_slice(&REPO_WIDE_PATHSPEC);
+    let out = runner.run_raw(&args)?;
+    Ok(split_nul(&out))
+}
+
+/// Repo-relative paths of tracked files with local modifications
+/// (`git ls-files -z --modified`).
+///
+/// `--modified` also reports DELETED tracked files; the caller filters those out
+/// by existence (a deleted file has nothing to copy).
+pub fn list_modified_files(runner: &impl GitRunner) -> Result<Vec<GitPathRecord>> {
+    let mut args = vec!["ls-files", "-z", "--modified", "--full-name"];
+    args.extend_from_slice(&REPO_WIDE_PATHSPEC);
+    let out = runner.run_raw(&args)?;
+    Ok(split_nul(&out))
 }
 
 /// Last-resort default-branch name when git tells us nothing.
@@ -1089,6 +1209,114 @@ branch refs/heads/main
                 },
             ]
         );
+    }
+
+    /// A runner that answers `ls-files` from a canned NUL-delimited byte payload
+    /// via `run_raw`, and would CORRUPT the payload if `run` (which trims and
+    /// decodes lossily) were used.
+    struct LsFilesGit {
+        raw: Vec<u8>,
+        args: std::cell::RefCell<Vec<String>>,
+    }
+    impl LsFilesGit {
+        fn new(raw: &str) -> Self {
+            Self {
+                raw: raw.as_bytes().to_vec(),
+                args: std::cell::RefCell::new(Vec::new()),
+            }
+        }
+        fn recorded_args(&self) -> Vec<String> {
+            self.args.borrow().clone()
+        }
+    }
+    impl GitRunner for LsFilesGit {
+        fn run(&self, _args: &[&str]) -> Result<String> {
+            Ok(String::from_utf8_lossy(&self.raw).trim().to_string())
+        }
+        fn run_raw(&self, args: &[&str]) -> Result<Vec<u8>> {
+            *self.args.borrow_mut() = args.iter().map(|a| a.to_string()).collect();
+            Ok(self.raw.clone())
+        }
+    }
+
+    fn valid(items: &[&str]) -> Vec<GitPathRecord> {
+        items
+            .iter()
+            .map(|s| GitPathRecord::Valid(s.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn split_nul_drops_the_trailing_terminator_only() {
+        assert_eq!(split_nul(b"a\0b\0"), valid(&["a", "b"]));
+        assert_eq!(split_nul(b""), Vec::<GitPathRecord>::new());
+    }
+
+    #[test]
+    fn split_nul_preserves_paths_with_newlines_and_spaces() {
+        // A NUL-delimited record may itself contain a newline or leading/trailing
+        // spaces; neither may be treated as a separator or stripped.
+        assert_eq!(
+            split_nul("we ird\nname.txt\0 padded \0".as_bytes()),
+            valid(&["we ird\nname.txt", " padded "])
+        );
+    }
+
+    #[test]
+    fn split_nul_marks_only_the_undecodable_record() {
+        // Per-record decoding: one bad record must not taint its neighbours, and a
+        // record that legitimately CONTAINS U+FFFD is valid, not undecodable.
+        let mut payload = b"ok.txt\0bad".to_vec();
+        payload.push(0xff);
+        payload.extend_from_slice(b".txt\0");
+        payload.extend_from_slice("real\u{fffd}.txt\0".as_bytes());
+        assert_eq!(
+            split_nul(&payload),
+            vec![
+                GitPathRecord::Valid("ok.txt".to_string()),
+                GitPathRecord::Undecodable("bad\u{fffd}.txt".to_string()),
+                GitPathRecord::Valid("real\u{fffd}.txt".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn untracked_listing_keeps_non_ascii_and_spaced_paths() {
+        let git = LsFilesGit::new("notes/メモ.txt\0my file.txt\0");
+        assert_eq!(
+            list_untracked_files(&git).unwrap(),
+            valid(&["notes/メモ.txt", "my file.txt"])
+        );
+    }
+
+    #[test]
+    fn modified_listing_reads_raw_untrimmed_output() {
+        // Trailing whitespace inside the final record survives because the helper
+        // reads `run_raw`, not the trimming `run`.
+        let git = LsFilesGit::new("src/main.rs\0trailing \0");
+        assert_eq!(
+            list_modified_files(&git).unwrap(),
+            valid(&["src/main.rs", "trailing "])
+        );
+    }
+
+    #[test]
+    fn ls_files_listings_are_scoped_to_the_whole_repository() {
+        // Guarantee: both listings ask git for the entire repository, not just the
+        // subtree below the process's current directory. `--full-name` alone only
+        // reformats paths, so the trailing `-- :/` pathspec is what makes a run
+        // from a subdirectory still see files elsewhere in the repo.
+        let untracked = LsFilesGit::new("a.txt\0");
+        list_untracked_files(&untracked).unwrap();
+        let args = untracked.recorded_args();
+        assert_eq!(&args[args.len() - 2..], &["--", ":/"]);
+        assert!(args.contains(&"--others".to_string()));
+
+        let modified = LsFilesGit::new("b.txt\0");
+        list_modified_files(&modified).unwrap();
+        let args = modified.recorded_args();
+        assert_eq!(&args[args.len() - 2..], &["--", ":/"]);
+        assert!(args.contains(&"--modified".to_string()));
     }
 
     // --- default-branch resolution ------------------------------------------

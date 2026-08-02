@@ -214,6 +214,19 @@ fn with_start_deps<T>(
     body(&deps)
 }
 
+/// Which copy sources a run opts into, beyond the configured `[copy]` patterns.
+///
+/// Bundled rather than passed as two more positional bools: `start` already
+/// takes nine parameters, and two adjacent same-typed flags at a call site are
+/// exactly the pair a future edit would silently transpose.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CopySources {
+    /// `--copy-untracked`
+    pub untracked: bool,
+    /// `--copy-modified`
+    pub modified: bool,
+}
+
 /// `vibe start <branch> [flags]`.
 #[allow(clippy::too_many_arguments)]
 pub fn start(
@@ -222,6 +235,7 @@ pub fn start(
     reuse: bool,
     no_hooks: bool,
     no_copy: bool,
+    copy_sources: CopySources,
     dry_run: bool,
     base: Option<String>,
     track: bool,
@@ -235,6 +249,8 @@ pub fn start(
     let flags = StartFlags {
         no_hooks,
         no_copy,
+        copy_untracked: copy_sources.untracked,
+        copy_modified: copy_sources.modified,
         dry_run,
         base,
         base_from_equals,
@@ -247,10 +263,12 @@ pub fn start(
 }
 
 /// `vibe scratch [flags]`.
+#[allow(clippy::too_many_arguments)]
 pub fn scratch(
     reuse: bool,
     no_hooks: bool,
     no_copy: bool,
+    copy_sources: CopySources,
     dry_run: bool,
     base: Option<String>,
     track: bool,
@@ -260,6 +278,8 @@ pub fn scratch(
     let flags = StartFlags {
         no_hooks,
         no_copy,
+        copy_untracked: copy_sources.untracked,
+        copy_modified: copy_sources.modified,
         dry_run,
         base,
         base_from_equals,
