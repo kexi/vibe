@@ -103,10 +103,13 @@ jobs:
   # The Windows-only coverage the other jobs structurally cannot provide, in two
   # parts:
   #
-  # 1. The vibe-core unit tests, which are the only place the `#[cfg(windows)]`
-  #    code paths (path-prefix validation, the Windows profile locations, the
-  #    fast-remove argv) are compiled AND run at all. On linux/macos they are
-  #    cfg'd out entirely, so a break in them would otherwise reach a release.
+  # 1. The `#[cfg(windows)]`-only vibe-core unit tests (path-prefix validation,
+  #    the Windows profile locations, the fast-remove argv), which are compiled
+  #    AND run nowhere else. On linux/macos they are cfg'd out entirely, so a
+  #    break in them would otherwise reach a release. Only these six run — the
+  #    wider vibe-core suite still assumes Unix paths in its fixtures and fails
+  #    wholesale on Windows (83 tests, see #570); until that lands this job
+  #    cannot run the full crate.
   # 2. The PowerShell wrapper round-trip: rust-linux/rust-macos run the pwsh leg
   #    on Unix pwsh, which cannot exercise Windows path semantics, vibe.exe
   #    resolution, or `& vibe.exe ... @args` splatting where PowerShell users
@@ -126,10 +129,31 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-toolchain
-      # The whole crate, not a doctor-scoped filter: every cfg(windows) test in
-      # vibe-core shares the same blind spot.
-      - name: vibe-core unit tests (compiles cfg(windows) code paths)
-        run: cargo test --manifest-path rust/Cargo.toml -p vibe-core
+      # Exact names, not a substring filter: `windows_` would also catch the
+      # unix-branch test `unix_and_windows_branches_...`, which (like the rest
+      # of the suite, #570) is not yet Windows-portable. libtest silently runs
+      # nothing when an --exact name goes stale, so the count guard below turns
+      # a renamed test into a hard failure instead of a vacuous pass. The whole
+      # crate still COMPILES for the test binary; only the run set is scoped.
+      - name: vibe-core cfg(windows) unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          # --lib: a single test target, so exactly one `test result:` line and
+          # the count below cannot accidentally read a doc-test summary.
+          out=$(cargo test --manifest-path rust/Cargo.toml -p vibe-core --lib -- --exact \
+            commands::doctor::tests::windows_uses_appdata_and_userprofile_documents \
+            commands::doctor::tests::windows_also_probes_onedrive_documents_when_set \
+            commands::doctor::tests::windows_rejects_unc_and_device_namespace_roots \
+            commands::doctor::tests::windows_continues_past_an_invalid_appdata \
+            commands::doctor::tests::the_windows_no_root_message_names_the_windows_variables \
+            fast_remove::tests::background_delete_passes_path_as_own_argv_element_on_windows \
+            2>&1 | tee /dev/stderr)
+          passed=$(printf '%s\n' "$out" | sed -n 's/^test result: ok\. \([0-9][0-9]*\) passed.*/\1/p' | tail -n1)
+          if [ -z "$passed" ] || [ "$passed" -lt 6 ]; then
+            echo "::error::expected 6 cfg(windows) tests to run, got '${passed:-none}' — a test was renamed or removed"
+            exit 1
+          fi
       - name: Wrapper round-trip test (Windows-native pwsh)
         env:
           VIBE_REQUIRE_SHELLS: pwsh
