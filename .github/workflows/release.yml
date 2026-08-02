@@ -1,10 +1,10 @@
 name: Release
 
 # Releasing is workflow-first: dispatching this workflow on main builds the
-# binaries and creates the GitHub Release with every asset in one
-# `gh release create` call. gh uploads assets to an internal draft and only
-# publishes once every upload succeeds, so the tag is burned only after all
-# artifacts exist — the order Immutable Releases requires. A GitHub Release is
+# binaries, creates the GitHub Release as a DRAFT with every asset attached,
+# verifies that draft, and only then undrafts it. A draft holds no tag, so the
+# tag is burned at the undraft — after all artifacts exist AND have been checked
+# — which is the order Immutable Releases requires. A GitHub Release is
 # therefore never a trigger here: the old `on: release` flow attached assets to
 # an already-published release, which Immutable Releases forbids.
 on:
@@ -424,26 +424,38 @@ jobs:
             exit 0
           fi
 
-          # gh uploads the assets to an internal draft and publishes only once
-          # every upload succeeds, so the tag is created (at --target) with all
-          # assets already present — the order Immutable Releases requires. A
-          # failed upload leaves a draft behind; the cleanup above removes it
-          # on the next attempt.
-          gh release create "$TAG" --target "$GITHUB_SHA" --latest \
+          # Create as a DRAFT and undraft only after the assets check out.
+          # Why not `gh release create` straight to published: that call is
+          # atomic over its uploads but not over their contents, so a release
+          # missing LICENSE / THIRD-PARTY-LICENSES.md would already be public
+          # (and its tag burned) by the time any verification could look at it.
+          # Immutable Releases forbids fixing that in place, and the tag cannot
+          # be reused — the only remedy would be burning a version number. A
+          # draft holds no tag, so a failure here leaves nothing published and
+          # the cleanup above reclaims it on the next attempt.
+          gh release create "$TAG" --draft --target "$GITHUB_SHA" \
             --title "$TAG" "${NOTES_ARGS[@]}" "${ASSETS[@]}"
 
           COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
           if [ "$COUNT" -ne 9 ]; then
-            echo "::error::Published release has $COUNT assets, expected 9"
+            echo "::error::Draft release has $COUNT assets, expected 9"
             exit 1
           fi
+          # Name-level gate: the count above would be satisfied by nine assets
+          # of any kind, including nine binaries and no license documents.
+          gh release view "$TAG" --json assets \
+            | bun run scripts/verify-release-assets.ts
+
+          # Everything verified: burn the tag and go public. --latest is set
+          # here rather than at create time because a draft cannot be latest.
+          gh release edit "$TAG" --draft=false --latest
           echo "Published $TAG with $COUNT assets."
 
-      # Why a separate named step rather than one more line in the script above:
-      # a missing LICENSE / THIRD-PARTY-LICENSES.md is a compliance failure, not
-      # a packaging typo, and it should be legible as its own red check in the
-      # run summary. The asset-count assertions above never look at names.
-      - name: Verify release carries the license documents
+      # Post-publish confirmation, distinct from the pre-publish gate inside the
+      # step above: that one decides whether to publish at all, this one asserts
+      # that undrafting did not change what the release carries. Cheap, and it
+      # is the state downstream consumers (Homebrew, publish-npm) actually see.
+      - name: Verify published release carries the license documents
         if: inputs.dry_run != true
         env:
           GH_TOKEN: ${{ github.token }}

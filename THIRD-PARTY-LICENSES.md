@@ -1326,8 +1326,9 @@ Crates with a top-level `AND` are covered by Appendix A instead.
 
 Where a crate publishes no license file of its own, the canonical text of the
 license it declares in `Cargo.toml` is reproduced instead, with the copyright
-line taken from that manifest's `authors`. Such sections are marked
-`(reconstructed)`.
+line composed from that manifest's `authors` metadata rather than copied from
+an upstream notice — the published crate contains none to copy. Such sections
+are marked `(reconstructed)` and say so individually.
 
 ### android_system_properties 0.1.5 — elected MIT (from MIT/Apache-2.0)
 
@@ -3422,8 +3423,12 @@ DEALINGS IN THE SOFTWARE.
 
 ### number_prefix 0.4.0 — elected MIT (from MIT)
 
-This crate ships no license file; the canonical MIT text is reproduced
-below from its `Cargo.toml` declaration.
+This crate ships no license file, so the canonical MIT text is reproduced
+below from the license it declares in `Cargo.toml`. The copyright line is
+**not** a verbatim copy of an upstream notice: it is composed from that
+manifest's `authors` metadata, because the published crate contains no
+notice to copy. The upstream repository may carry a dated copyright line
+that differs from the one shown here.
 
 #### MIT (reconstructed)
 
@@ -3453,8 +3458,12 @@ SOFTWARE.
 
 ### objc2 0.6.4 — elected MIT (from MIT)
 
-This crate ships no license file; the canonical MIT text is reproduced
-below from its `Cargo.toml` declaration.
+This crate ships no license file, so the canonical MIT text is reproduced
+below from the license it declares in `Cargo.toml`. The copyright line is
+**not** a verbatim copy of an upstream notice: it is composed from that
+manifest's `authors` metadata, because the published crate contains no
+notice to copy. The upstream repository may carry a dated copyright line
+that differs from the one shown here.
 
 #### MIT (reconstructed)
 
@@ -3484,8 +3493,12 @@ SOFTWARE.
 
 ### objc2-encode 4.1.0 — elected MIT (from MIT)
 
-This crate ships no license file; the canonical MIT text is reproduced
-below from its `Cargo.toml` declaration.
+This crate ships no license file, so the canonical MIT text is reproduced
+below from the license it declares in `Cargo.toml`. The copyright line is
+**not** a verbatim copy of an upstream notice: it is composed from that
+manifest's `authors` metadata, because the published crate contains no
+notice to copy. The upstream repository may carry a dated copyright line
+that differs from the one shown here.
 
 #### MIT (reconstructed)
 
@@ -3515,8 +3528,12 @@ SOFTWARE.
 
 ### objc2-foundation 0.3.2 — elected MIT (from MIT)
 
-This crate ships no license file; the canonical MIT text is reproduced
-below from its `Cargo.toml` declaration.
+This crate ships no license file, so the canonical MIT text is reproduced
+below from the license it declares in `Cargo.toml`. The copyright line is
+**not** a verbatim copy of an upstream notice: it is composed from that
+manifest's `authors` metadata, because the published crate contains no
+notice to copy. The upstream repository may carry a dated copyright line
+that differs from the one shown here.
 
 #### MIT (reconstructed)
 
@@ -3784,8 +3801,12 @@ DEALINGS IN THE SOFTWARE.
 
 ### r-efi 5.3.0 — elected MIT (from MIT OR Apache-2.0 OR LGPL-2.1-or-later)
 
-This crate ships no license file; the canonical MIT text is reproduced
-below from its `Cargo.toml` declaration.
+This crate ships no license file, so the canonical MIT text is reproduced
+below from the license it declares in `Cargo.toml`. The copyright line is
+**not** a verbatim copy of an upstream notice: it is composed from that
+manifest's `authors` metadata, because the published crate contains no
+notice to copy. The upstream repository may carry a dated copyright line
+that differs from the one shown here.
 
 #### MIT (reconstructed)
 
@@ -3815,8 +3836,12 @@ SOFTWARE.
 
 ### r-efi 6.0.0 — elected MIT (from MIT OR Apache-2.0 OR LGPL-2.1-or-later)
 
-This crate ships no license file; the canonical MIT text is reproduced
-below from its `Cargo.toml` declaration.
+This crate ships no license file, so the canonical MIT text is reproduced
+below from the license it declares in `Cargo.toml`. The copyright line is
+**not** a verbatim copy of an upstream notice: it is composed from that
+manifest's `authors` metadata, because the published crate contains no
+notice to copy. The upstream repository may carry a dated copyright line
+that differs from the one shown here.
 
 #### MIT (reconstructed)
 
@@ -5039,8 +5064,12 @@ DEALINGS IN THE SOFTWARE.
 
 ### wasip3 0.4.0+wasi-0.3.0-rc-2026-01-06 — elected MIT (from Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
 
-This crate ships no license file; the canonical MIT text is reproduced
-below from its `Cargo.toml` declaration.
+This crate ships no license file, so the canonical MIT text is reproduced
+below from the license it declares in `Cargo.toml`. The copyright line is
+**not** a verbatim copy of an upstream notice: it is composed from that
+manifest's `authors` metadata, because the published crate contains no
+notice to copy. The upstream repository may carry a dated copyright line
+that differs from the one shown here.
 
 #### MIT (reconstructed)
 
@@ -5198,8 +5227,12 @@ DEALINGS IN THE SOFTWARE.
 
 ### wasm-encoder 0.244.0 — elected MIT (from Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
 
-This crate ships no license file; the canonical MIT text is reproduced
-below from its `Cargo.toml` declaration.
+This crate ships no license file, so the canonical MIT text is reproduced
+below from the license it declares in `Cargo.toml`. The copyright line is
+**not** a verbatim copy of an upstream notice: it is composed from that
+manifest's `authors` metadata, because the published crate contains no
+notice to copy. The upstream repository may carry a dated copyright line
+that differs from the one shown here.
 
 #### MIT (reconstructed)
 
@@ -5229,8 +5262,12 @@ SOFTWARE.
 
 ### wasm-metadata 0.244.0 — elected MIT (from Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
 
-This crate ships no license file; the canonical MIT text is reproduced
-below from its `Cargo.toml` declaration.
+This crate ships no license file, so the canonical MIT text is reproduced
+below from the license it declares in `Cargo.toml`. The copyright line is
+**not** a verbatim copy of an upstream notice: it is composed from that
+manifest's `authors` metadata, because the published crate contains no
+notice to copy. The upstream repository may carry a dated copyright line
+that differs from the one shown here.
 
 #### MIT (reconstructed)
 
@@ -5260,8 +5297,12 @@ SOFTWARE.
 
 ### wasmparser 0.244.0 — elected MIT (from Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
 
-This crate ships no license file; the canonical MIT text is reproduced
-below from its `Cargo.toml` declaration.
+This crate ships no license file, so the canonical MIT text is reproduced
+below from the license it declares in `Cargo.toml`. The copyright line is
+**not** a verbatim copy of an upstream notice: it is composed from that
+manifest's `authors` metadata, because the published crate contains no
+notice to copy. The upstream repository may carry a dated copyright line
+that differs from the one shown here.
 
 #### MIT (reconstructed)
 
@@ -6206,8 +6247,12 @@ DEALINGS IN THE SOFTWARE.
 
 ### wit-component 0.244.0 — elected MIT (from Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
 
-This crate ships no license file; the canonical MIT text is reproduced
-below from its `Cargo.toml` declaration.
+This crate ships no license file, so the canonical MIT text is reproduced
+below from the license it declares in `Cargo.toml`. The copyright line is
+**not** a verbatim copy of an upstream notice: it is composed from that
+manifest's `authors` metadata, because the published crate contains no
+notice to copy. The upstream repository may carry a dated copyright line
+that differs from the one shown here.
 
 #### MIT (reconstructed)
 
@@ -6237,8 +6282,12 @@ SOFTWARE.
 
 ### wit-parser 0.244.0 — elected MIT (from Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
 
-This crate ships no license file; the canonical MIT text is reproduced
-below from its `Cargo.toml` declaration.
+This crate ships no license file, so the canonical MIT text is reproduced
+below from the license it declares in `Cargo.toml`. The copyright line is
+**not** a verbatim copy of an upstream notice: it is composed from that
+manifest's `authors` metadata, because the published crate contains no
+notice to copy. The upstream repository may carry a dated copyright line
+that differs from the one shown here.
 
 #### MIT (reconstructed)
 

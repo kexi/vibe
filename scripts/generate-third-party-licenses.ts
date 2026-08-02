@@ -32,7 +32,7 @@
 import { readFile, readdir, writeFile, lstat, realpath } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { dirname, join, relative, isAbsolute } from "node:path";
+import { dirname, relative, resolve, isAbsolute } from "node:path";
 
 const execFileAsync = promisify(execFile);
 
@@ -295,38 +295,91 @@ export function electLicense(expr: string): string | null {
 // --- Notice files ----------------------------------------------------------
 
 /**
+ * Why a named file is unsafe to reproduce, or `null` when it is fine.
+ *
+ * Shared by the two ways a notice file is reached — directory scan and a
+ * manifest's `license_file` pointer — so the manifest-driven path cannot end up
+ * with weaker checks than the scan. The distinction between them is only what
+ * happens on rejection: the scan skips the entry, the pointer throws.
+ */
+async function noticeFileRejection(crateDir: string, name: string): Promise<string | null> {
+  // A `license_file` may name a subdirectory path or, hostilely, `../../..`.
+  // resolve() collapses those before the containment check below sees them.
+  const abs = resolve(crateDir, name);
+  const stats = await lstat(abs).catch(() => null);
+  if (stats === null) {
+    return "does not exist";
+  }
+  // Symlinks are excluded outright rather than resolved: a crate tarball that
+  // pointed LICENSE at /etc/shadow (or at the checkout's git credentials) would
+  // otherwise have its target inlined into a committed, published document.
+  if (stats.isSymbolicLink()) {
+    return "is a symlink";
+  }
+  if (!stats.isFile()) {
+    return "is not a regular file";
+  }
+  const real = await realpath(abs).catch(() => null);
+  if (real === null) {
+    return "could not be resolved";
+  }
+  // Second layer, covering a crate root that is itself reached through a link
+  // and a `license_file` that walks out with `../`.
+  const crateReal = await realpath(crateDir).catch(() => null);
+  if (crateReal === null) {
+    return "crate directory could not be resolved";
+  }
+  const rel = relative(crateReal, real);
+  const escapesCrate = rel === "" || rel.startsWith("..") || isAbsolute(rel);
+  if (escapesCrate) {
+    return "resolves outside the crate directory";
+  }
+  return null;
+}
+
+/**
  * List the license/notice files a crate ships at its root, sorted by name.
  *
- * Symlinks are excluded outright rather than resolved: a crate tarball that
- * pointed LICENSE at /etc/shadow would otherwise have its target inlined into a
- * committed, published document. The realpath containment check is the second
- * layer, covering a root that is itself reached through a link.
+ * Anything that fails containment is skipped rather than fatal: the scan is
+ * speculative (it asks what a crate happens to ship), so an odd entry is not
+ * evidence that a required notice is missing.
  */
 export async function discoverNoticeFiles(crateDir: string): Promise<string[]> {
   const entries = await readdir(crateDir).catch(() => [] as string[]);
   const candidates = entries.filter((name) => NOTICE_FILE_PATTERN.test(name)).sort();
 
-  const crateReal = await realpath(crateDir);
   const found: string[] = [];
   for (const name of candidates) {
-    const abs = join(crateDir, name);
-    const stats = await lstat(abs).catch(() => null);
-    const isPlainFile = stats !== null && stats.isFile() && !stats.isSymbolicLink();
-    if (!isPlainFile) {
-      continue;
-    }
-    const real = await realpath(abs).catch(() => null);
-    if (real === null) {
-      continue;
-    }
-    const rel = relative(crateReal, real);
-    const escapesCrate = rel.startsWith("..") || isAbsolute(rel);
-    if (escapesCrate) {
+    const rejection = await noticeFileRejection(crateDir, name);
+    if (rejection !== null) {
       continue;
     }
     found.push(name);
   }
   return found;
+}
+
+/**
+ * Resolve a manifest's `license_file` pointer, refusing anything that escapes
+ * the crate.
+ *
+ * Why throw where discoverNoticeFiles skips: this path is not speculative. The
+ * manifest declares that these are the crate's only terms, so a pointer we will
+ * not follow means the document would ship a crate with no reproduced license
+ * at all — exactly the silent omission this generator exists to prevent. The
+ * error names the crate and the declared path but never the resolved target,
+ * which would echo an attacker-chosen filesystem path into CI logs.
+ */
+export async function resolveLicenseFile(
+  crateDir: string,
+  name: string,
+  label: string,
+): Promise<string> {
+  const rejection = await noticeFileRejection(crateDir, name);
+  if (rejection !== null) {
+    throw new Error(`${label}: declared license_file '${name}' ${rejection}`);
+  }
+  return name;
 }
 
 /**
@@ -375,12 +428,35 @@ export function normalizeNoticeText(raw: Buffer, label: string): string {
 }
 
 async function readNoticeFile(crateDir: string, name: string, label: string): Promise<NoticeFile> {
-  const raw = await readFile(join(crateDir, name));
+  // resolve() rather than join(): callers pass names that reached them from a
+  // manifest, and only the resolved form is what noticeFileRejection vetted.
+  const raw = await readFile(resolve(crateDir, name));
   return { name, text: normalizeNoticeText(raw, `${label}/${name}`) };
 }
 
 /** `LICENSE` / `LICENCE` / `COPYING` with no license-naming suffix. */
 const UNQUALIFIED_NOTICE_PATTERN = /^(LICENSE|LICENCE|COPYING)(\.(txt|md))?$/i;
+
+/** Split a license id or filename suffix into comparable lowercase tokens. */
+function licenseTokens(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/\.(txt|md)$/, "")
+    .split(/[-._ ]+/)
+    .filter((token) => token.length > 0);
+}
+
+/**
+ * True when a token sequence spells out a license ID this script knows by name.
+ *
+ * Drawn from the two ID tables rather than a separate list, so a license added
+ * to either automatically becomes something a filename can unambiguously mean.
+ */
+function namesAKnownLicense(tokens: string[]): boolean {
+  const joined = tokens.join("-");
+  const known = [...ELECTION_PREFERENCE, ...NO_ATTRIBUTION_LICENSES];
+  return known.some((id) => licenseTokens(id).join("-") === joined);
+}
 
 /**
  * Rank a crate's notice files against an elected license ID.
@@ -391,25 +467,49 @@ const UNQUALIFIED_NOTICE_PATTERN = /^(LICENSE|LICENCE|COPYING)(\.(txt|md))?$/i;
  * form: crates spell the suffix in at least five ways, and a stricter matcher
  * would silently fall through to the unqualified branch — reproducing, say, a
  * dual-license COPYING where the crate shipped the exact MIT text next to it.
+ *
+ * Matching compares TOKEN SEQUENCES, and only in one direction: the file's
+ * tokens must be a prefix of the elected ID's. That admits the version-eliding
+ * shorthand crates actually use (`LICENSE-APACHE` [apache] for Apache-2.0
+ * [apache, 2, 0], `LICENSE-BSD` for BSD-3-Clause) while rejecting the reverse.
+ *
+ * Why not a plain string prefix test on the concatenated letters, as this first
+ * did: `LICENSE-MIT-0` flattens to "mit0", which has "mit" as a prefix, so
+ * electing MIT would have reproduced the MIT-0 text — a different license with
+ * no attribution clause at all. Tokens keep `mit-0` and `mit` distinct.
+ *
+ * The abbreviation is additionally refused when the shortened form is itself a
+ * license we know by name: `LICENSE-MIT` must not satisfy an elected MIT-0,
+ * because that file is far likelier to be the actual MIT text sitting next to
+ * it than an abbreviation of MIT-0. Eliding is only ever a guess, so it is
+ * declined wherever a more specific reading exists.
  */
 export function selectNoticeFiles(names: string[], elected: string): string[] {
-  const wanted = elected.toLowerCase().replace(/[^a-z0-9]/g, "");
-  // The shorthand spelling drops the version too (`LICENSE-APACHE` for
-  // Apache-2.0), so a prefix test has to run in both directions; requiring the
-  // file to spell the ID out in full would miss the single most common name in
-  // the graph.
+  const wanted = licenseTokens(elected);
   const matchesElected = (name: string): boolean => {
     if (wanted.length === 0) {
       return false;
     }
-    const suffix = name
-      .toLowerCase()
-      .replace(/^(license|licence|copying)[-._]?/, "")
-      .replace(/[^a-z0-9]/g, "");
-    if (suffix.length === 0) {
+    const suffix = name.replace(/^(license|licence|copying)[-._]?/i, "");
+    const isUnqualified = suffix === "" || suffix.toLowerCase() === name.toLowerCase();
+    if (isUnqualified) {
       return false;
     }
-    return suffix.startsWith(wanted) || wanted.startsWith(suffix);
+    const tokens = licenseTokens(suffix);
+    const isLongerThanId = tokens.length === 0 || tokens.length > wanted.length;
+    if (isLongerThanId) {
+      return false;
+    }
+    const isPrefix = tokens.every((token, index) => token === wanted[index]);
+    if (!isPrefix) {
+      return false;
+    }
+
+    const isExact = tokens.length === wanted.length;
+    if (isExact) {
+      return true;
+    }
+    return !namesAKnownLicense(tokens);
   };
 
   const qualified = names.filter((name) => matchesElected(name));
@@ -462,6 +562,16 @@ SOFTWARE.
  * Build the copyright line for a synthesized notice from `cargo metadata`'s
  * `authors`. Falls back to the collective form when the manifest declares none,
  * which is both true and the convention crates use when authorship is a group.
+ *
+ * Why not reproduce the upstream notice's own copyright line, years and all:
+ * the crate published to crates.io does not contain one — that is the whole
+ * reason this path exists. The upstream *repository* usually does carry a
+ * dated LICENSE, but reaching for it would make the generated document depend
+ * on network fetches and on a repository revision that no longer corresponds to
+ * the packaged version, so the output would stop being deterministic and
+ * offline-reproducible. `authors` is the only attribution the packaged artifact
+ * actually ships, so it is what the reconstructed notice is built from, and the
+ * rendered section says so rather than passing it off as a verbatim copy.
  */
 export function copyrightLine(crate: string, authors: string[]): string {
   const named = authors.map((author) => author.trim()).filter((author) => author.length > 0);
@@ -566,8 +676,9 @@ export function renderElectedAppendix(entries: ElectedEntry[]): string {
   lines.push("");
   lines.push("Where a crate publishes no license file of its own, the canonical text of the");
   lines.push("license it declares in `Cargo.toml` is reproduced instead, with the copyright");
-  lines.push("line taken from that manifest's `authors`. Such sections are marked");
-  lines.push("`(reconstructed)`.");
+  lines.push("line composed from that manifest's `authors` metadata rather than copied from");
+  lines.push("an upstream notice — the published crate contains none to copy. Such sections");
+  lines.push("are marked `(reconstructed)` and say so individually.");
   lines.push("");
 
   for (const entry of entries) {
@@ -577,9 +688,13 @@ export function renderElectedAppendix(entries: ElectedEntry[]): string {
     lines.push("");
     if (entry.synthesized) {
       lines.push(
-        `This crate ships no license file; the canonical ${entry.elected} text is reproduced`,
+        `This crate ships no license file, so the canonical ${entry.elected} text is reproduced`,
       );
-      lines.push("below from its `Cargo.toml` declaration.");
+      lines.push("below from the license it declares in `Cargo.toml`. The copyright line is");
+      lines.push("**not** a verbatim copy of an upstream notice: it is composed from that");
+      lines.push("manifest's `authors` metadata, because the published crate contains no");
+      lines.push("notice to copy. The upstream repository may carry a dated copyright line");
+      lines.push("that differs from the one shown here.");
       lines.push("");
     }
     pushNoticeBlocks(lines, entry.files);
@@ -696,7 +811,9 @@ async function collectElectedEntries(deps: CargoPackage[]): Promise<ElectedEntry
     // so there is nothing to elect — the referenced file is the whole grant.
     const hasOnlyLicenseFile = dep.license === null && dep.license_file !== null;
     if (hasOnlyLicenseFile) {
-      const name = dep.license_file as string;
+      // The pointer comes straight from a third-party manifest, so it is vetted
+      // for symlinks and `../` escapes before anything is read off disk.
+      const name = await resolveLicenseFile(crateDir, dep.license_file as string, label);
       const files = [await readNoticeFile(crateDir, name, label)];
       entries.push({
         name: dep.name,

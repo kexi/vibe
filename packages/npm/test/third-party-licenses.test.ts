@@ -15,12 +15,16 @@
  *     obligation-free licenses, and FAILS LOUDLY on anything unclassified
  *     rather than quietly omitting a crate's notice;
  *   - the file chosen for an elected license matches that license, across the
- *     several suffix spellings crates actually use;
+ *     several suffix spellings crates actually use, WITHOUT confusing licenses
+ *     that share a prefix (MIT vs MIT-0 are different grants);
  *   - a crate shipping no license file gets the canonical text reconstructed
  *     from its manifest instead of being dropped;
  *   - notice discovery lists a crate's root license files deterministically and
  *     refuses symlinks, so a crafted crate cannot inline a file from elsewhere
  *     on the machine into a published document;
+ *   - a manifest's `license_file` pointer — fully attacker-chosen text — is
+ *     confined to the crate directory and REJECTS rather than skips, so neither
+ *     a `../` escape nor a symlink can pull an unrelated file into the document;
  *   - notice text is normalized (BOM, CRLF, trailing newline) and REJECTED
  *     rather than repaired when oversized, non-UTF-8 or control-carrying —
  *     a truncated or sanitized license is no longer the license;
@@ -34,7 +38,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, symlinkSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import {
   normalizeSpdx,
   parseSpdx,
@@ -44,6 +48,7 @@ import {
   copyrightLine,
   synthesizeNoticeFile,
   discoverNoticeFiles,
+  resolveLicenseFile,
   normalizeNoticeText,
   renderNoticeAppendix,
   renderElectedAppendix,
@@ -226,13 +231,41 @@ describe("selectNoticeFiles", () => {
     expect(selectNoticeFiles(["LICENSE-MIT.txt"], "MIT")).toEqual(["LICENSE-MIT.txt"]);
   });
 
-  it("matches a hyphenated license id loosely", () => {
+  it("matches a hyphenated license id spelled out in full", () => {
     expect(selectNoticeFiles(["LICENSE-BSD-3-Clause", "LICENSE-MIT"], "BSD-3-Clause")).toEqual([
       "LICENSE-BSD-3-Clause",
     ]);
+    expect(selectNoticeFiles(["LICENSE-Apache-2.0"], "Apache-2.0")).toEqual(["LICENSE-Apache-2.0"]);
+  });
+
+  it("accepts the version-eliding shorthand crates use", () => {
+    // `LICENSE-APACHE` for Apache-2.0 is the single most common notice filename
+    // in the graph, so requiring the ID in full would miss almost everything.
+    expect(selectNoticeFiles(["LICENSE-APACHE"], "Apache-2.0")).toEqual(["LICENSE-APACHE"]);
+    expect(selectNoticeFiles(["LICENSE-BSD"], "BSD-3-Clause")).toEqual(["LICENSE-BSD"]);
+  });
+
+  it("does not confuse licenses that merely share a token prefix", () => {
+    // MIT-0 is a different grant from MIT — it drops the attribution clause
+    // entirely — so reproducing one in place of the other misstates the terms.
+    // A concatenated prefix test ("mit0".startsWith("mit")) got this wrong.
+    expect(selectNoticeFiles(["LICENSE-MIT-0"], "MIT")).toEqual([]);
+    expect(selectNoticeFiles(["LICENSE-MIT-0"], "MIT-0")).toEqual(["LICENSE-MIT-0"]);
+    expect(selectNoticeFiles(["LICENSE-MIT"], "MIT")).toEqual(["LICENSE-MIT"]);
+  });
+
+  it("declines to read a plain LICENSE-MIT as an abbreviation of MIT-0", () => {
+    // The shortened form names a license we know, so it is far likelier to be
+    // that license's text than an abbreviation of the longer id.
+    expect(selectNoticeFiles(["LICENSE-MIT"], "MIT-0")).toEqual([]);
+  });
+
+  it("picks the exact file over a WITH-exception variant of the same license", () => {
+    // The exception variant is a different document; only the plain Apache-2.0
+    // spelling (or its APACHE shorthand) is the elected license's own text.
     expect(
       selectNoticeFiles(["LICENSE-APACHE", "LICENSE-Apache-2.0_WITH_LLVM-exception"], "Apache-2.0"),
-    ).toEqual(["LICENSE-APACHE", "LICENSE-Apache-2.0_WITH_LLVM-exception"]);
+    ).toEqual(["LICENSE-APACHE"]);
   });
 
   it("falls back to the unqualified file when nothing names the license", () => {
@@ -350,6 +383,107 @@ describe("discoverNoticeFiles", () => {
   it("returns nothing for a crate that ships no notices", async () => {
     writeFileSync(join(crateDir, "Cargo.toml"), "[package]");
     expect(await discoverNoticeFiles(crateDir)).toEqual([]);
+  });
+});
+
+describe("resolveLicenseFile", () => {
+  // Unlike discoverNoticeFiles, this path follows a pointer written in a
+  // third-party Cargo.toml, so the value is fully attacker-chosen. It must be
+  // confined to the crate directory and must THROW on rejection: skipping would
+  // drop the crate's only statement of terms from the generated document.
+  let crateDir: string;
+  let outside: string;
+
+  beforeEach(() => {
+    crateDir = mkdtempSync(join(tmpdir(), "vibe-lf-"));
+    outside = mkdtempSync(join(tmpdir(), "vibe-lf-outside-"));
+  });
+
+  afterEach(() => {
+    rmSync(crateDir, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  it("accepts a plain file at the crate root", async () => {
+    writeFileSync(join(crateDir, "LICENSE-CUSTOM"), "terms");
+    expect(await resolveLicenseFile(crateDir, "LICENSE-CUSTOM", "demo 1.0.0")).toBe(
+      "LICENSE-CUSTOM",
+    );
+  });
+
+  it("accepts a file in a subdirectory of the crate", async () => {
+    // A license_file may legitimately point below the root, which containment
+    // must permit — only escaping the crate is forbidden.
+    mkdirSync(join(crateDir, "licenses"));
+    writeFileSync(join(crateDir, "licenses", "TERMS"), "terms");
+    expect(await resolveLicenseFile(crateDir, "licenses/TERMS", "demo 1.0.0")).toBe(
+      "licenses/TERMS",
+    );
+  });
+
+  it("rejects a relative path that climbs out of the crate", async () => {
+    // The attack in the review: `../../..` reaching a checkout's credentials,
+    // whose contents would then be inlined into a committed, published file.
+    writeFileSync(join(outside, "secret"), "SECRET");
+    const escape = join("..", basename(outside), "secret");
+    await expect(resolveLicenseFile(crateDir, escape, "demo 1.0.0")).rejects.toThrow(
+      /resolves outside the crate directory/,
+    );
+  });
+
+  it("rejects an absolute path outside the crate", async () => {
+    const secret = join(outside, "secret");
+    writeFileSync(secret, "SECRET");
+    await expect(resolveLicenseFile(crateDir, secret, "demo 1.0.0")).rejects.toThrow(
+      /resolves outside the crate directory/,
+    );
+  });
+
+  it("rejects a symlink even when it points inside the crate", async () => {
+    // Symlinks are refused outright rather than resolved, matching
+    // discoverNoticeFiles: whether the target is safe is not the question, the
+    // indirection itself is what is declined.
+    writeFileSync(join(crateDir, "real"), "terms");
+    symlinkSync(join(crateDir, "real"), join(crateDir, "LICENSE-LINK"));
+    await expect(resolveLicenseFile(crateDir, "LICENSE-LINK", "demo 1.0.0")).rejects.toThrow(
+      /is a symlink/,
+    );
+  });
+
+  it("rejects a symlink that escapes the crate", async () => {
+    const secret = join(outside, "secret");
+    writeFileSync(secret, "SECRET");
+    symlinkSync(secret, join(crateDir, "LICENSE-EVIL"));
+    await expect(resolveLicenseFile(crateDir, "LICENSE-EVIL", "demo 1.0.0")).rejects.toThrow(
+      /is a symlink/,
+    );
+  });
+
+  it("rejects a directory", async () => {
+    mkdirSync(join(crateDir, "LICENSE-DIR"));
+    await expect(resolveLicenseFile(crateDir, "LICENSE-DIR", "demo 1.0.0")).rejects.toThrow(
+      /is not a regular file/,
+    );
+  });
+
+  it("rejects a pointer to a file that does not exist", async () => {
+    await expect(resolveLicenseFile(crateDir, "MISSING", "demo 1.0.0")).rejects.toThrow(
+      /does not exist/,
+    );
+  });
+
+  it("rejects the crate directory itself", async () => {
+    await expect(resolveLicenseFile(crateDir, ".", "demo 1.0.0")).rejects.toThrow(
+      /is not a regular file/,
+    );
+  });
+
+  it("names the crate and the declared path but never the resolved target", async () => {
+    // Echoing the resolved path would push an attacker-chosen filesystem
+    // location into CI logs.
+    writeFileSync(join(outside, "secret"), "SECRET");
+    const secret = join(outside, "secret");
+    await expect(resolveLicenseFile(crateDir, secret, "evil 6.6.6")).rejects.toThrow(/evil 6.6.6/);
   });
 });
 
