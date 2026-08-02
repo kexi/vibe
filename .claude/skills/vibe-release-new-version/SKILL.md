@@ -1,9 +1,8 @@
 ---
-description: Release a new version of vibe (version bump, sync, PR creation, Release workflow dispatch)
+description: Release a new version of vibe. Use for ANY release work — version bump, release preparation, develop→main release PR, dispatching release.yml, release notes / announcement tweet, or post-release follow-ups (flake.nix hashes). Trigger on "release", "リリース", "version bump", "vX.Y.Z を出す", or a request to publish/announce a new version. Read this BEFORE starting any release step, even a partial one.
 argument-hint: "[patch|minor|major|X.Y.Z]"
 allowed-tools: Bash(git *), Bash(gh *), Bash(pnpm *), Bash(bun *), Read, Edit, AskUserQuestion
 context: fork
-disable-model-invocation: true
 ---
 
 # vibe Release Workflow
@@ -420,11 +419,31 @@ EOF
 )"
 ```
 
-### 6.3 Guide User
+### 6.3 Enable auto-merge, with the admin fallback for BEHIND
+
+```bash
+gh pr merge <pr> --auto --merge
+```
+
+**Known gotcha (hit in v3.0.0):** this PR's head (develop) is always BEHIND main
+— main carries the previous releases' merge commits that develop does not have —
+and with "require branches to be up to date" protection, auto-merge then never
+fires even with every check green. Check `gh pr view <pr> --json
+mergeStateStatus`; if it reports `BEHIND` and all checks pass, merge with the
+documented fallback:
+
+```bash
+gh pr merge <pr> --admin --merge
+```
+
+Do NOT "update branch" (merging main back into develop) to clear BEHIND — it
+pollutes develop with main's merge commits for no benefit.
+
+### 6.4 Guide User
 
 Display the PR URL and inform the user:
 
-1. Review and merge the PR
+1. Review and merge the PR (or let auto-merge / the admin fallback complete)
 2. After merging, execute Step 7 to finalize the release
 
 **Note**: Wait until the PR is merged. After merging, invoke `/vibe-release-new-version` again or manually execute Step 7.
@@ -534,6 +553,17 @@ gh workflow run release.yml --ref main -F notes=@/tmp/release-notes.md
 
 **Note:** Replace the notes content above with the release notes generated in Step 7.2.
 
+**Rehearse first (recommended, mandatory for majors):** the workflow's
+`dry_run` input builds everything, verifies a draft release, then deletes it
+without publishing — the tag is never burned. Immutable Releases means a failed
+real run cannot be retried under the same version, so the rehearsal is cheap
+insurance (used successfully for v3.0.0):
+
+```bash
+gh workflow run release.yml --ref main -f dry_run=true
+# wait for success, then dispatch the real run as above
+```
+
 Watch the run until it finishes, then confirm the release is published. Wait
 (max ~3 minutes) for the fresh (not yet completed) run so a stale earlier run
 is never watched:
@@ -575,9 +605,9 @@ PREV_TAG=$(gh release list --exclude-pre-releases --limit 1 --json tagName --jq 
 # Get repository owner
 REPO_OWNER=$(gh repo view --json owner --jq '.owner.login')
 
-# Get contributors (excluding owner)
+# Get contributors (excluding owner and bots — dependabot[bot] etc. get no thanks mention)
 gh api "repos/kexi/vibe/compare/${PREV_TAG}...HEAD" \
-  --jq "[.commits[].author.login] | unique | map(select(. != \"${REPO_OWNER}\")) | .[]"
+  --jq "[.commits[].author.login] | unique | map(select(. != \"${REPO_OWNER}\" and (endswith(\"[bot]\") | not))) | .[]"
 ```
 
 #### 7.4.2 Extract Twitter User IDs
@@ -661,7 +691,27 @@ Your contributions make vibe better! 🎉
 
 **Note:** Be mindful of the 280 character limit. Adjust the summary as needed.
 
-### 7.5 Cleanup
+### 7.5 Refresh flake.nix binary hashes (post-release PR)
+
+The four `platforms.*.hash` fixed-output hashes in `flake.nix` live OUTSIDE
+`flake.lock` and must be bumped by hand after every release (the version itself
+derives from `package.json` and needs no edit; there is no automation in
+release.yml despite an old comment in `flake.nix` suggesting otherwise). Added
+after v3.0.0, where this was done as PR #576.
+
+```bash
+git checkout -b chore/flake-hashes-vX.Y.Z origin/develop
+for a in vibe-linux-x64 vibe-linux-arm64 vibe-darwin-x64 vibe-darwin-arm64; do
+  nix store prefetch-file --json \
+    "https://github.com/kexi/vibe/releases/download/vX.Y.Z/$a" | jq -r "\"$a \" + .hash"
+done
+# Edit the four platforms.*.hash values in flake.nix, then verify for real:
+nix build .#binary --no-link   # must exit 0
+```
+
+Commit, open a PR to develop, and merge it like any other change.
+
+### 7.6 Cleanup
 
 Delete the release branch:
 
@@ -708,4 +758,4 @@ JSR publishing was removed with the dead TypeScript distribution in Phase 6.
 Areas the skill intentionally leaves to executor judgement (do not silently auto-decide):
 
 - **BREAKING change placement in changelog**: Keep a Changelog interpretation varies. When a `feat!:` / `BREAKING CHANGE:` exists, the executor may place it under `### Changed` (with a `**BREAKING:**` prefix), `### Removed`, or `### Deprecated` based on what changed. Pick one consistently within a single release entry.
-- **Changelog i18n sync**: This skill only edits `packages/docs/src/content/docs/changelog.mdx`. The Japanese counterpart `packages/docs/src/content/docs/ja/changelog.mdx` must be kept in sync per `.claude/rules/docs-i18n.md` — handle that as a separate edit before staging in Step 4.1 (and add it to the `git add` list when present).
+- **Changelog i18n sync**: This skill only edits `packages/docs/src/content/docs/changelog.mdx`. The Japanese and Simplified Chinese counterparts (`ja/changelog.mdx`, `zh/changelog.mdx`) must be kept in sync per `.claude/rules/docs-i18n.md` — `pnpm run check:i18n` (wired into `check:all`) fails on a missing counterpart. Handle them as separate edits before staging in Step 4.1 (and add them to the `git add` list).
