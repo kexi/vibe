@@ -282,8 +282,12 @@ mod tests {
     #[test]
     fn path_failing_validate_path_is_rejected() {
         let io = FakeIo::new();
-        // Absolute but contains a command-substitution pattern.
-        let r = FakeStdin::text(r#"{"worktree_path": "/tmp/$(whoami)"}"#);
+        // Absolute on BOTH hosts and carrying a command-substitution pattern, so
+        // it is `validate_path` that rejects it. A bare `/tmp/$(whoami)` is
+        // relative on Windows and would be refused one check earlier, leaving the
+        // substitution guard this case exists to prove unexercised there.
+        let json = serde_json::json!({ "worktree_path": fake_root_str("tmp/$(whoami)") });
+        let r = FakeStdin::text(&json.to_string());
         assert!(read_worktree_hook_path(&io, &r).is_none());
     }
 

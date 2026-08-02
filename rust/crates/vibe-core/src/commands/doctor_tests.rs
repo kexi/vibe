@@ -215,7 +215,13 @@ fn unix_with_no_home_at_all_has_no_candidates() {
 fn unsafe_env_roots_are_rejected() {
     // Relative, `..`-bearing and empty roots are all refused, and with no safe
     // fallback the candidate list is empty (never a path built from them).
-    for bad in ["relative/config", "/home/../etc", ""] {
+    //
+    // The `..` case is built from a fake root so it is ABSOLUTE on both hosts:
+    // a bare `/home/../etc` is relative on Windows and would be refused by the
+    // absoluteness check, leaving the ParentDir rejection this case exists to
+    // prove unexercised there.
+    let dotdot = fake_root_str("home/../etc");
+    for bad in ["relative/config", &dotdot, ""] {
         let io = FakeIo::new().with_env("XDG_CONFIG_HOME", bad);
         assert!(
             paths(&io, UNIX).is_empty(),

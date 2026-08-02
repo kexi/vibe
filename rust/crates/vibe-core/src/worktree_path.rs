@@ -479,10 +479,17 @@ mod tests {
     #[test]
     fn tilde_with_dotdot_home_errors() {
         // HOME containing `..` is rejected by the substring check (TS parity).
-        let io = FakeIo::new().with_env("HOME", "/home/../etc");
-        let runner = FakeScriptRunner::ok("/out");
+        //
+        // Absolute on both hosts, so it is the `..` that rejects it: the guard is
+        // `is_absolute() && !contains("..")`, and a bare `/home/../etc` fails the
+        // absoluteness half on Windows — reaching the same error for the wrong
+        // reason and never proving the `..` check runs.
+        let io = FakeIo::new().with_env("HOME", &fake_root_str("home/../etc"));
+        let runner = FakeScriptRunner::ok(&fake_root_str("out"));
         let settings = settings_with_script(Some("~/s.sh"));
-        let err = resolve_worktree_path(&io, &runner, None, &settings, &ctx("/repo")).unwrap_err();
+        let err =
+            resolve_worktree_path(&io, &runner, None, &settings, &ctx(&fake_root_str("repo")))
+                .unwrap_err();
         assert!(err.to_string().contains("Cannot expand ~ in path_script"));
     }
 }

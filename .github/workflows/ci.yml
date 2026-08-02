@@ -5,6 +5,16 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+    # `labeled` is not one of the default activity types (opened/synchronize/
+    # reopened), so without it applying `ci-full` to an open PR would not start a
+    # run — the label would only take effect on the next push, which defeats the
+    # point of being able to opt a finished PR into the Windows leg.
+    #
+    # The cost is a duplicate full run whenever ANY label is added to an open PR
+    # (the filter is per-event, not per-label). There is no `concurrency` group on
+    # this workflow, so those runs do not cancel each other; labels are applied
+    # rarely enough here that this is cheaper than the alternative.
+    types: [opened, synchronize, reopened, labeled]
 
 # Least privilege: CI only reads the repository. Jobs that need more must
 # request it explicitly at the job level.

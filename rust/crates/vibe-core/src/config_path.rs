@@ -105,7 +105,10 @@ mod tests {
 
     #[test]
     fn rejects_parent_dir_component() {
-        assert!(config_dir("/home/../etc").is_err());
+        // Absolute on both hosts, so it is the ParentDir component — not the
+        // absoluteness check — that does the rejecting. A bare `/home/../etc` is
+        // relative on Windows and would never reach the guard under test.
+        assert!(config_dir(&fake_root_str("home/../etc")).is_err());
     }
 
     #[test]
