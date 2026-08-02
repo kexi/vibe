@@ -617,9 +617,9 @@ mod tests {
 
     #[test]
     fn copy_failure_warning_neutralizes_control_characters() {
-        let fx = Fixture::new();
+        // No fixture: the fake executor never touches the filesystem, and a name
+        // carrying an ESC byte cannot even be created on Windows (NTFS).
         let nasty = "bad\u{1b}[2Kname.txt";
-        fx.write(nasty, "x");
         let io = FakeIo::new();
         let exec = FakeCopyExecutor::new(CopyStrategyKind::Standard)
             .fail_on(nasty, CopyError::Failed("disk full".into()));
@@ -630,7 +630,7 @@ mod tests {
             &tracker,
             &[nasty.to_string()],
             &SymlinkedPaths::none(),
-            fx.path().to_str().unwrap(),
+            "/repo",
             "/wt",
             false,
         );
@@ -651,9 +651,8 @@ mod tests {
         // so the attacker-controlled filename appears a SECOND time inside the
         // error message. Sanitizing only the label would still let an ESC reach the
         // terminal, a few characters further along the same warning line.
-        let fx = Fixture::new();
+        // No fixture, for the same Windows reason as the warning test above.
         let nasty = "bad\u{1b}[2Kname.txt";
-        fx.write(nasty, "x");
         let io = FakeIo::new();
         let exec = FakeCopyExecutor::new(CopyStrategyKind::Standard).fail_on(
             nasty,
@@ -668,7 +667,7 @@ mod tests {
             &tracker,
             &[nasty.to_string()],
             &SymlinkedPaths::none(),
-            fx.path().to_str().unwrap(),
+            "/repo",
             "/wt",
             false,
         );
