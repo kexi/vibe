@@ -385,20 +385,34 @@ pub fn split_nul(output: &[u8]) -> Vec<GitPathRecord> {
         .collect()
 }
 
+/// Pathspec that widens `git ls-files` from "under the current directory" to
+/// "the whole repository".
+///
+/// `--full-name` only fixes the path FORMAT (repo-root-relative instead of
+/// cwd-relative); it does not widen the SCOPE. Without a pathspec, a run from a
+/// subdirectory lists only that subtree, so `vibe start` invoked from e.g.
+/// `packages/docs/` would silently carry over just that subtree's files. `:/`
+/// is the magic "from the repository root" pathspec, and the preceding `--`
+/// stops git from mistaking it for an option.
+const REPO_WIDE_PATHSPEC: [&str; 2] = ["--", ":/"];
+
 /// Repo-relative paths of untracked, non-ignored files
 /// (`git ls-files -z --others --exclude-standard`).
 ///
 /// `-z` is mandatory: without it git would quote paths per `core.quotePath` and
-/// break on embedded newlines. Paths are relative to the repository root because
-/// the command runs with `--full-name` against the top level.
+/// break on embedded newlines. `--full-name` makes the emitted paths relative to
+/// the repository root, and [`REPO_WIDE_PATHSPEC`] makes the listing cover the
+/// whole repository regardless of the process's current directory.
 pub fn list_untracked_files(runner: &impl GitRunner) -> Result<Vec<GitPathRecord>> {
-    let out = runner.run_raw(&[
+    let mut args = vec![
         "ls-files",
         "-z",
         "--others",
         "--exclude-standard",
         "--full-name",
-    ])?;
+    ];
+    args.extend_from_slice(&REPO_WIDE_PATHSPEC);
+    let out = runner.run_raw(&args)?;
     Ok(split_nul(&out))
 }
 
@@ -408,7 +422,9 @@ pub fn list_untracked_files(runner: &impl GitRunner) -> Result<Vec<GitPathRecord
 /// `--modified` also reports DELETED tracked files; the caller filters those out
 /// by existence (a deleted file has nothing to copy).
 pub fn list_modified_files(runner: &impl GitRunner) -> Result<Vec<GitPathRecord>> {
-    let out = runner.run_raw(&["ls-files", "-z", "--modified", "--full-name"])?;
+    let mut args = vec!["ls-files", "-z", "--modified", "--full-name"];
+    args.extend_from_slice(&REPO_WIDE_PATHSPEC);
+    let out = runner.run_raw(&args)?;
     Ok(split_nul(&out))
 }
 
@@ -741,19 +757,25 @@ branch refs/heads/main
     /// decodes lossily) were used.
     struct LsFilesGit {
         raw: Vec<u8>,
+        args: std::cell::RefCell<Vec<String>>,
     }
     impl LsFilesGit {
         fn new(raw: &str) -> Self {
             Self {
                 raw: raw.as_bytes().to_vec(),
+                args: std::cell::RefCell::new(Vec::new()),
             }
+        }
+        fn recorded_args(&self) -> Vec<String> {
+            self.args.borrow().clone()
         }
     }
     impl GitRunner for LsFilesGit {
         fn run(&self, _args: &[&str]) -> Result<String> {
             Ok(String::from_utf8_lossy(&self.raw).trim().to_string())
         }
-        fn run_raw(&self, _args: &[&str]) -> Result<Vec<u8>> {
+        fn run_raw(&self, args: &[&str]) -> Result<Vec<u8>> {
+            *self.args.borrow_mut() = args.iter().map(|a| a.to_string()).collect();
             Ok(self.raw.clone())
         }
     }
@@ -817,6 +839,25 @@ branch refs/heads/main
             list_modified_files(&git).unwrap(),
             valid(&["src/main.rs", "trailing "])
         );
+    }
+
+    #[test]
+    fn ls_files_listings_are_scoped_to_the_whole_repository() {
+        // Guarantee: both listings ask git for the entire repository, not just the
+        // subtree below the process's current directory. `--full-name` alone only
+        // reformats paths, so the trailing `-- :/` pathspec is what makes a run
+        // from a subdirectory still see files elsewhere in the repo.
+        let untracked = LsFilesGit::new("a.txt\0");
+        list_untracked_files(&untracked).unwrap();
+        let args = untracked.recorded_args();
+        assert_eq!(&args[args.len() - 2..], &["--", ":/"]);
+        assert!(args.contains(&"--others".to_string()));
+
+        let modified = LsFilesGit::new("b.txt\0");
+        list_modified_files(&modified).unwrap();
+        let args = modified.recorded_args();
+        assert_eq!(&args[args.len() - 2..], &["--", ":/"]);
+        assert!(args.contains(&"--modified".to_string()));
     }
 
     #[test]
