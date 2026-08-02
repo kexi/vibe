@@ -49,6 +49,26 @@ pub enum EvalDialect {
     Powershell,
 }
 
+impl EvalDialect {
+    /// Accepted `--eval-dialect` value spellings (primary first).
+    ///
+    /// Single source of truth for the flag's vocabulary: the clap `ValueEnum` in
+    /// the binary derives its name+aliases from these (drift-guarded by a test
+    /// there), and `vibe doctor` matches wrapper text against them. A classifier
+    /// that hardcoded its own spelling would silently stop recognizing a wrapper
+    /// the moment an alias was added on the parsing side.
+    pub const fn accepted_values(self) -> &'static [&'static str] {
+        match self {
+            EvalDialect::Posix => &["posix"],
+            EvalDialect::Nushell => &["nu", "nushell"],
+            EvalDialect::Powershell => &["powershell", "pwsh"],
+        }
+    }
+}
+
+/// The hidden flag a wrapper passes to request its stdout dialect.
+pub const EVAL_DIALECT_FLAG: &str = "--eval-dialect";
+
 /// Line prefix marking a nushell `cd` request.
 ///
 /// Nushell has no `eval`, and its single-quoted strings support no escape

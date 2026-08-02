@@ -100,14 +100,22 @@ jobs:
           VIBE_REQUIRE_SHELLS: bash,zsh,fish,nu,pwsh
         run: cargo test --manifest-path rust/Cargo.toml --workspace
 
-  # Windows-native proof of the PowerShell wrapper: rust-linux/rust-macos run
-  # the pwsh leg on Unix pwsh, which cannot exercise Windows path semantics,
-  # vibe.exe resolution, or `& vibe.exe ... @args` splatting where PowerShell
-  # users actually live. Scoped to the round-trip test: the rest of the
-  # workspace suite is platform-covered by the linux/macos jobs, and a full
-  # `cargo test --workspace` on the slow Windows runner would roughly double
-  # this job's cost for no unique coverage. Windows PowerShell 5.1 is not
-  # exercised (the wrapper targets pwsh 7).
+  # The Windows-only coverage the other jobs structurally cannot provide, in two
+  # parts:
+  #
+  # 1. The vibe-core unit tests, which are the only place the `#[cfg(windows)]`
+  #    code paths (path-prefix validation, the Windows profile locations, the
+  #    fast-remove argv) are compiled AND run at all. On linux/macos they are
+  #    cfg'd out entirely, so a break in them would otherwise reach a release.
+  # 2. The PowerShell wrapper round-trip: rust-linux/rust-macos run the pwsh leg
+  #    on Unix pwsh, which cannot exercise Windows path semantics, vibe.exe
+  #    resolution, or `& vibe.exe ... @args` splatting where PowerShell users
+  #    actually live.
+  #
+  # `-p vibe`'s integration suites (eval_contract and friends) are deliberately
+  # left out: they spawn the binary and git repeatedly, which is slow on the
+  # Windows runner, and they carry no cfg(windows) code of their own. Windows
+  # PowerShell 5.1 is not exercised either (the wrapper targets pwsh 7).
   rust-windows:
     if: github.event_name == 'push' || github.base_ref == 'main'
     runs-on: windows-latest
@@ -118,6 +126,10 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-toolchain
+      # The whole crate, not a doctor-scoped filter: every cfg(windows) test in
+      # vibe-core shares the same blind spot.
+      - name: vibe-core unit tests (compiles cfg(windows) code paths)
+        run: cargo test --manifest-path rust/Cargo.toml -p vibe-core
       - name: Wrapper round-trip test (Windows-native pwsh)
         env:
           VIBE_REQUIRE_SHELLS: pwsh

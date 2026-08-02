@@ -46,20 +46,40 @@ that definition requests its dialect.
 
 | Shell      | Platform      | Path                                                                                                                                                |
 | ---------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| nushell    | macOS / Linux | `$XDG_CONFIG_HOME/nushell/config.nu`, else `~/.config/nushell/config.nu`                                                                            |
+| nushell    | Linux         | `$XDG_CONFIG_HOME/nushell/config.nu` when that variable is set, otherwise `~/.config/nushell/config.nu`                                             |
+| nushell    | macOS         | `$XDG_CONFIG_HOME/nushell/config.nu` when that variable is set, otherwise `~/Library/Application Support/nushell/config.nu` (nu's macOS default)    |
 | nushell    | Windows       | `%APPDATA%\nushell\config.nu`                                                                                                                       |
-| PowerShell | macOS / Linux | `~/.config/powershell/Microsoft.PowerShell_profile.ps1`, `profile.ps1`                                                                              |
+| PowerShell | macOS / Linux | `$XDG_CONFIG_HOME/powershell/…` when that variable is set, otherwise `~/.config/powershell/…`                                                       |
 | PowerShell | Windows       | `%USERPROFILE%\Documents\{PowerShell,WindowsPowerShell}\*.ps1`, and the same two directories under `%OneDrive%\Documents\` when `%OneDrive%` is set |
+
+Each shell resolves exactly one config directory, and only that one is checked. On
+Unix both follow `XDG_CONFIG_HOME` when it is set — nushell by its own rule,
+PowerShell because .NET's `ApplicationData` folder resolves to it — falling back
+to the platform default otherwise. A leftover file in the directory that is _not_
+active is one your shell never loads, so reporting it would fail the run over a
+file that has no effect on your setup.
 
 A file that does not exist is not reported. Each reported file gets one of:
 
-| Status                             | Meaning                                                  |
-| ---------------------------------- | -------------------------------------------------------- |
-| `current`                          | The wrapper requests its dialect — nothing to do         |
-| `stale`                            | A pre-2.2.0 wrapper; replace it                          |
-| `no vibe wrapper`                  | The file exists but defines no `vibe` function           |
-| `not checked (not a regular file)` | The path is a directory, socket or device                |
-| `unreadable`                       | The file exists but could not be read (permissions, I/O) |
+| Status                                         | Meaning                                                                              |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `current`                                      | The wrapper requests its dialect — nothing to do                                     |
+| `stale`                                        | A pre-2.2.0 wrapper; replace it                                                      |
+| `no vibe wrapper`                              | The file exists but defines no `vibe` function                                       |
+| `could not determine (wrapper block too long)` | The wrapper's `{ ... }` block never closed within the scan limit; compare it by hand |
+| `not checked (not a regular file)`             | The path is a directory, socket or device                                            |
+| `unreadable`                                   | The file exists but could not be read (permissions, I/O)                             |
+
+A row of the form `<VARIABLE>: skipped (invalid value)` means that environment
+variable is set but its value cannot be used as a directory root: it must be an
+absolute path with no `..` components (and on Windows, a drive-letter path — a
+UNC share or a device path is refused). The variable's value is never printed,
+only its name. A variable that is simply _unset_ produces no row at all, since
+that is the normal state for `XDG_CONFIG_HOME` and `%OneDrive%`.
+
+Profiles saved as UTF-16 (which Windows PowerShell's `Out-File` produced by
+default) or with a UTF-8 byte-order mark are decoded before classification. A
+UTF-16 file with no byte-order mark is not detected.
 
 ## Output
 
@@ -67,7 +87,7 @@ A file that does not exist is not reported. Each reported file gets one of:
 $ vibe doctor
 Checking shell wrappers for nushell and PowerShell...
   /Users/you/.config/nushell/config.nu: stale
-Fix: run 'vibe shell-setup --shell nushell' and replace the vibe function in /Users/you/.config/nushell/config.nu
+    Fix: run 'vibe shell-setup --shell nushell' and replace the vibe function in /Users/you/.config/nushell/config.nu
 If your wrapper is sourced from another file, compare it with 'vibe shell-setup --shell <nushell|powershell>'.
 ```
 
@@ -76,12 +96,23 @@ protocol, so a report printed there would be _executed_ by your wrapper.
 
 ## Exit codes
 
-| Code | Meaning                                                      |
-| ---- | ------------------------------------------------------------ |
-| `0`  | No stale wrapper found (including "no profile found at all") |
-| `1`  | At least one stale wrapper found                             |
+| Code | Meaning                                                                            |
+| ---- | ---------------------------------------------------------------------------------- |
+| `0`  | No stale wrapper found (including "no profile found at all")                       |
+| `1`  | At least one stale wrapper found, **or** no usable profile root exists (see below) |
+
+If `HOME` and `XDG_CONFIG_HOME` are both unset or invalid (on Windows: `APPDATA`,
+`USERPROFILE` and `OneDrive`), there is nowhere to look, so `doctor` fails with an
+explanation rather than reporting a clean bill of health for files it never
+inspected.
 
 The report is printed even with `--quiet`, so a non-zero exit is never silent.
+
+To observe the exit code from a script, call the binary directly rather than the
+shell wrapper — POSIX `command vibe doctor`, nushell `^vibe doctor`, PowerShell
+`vibe.exe doctor` (or `& vibe.exe doctor`). The POSIX wrappers run vibe inside
+`eval "$(...)"`, which discards its exit code, and the nushell wrapper aborts the
+calling script when an external command exits non-zero.
 
 ## Caveats
 
@@ -92,6 +123,15 @@ The report is printed even with `--quiet`, so a non-zero exit is never silent.
 - **OneDrive Known Folder redirection.** `%OneDrive%\Documents` is checked when
   `%OneDrive%` is set, but a `Documents` folder redirected somewhere else is not
   found.
+- **Unusual string syntax may read as `stale`.** Before deciding, `doctor` blanks
+  out string literals, PowerShell `<# … #>` block comments, PowerShell
+  here-strings (`@"…"@`, `@'…'@`) and nushell raw strings (`r#'…'#`), tracking all
+  of them across line breaks. A brace or a `--eval-dialect` mention inside any of
+  those therefore cannot sway the verdict. What remains: an unpaired quote in your
+  code blanks the rest of the wrapper, and quoting the dialect value itself
+  (`--eval-dialect "powershell"`) hides it — both read as `stale`. The error always
+  falls on that side, never on blessing a broken wrapper, and `vibe shell-setup`
+  emits the value unquoted.
 
 ## Related
 

@@ -105,13 +105,19 @@ pub fn upgrade_command_run(
     log(io, &format!("vibe {}", env.version), opts);
     log(io, "", opts);
 
+    // Before the network call, not after: the user most likely to be running a
+    // broken wrapper is also the one behind a proxy or offline, and every later
+    // placement loses the notice to the `?` on `fetch_latest_version`. The notice
+    // is about the LOCAL shell setup, so it is true regardless of what the
+    // registry says.
+    maybe_warn_stale_wrapper(io, env);
+
     let latest_version = fetch_latest_version(http)?;
 
     let comparison = crate::upgrade_meta::compare_versions(&current_version, &latest_version)?;
     let is_up_to_date = comparison != Ordering::Less;
     if is_up_to_date {
         log(io, "You are using the latest version.", opts);
-        maybe_warn_stale_wrapper(io, env);
         return Ok(Outcome::none());
     }
 
@@ -125,7 +131,6 @@ pub fn upgrade_command_run(
     if check {
         log(io, &format!("Current: {current_version}"), opts);
         log(io, &format!("Latest:  {latest_version}"), opts);
-        maybe_warn_stale_wrapper(io, env);
         return Ok(Outcome::none());
     }
 
@@ -149,7 +154,6 @@ pub fn upgrade_command_run(
     log(io, "", opts);
     log(io, "Release notes:", opts);
     log(io, &format!("  {release_tag}"), opts);
-    maybe_warn_stale_wrapper(io, env);
 
     Ok(Outcome::none())
 }
@@ -473,6 +477,37 @@ mod tests {
     }
 
     const NOTICE_MARKER: &str = "Run 'vibe doctor' to check yours.";
+
+    /// The reason the notice is emitted BEFORE the network call: the user most
+    /// likely to be stuck on a broken wrapper is also the one who is offline or
+    /// behind a proxy, and the notice is about their LOCAL shell setup, so it is
+    /// true whatever the registry says. Placed after the fetch, the `?` would
+    /// swallow it on every failing run.
+    #[test]
+    fn notice_survives_a_failing_version_fetch() {
+        for http in [
+            FakeHttpClient::with(500, Some("application/json"), ""),
+            FakeHttpClient::error("connection refused"),
+        ] {
+            let io = FakeIo::new().with_env("SHELL", "/usr/bin/nu");
+            let env = UpgradeEnv {
+                version: "1.0.0",
+                distribution: "dev",
+                exec_path: "/home/u/.local/bin/vibe",
+                real_path: "/home/u/.local/bin/vibe",
+                is_mac: false,
+                is_windows: false,
+                eval_dialect: EvalDialect::Posix,
+            };
+            let err =
+                upgrade_command_run(&io, &http, &env, false, OutputOptions::default()).unwrap_err();
+            // The network failure is still reported as such...
+            assert!(matches!(err, VibeError::Network(_)), "got: {err}");
+            // ...and the wrapper notice was not lost with it.
+            let text = io.stderr_text();
+            assert!(text.contains(NOTICE_MARKER), "got: {text}");
+        }
+    }
 
     #[test]
     fn notice_is_shown_for_a_nushell_shell_in_both_version_paths() {
