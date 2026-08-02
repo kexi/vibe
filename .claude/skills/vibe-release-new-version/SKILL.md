@@ -758,9 +758,10 @@ Releasing is workflow-first (Immutable Releases-safe): a GitHub Release is
 never a trigger, it is the *output* of the Release workflow.
 
 - `release.yml` (dispatched via Step 7.3): builds the binaries and `.deb`s,
-  then creates and publishes the GitHub Release with all assets attached in
-  one `gh release create` call (the tag is burned only after every asset
-  uploaded). Since PR #582 the assets also include `LICENSE` and
+  then creates the GitHub Release as a **draft** with all assets attached,
+  verifies it, and only then publishes with `gh release edit --draft=false`
+  (the tag is burned only after verification passes — a failed check leaves
+  nothing published). Since PR #582 the assets also include `LICENSE` and
   `THIRD-PARTY-LICENSES.md` taken from the release commit (9 assets total:
   5 binaries + 2 `.deb` + 2 license documents), and
   `scripts/verify-release-assets.ts` asserts they are present, non-empty, and
