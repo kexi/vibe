@@ -24,7 +24,15 @@ import { readFile } from "node:fs/promises";
 /** Assets a release must carry beyond its binaries, by exact name. */
 export const REQUIRED_ASSETS = ["LICENSE", "THIRD-PARTY-LICENSES.md"];
 
-/** One entry of `gh release view --json assets`, narrowed to what we check. */
+/**
+ * One entry of `gh release view --json assets`, narrowed to what we check.
+ *
+ * `size` and `state` are optional on the TYPE but not in practice: the real
+ * producer always emits both (verified against the published v3.0.0 release),
+ * as does the REST API this mirrors. They stay optional because the JSON is
+ * untrusted input that must be representable before it can be judged — absence
+ * is then reported as a problem rather than silently accepted.
+ */
 export interface ReleaseAsset {
   name: string;
   size?: number;
@@ -61,6 +69,10 @@ export function parseAssets(raw: string): ReleaseAsset[] {
     if (typeof name !== "string") {
       throw new Error(`release asset #${index} has no name`);
     }
+    // A wrong-typed size/state is narrowed to undefined rather than thrown on,
+    // so findAssetProblems can report it per-asset with the name attached. Only
+    // required assets matter, and a malformed entry for some unrelated binary
+    // should not abort the check that the license documents are present.
     const record = entry as { size?: unknown; state?: unknown };
     return {
       name,
@@ -77,6 +89,12 @@ export function parseAssets(raw: string): ReleaseAsset[] {
  * A zero-byte or non-`uploaded` asset counts as missing: gh creates the asset
  * record before the bytes land, so presence of the name alone would accept a
  * release whose LICENSE downloads as an empty file.
+ *
+ * Why absent `size`/`state` is a problem rather than a pass: the real producer
+ * always sends both, so a listing without them is not a lenient older format,
+ * it is a payload this script does not understand. Treating unknown as fine
+ * would make the one case where verification cannot be performed the one case
+ * that always succeeds — precisely inverted for a release gate.
  */
 export function findAssetProblems(assets: ReleaseAsset[], required = REQUIRED_ASSETS): string[] {
   const byName = new Map(assets.map((asset) => [asset.name, asset]));
@@ -88,12 +106,16 @@ export function findAssetProblems(assets: ReleaseAsset[], required = REQUIRED_AS
       problems.push(`missing required release asset: ${name}`);
       continue;
     }
-    const isEmpty = asset.size !== undefined && asset.size === 0;
-    if (isEmpty) {
-      problems.push(`release asset ${name} is empty (0 bytes)`);
+
+    if (asset.size === undefined) {
+      problems.push(`release asset ${name} reports no size`);
+    } else if (asset.size <= 0) {
+      problems.push(`release asset ${name} is empty (${asset.size} bytes)`);
     }
-    const isIncomplete = asset.state !== undefined && asset.state !== "uploaded";
-    if (isIncomplete) {
+
+    if (asset.state === undefined) {
+      problems.push(`release asset ${name} reports no upload state`);
+    } else if (asset.state !== "uploaded") {
       problems.push(`release asset ${name} is in state '${asset.state}', expected 'uploaded'`);
     }
   }

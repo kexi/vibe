@@ -1315,14 +1315,20 @@ authorization of the copyright holder.
 Electing the permissive arm of an `OR` narrows a crate's terms to one license;
 it does not end its obligations. MIT, ISC, the BSD licenses, Zlib and
 Apache-2.0 all condition their grant on the copyright notice and permission
-text being reproduced in distributions of the software, and vibe ships those
-crates statically linked into its binary. This appendix therefore reproduces,
-for each such crate, the text of the license vibe elected out of its SPDX
-expression.
+text being reproduced in distributions of the software, and vibe's shipped
+binaries link many of these crates statically. This appendix therefore
+reproduces, for each such crate, the text of the license vibe elected out of
+its SPDX expression.
 
 Crates offering an arm that imposes no attribution obligation at all
 (`Unlicense`, `CC0-1.0`, `MIT-0`, `0BSD`) elect that arm and are omitted here.
 Crates with a top-level `AND` are covered by Appendix A instead.
+
+Like the table above, this appendix is drawn from the conservative full
+dependency graph, so it may reproduce a license for a crate that is not linked
+into any shipped binary — platform-gated crates (e.g. Windows/wasm) among
+them. Reproducing a license is not a representation that the crate is present
+in a given build.
 
 Where a crate publishes no license file of its own, the canonical text of the
 license it declares in `Cargo.toml` is reproduced instead, with the copyright

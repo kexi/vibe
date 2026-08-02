@@ -11,8 +11,10 @@
  *   - `gh release view --json assets` output parses in both the wrapped and
  *     bare-array shapes, and malformed input throws instead of being read as an
  *     empty release that trivially passes;
- *   - an asset that exists in name only — zero bytes, or still uploading — is
- *     reported as a problem, since gh creates the record before the bytes land;
+ *   - an asset that exists in name only — zero bytes, still uploading, or with
+ *     the metadata absent altogether — is reported as a problem, since gh
+ *     creates the record before the bytes land and always sends size/state, so
+ *     "cannot tell" must fail rather than pass a release gate;
  *   - a release carrying extra assets (binaries, .debs) still passes, so the
  *     check does not have to be edited every time the artifact set changes.
  */
@@ -52,13 +54,23 @@ describe("parseAssets", () => {
   });
 
   it("reads a bare array, as produced by --jq .assets", () => {
-    const raw = JSON.stringify([{ name: "LICENSE" }]);
-    expect(parseAssets(raw)).toEqual([{ name: "LICENSE", size: undefined, state: undefined }]);
+    const raw = JSON.stringify([{ name: "LICENSE", size: 10, state: "uploaded" }]);
+    expect(parseAssets(raw)).toEqual([{ name: "LICENSE", size: 10, state: "uploaded" }]);
   });
 
   it("ignores fields it does not check", () => {
-    const raw = JSON.stringify({ assets: [{ name: "LICENSE", url: "https://example.invalid" }] });
+    const raw = JSON.stringify({
+      assets: [{ name: "LICENSE", size: 10, state: "uploaded", url: "https://example.invalid" }],
+    });
     expect(parseAssets(raw)[0].name).toBe("LICENSE");
+  });
+
+  it("narrows absent or wrong-typed metadata to undefined for the checker to report", () => {
+    // Not thrown on: only required assets matter, so a malformed entry for some
+    // unrelated binary must not abort the license-document check. The undefined
+    // then surfaces as a named problem in findAssetProblems.
+    const raw = JSON.stringify({ assets: [{ name: "LICENSE", size: "10", state: 7 }] });
+    expect(parseAssets(raw)).toEqual([{ name: "LICENSE", size: undefined, state: undefined }]);
   });
 
   it("throws on malformed JSON rather than reading it as an empty release", () => {
@@ -121,6 +133,11 @@ describe("findAssetProblems", () => {
     expect(findAssetProblems(assets)).toEqual(["release asset LICENSE is empty (0 bytes)"]);
   });
 
+  it("rejects a negative size", () => {
+    const assets = FULL_RELEASE.map((a) => (a.name === "LICENSE" ? { ...a, size: -1 } : a));
+    expect(findAssetProblems(assets)).toEqual(["release asset LICENSE is empty (-1 bytes)"]);
+  });
+
   it("rejects an asset whose upload has not finished", () => {
     const assets = FULL_RELEASE.map((a) =>
       a.name === "THIRD-PARTY-LICENSES.md" ? { ...a, state: "starter" } : a,
@@ -130,10 +147,38 @@ describe("findAssetProblems", () => {
     ]);
   });
 
-  it("does not require size or state when gh omits them", () => {
-    expect(
-      findAssetProblems([{ name: "LICENSE" }, { name: "THIRD-PARTY-LICENSES.md" }]),
-    ).toEqual([]);
+  it("reports absent metadata instead of passing the asset", () => {
+    // gh always sends size and state, so a listing without them is a payload
+    // this script does not understand — not a lenient older format. Passing it
+    // would make the one case where verification is impossible always succeed.
+    expect(findAssetProblems([{ name: "LICENSE" }, { name: "THIRD-PARTY-LICENSES.md" }])).toEqual([
+      "release asset LICENSE reports no size",
+      "release asset LICENSE reports no upload state",
+      "release asset THIRD-PARTY-LICENSES.md reports no size",
+      "release asset THIRD-PARTY-LICENSES.md reports no upload state",
+    ]);
+  });
+
+  it("reports a missing size independently of a valid state", () => {
+    const assets = FULL_RELEASE.map((a) =>
+      a.name === "LICENSE" ? { name: a.name, state: "uploaded" } : a,
+    );
+    expect(findAssetProblems(assets)).toEqual(["release asset LICENSE reports no size"]);
+  });
+
+  it("reports a missing state independently of a valid size", () => {
+    const assets = FULL_RELEASE.map((a) => (a.name === "LICENSE" ? { name: a.name, size: 10 } : a));
+    expect(findAssetProblems(assets)).toEqual(["release asset LICENSE reports no upload state"]);
+  });
+
+  it("ignores absent metadata on assets that are not required", () => {
+    // The binaries are self-describing; only the license documents are gated.
+    const assets = [
+      { name: "vibe-linux-x64" },
+      { name: "LICENSE", size: 1, state: "uploaded" },
+      { name: "THIRD-PARTY-LICENSES.md", size: 1, state: "uploaded" },
+    ];
+    expect(findAssetProblems(assets)).toEqual([]);
   });
 
   it("is not fooled by a similarly named asset", () => {
