@@ -55,8 +55,11 @@ fn generate_scratch_name(git: &impl GitRunner, clock: &impl Clock) -> Result<Str
     let base_name = format!("{SCRATCH_PREFIX}{ts}");
 
     let mut used: HashSet<String> = HashSet::new();
+    // A detached worktree occupies no branch name, so it constrains nothing here.
     for w in get_worktree_list(git)? {
-        used.insert(w.branch);
+        if let Some(branch) = w.branch {
+            used.insert(branch);
+        }
     }
     // Existing scratch branch refs (best-effort: ignore a git error → empty).
     let refs = git

@@ -102,8 +102,9 @@ directory. If a tool is not safe under concurrent access, copy it instead.
 
 - Entries are **exact directory paths** relative to the repository root. Glob
   patterns are not supported (a symlink names one directory to share).
-- A `symlink` entry that was **actually linked** takes precedence over any
-  `files`/`dirs` entry covering the same path — the path is linked, not copied.
+- A `symlink` entry that was **actually linked** takes precedence over every
+  other copy source covering the same path — a `files`/`dirs` entry, and equally
+  a file picked up by `untracked` or `modified`. The path is linked, not copied.
   This is applied after glob expansion, so `dirs = [".*"]` alongside
   `symlink = [".cache"]` still links `.cache` and copies only the other matches.
   Paths **under** a shared directory (and its parents) are excluded too, so a

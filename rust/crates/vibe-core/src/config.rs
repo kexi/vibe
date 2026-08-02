@@ -53,6 +53,14 @@ pub struct CopyConfig {
     /// Parallel directory-copy operations (1-32, default 4 applied at use site).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub concurrency: Option<i64>,
+    /// Also copy untracked, non-ignored files (`git ls-files --others
+    /// --exclude-standard`). Opt-in; `None` means off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub untracked: Option<bool>,
+    /// Also copy locally modified tracked files (`git ls-files --modified`).
+    /// Opt-in; `None` means off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modified: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -186,17 +194,32 @@ pub fn merge_configs(base: &VibeConfig, local: &VibeConfig) -> VibeConfig {
         .as_ref()
         .and_then(|c| c.concurrency)
         .or_else(|| base.copy.as_ref().and_then(|c| c.concurrency));
+    // Scalar toggles: local wins when set, otherwise the base value carries.
+    let untracked = local
+        .copy
+        .as_ref()
+        .and_then(|c| c.untracked)
+        .or_else(|| base.copy.as_ref().and_then(|c| c.untracked));
+    let modified = local
+        .copy
+        .as_ref()
+        .and_then(|c| c.modified)
+        .or_else(|| base.copy.as_ref().and_then(|c| c.modified));
 
     if merged_files.is_some()
         || merged_dirs.is_some()
         || merged_symlink.is_some()
         || concurrency.is_some()
+        || untracked.is_some()
+        || modified.is_some()
     {
         merged.copy = Some(CopyConfig {
             files: merged_files,
             dirs: merged_dirs,
             symlink: merged_symlink,
             concurrency,
+            untracked,
+            modified,
             ..CopyConfig::default()
         });
     }
@@ -381,6 +404,60 @@ mod tests {
         assert_eq!(
             merge_configs(&base, &local).copy.unwrap().files,
             Some(v(&["only.txt"]))
+        );
+    }
+
+    #[test]
+    fn untracked_and_modified_parse_and_default_to_absent() {
+        let cfg = parse_vibe_config("[copy]\nuntracked = true\nmodified = false\n", "/p").unwrap();
+        let copy = cfg.copy.unwrap();
+        assert_eq!(copy.untracked, Some(true));
+        assert_eq!(copy.modified, Some(false));
+
+        // Omitting them leaves them unset (the use site reads that as "off").
+        let bare = parse_vibe_config("[copy]\nfiles = []\n", "/p").unwrap();
+        let bare_copy = bare.copy.unwrap();
+        assert_eq!(bare_copy.untracked, None);
+        assert_eq!(bare_copy.modified, None);
+    }
+
+    #[test]
+    fn local_untracked_overrides_base_and_base_carries_when_local_is_silent() {
+        let base = VibeConfig {
+            copy: Some(CopyConfig {
+                untracked: Some(true),
+                modified: Some(true),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let local = VibeConfig {
+            copy: Some(CopyConfig {
+                untracked: Some(false),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let merged = merge_configs(&base, &local).copy.unwrap();
+        assert_eq!(merged.untracked, Some(false), "local wins when set");
+        assert_eq!(merged.modified, Some(true), "base carries when local omits");
+    }
+
+    #[test]
+    fn a_copy_section_holding_only_toggles_survives_the_merge() {
+        // Regression guard: the merge builds `copy` only when SOMETHING merged, so
+        // a config whose sole copy content is `untracked` must not be dropped.
+        let base = VibeConfig::default();
+        let local = VibeConfig {
+            copy: Some(CopyConfig {
+                untracked: Some(true),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            merge_configs(&base, &local).copy.unwrap().untracked,
+            Some(true)
         );
     }
 

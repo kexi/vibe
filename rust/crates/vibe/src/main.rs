@@ -112,6 +112,7 @@ fn dispatch(
                 args.delete_branch,
                 args.keep_branch,
                 args.worktree_hook,
+                args.allow_default_branch,
                 opts,
             )
         }
@@ -130,6 +131,10 @@ fn dispatch(
                 args.reuse,
                 args.no_hooks,
                 args.no_copy,
+                commands::CopySources {
+                    untracked: args.copy_untracked,
+                    modified: args.copy_modified,
+                },
                 args.dry_run,
                 args.base,
                 args.track,
@@ -141,6 +146,10 @@ fn dispatch(
             args.reuse,
             args.no_hooks,
             args.no_copy,
+            commands::CopySources {
+                untracked: args.copy_untracked,
+                modified: args.copy_modified,
+            },
             args.dry_run,
             args.base,
             args.track,
@@ -150,9 +159,10 @@ fn dispatch(
             let branch = args.branch_name.unwrap_or_default();
             commands::jump(&branch, opts)
         }
+        Command::List(args) => commands::list(args.json, opts),
         Command::Rename(args) => {
             let new_name = args.new_name.unwrap_or_default();
-            commands::rename(&new_name, args.dry_run, opts)
+            commands::rename(&new_name, args.dry_run, args.allow_default_branch, opts)
         }
         Command::Home => commands::home(opts),
         Command::Trust => commands::trust(opts),

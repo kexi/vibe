@@ -13,7 +13,7 @@ use crate::copy::strategies::CopyExecutor;
 use crate::copy::symlink::{without_symlinked, SymlinkedPaths};
 use crate::glob::{expand_copy_patterns, expand_directory_patterns};
 use crate::io::Io;
-use crate::output::{log_dry_run, warn_log};
+use crate::output::{log_dry_run, sanitize_for_display, warn_log};
 use crate::progress::ProgressTracker;
 use std::collections::VecDeque;
 use std::sync::Mutex;
@@ -68,7 +68,7 @@ fn join(a: &str, b: &str) -> String {
 /// `symlinked` are the entries a link was actually CREATED for (not the raw
 /// config); anything expanding to one of them (or under one) is dropped AFTER
 /// expansion, because a glob only reveals the overlap once expanded — see
-/// [`without_symlinked`].
+/// [`without_symlinked`], applied in [`copy_resolved_files`].
 #[allow(clippy::too_many_arguments)]
 pub fn copy_files(
     io: &impl Io,
@@ -80,21 +80,69 @@ pub fn copy_files(
     worktree_path: &str,
     dry_run: bool,
 ) {
-    let files = without_symlinked(symlinked, &expand_copy_patterns(io, patterns, repo_root));
+    let files = expand_copy_patterns(io, patterns, repo_root);
+    copy_resolved_files(
+        io,
+        executor,
+        tracker,
+        &files,
+        symlinked,
+        repo_root,
+        worktree_path,
+        dry_run,
+    );
+}
+
+/// Copy an ALREADY-RESOLVED list of repo-relative files.
+///
+/// Split out of [`copy_files`] for sources that are not patterns: git-derived
+/// paths (`[copy] untracked` / `modified`) are literal filenames, and a filename
+/// containing `[`, `{`, `*` or `?` would be misread as a glob if it went through
+/// the pattern expander. Callers that mix both concatenate the expanded patterns
+/// with their literal paths and call this once, so a single progress phase and a
+/// single dedup pass cover everything.
+///
+/// The symlink exclusion lives HERE rather than in [`copy_files`] so it covers
+/// the git-derived candidates too: a file `git status` reports under a directory
+/// that was actually symlinked is already visible through the link, and copying
+/// it would write THROUGH the link back into the origin repo.
+#[allow(clippy::too_many_arguments)]
+pub fn copy_resolved_files(
+    io: &impl Io,
+    executor: &impl CopyExecutor,
+    tracker: &dyn ProgressTracker,
+    files: &[String],
+    symlinked: &SymlinkedPaths,
+    repo_root: &str,
+    worktree_path: &str,
+    dry_run: bool,
+) {
+    let files = &without_symlinked(symlinked, files);
     if files.is_empty() {
         return;
     }
 
     if dry_run {
         log_dry_run(io, "Would copy files:");
-        for file in &files {
-            log_dry_run(io, &format!("  - {file}"));
+        for file in files {
+            // Sanitized because this list can contain git-derived filenames
+            // (`[copy] untracked` / `modified`), i.e. names an attacker who can
+            // land a file in the repo controls; a raw ESC or bidi override here
+            // would rewrite the terminal around the dry-run report.
+            log_dry_run(io, &format!("  - {}", sanitize_for_display(file)));
         }
         return;
     }
 
     let phase = tracker.add_phase("Copying files");
-    let task_ids: Vec<_> = files.iter().map(|f| tracker.add_task(phase, f)).collect();
+    // The progress label goes straight to the terminal too, so it is sanitized
+    // for the same reason as the dry-run list. Only the LABEL is sanitized — the
+    // src/dest paths below are built from the untouched `file`, so a name
+    // containing a control character is still copied verbatim.
+    let task_ids: Vec<_> = files
+        .iter()
+        .map(|f| tracker.add_task(phase, &sanitize_for_display(f)))
+        .collect();
 
     for (i, file) in files.iter().enumerate() {
         let src = join(repo_root, file);
@@ -103,8 +151,20 @@ pub fn copy_files(
         match executor.copy_file(&src, &dest) {
             Ok(()) => tracker.complete_task(task_ids[i]),
             Err(e) => {
-                tracker.fail_task(task_ids[i], &e.to_string());
-                warn_log(io, &format!("Warning: Failed to copy {file}: {e}"));
+                // The error text is sanitized too, not just the label: the copy
+                // strategies build their messages as `... failed: {src} -> {dest}:
+                // {io_error}`, which re-embeds the very filename the label took
+                // care to neutralize. Sanitizing only the label would leave the
+                // escape sequence a few characters further along the same line.
+                let msg = sanitize_for_display(&e.to_string());
+                tracker.fail_task(task_ids[i], &msg);
+                warn_log(
+                    io,
+                    &format!(
+                        "Warning: Failed to copy {}: {msg}",
+                        sanitize_for_display(file)
+                    ),
+                );
             }
         }
     }
@@ -145,7 +205,7 @@ where
     if dry_run {
         log_dry_run(io, "Would copy directories:");
         for dir in &dirs {
-            log_dry_run(io, &format!("  - {dir}"));
+            log_dry_run(io, &format!("  - {}", sanitize_for_display(dir)));
         }
         return Ok(());
     }
@@ -160,7 +220,10 @@ where
         "Copying directories ({})",
         executor.directory_strategy()
     ));
-    let task_ids: Vec<_> = dirs.iter().map(|d| tracker.add_task(phase, d)).collect();
+    let task_ids: Vec<_> = dirs
+        .iter()
+        .map(|d| tracker.add_task(phase, &sanitize_for_display(d)))
+        .collect();
 
     // Shared job queue of (index, dir). Workers pull until empty. Per-dir
     // failures are recorded here (NOT logged in-thread) because the injected
@@ -186,7 +249,9 @@ where
                 match executor.copy_directory(&src, &dest) {
                     Ok(()) => tracker.complete_task(task_ids[i]),
                     Err(e) => {
-                        let msg = e.to_string();
+                        // Sanitized for the same reason as in `copy_resolved_files`:
+                        // the message embeds `src`/`dest`, i.e. a repo-derived name.
+                        let msg = sanitize_for_display(&e.to_string());
                         tracker.fail_task(task_ids[i], &msg);
                         failures
                             .lock()
@@ -206,7 +271,10 @@ where
     for (_, dir, msg) in &failures {
         warn_log(
             io,
-            &format!("Warning: Failed to copy directory {dir}: {msg}"),
+            &format!(
+                "Warning: Failed to copy directory {}: {msg}",
+                sanitize_for_display(dir)
+            ),
         );
     }
     match failures.first() {
@@ -222,7 +290,7 @@ mod tests {
     use crate::copy::strategies::FakeCopyExecutor;
     use crate::copy::types::{CopyError, CopyStrategyKind};
     use crate::io::FakeIo;
-    use crate::progress::NullTracker;
+    use crate::progress::{NodeId, NullTracker};
     use vibe_test_support::{fake_root, Fixture};
 
     fn pats(items: &[&str]) -> Vec<String> {
@@ -479,6 +547,176 @@ mod tests {
         );
         assert!(res.is_ok());
         assert_eq!(exec.dir_copies.lock().unwrap().len(), 1);
+    }
+
+    /// The git-derived candidates (`[copy] untracked` / `modified`) reach the
+    /// runner as literal paths that never went through the glob expander, so the
+    /// exclusion has to live in `copy_resolved_files` to see them at all. A file
+    /// `git status` reports under a shared directory is already visible through
+    /// the link; copying it would write through the link into the origin repo.
+    #[test]
+    fn resolved_git_derived_paths_under_a_symlinked_directory_are_dropped() {
+        let fx = Fixture::new();
+        fx.write(".cache/untracked.bin", "shared");
+        fx.write("notes.txt", "mine");
+        let io = FakeIo::new();
+        let exec = FakeCopyExecutor::new(CopyStrategyKind::Standard);
+        copy_resolved_files(
+            &io,
+            &exec,
+            &NullTracker,
+            &[".cache/untracked.bin".to_string(), "notes.txt".to_string()],
+            &SymlinkedPaths::from_patterns(&pats(&[".cache"]), false),
+            fx.path().to_str().unwrap(),
+            "/wt",
+            false,
+        );
+        let copied: Vec<String> = exec
+            .file_copies
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(src, _)| src.clone())
+            .collect();
+        assert!(
+            copied.iter().all(|s| !s.contains(".cache")),
+            "a git-derived path under a created symlink must not be copied: {copied:?}"
+        );
+        assert!(
+            copied.iter().any(|s| s.ends_with("notes.txt")),
+            "unrelated git-derived paths must still be copied: {copied:?}"
+        );
+    }
+
+    #[test]
+    fn dry_run_neutralizes_control_characters_in_git_derived_names() {
+        // `[copy] untracked` feeds real filenames straight into this list, so a
+        // name carrying an ESC sequence or a bidi override must not reach the
+        // terminal intact: it could clear the line or visually reverse the path.
+        let io = FakeIo::new();
+        let exec = FakeCopyExecutor::new(CopyStrategyKind::Standard);
+        let tracker = NullTracker;
+        let nasty = "evil\u{1b}[2K\u{202e}gnp.exe";
+        copy_resolved_files(
+            &io,
+            &exec,
+            &tracker,
+            &[nasty.to_string()],
+            &SymlinkedPaths::none(),
+            "/repo",
+            "/wt",
+            true,
+        );
+        let out = io.stderr_text();
+        assert!(
+            !out.contains('\u{1b}') && !out.contains('\u{202e}'),
+            "control characters reached the terminal: {out:?}"
+        );
+        assert!(out.contains("evil\u{fffd}[2K\u{fffd}gnp.exe"), "{out:?}");
+    }
+
+    #[test]
+    fn copy_failure_warning_neutralizes_control_characters() {
+        let fx = Fixture::new();
+        let nasty = "bad\u{1b}[2Kname.txt";
+        fx.write(nasty, "x");
+        let io = FakeIo::new();
+        let exec = FakeCopyExecutor::new(CopyStrategyKind::Standard)
+            .fail_on(nasty, CopyError::Failed("disk full".into()));
+        let tracker = NullTracker;
+        copy_resolved_files(
+            &io,
+            &exec,
+            &tracker,
+            &[nasty.to_string()],
+            &SymlinkedPaths::none(),
+            fx.path().to_str().unwrap(),
+            "/wt",
+            false,
+        );
+        let out = io.stderr_text();
+        assert!(
+            out.contains("Failed to copy bad\u{fffd}[2Kname.txt"),
+            "{out:?}"
+        );
+        assert!(!out.contains('\u{1b}'), "{out:?}");
+        // The copy itself still used the real, unsanitized name.
+        let copies = exec.file_copies.lock().unwrap();
+        assert!(copies[0].0.contains(nasty), "{:?}", copies[0].0);
+    }
+
+    #[test]
+    fn copy_failure_neutralizes_control_characters_inside_the_error_text() {
+        // The real strategies phrase failures as `... failed: {src} -> {dest}: {e}`,
+        // so the attacker-controlled filename appears a SECOND time inside the
+        // error message. Sanitizing only the label would still let an ESC reach the
+        // terminal, a few characters further along the same warning line.
+        let fx = Fixture::new();
+        let nasty = "bad\u{1b}[2Kname.txt";
+        fx.write(nasty, "x");
+        let io = FakeIo::new();
+        let exec = FakeCopyExecutor::new(CopyStrategyKind::Standard).fail_on(
+            nasty,
+            CopyError::Failed(format!(
+                "Standard copy failed: /repo/{nasty} -> /wt/{nasty}: No space left on device"
+            )),
+        );
+        let tracker = RecordingTracker::default();
+        copy_resolved_files(
+            &io,
+            &exec,
+            &tracker,
+            &[nasty.to_string()],
+            &SymlinkedPaths::none(),
+            fx.path().to_str().unwrap(),
+            "/wt",
+            false,
+        );
+        let out = io.stderr_text();
+        assert!(
+            !out.contains('\u{1b}'),
+            "the error text leaked a control character: {out:?}"
+        );
+        // The message is still there and still names the file, just neutralized.
+        assert!(
+            out.contains("Standard copy failed: /repo/bad\u{fffd}[2Kname.txt"),
+            "{out:?}"
+        );
+        // The same text is handed to the progress tracker, which renders it to the
+        // terminal on its own, so it must be neutralized there too.
+        let failures = tracker.failures.lock().unwrap();
+        assert_eq!(failures.len(), 1);
+        assert!(
+            !failures[0].contains('\u{1b}'),
+            "fail_task received an unsanitized message: {:?}",
+            failures[0]
+        );
+    }
+
+    /// A tracker that captures the message passed to `fail_task`, so a test can
+    /// assert on what the live renderer would draw.
+    #[derive(Default)]
+    struct RecordingTracker {
+        failures: Mutex<Vec<String>>,
+    }
+
+    impl ProgressTracker for RecordingTracker {
+        fn add_phase(&self, _label: &str) -> NodeId {
+            NodeId(0)
+        }
+        fn add_task(&self, _parent: NodeId, _label: &str) -> NodeId {
+            NodeId(0)
+        }
+        fn start_task(&self, _id: NodeId) {}
+        fn complete_task(&self, _id: NodeId) {}
+        fn fail_task(&self, _id: NodeId, err: &str) {
+            self.failures
+                .lock()
+                .expect("failures mutex poisoned")
+                .push(err.to_string());
+        }
+        fn start(&self) {}
+        fn finish(&self) {}
     }
 
     // --- copy_directories concurrency + error aggregation ---

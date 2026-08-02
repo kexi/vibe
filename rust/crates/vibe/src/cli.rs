@@ -70,6 +70,8 @@ pub enum Command {
     Scratch(ScratchArgs),
     /// Jump to an existing worktree by branch name.
     Jump(JumpArgs),
+    /// List all worktrees of the current repository.
+    List(ListArgs),
     /// Rename the current worktree's branch and directory.
     Rename(RenameArgs),
     /// Remove current worktree and return to main.
@@ -106,6 +108,12 @@ pub struct StartArgs {
     /// Skip file/directory copying.
     #[arg(long = "no-copy")]
     pub no_copy: bool,
+    /// Also copy untracked, non-ignored files.
+    #[arg(long = "copy-untracked")]
+    pub copy_untracked: bool,
+    /// Also copy locally modified tracked files.
+    #[arg(long = "copy-modified")]
+    pub copy_modified: bool,
     /// Show what would happen without doing it.
     #[arg(short = 'n', long = "dry-run")]
     pub dry_run: bool,
@@ -131,6 +139,10 @@ pub struct ScratchArgs {
     pub no_hooks: bool,
     #[arg(long = "no-copy")]
     pub no_copy: bool,
+    #[arg(long = "copy-untracked")]
+    pub copy_untracked: bool,
+    #[arg(long = "copy-modified")]
+    pub copy_modified: bool,
     #[arg(short = 'n', long = "dry-run")]
     pub dry_run: bool,
     #[arg(long)]
@@ -146,11 +158,21 @@ pub struct JumpArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct ListArgs {
+    /// Emit the listing as JSON for scripting and tool integrations.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
 pub struct RenameArgs {
     /// New branch/worktree name.
     pub new_name: Option<String>,
     #[arg(short = 'n', long = "dry-run")]
     pub dry_run: bool,
+    /// Allow operating on the repository's default branch.
+    #[arg(long = "allow-default-branch")]
+    pub allow_default_branch: bool,
 }
 
 #[derive(Debug, Args)]
@@ -164,6 +186,9 @@ pub struct CleanArgs {
     /// Keep the branch after removing the worktree.
     #[arg(long = "keep-branch")]
     pub keep_branch: bool,
+    /// Allow operating on the repository's default branch.
+    #[arg(long = "allow-default-branch")]
+    pub allow_default_branch: bool,
     /// Claude Code worktree-hook mode (reads JSON from stdin).
     #[arg(long = "claude-code-worktree-hook")]
     pub worktree_hook: bool,

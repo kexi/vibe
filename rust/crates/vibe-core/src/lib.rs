@@ -21,6 +21,7 @@ pub mod error;
 pub mod fast_remove;
 pub mod fuzzy;
 pub mod git;
+pub mod git_copy;
 pub mod glob;
 pub mod hash;
 pub mod hooks;

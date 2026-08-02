@@ -56,6 +56,10 @@ struct MockGit {
     remote_branches: Vec<String>,
     existing_revisions: Vec<String>,
     fail_prefix: Option<Vec<String>>,
+    /// NUL-delimited `ls-files --others` payload (untracked candidates).
+    untracked: String,
+    /// NUL-delimited `ls-files --modified` payload.
+    modified: String,
     pub calls: RefCell<Vec<Vec<String>>>,
 }
 
@@ -68,11 +72,26 @@ impl MockGit {
             remote_branches: vec![],
             existing_revisions: vec![],
             fail_prefix: None,
+            untracked: String::new(),
+            modified: String::new(),
             calls: RefCell::new(vec![]),
         }
     }
     fn with_revision(mut self, r: &str) -> Self {
         self.existing_revisions.push(r.to_string());
+        self
+    }
+    /// Canned `git ls-files -z` payloads (NUL-delimited, terminator included).
+    fn with_ls_files(mut self, untracked: &[&str], modified: &[&str]) -> Self {
+        let encode = |items: &[&str]| {
+            items
+                .iter()
+                .map(|s| format!("{s}\0"))
+                .collect::<Vec<_>>()
+                .join("")
+        };
+        self.untracked = encode(untracked);
+        self.modified = encode(modified);
         self
     }
     fn failing_on(mut self, prefix: &[&str]) -> Self {
@@ -121,6 +140,13 @@ impl GitRunner for MockGit {
 
         if args.contains(&"--show-toplevel") {
             return Ok(self.repo_root.clone());
+        }
+        if args.first() == Some(&"ls-files") {
+            return Ok(if args.contains(&"--others") {
+                self.untracked.clone()
+            } else {
+                self.modified.clone()
+            });
         }
         if args.contains(&"config") && args.contains(&"--file") && args.contains(&".gitmodules") {
             let gitmodules = std::path::Path::new(&self.repo_root).join(".gitmodules");
@@ -178,6 +204,13 @@ impl GitRunner for MockGit {
         }
         // worktree add / remove succeed.
         Ok(String::new())
+    }
+
+    // `-z` output must not be trimmed and is raw bytes; the mock serves the same
+    // payload either way, but overriding here keeps the double honest about the
+    // real contract.
+    fn run_raw(&self, args: &[&str]) -> Result<Vec<u8>> {
+        self.run(args).map(String::into_bytes)
     }
 }
 
@@ -1025,6 +1058,348 @@ fn runs_pre_then_copy_then_post_with_correct_cwds() {
 
     // The copy file was attempted.
     assert_eq!(fk.exec.file_copies.lock().unwrap().len(), 1);
+}
+
+// --- [copy] untracked / modified (issue #580) ---
+
+/// Drive `start` over a trusted config plus canned `ls-files` payloads, and
+/// return the repo-relative source paths that were actually copied.
+fn copied_sources_for(
+    config: &str,
+    untracked: &[&str],
+    modified: &[&str],
+    extra_files: &[&str],
+    flags: &StartFlags,
+) -> (Vec<String>, String) {
+    let (fx, io, resolver, repo_root) = trusted_config_repo_with_content(config);
+    for rel in extra_files {
+        fx.write(format!("repo/{rel}"), "x");
+    }
+    let git = MockGit::new(
+        &repo_root,
+        &format!("worktree {repo_root}\nbranch refs/heads/main\n\n"),
+    )
+    .with_ls_files(untracked, modified);
+    let s = NoScript;
+    let p = ScriptPrompt::confirming(true);
+    let sin = FakeStdin::none();
+    let fk = Fakes::new();
+    let d = StartDeps {
+        io: &io,
+        git: &git,
+        resolver: &resolver,
+        script_runner: &s,
+        prompt: &p,
+        stdin: &sin,
+        hook_runner: &fk.hooks,
+        executor: &fk.exec,
+        symlink_creator: &fk.symlinks,
+        tracker: &fk.tracker,
+        version: V,
+    };
+    start_command(&d, "feat", flags, OutputOptions::default()).unwrap();
+    let copies = fk.exec.file_copies.lock().unwrap();
+    let sources = copies
+        .iter()
+        .map(|(src, _)| {
+            to_slash(src)
+                .rsplit_once("/repo/")
+                .map(|(_, rel)| rel.to_string())
+                .unwrap_or_else(|| to_slash(src))
+        })
+        .collect();
+    (sources, io.stderr_text())
+}
+
+/// Config with no copy sources enabled at all — the default.
+const NO_COPY_SOURCES: &str = "[copy]\nfiles = []\n";
+
+#[test]
+fn untracked_and_modified_are_off_by_default() {
+    let (copied, _) = copied_sources_for(
+        NO_COPY_SOURCES,
+        &["scratch.md"],
+        &["src/main.rs"],
+        &["scratch.md", "src/main.rs"],
+        &StartFlags::default(),
+    );
+    assert!(
+        copied.is_empty(),
+        "neither source may be copied without an opt-in: {copied:?}"
+    );
+}
+
+#[test]
+fn config_untracked_true_copies_untracked_files() {
+    let (copied, _) = copied_sources_for(
+        "[copy]\nuntracked = true\n",
+        &["scratch.md", "notes/todo.txt"],
+        &["src/main.rs"],
+        &["scratch.md", "notes/todo.txt", "src/main.rs"],
+        &StartFlags::default(),
+    );
+    // Untracked only: the modified tracked file is NOT picked up.
+    assert_eq!(
+        copied,
+        vec!["scratch.md".to_string(), "notes/todo.txt".to_string()]
+    );
+}
+
+#[test]
+fn config_modified_true_copies_modified_tracked_files() {
+    let (copied, _) = copied_sources_for(
+        "[copy]\nmodified = true\n",
+        &["scratch.md"],
+        &["src/main.rs"],
+        &["scratch.md", "src/main.rs"],
+        &StartFlags::default(),
+    );
+    assert_eq!(copied, vec!["src/main.rs".to_string()]);
+}
+
+#[test]
+fn cli_flags_enable_the_sources_without_config() {
+    let flags = StartFlags {
+        copy_untracked: true,
+        copy_modified: true,
+        ..Default::default()
+    };
+    let (copied, _) = copied_sources_for(
+        NO_COPY_SOURCES,
+        &["scratch.md"],
+        &["src/main.rs"],
+        &["scratch.md", "src/main.rs"],
+        &flags,
+    );
+    assert_eq!(
+        copied,
+        vec!["scratch.md".to_string(), "src/main.rs".to_string()]
+    );
+}
+
+#[test]
+fn no_copy_skips_untracked_and_modified_too() {
+    let flags = StartFlags {
+        no_copy: true,
+        copy_untracked: true,
+        copy_modified: true,
+        ..Default::default()
+    };
+    let (copied, _) = copied_sources_for(
+        "[copy]\nuntracked = true\nmodified = true\n",
+        &["scratch.md"],
+        &["src/main.rs"],
+        &["scratch.md", "src/main.rs"],
+        &flags,
+    );
+    assert!(
+        copied.is_empty(),
+        "--no-copy must suppress the git-derived sources as well: {copied:?}"
+    );
+}
+
+#[test]
+fn git_derived_files_do_not_duplicate_configured_patterns() {
+    // `.env` is written by the fixture and listed in `[copy] files`; git also
+    // reports it as untracked. It must be copied exactly once.
+    let (copied, _) = copied_sources_for(
+        "[copy]\nfiles = [\".env\"]\nuntracked = true\n",
+        &[".env", "scratch.md"],
+        &[],
+        &["scratch.md"],
+        &StartFlags::default(),
+    );
+    assert_eq!(
+        copied,
+        vec![".env".to_string(), "scratch.md".to_string()],
+        "a path in both sources is copied once"
+    );
+}
+
+#[test]
+fn glob_metacharacters_in_git_reported_names_are_literal() {
+    // A literal file named `weird[1].txt` must be copied as-is, not treated as a
+    // character-class glob (which would match nothing and silently drop it).
+    let (copied, _) = copied_sources_for(
+        "[copy]\nuntracked = true\n",
+        &["weird[1].txt"],
+        &[],
+        &["weird[1].txt"],
+        &StartFlags::default(),
+    );
+    assert_eq!(copied, vec!["weird[1].txt".to_string()]);
+}
+
+#[test]
+fn spaced_and_non_ascii_names_are_copied() {
+    let (copied, _) = copied_sources_for(
+        "[copy]\nuntracked = true\n",
+        &["my note.txt", "メモ.txt"],
+        &[],
+        &["my note.txt", "メモ.txt"],
+        &StartFlags::default(),
+    );
+    assert_eq!(
+        copied,
+        vec!["my note.txt".to_string(), "メモ.txt".to_string()]
+    );
+}
+
+/// A hook runner that materializes files in the origin repo as a side effect,
+/// standing in for a real `pre_start` hook that writes scratch files.
+struct FileWritingHooks {
+    /// `(repo-relative path, contents)` written on the FIRST hook invocation.
+    writes: Vec<(String, String)>,
+    repo_root: String,
+    calls: RefCell<Vec<String>>,
+}
+
+impl crate::hooks::HookRunner for FileWritingHooks {
+    fn run_hook(
+        &self,
+        cmd: &str,
+        _cwd: &str,
+        _env: &[(&str, &str)],
+    ) -> Result<crate::hooks::HookOutput> {
+        self.calls.borrow_mut().push(cmd.to_string());
+        for (rel, contents) in &self.writes {
+            let path = std::path::Path::new(&self.repo_root).join(rel);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            std::fs::write(&path, contents).unwrap();
+        }
+        Ok(crate::hooks::HookOutput {
+            code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+        })
+    }
+}
+
+#[test]
+fn files_created_by_a_pre_start_hook_are_carried_over() {
+    // The documented order is pre_start → copy → post_start, so a file a
+    // `pre_start` hook writes into the origin repo must be visible to
+    // `--copy-untracked`. Enumerating before the hooks ran would drop
+    // `generated.txt` on the existence check, since it does not exist yet.
+    let config = "[copy]\nuntracked = true\n\n[hooks]\npre_start = [\"generate\"]\n";
+    let (fx, io, resolver, repo_root) = trusted_config_repo_with_content(config);
+    fx.write("repo/scratch.md", "already here");
+
+    let git = MockGit::new(
+        &repo_root,
+        &format!("worktree {repo_root}\nbranch refs/heads/main\n\n"),
+    )
+    // git reports both once they exist; only `scratch.md` exists before the hook.
+    .with_ls_files(&["scratch.md", "generated.txt"], &[]);
+    let s = NoScript;
+    let p = ScriptPrompt::confirming(true);
+    let sin = FakeStdin::none();
+    let fk = Fakes::new();
+    let hooks = FileWritingHooks {
+        writes: vec![("generated.txt".to_string(), "made by the hook".to_string())],
+        repo_root: repo_root.clone(),
+        calls: RefCell::new(vec![]),
+    };
+    let d = StartDeps {
+        io: &io,
+        git: &git,
+        resolver: &resolver,
+        script_runner: &s,
+        prompt: &p,
+        stdin: &sin,
+        hook_runner: &hooks,
+        executor: &fk.exec,
+        symlink_creator: &fk.symlinks,
+        tracker: &fk.tracker,
+        version: V,
+    };
+    start_command(&d, "feat", &StartFlags::default(), OutputOptions::default()).unwrap();
+
+    assert_eq!(
+        hooks.calls.borrow().len(),
+        1,
+        "pre_start hook must have run"
+    );
+    let copies = fk.exec.file_copies.lock().unwrap();
+    let sources: Vec<String> = copies
+        .iter()
+        .map(|(src, _)| {
+            to_slash(src)
+                .rsplit_once("/repo/")
+                .map(|(_, rel)| rel.to_string())
+                .unwrap_or_else(|| to_slash(src))
+        })
+        .collect();
+    assert!(
+        sources.contains(&"generated.txt".to_string()),
+        "a file created by pre_start must be enumerated for the copy: {sources:?}"
+    );
+    assert!(sources.contains(&"scratch.md".to_string()), "{sources:?}");
+}
+
+#[test]
+fn cli_flags_work_in_a_repo_with_no_vibe_toml() {
+    // The ad-hoc case the flags exist for: carry work in progress into a new
+    // worktree in a repo where nobody has written a config. `NoResolver` makes
+    // the config load return None, so this exercises the absent-config path.
+    let fx = Fixture::new();
+    let repo = fx.mkdir("repo");
+    fx.write("repo/scratch.md", "wip");
+    let repo_root = repo.to_string_lossy().into_owned();
+    let io = FakeIo::new().with_env("HOME", fx.path().to_str().unwrap());
+
+    let git = MockGit::new(
+        &repo_root,
+        &format!("worktree {repo_root}\nbranch refs/heads/main\n\n"),
+    )
+    .with_ls_files(&["scratch.md"], &[]);
+    let resolver = NoResolver;
+    let s = NoScript;
+    let p = ScriptPrompt::confirming(true);
+    let sin = FakeStdin::none();
+    let fk = Fakes::new();
+    let d = deps(&io, &git, &resolver, &s, &p, &sin, &fk);
+
+    let flags = StartFlags {
+        copy_untracked: true,
+        ..Default::default()
+    };
+    start_command(&d, "feat", &flags, OutputOptions::default()).unwrap();
+
+    let copies = fk.exec.file_copies.lock().unwrap();
+    assert_eq!(copies.len(), 1, "expected the untracked file to be copied");
+    assert!(to_slash(&copies[0].0).ends_with("repo/scratch.md"));
+}
+
+#[test]
+fn no_config_and_no_flags_still_short_circuits_without_touching_git() {
+    let fx = Fixture::new();
+    let repo = fx.mkdir("repo");
+    fx.write("repo/scratch.md", "wip");
+    let repo_root = repo.to_string_lossy().into_owned();
+    let io = FakeIo::new().with_env("HOME", fx.path().to_str().unwrap());
+
+    let git = MockGit::new(
+        &repo_root,
+        &format!("worktree {repo_root}\nbranch refs/heads/main\n\n"),
+    )
+    .with_ls_files(&["scratch.md"], &[]);
+    let resolver = NoResolver;
+    let s = NoScript;
+    let p = ScriptPrompt::confirming(true);
+    let sin = FakeStdin::none();
+    let fk = Fakes::new();
+    let d = deps(&io, &git, &resolver, &s, &p, &sin, &fk);
+
+    start_command(&d, "feat", &StartFlags::default(), OutputOptions::default()).unwrap();
+
+    assert!(fk.exec.file_copies.lock().unwrap().is_empty());
+    assert!(
+        !git.calls_contain(&["ls-files"]),
+        "no config and no opt-in must not run ls-files at all"
+    );
 }
 
 #[test]

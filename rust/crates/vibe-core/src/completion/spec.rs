@@ -101,6 +101,8 @@ pub const SUBCOMMANDS: &[CommandSpec] = &[
             FlagSpec::flag("track", "Set upstream tracking when using --base"),
             FlagSpec::flag("no-hooks", "Skip pre-start and post-start hooks"),
             FlagSpec::flag("no-copy", "Skip copying files and directories"),
+            FlagSpec::flag("copy-untracked", "Also copy untracked, non-ignored files"),
+            FlagSpec::flag("copy-modified", "Also copy locally modified tracked files"),
             FlagSpec::flag_short("dry-run", "n", "Show what would be executed"),
             FlagSpec::flag_short("force", "f", "Skip confirmation prompts"),
         ],
@@ -115,6 +117,8 @@ pub const SUBCOMMANDS: &[CommandSpec] = &[
             FlagSpec::flag("track", "Set upstream tracking when using --base"),
             FlagSpec::flag("no-hooks", "Skip pre-start and post-start hooks"),
             FlagSpec::flag("no-copy", "Skip copying files and directories"),
+            FlagSpec::flag("copy-untracked", "Also copy untracked, non-ignored files"),
+            FlagSpec::flag("copy-modified", "Also copy locally modified tracked files"),
             FlagSpec::flag_short("dry-run", "n", "Show what would be executed"),
         ],
     },
@@ -125,14 +129,22 @@ pub const SUBCOMMANDS: &[CommandSpec] = &[
         flags: &[],
     },
     CommandSpec {
+        name: "list",
+        description: "List all worktrees of the current repository",
+        positional_completion: None,
+        flags: &[FlagSpec::flag("json", "Output the listing as JSON")],
+    },
+    CommandSpec {
         name: "rename",
         description: "Rename the current worktree's branch and directory",
         positional_completion: None,
-        flags: &[FlagSpec::flag_short(
-            "dry-run",
-            "n",
-            "Show what would be executed",
-        )],
+        flags: &[
+            FlagSpec::flag_short("dry-run", "n", "Show what would be executed"),
+            FlagSpec::flag(
+                "allow-default-branch",
+                "Allow operating on the repository's default branch",
+            ),
+        ],
     },
     CommandSpec {
         name: "clean",
@@ -145,6 +157,10 @@ pub const SUBCOMMANDS: &[CommandSpec] = &[
                 "Delete the branch after removing the worktree",
             ),
             FlagSpec::flag("keep-branch", "Keep the branch after removing the worktree"),
+            FlagSpec::flag(
+                "allow-default-branch",
+                "Allow operating on the repository's default branch",
+            ),
         ],
     },
     CommandSpec {
