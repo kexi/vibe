@@ -102,16 +102,19 @@ directory. If a tool is not safe under concurrent access, copy it instead.
 
 - Entries are **exact directory paths** relative to the repository root. Glob
   patterns are not supported (a symlink names one directory to share).
-- A `symlink` entry **takes precedence** over any `files`/`dirs` entry covering
-  the same path — the path is linked, not copied. This is applied after glob
-  expansion, so `dirs = [".*"]` alongside `symlink = [".cache"]` still links
-  `.cache` and copies only the other matches. Paths **under** a shared directory
-  (and its parents) are excluded too, so a copy can never be written through the
-  link into the origin repository.
+- A `symlink` entry that was **actually linked** takes precedence over any
+  `files`/`dirs` entry covering the same path — the path is linked, not copied.
+  This is applied after glob expansion, so `dirs = [".*"]` alongside
+  `symlink = [".cache"]` still links `.cache` and copies only the other matches.
+  Paths **under** a shared directory (and its parents) are excluded too, so a
+  copy can never be written through the link into the origin repository. On a
+  case-insensitive filesystem (APFS, NTFS) the exclusion ignores case, because
+  `.Cache` and `.cache` are the same directory entry there.
 - The target must exist in the origin repository and stay inside it. A missing
   target, a path escaping the repository, or an OS refusal to create the link
   (Windows without Developer Mode) prints a warning and `vibe start` continues —
-  the worktree stays usable.
+  the worktree stays usable. Nothing was linked in that case, so a `files`/`dirs`
+  entry naming the same path is still copied as usual.
 - An existing **real** file or directory at that path in the worktree is never
   replaced; only a stale symlink is refreshed.
 - `vibe clean` removes the link, never the directory it points at.

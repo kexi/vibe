@@ -10,7 +10,7 @@
 
 use crate::config::VibeConfig;
 use crate::copy::strategies::CopyExecutor;
-use crate::copy::symlink::without_symlinked;
+use crate::copy::symlink::{without_symlinked, SymlinkedPaths};
 use crate::glob::{expand_copy_patterns, expand_directory_patterns};
 use crate::io::Io;
 use crate::output::{log_dry_run, warn_log};
@@ -65,16 +65,17 @@ fn join(a: &str, b: &str) -> String {
 /// Sequential, glob-expanded, one progress task per file. A per-file failure is
 /// warned and the task failed, but the overall op continues (TS parity).
 ///
-/// `symlinked` are the `[copy] symlink` entries; anything expanding to one of
-/// them (or under one) is dropped AFTER expansion, because a glob only reveals
-/// the overlap once expanded — see [`without_symlinked`].
+/// `symlinked` are the entries a link was actually CREATED for (not the raw
+/// config); anything expanding to one of them (or under one) is dropped AFTER
+/// expansion, because a glob only reveals the overlap once expanded — see
+/// [`without_symlinked`].
 #[allow(clippy::too_many_arguments)]
 pub fn copy_files(
     io: &impl Io,
     executor: &impl CopyExecutor,
     tracker: &dyn ProgressTracker,
     patterns: &[String],
-    symlinked: &[String],
+    symlinked: &SymlinkedPaths,
     repo_root: &str,
     worktree_path: &str,
     dry_run: bool,
@@ -123,7 +124,7 @@ pub fn copy_directories<E, T>(
     executor: &E,
     tracker: &T,
     patterns: &[String],
-    symlinked: &[String],
+    symlinked: &SymlinkedPaths,
     repo_root: &str,
     worktree_path: &str,
     dry_run: bool,
@@ -291,7 +292,7 @@ mod tests {
             &exec,
             &tracker,
             &pats(&[".env", "config.toml"]),
-            &[],
+            &SymlinkedPaths::none(),
             fx.path().to_str().unwrap(),
             worktree.to_str().unwrap(),
             false,
@@ -318,7 +319,7 @@ mod tests {
             &exec,
             &tracker,
             &pats(&["good.txt", "bad.txt"]),
-            &[],
+            &SymlinkedPaths::none(),
             fx.path().to_str().unwrap(),
             "/wt",
             false,
@@ -340,7 +341,7 @@ mod tests {
             &exec,
             &tracker,
             &pats(&[".env"]),
-            &[],
+            &SymlinkedPaths::none(),
             fx.path().to_str().unwrap(),
             "/wt",
             true,
@@ -368,7 +369,7 @@ mod tests {
             &exec,
             &NullTracker,
             &pats(&[".*"]),
-            &pats(&[".cache"]),
+            &SymlinkedPaths::from_patterns(&pats(&[".cache"]), false),
             fx.path().to_str().unwrap(),
             "/wt",
             false,
@@ -406,7 +407,7 @@ mod tests {
             &exec,
             &NullTracker,
             &pats(&["**/*.json"]),
-            &pats(&[".cache"]),
+            &SymlinkedPaths::from_patterns(&pats(&[".cache"]), false),
             fx.path().to_str().unwrap(),
             "/wt",
             false,
@@ -428,6 +429,58 @@ mod tests {
         );
     }
 
+    /// On a case-insensitive volume (APFS, NTFS) `dirs = [".cache"]` names the
+    /// SAME directory entry as `symlink = [".Cache"]`, so the copy would land on
+    /// the link and write through it into the origin. The exclusion must fold
+    /// case exactly when the destination filesystem does.
+    #[test]
+    fn case_variant_spelling_is_excluded_on_a_case_insensitive_volume() {
+        let fx = Fixture::new();
+        fx.mkdir(".cache");
+        let io = FakeIo::new();
+        let exec = FakeCopyExecutor::new(CopyStrategyKind::Clone);
+        let res = copy_directories(
+            &io,
+            &exec,
+            &NullTracker,
+            &pats(&[".cache"]),
+            &SymlinkedPaths::from_patterns(&pats(&[".Cache"]), true),
+            fx.path().to_str().unwrap(),
+            "/wt",
+            false,
+            4,
+        );
+        assert!(res.is_ok());
+        assert!(
+            exec.dir_copies.lock().unwrap().is_empty(),
+            "a case-variant spelling must not be copied through the link"
+        );
+    }
+
+    /// The same pair on a case-SENSITIVE volume names two different directories,
+    /// so the copy must still run — the fold is driven by the filesystem, not by
+    /// a blanket rule that would silently drop legitimate copies on Linux.
+    #[test]
+    fn case_variant_spelling_is_copied_on_a_case_sensitive_volume() {
+        let fx = Fixture::new();
+        fx.mkdir(".cache");
+        let io = FakeIo::new();
+        let exec = FakeCopyExecutor::new(CopyStrategyKind::Clone);
+        let res = copy_directories(
+            &io,
+            &exec,
+            &NullTracker,
+            &pats(&[".cache"]),
+            &SymlinkedPaths::from_patterns(&pats(&[".Cache"]), false),
+            fx.path().to_str().unwrap(),
+            "/wt",
+            false,
+            4,
+        );
+        assert!(res.is_ok());
+        assert_eq!(exec.dir_copies.lock().unwrap().len(), 1);
+    }
+
     // --- copy_directories concurrency + error aggregation ---
 
     #[test]
@@ -443,7 +496,7 @@ mod tests {
             &exec,
             &tracker,
             &pats(&["node_modules", ".cache"]),
-            &[],
+            &SymlinkedPaths::none(),
             fx.path().to_str().unwrap(),
             "/wt",
             false,
@@ -467,7 +520,7 @@ mod tests {
             &exec,
             &tracker,
             &pats(&["ok_dir", "bad_dir"]),
-            &[],
+            &SymlinkedPaths::none(),
             fx.path().to_str().unwrap(),
             "/wt",
             // concurrency 1 makes ordering deterministic for the assertion.
@@ -500,7 +553,7 @@ mod tests {
             &exec,
             &tracker,
             &names,
-            &[],
+            &SymlinkedPaths::none(),
             fx.path().to_str().unwrap(),
             "/wt",
             false,
@@ -533,7 +586,7 @@ mod tests {
             &exec,
             &tracker,
             &pats(&["node_modules"]),
-            &[],
+            &SymlinkedPaths::none(),
             fx.path().to_str().unwrap(),
             "/wt",
             true,

@@ -626,7 +626,12 @@ where
 
         // Symlinks first: a shared directory must exist before a post_start hook
         // or a later copy could observe a half-set-up worktree.
-        create_symlinks(
+        //
+        // The return value is the set of entries a link actually EXISTS for, not
+        // the raw config: a pattern rejected as a glob (or invalid, or missing
+        // in the origin) creates nothing, so it must not suppress a legitimate
+        // `files`/`dirs` copy of the same path.
+        let symlinked = create_symlinks(
             deps.io,
             &deps.symlink_creator,
             deps.tracker,
@@ -636,10 +641,10 @@ where
             options.dry_run,
         );
 
-        // A `symlink` entry WINS over a `files`/`dirs` pattern covering the same
-        // path: the point of sharing is to not duplicate it. The runners apply
-        // the exclusion AFTER glob expansion, so `dirs = [".*"]` cannot sneak a
-        // copy over (and through) a `symlink = [".cache"]` link.
+        // A created `symlink` entry WINS over a `files`/`dirs` pattern covering
+        // the same path: the point of sharing is to not duplicate it. The
+        // runners apply the exclusion AFTER glob expansion, so `dirs = [".*"]`
+        // cannot sneak a copy over (and through) a `symlink = [".cache"]` link.
         let files = config
             .copy
             .as_ref()
@@ -650,7 +655,7 @@ where
             &deps.executor,
             deps.tracker,
             files,
-            symlinks,
+            &symlinked,
             copy_source_root,
             worktree_path,
             options.dry_run,
@@ -670,7 +675,7 @@ where
                 &deps.executor,
                 &deps.tracker,
                 dirs,
-                symlinks,
+                &symlinked,
                 copy_source_root,
                 worktree_path,
                 options.dry_run,

@@ -681,6 +681,55 @@ symlink = ["shared/.cache"]
     }
   });
 
+  test("a REJECTED [copy] symlink pattern still lets the dirs copy run", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+
+    mkdirSync(join(repoPath, "packages/app"), { recursive: true });
+    writeFileSync(join(repoPath, "packages/app/data.bin"), "copied\n");
+    writeFileSync(join(repoPath, ".gitignore"), "packages\n");
+    // A glob symlink entry is REFUSED, so no link is ever created. The `dirs`
+    // copy of the ancestor it lexically overlaps must therefore still run —
+    // suppressing it would leave the worktree without `packages` at all.
+    writeFileSync(
+      join(repoPath, ".vibe.toml"),
+      `
+[copy]
+dirs = ["packages"]
+symlink = ["packages/*"]
+`,
+    );
+    execFileSync("git", ["add", ".vibe.toml", ".gitignore"], { cwd: repoPath, stdio: "pipe" });
+    execFileSync("git", ["commit", "-m", "Add a rejected symlink pattern next to a dirs copy"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    await trustConfig(vibePath, repoPath, homePath);
+
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
+    try {
+      await runner.spawn(["start", "feat/test-symlink-rejected"]);
+      await runner.waitForExit();
+
+      const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
+      assertOutputContains(output, "globs are not supported");
+
+      const parentDir = dirname(repoPath);
+      const repoName = basename(repoPath);
+      const worktreePath = `${parentDir}/${repoName}-feat-test-symlink-rejected`;
+
+      const copied = join(worktreePath, "packages");
+      expect(lstatSync(copied).isSymbolicLink()).toBe(false);
+      expect(readFileSync(join(copied, "app/data.bin"), "utf8")).toBe("copied\n");
+    } finally {
+      runner.dispose();
+    }
+  });
+
   test("[copy] symlink with a missing target warns but still creates the worktree", async () => {
     const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
