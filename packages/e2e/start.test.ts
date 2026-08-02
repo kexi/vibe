@@ -570,6 +570,41 @@ files = [".env.local"]
     }
   });
 
+  test("[copy] untracked sees files a pre_start hook created", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+    const vibePath = getVibePath();
+
+    // The documented order is pre_start -> copy -> post_start, so a file the
+    // hook writes into the origin repo must be enumerated by the copy step that
+    // follows it. `git ls-files` cannot report it before the hook has run.
+    await commitAndTrustConfig(
+      repoPath,
+      homePath,
+      vibePath,
+      '[copy]\nuntracked = true\n\n[hooks]\npre_start = ["echo generated-by-hook > hook-made.txt"]\n',
+    );
+
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
+    try {
+      await runner.spawn(["start", "feat/hook-created"]);
+      await runner.waitForExit();
+      const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
+
+      // The hook really did write into the origin repo.
+      expect(existsSync(join(repoPath, "hook-made.txt"))).toBe(true);
+
+      const worktreePath = worktreePathFor(repoPath, "feat/hook-created");
+      await assertDirectoryExists(worktreePath);
+      expect(readFileSync(join(worktreePath, "hook-made.txt"), "utf-8")).toBe(
+        "generated-by-hook\n",
+      );
+    } finally {
+      runner.dispose();
+    }
+  });
+
   test("--no-copy suppresses [copy] untracked and modified", async () => {
     const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;

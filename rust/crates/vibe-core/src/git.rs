@@ -41,6 +41,13 @@ pub trait GitRunner {
     /// corrupt a path whose name legitimately begins or ends with whitespace.
     /// Defaults to [`GitRunner::run`] so the many test doubles in this crate keep
     /// compiling; [`RealGit`] overrides it with the untrimmed capture.
+    ///
+    /// Still `String`, not `OsString`: every path seam in this crate (config,
+    /// glob, `CopyExecutor`, the `Io` trait) is `String`/`&str`, so returning raw
+    /// bytes here would only push the lossy conversion one layer out. A path that
+    /// is not valid UTF-8 therefore arrives with U+FFFD substitutions; the copy
+    /// layer detects that and warns rather than dropping it silently (see
+    /// `git_copy::is_lossily_decoded`).
     fn run_raw(&self, args: &[&str]) -> Result<String> {
         self.run(args)
     }

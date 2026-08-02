@@ -25,7 +25,7 @@ use crate::copy_runner::{
 };
 use crate::error::{Result, VibeError};
 use crate::git::{get_repo_name, get_repo_root, revision_exists, sanitize_branch_name, GitRunner};
-use crate::git_copy::{collect_git_copy_files, resolve_selection};
+use crate::git_copy::{collect_git_copy_files, resolve_selection, GitCopySelection};
 use crate::glob::expand_copy_patterns;
 use crate::hooks::{run_hooks, HookEnv, HookRunner, HookTrackerInfo};
 use crate::io::Io;
@@ -594,20 +594,23 @@ where
         }
     };
 
-    // Enumerated ONCE, before the tracker starts, so `config_has_operations` can
-    // count the git-derived files and a run whose only work is copying untracked
-    // files still gets a progress phase. Only the top-level repo is enumerated:
-    // `deps.git` runs in the process cwd, so a submodule's own `[copy] untracked`
-    // would list the parent repo's files, not the submodule's.
-    let git_copy_files = if options.skip_copy {
-        Vec::new()
+    // Resolved here, but NOT enumerated here: `git ls-files` runs inside
+    // `run_config_body`, after `pre_start`, so a file a hook creates or edits in
+    // the origin repo is carried over. `config_has_operations` therefore only
+    // gets the boolean "a git source is enabled" — a pre-enumeration signal — so
+    // the tracker still starts for a run whose only work is the git-derived copy,
+    // without moving the `ls-files` call back ahead of the hooks.
+    //
+    // Only the top-level repo is enumerated: `deps.git` runs in the process cwd,
+    // so a submodule's own `[copy] untracked` would list the parent repo's files,
+    // not the submodule's.
+    let git_selection = if options.skip_copy {
+        GitCopySelection::default()
     } else {
-        let selection =
-            resolve_selection(Some(config), options.copy_untracked, options.copy_modified);
-        collect_git_copy_files(deps.io, deps.git, repo_root, selection)?
+        resolve_selection(Some(config), options.copy_untracked, options.copy_modified)
     };
 
-    let has_ops = !options.dry_run && config_has_operations(config, options, git_copy_files.len());
+    let has_ops = !options.dry_run && config_has_operations(config, options, git_selection);
     if has_ops {
         deps.tracker.start();
     }
@@ -620,7 +623,7 @@ where
         repo_root,
         worktree_path,
         repo_root,
-        &git_copy_files,
+        git_selection,
         options,
     )?;
 
@@ -641,9 +644,9 @@ fn run_config_body<I, G, R, S, P, Sr>(
     repo_root: &str,
     worktree_path: &str,
     copy_source_root: &str,
-    // Already-enumerated git-derived files, repo-relative to `copy_source_root`.
-    // Empty for submodule bodies (see `run_config_and_hooks`).
-    git_copy_files: &[String],
+    // Which git-derived sources to enumerate once `pre_start` has run. Empty for
+    // submodule bodies (see `run_config_and_hooks`).
+    git_selection: GitCopySelection,
     options: &ConfigAndHooks,
 ) -> Result<()>
 where
@@ -667,6 +670,14 @@ where
             options.dry_run,
         )?;
     }
+
+    // Enumerate the git-derived sources HERE — after `pre_start`, immediately
+    // before the copy — so the documented `pre_start` → copy → `post_start`
+    // ordering holds for them too: a hook that writes a scratch file or edits a
+    // tracked one in the origin repo must have that file carried over, and an
+    // enumeration taken before the hooks ran could not see it.
+    let git_copy_files =
+        collect_git_copy_files(deps.io, deps.git, copy_source_root, git_selection)?;
 
     // copy files + directories.
     if !options.skip_copy {
@@ -696,7 +707,7 @@ where
             let mut seen: HashSet<String> = files.iter().cloned().collect();
             for file in git_copy_files {
                 if seen.insert(file.clone()) {
-                    files.push(file.clone());
+                    files.push(file);
                 }
             }
             copy_resolved_files(
@@ -756,12 +767,15 @@ where
 
 /// Whether config has any hook/copy operation (drives starting the tracker).
 ///
-/// `git_copy_count` is the already-enumerated git-derived file count, so a run
-/// whose only work is copying untracked/modified files still gets a progress UI.
+/// `git_selection` counts as one pending operation when either source is on, so
+/// a run whose only work is copying untracked/modified files still gets a
+/// progress UI. It is deliberately the *selection*, not an enumerated count:
+/// enumeration happens after `pre_start` (see `run_config_body`), which is later
+/// than this decision.
 fn config_has_operations(
     config: &VibeConfig,
     options: &ConfigAndHooks,
-    git_copy_count: usize,
+    git_selection: GitCopySelection,
 ) -> bool {
     let has_submodule_configs =
         submodule_config_paths(config).is_some_and(|paths| !paths.is_empty());
@@ -788,7 +802,7 @@ fn config_has_operations(
                     + c.dirs.as_ref().map(|v| v.len()).unwrap_or(0)
             })
             .unwrap_or(0)
-            + git_copy_count
+            + usize::from(!git_selection.is_empty())
     };
     has_submodule_configs || hooks_count + copy_count > 0
 }
@@ -847,7 +861,7 @@ where
             // No git-derived files for a submodule: `deps.git` runs in the
             // process cwd (the superproject), so `ls-files` there would enumerate
             // the parent repo, not this submodule.
-            &[],
+            GitCopySelection::default(),
             options,
         )?;
     }

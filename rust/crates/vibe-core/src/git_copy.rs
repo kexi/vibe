@@ -17,12 +17,16 @@
 //! or escaping path today, but the checks are the contract the copy layer
 //! relies on — an untrusted `core.quotePath`/alternate-index setup must not be
 //! able to widen what gets read out of the repository.
+//!
+//! A filename that is not valid UTF-8 cannot survive the `String` path seam this
+//! crate uses end to end, so it is reported and skipped instead of being dropped
+//! on the existence check (see `is_lossily_decoded`).
 
 use crate::config::VibeConfig;
 use crate::error::Result;
 use crate::git::{list_modified_files, list_untracked_files, GitRunner};
 use crate::io::Io;
-use crate::output::warn_log;
+use crate::output::{sanitize_for_display, warn_log};
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 
@@ -73,7 +77,32 @@ fn is_safe_relative_path(path: &str) -> bool {
         .any(|c| matches!(c, Component::ParentDir))
 }
 
+/// True if git's output for this path was mangled by the lossy UTF-8 decode in
+/// [`crate::git::GitRunner::run_raw`].
+///
+/// A non-UTF-8 filename comes back with U+FFFD in place of the offending bytes,
+/// so the name no longer refers to anything on disk and the existence check below
+/// would drop it without a word. U+FFFD is not a plausible deliberate filename
+/// character, so treating its presence as "undecodable" costs nothing and turns a
+/// silent omission into a visible warning. It stays a warning rather than an
+/// error because one unreadable name must not abort a copy of dozens of good
+/// ones.
+fn is_lossily_decoded(rel: &str) -> bool {
+    rel.contains('\u{fffd}')
+}
+
 /// Keep a candidate only if it is a real, contained, non-symlink regular file.
+///
+/// Why not TOCTOU-free: the symlink and containment verdicts are reached here,
+/// but the open happens later in `CopyExecutor`, so someone who can write to the
+/// repository between the two calls can swap a checked file for a symlink. The
+/// window is not closed here because doing so means handing the executor an
+/// already-open descriptor and re-checking with `fstat` — a change to the copy
+/// seam that `glob::expand_copy_patterns` (which has the identical window for
+/// `[copy] files`) would have to make at the same time, or the two sources would
+/// disagree about what "checked" means. It is also not a privilege boundary:
+/// `vibe start` runs as the user who already owns the repository, so an attacker
+/// positioned to win the race can simply write the file's contents directly.
 fn is_copyable_entry(io: &impl Io, repo_root: &Path, canonical_root: &Path, rel: &str) -> bool {
     let abs = repo_root.join(rel);
     // `--modified` also reports DELETED tracked files; those simply vanish here.
@@ -81,7 +110,13 @@ fn is_copyable_entry(io: &impl Io, repo_root: &Path, canonical_root: &Path, rel:
         return false;
     };
     if meta.file_type().is_symlink() {
-        warn_log(io, &format!("Warning: Skipping symlink entry: {rel}"));
+        warn_log(
+            io,
+            &format!(
+                "Warning: Skipping symlink entry: {}",
+                sanitize_for_display(rel)
+            ),
+        );
         return false;
     }
     if !meta.is_file() {
@@ -93,7 +128,10 @@ fn is_copyable_entry(io: &impl Io, repo_root: &Path, canonical_root: &Path, rel:
     if !canon.starts_with(canonical_root) {
         warn_log(
             io,
-            &format!("Warning: Skipping entry outside repository: {rel}"),
+            &format!(
+                "Warning: Skipping entry outside repository: {}",
+                sanitize_for_display(rel)
+            ),
         );
         return false;
     }
@@ -133,8 +171,24 @@ pub fn collect_git_copy_files(
     let mut seen: HashSet<String> = HashSet::new();
     let mut out = Vec::new();
     for rel in candidates {
+        if is_lossily_decoded(&rel) {
+            warn_log(
+                io,
+                &format!(
+                    "Warning: Skipping file whose name is not valid UTF-8: {}",
+                    sanitize_for_display(&rel)
+                ),
+            );
+            continue;
+        }
         if !is_safe_relative_path(&rel) {
-            warn_log(io, &format!("Warning: Skipping invalid pattern: {rel}"));
+            warn_log(
+                io,
+                &format!(
+                    "Warning: Skipping invalid pattern: {}",
+                    sanitize_for_display(&rel)
+                ),
+            );
             continue;
         }
         if !is_copyable_entry(io, &root, &canonical_root, &rel) {
@@ -420,6 +474,95 @@ mod tests {
         .unwrap();
         assert_eq!(files, vec!["real.txt".to_string()]);
         assert!(io.stderr_text().contains("Skipping symlink entry"));
+    }
+
+    #[test]
+    fn non_utf8_names_are_reported_rather_than_dropped_silently() {
+        // `run_raw` decodes with `from_utf8_lossy`, so a filename with invalid
+        // UTF-8 bytes arrives carrying U+FFFD and matches nothing on disk. It must
+        // be named in a warning, not vanish on the existence check.
+        let fx = Fixture::new();
+        fx.write("good.txt", "x");
+        let io = FakeIo::new();
+        let git = LsFilesGit::new("good.txt\0bad\u{fffd}name.txt\0", "");
+        let files = collect_git_copy_files(
+            &io,
+            &git,
+            fx.path().to_str().unwrap(),
+            GitCopySelection {
+                untracked: true,
+                modified: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            files,
+            vec!["good.txt".to_string()],
+            "the decodable file is still copied"
+        );
+        assert!(
+            io.stderr_text().contains("is not valid UTF-8"),
+            "{}",
+            io.stderr_text()
+        );
+    }
+
+    #[test]
+    fn skip_warnings_neutralize_control_characters_in_names() {
+        // The rejected path is printed back to the user, and its bytes came from a
+        // filename in the repository. An ESC or bidi override in it must not be
+        // able to rewrite the terminal around the warning.
+        let fx = Fixture::new();
+        let io = FakeIo::new();
+        let git = LsFilesGit::new("../esc\u{1b}[2K\u{202e}ape.txt\0", "");
+        let files = collect_git_copy_files(
+            &io,
+            &git,
+            fx.path().to_str().unwrap(),
+            GitCopySelection {
+                untracked: true,
+                modified: false,
+            },
+        )
+        .unwrap();
+        assert!(files.is_empty());
+        let out = io.stderr_text();
+        assert!(
+            !out.contains('\u{1b}') && !out.contains('\u{202e}'),
+            "control characters reached the terminal: {out:?}"
+        );
+        assert!(out.contains("esc\u{fffd}[2K\u{fffd}ape.txt"), "{out:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_skip_warning_neutralizes_control_characters() {
+        use std::os::unix::fs::symlink;
+        let outside = Fixture::new();
+        let secret = outside.write("secret.txt", "TOP SECRET");
+        let fx = Fixture::new();
+        let nasty = "link\u{1b}[2Kname";
+        symlink(&secret, fx.join(nasty)).unwrap();
+
+        let io = FakeIo::new();
+        let git = LsFilesGit::new(&format!("{nasty}\0"), "");
+        let files = collect_git_copy_files(
+            &io,
+            &git,
+            fx.path().to_str().unwrap(),
+            GitCopySelection {
+                untracked: true,
+                modified: false,
+            },
+        )
+        .unwrap();
+        assert!(files.is_empty());
+        let out = io.stderr_text();
+        assert!(!out.contains('\u{1b}'), "{out:?}");
+        assert!(
+            out.contains("Skipping symlink entry: link\u{fffd}[2Kname"),
+            "{out:?}"
+        );
     }
 
     #[test]

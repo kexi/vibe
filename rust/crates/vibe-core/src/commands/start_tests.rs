@@ -1233,6 +1233,99 @@ fn spaced_and_non_ascii_names_are_copied() {
     );
 }
 
+/// A hook runner that materializes files in the origin repo as a side effect,
+/// standing in for a real `pre_start` hook that writes scratch files.
+struct FileWritingHooks {
+    /// `(repo-relative path, contents)` written on the FIRST hook invocation.
+    writes: Vec<(String, String)>,
+    repo_root: String,
+    calls: RefCell<Vec<String>>,
+}
+
+impl crate::hooks::HookRunner for FileWritingHooks {
+    fn run_hook(
+        &self,
+        cmd: &str,
+        _cwd: &str,
+        _env: &[(&str, &str)],
+    ) -> Result<crate::hooks::HookOutput> {
+        self.calls.borrow_mut().push(cmd.to_string());
+        for (rel, contents) in &self.writes {
+            let path = std::path::Path::new(&self.repo_root).join(rel);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            std::fs::write(&path, contents).unwrap();
+        }
+        Ok(crate::hooks::HookOutput {
+            code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+        })
+    }
+}
+
+#[test]
+fn files_created_by_a_pre_start_hook_are_carried_over() {
+    // The documented order is pre_start → copy → post_start, so a file a
+    // `pre_start` hook writes into the origin repo must be visible to
+    // `--copy-untracked`. Enumerating before the hooks ran would drop
+    // `generated.txt` on the existence check, since it does not exist yet.
+    let config = "[copy]\nuntracked = true\n\n[hooks]\npre_start = [\"generate\"]\n";
+    let (fx, io, resolver, repo_root) = trusted_config_repo_with_content(config);
+    fx.write("repo/scratch.md", "already here");
+
+    let git = MockGit::new(
+        &repo_root,
+        &format!("worktree {repo_root}\nbranch refs/heads/main\n\n"),
+    )
+    // git reports both once they exist; only `scratch.md` exists before the hook.
+    .with_ls_files(&["scratch.md", "generated.txt"], &[]);
+    let s = NoScript;
+    let p = ScriptPrompt::confirming(true);
+    let sin = FakeStdin::none();
+    let fk = Fakes::new();
+    let hooks = FileWritingHooks {
+        writes: vec![("generated.txt".to_string(), "made by the hook".to_string())],
+        repo_root: repo_root.clone(),
+        calls: RefCell::new(vec![]),
+    };
+    let d = StartDeps {
+        io: &io,
+        git: &git,
+        resolver: &resolver,
+        script_runner: &s,
+        prompt: &p,
+        stdin: &sin,
+        hook_runner: &hooks,
+        executor: &fk.exec,
+        tracker: &fk.tracker,
+        version: V,
+    };
+    start_command(&d, "feat", &StartFlags::default(), OutputOptions::default()).unwrap();
+
+    assert_eq!(
+        hooks.calls.borrow().len(),
+        1,
+        "pre_start hook must have run"
+    );
+    let copies = fk.exec.file_copies.lock().unwrap();
+    let sources: Vec<String> = copies
+        .iter()
+        .map(|(src, _)| {
+            to_slash(src)
+                .rsplit_once("/repo/")
+                .map(|(_, rel)| rel.to_string())
+                .unwrap_or_else(|| to_slash(src))
+        })
+        .collect();
+    assert!(
+        sources.contains(&"generated.txt".to_string()),
+        "a file created by pre_start must be enumerated for the copy: {sources:?}"
+    );
+    assert!(sources.contains(&"scratch.md".to_string()), "{sources:?}");
+}
+
 #[test]
 fn cli_flags_work_in_a_repo_with_no_vibe_toml() {
     // The ad-hoc case the flags exist for: carry work in progress into a new

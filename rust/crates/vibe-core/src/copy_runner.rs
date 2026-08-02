@@ -12,7 +12,7 @@ use crate::config::VibeConfig;
 use crate::copy::strategies::CopyExecutor;
 use crate::glob::{expand_copy_patterns, expand_directory_patterns};
 use crate::io::Io;
-use crate::output::{log_dry_run, warn_log};
+use crate::output::{log_dry_run, sanitize_for_display, warn_log};
 use crate::progress::ProgressTracker;
 use std::collections::VecDeque;
 use std::sync::Mutex;
@@ -109,13 +109,24 @@ pub fn copy_resolved_files(
     if dry_run {
         log_dry_run(io, "Would copy files:");
         for file in files {
-            log_dry_run(io, &format!("  - {file}"));
+            // Sanitized because this list can contain git-derived filenames
+            // (`[copy] untracked` / `modified`), i.e. names an attacker who can
+            // land a file in the repo controls; a raw ESC or bidi override here
+            // would rewrite the terminal around the dry-run report.
+            log_dry_run(io, &format!("  - {}", sanitize_for_display(file)));
         }
         return;
     }
 
     let phase = tracker.add_phase("Copying files");
-    let task_ids: Vec<_> = files.iter().map(|f| tracker.add_task(phase, f)).collect();
+    // The progress label goes straight to the terminal too, so it is sanitized
+    // for the same reason as the dry-run list. Only the LABEL is sanitized — the
+    // src/dest paths below are built from the untouched `file`, so a name
+    // containing a control character is still copied verbatim.
+    let task_ids: Vec<_> = files
+        .iter()
+        .map(|f| tracker.add_task(phase, &sanitize_for_display(f)))
+        .collect();
 
     for (i, file) in files.iter().enumerate() {
         let src = join(repo_root, file);
@@ -125,7 +136,13 @@ pub fn copy_resolved_files(
             Ok(()) => tracker.complete_task(task_ids[i]),
             Err(e) => {
                 tracker.fail_task(task_ids[i], &e.to_string());
-                warn_log(io, &format!("Warning: Failed to copy {file}: {e}"));
+                warn_log(
+                    io,
+                    &format!(
+                        "Warning: Failed to copy {}: {e}",
+                        sanitize_for_display(file)
+                    ),
+                );
             }
         }
     }
@@ -159,7 +176,7 @@ where
     if dry_run {
         log_dry_run(io, "Would copy directories:");
         for dir in &dirs {
-            log_dry_run(io, &format!("  - {dir}"));
+            log_dry_run(io, &format!("  - {}", sanitize_for_display(dir)));
         }
         return Ok(());
     }
@@ -174,7 +191,10 @@ where
         "Copying directories ({})",
         executor.directory_strategy()
     ));
-    let task_ids: Vec<_> = dirs.iter().map(|d| tracker.add_task(phase, d)).collect();
+    let task_ids: Vec<_> = dirs
+        .iter()
+        .map(|d| tracker.add_task(phase, &sanitize_for_display(d)))
+        .collect();
 
     // Shared job queue of (index, dir). Workers pull until empty. Per-dir
     // failures are recorded here (NOT logged in-thread) because the injected
@@ -220,7 +240,10 @@ where
     for (_, dir, msg) in &failures {
         warn_log(
             io,
-            &format!("Warning: Failed to copy directory {dir}: {msg}"),
+            &format!(
+                "Warning: Failed to copy directory {}: {msg}",
+                sanitize_for_display(dir)
+            ),
         );
     }
     match failures.first() {
@@ -360,6 +383,61 @@ mod tests {
         assert!(exec.file_copies.lock().unwrap().is_empty());
         assert!(io.stderr_text().contains("[dry-run] Would copy files:"));
         assert!(io.stderr_text().contains("  - .env"));
+    }
+
+    #[test]
+    fn dry_run_neutralizes_control_characters_in_git_derived_names() {
+        // `[copy] untracked` feeds real filenames straight into this list, so a
+        // name carrying an ESC sequence or a bidi override must not reach the
+        // terminal intact: it could clear the line or visually reverse the path.
+        let io = FakeIo::new();
+        let exec = FakeCopyExecutor::new(CopyStrategyKind::Standard);
+        let tracker = NullTracker;
+        let nasty = "evil\u{1b}[2K\u{202e}gnp.exe";
+        copy_resolved_files(
+            &io,
+            &exec,
+            &tracker,
+            &[nasty.to_string()],
+            "/repo",
+            "/wt",
+            true,
+        );
+        let out = io.stderr_text();
+        assert!(
+            !out.contains('\u{1b}') && !out.contains('\u{202e}'),
+            "control characters reached the terminal: {out:?}"
+        );
+        assert!(out.contains("evil\u{fffd}[2K\u{fffd}gnp.exe"), "{out:?}");
+    }
+
+    #[test]
+    fn copy_failure_warning_neutralizes_control_characters() {
+        let fx = Fixture::new();
+        let nasty = "bad\u{1b}[2Kname.txt";
+        fx.write(nasty, "x");
+        let io = FakeIo::new();
+        let exec = FakeCopyExecutor::new(CopyStrategyKind::Standard)
+            .fail_on(nasty, CopyError::Failed("disk full".into()));
+        let tracker = NullTracker;
+        copy_resolved_files(
+            &io,
+            &exec,
+            &tracker,
+            &[nasty.to_string()],
+            fx.path().to_str().unwrap(),
+            "/wt",
+            false,
+        );
+        let out = io.stderr_text();
+        assert!(
+            out.contains("Failed to copy bad\u{fffd}[2Kname.txt"),
+            "{out:?}"
+        );
+        assert!(!out.contains('\u{1b}'), "{out:?}");
+        // The copy itself still used the real, unsanitized name.
+        let copies = exec.file_copies.lock().unwrap();
+        assert!(copies[0].0.contains(nasty), "{:?}", copies[0].0);
     }
 
     // --- copy_directories concurrency + error aggregation ---

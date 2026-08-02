@@ -91,10 +91,12 @@ pub fn log_dry_run(io: &impl Io, message: &str) {
 /// while describing a different one. A U+FFFD keeps the strings distinct and
 /// makes the tampering visible.
 ///
-/// Scope: currently applied only by `doctor`, whose paths are built straight from
-/// environment variables. The other stderr paths (`fast_remove`, `start`) do
-/// their own stripping/rejecting and have NOT been migrated onto this helper, so
-/// its use is not yet a program-wide guarantee.
+/// Scope: applied by `doctor` (whose paths are built straight from environment
+/// variables) and by the copy layer (`copy_runner`, `git_copy`), whose file names
+/// come from `git ls-files` and are therefore chosen by whoever can land a file
+/// in the repository. The remaining stderr paths (`fast_remove`, the rest of
+/// `start`) do their own stripping/rejecting and have NOT been migrated onto this
+/// helper, so its use is not yet a program-wide guarantee.
 pub fn sanitize_for_display(text: &str) -> String {
     text.chars()
         .map(|c| {
