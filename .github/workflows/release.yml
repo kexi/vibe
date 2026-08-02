@@ -332,6 +332,17 @@ jobs:
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
+      # The license files are uploaded as release assets so every downloader
+      # gets the terms alongside the binary, and the verifier script runs from
+      # the same tree. Why not `ref: <tag>`: prepare fails the run if the tag
+      # already exists, so at this point it does not — `gh release create
+      # --target $GITHUB_SHA` below is what burns it. Checking out the default
+      # `GITHUB_SHA` also guarantees the attached license text matches the
+      # commit the binaries were built from, not wherever the branch has since
+      # moved to.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/setup-toolchain
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: artifacts
@@ -340,8 +351,9 @@ jobs:
       - name: Create and publish release
         env:
           GH_TOKEN: ${{ github.token }}
-          # No checkout in this job, so gh has no git remote to resolve the
-          # repository from (gh ignores GITHUB_REPOSITORY): GH_REPO is required.
+          # gh ignores GITHUB_REPOSITORY, and pinning GH_REPO keeps every gh
+          # call in this job aimed at this repository regardless of what the
+          # checkout's remote happens to say.
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.prepare.outputs.tag }}
           NOTES: ${{ inputs.notes }}
@@ -365,13 +377,16 @@ jobs:
 
           # Why not `artifacts/*`: download-artifact with `merge-multiple: true`
           # flattens the five `platform-package-*` artifacts into the same dir,
-          # leaking their `package.json` / `THIRD-PARTY-LICENSES.md` into the
-          # GitHub Release. publish-npm.yml regenerates those locally per-matrix
-          # and only pulls the named binary via `gh release download --pattern`,
-          # so restricting uploads to the binaries and .debs is safe.
-          ASSETS=(artifacts/vibe-*-* artifacts/vibe_*.deb)
-          if [ "${#ASSETS[@]}" -ne 7 ]; then
-            echo "::error::Expected 7 release assets (5 binaries + 2 .deb), found ${#ASSETS[@]}: ${ASSETS[*]}"
+          # so a bare glob would upload their `package.json` and pick up
+          # whichever of the five identical `THIRD-PARTY-LICENSES.md` copies
+          # won the merge — an asset whose provenance is a race. The license
+          # files are instead taken from the checkout above, which is the
+          # release commit itself. publish-npm.yml regenerates the package
+          # metadata locally per-matrix and only pulls the named binary via
+          # `gh release download --pattern`, so it is unaffected either way.
+          ASSETS=(artifacts/vibe-*-* artifacts/vibe_*.deb LICENSE THIRD-PARTY-LICENSES.md)
+          if [ "${#ASSETS[@]}" -ne 9 ]; then
+            echo "::error::Expected 9 release assets (5 binaries + 2 .deb + 2 license files), found ${#ASSETS[@]}: ${ASSETS[*]}"
             exit 1
           fi
 
@@ -396,12 +411,16 @@ jobs:
             gh release create "$TAG" --draft --target "$GITHUB_SHA" \
               --title "$TAG" "${NOTES_ARGS[@]}" "${ASSETS[@]}"
             COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
-            if [ "$COUNT" -ne 7 ]; then
-              echo "::error::Draft release has $COUNT assets, expected 7"
+            if [ "$COUNT" -ne 9 ]; then
+              echo "::error::Draft release has $COUNT assets, expected 9"
               exit 1
             fi
+            # Name-level check before the draft is discarded: the count above
+            # would be satisfied by nine assets of any kind.
+            gh release view "$TAG" --json assets \
+              | bun run scripts/verify-release-assets.ts
             gh release delete "$TAG" --yes
-            echo "Dry run OK: draft carried all 7 assets and was deleted."
+            echo "Dry run OK: draft carried all 9 assets and was deleted."
             exit 0
           fi
 
@@ -414,11 +433,25 @@ jobs:
             --title "$TAG" "${NOTES_ARGS[@]}" "${ASSETS[@]}"
 
           COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
-          if [ "$COUNT" -ne 7 ]; then
-            echo "::error::Published release has $COUNT assets, expected 7"
+          if [ "$COUNT" -ne 9 ]; then
+            echo "::error::Published release has $COUNT assets, expected 9"
             exit 1
           fi
           echo "Published $TAG with $COUNT assets."
+
+      # Why a separate named step rather than one more line in the script above:
+      # a missing LICENSE / THIRD-PARTY-LICENSES.md is a compliance failure, not
+      # a packaging typo, and it should be legible as its own red check in the
+      # run summary. The asset-count assertions above never look at names.
+      - name: Verify release carries the license documents
+        if: inputs.dry_run != true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          gh release view "$TAG" --json assets \
+            | bun run scripts/verify-release-assets.ts
 
   update-homebrew:
     needs: [prepare, release]
