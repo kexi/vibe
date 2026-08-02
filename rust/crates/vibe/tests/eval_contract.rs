@@ -1045,12 +1045,20 @@ fn list_json_keeps_stdout_empty_and_stderr_pure_json() {
         !stderr.contains("[verbose]"),
         "a diagnostic corrupted the payload: {stderr:?}"
     );
+    // Deserialized rather than substring-matched: `starts_with('[')` +
+    // `ends_with(']')` + `contains(…)` would also accept a payload with trailing
+    // garbage or a trailing comma, which is exactly the corruption this contract
+    // exists to catch. A successful parse is the only real proof the stream is
+    // the document and nothing else.
+    let payload: serde_json::Value = serde_json::from_str(&stderr)
+        .unwrap_or_else(|e| panic!("stderr is not a single JSON document ({e}): {stderr:?}"));
+    let entries = payload
+        .as_array()
+        .unwrap_or_else(|| panic!("payload is not a JSON array: {stderr:?}"));
     assert!(
-        stderr.starts_with('[') && stderr.trim_end().ends_with(']'),
-        "stderr is not exactly the JSON document: {stderr:?}"
-    );
-    assert!(
-        stderr.contains("\"branch\": \"feature\""),
+        entries
+            .iter()
+            .any(|e| e.get("branch") == Some(&serde_json::json!("feature"))),
         "payload missing the worktree: {stderr:?}"
     );
 }

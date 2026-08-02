@@ -1095,6 +1095,7 @@ version = "3.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "serde_json",
  "tempfile",
  "vibe-core",
  "vibe-test-support",

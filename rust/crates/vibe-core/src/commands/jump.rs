@@ -14,7 +14,7 @@ use crate::fuzzy::{fuzzy_match, FUZZY_MATCH_MIN_LENGTH};
 use crate::git::{get_worktree_list, GitRunner, Worktree};
 use crate::io::Io;
 use crate::mru::{load_mru_data, record_mru_entry, sort_by_mru, HasPath, MruEntry};
-use crate::output::{log, verbose_log, OutputOptions};
+use crate::output::{log, sanitize_for_display, verbose_log, OutputOptions};
 use crate::prompt::Prompt;
 
 /// Branch-name prefix marking auto-generated scratch worktrees.
@@ -34,6 +34,14 @@ impl HasPath for Worktree {
 /// (`Worktree::branch == None`) has nothing to match and is filtered out up
 /// front. Narrowing once here — rather than threading `Option` through all seven
 /// matching tiers — keeps every tier operating on a plain `String`.
+///
+/// Both fields hold the RAW git values. `git worktree list --porcelain -z`
+/// preserves a literal newline (or any control character) inside a path, and a
+/// branch name can carry one too, so every *display* site — prompt labels and
+/// verbose diagnostics — runs the value through
+/// [`sanitize_for_display`](crate::output::sanitize_for_display), matching what
+/// `list` does. Sanitizing at the struct instead would corrupt the `cd` target
+/// and the MRU key, which must stay byte-exact to actually work.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct BranchedWorktree {
     path: String,
@@ -111,7 +119,11 @@ where
     if let Some(wt) = worktrees.iter().find(|w| w.branch == trimmed) {
         verbose_log(
             deps.io,
-            &format!("Exact match found: {} -> {}", wt.branch, wt.path),
+            &format!(
+                "Exact match found: {} -> {}",
+                sanitize_for_display(&wt.branch),
+                sanitize_for_display(&wt.path)
+            ),
             opts,
         );
         return Ok(jump_to(deps, &wt.branch, &wt.path));
@@ -126,11 +138,16 @@ where
             deps.io,
             &format!(
                 "Exact match found (case-insensitive): {} -> {}",
-                wt.branch, wt.path
+                sanitize_for_display(&wt.branch),
+                sanitize_for_display(&wt.path)
             ),
             opts,
         );
-        log(deps.io, &format!("Matched: {}", wt.branch), opts);
+        log(
+            deps.io,
+            &format!("Matched: {}", sanitize_for_display(&wt.branch)),
+            opts,
+        );
         return Ok(jump_to(deps, &wt.branch, &wt.path));
     }
 
@@ -231,10 +248,18 @@ where
         let wt = &matches[0];
         verbose_log(
             deps.io,
-            &format!("Partial match found: {} -> {}", wt.branch, wt.path),
+            &format!(
+                "Partial match found: {} -> {}",
+                sanitize_for_display(&wt.branch),
+                sanitize_for_display(&wt.path)
+            ),
             opts,
         );
-        log(deps.io, &format!("Matched: {}", wt.branch), opts);
+        log(
+            deps.io,
+            &format!("Matched: {}", sanitize_for_display(&wt.branch)),
+            opts,
+        );
         return Ok(Some(jump_to(deps, &wt.branch, &wt.path)));
     }
 
@@ -246,9 +271,17 @@ where
         );
 
         let sorted = sort_by_mru(matches, mru_entries);
+        // Labels only: `sorted[selected]` still carries the raw branch/path, so
+        // the `cd` and the MRU record are unaffected by this substitution.
         let mut choices: Vec<String> = sorted
             .iter()
-            .map(|w| format!("{} ({})", w.branch, w.path))
+            .map(|w| {
+                format!(
+                    "{} ({})",
+                    sanitize_for_display(&w.branch),
+                    sanitize_for_display(&w.path)
+                )
+            })
             .collect();
         choices.push("Cancel".to_string());
 
@@ -329,23 +362,32 @@ mod tests {
     }
 
     /// Prompt scripted with a confirm answer and a select index.
+    ///
+    /// Also records the choice labels it was offered, so tests can assert what
+    /// the user would actually have seen.
     struct ScriptPrompt {
         confirm: bool,
         select: RefCell<Vec<usize>>,
+        offered: RefCell<Vec<String>>,
     }
     impl ScriptPrompt {
         fn new(confirm: bool, selects: &[usize]) -> Self {
             ScriptPrompt {
                 confirm,
                 select: RefCell::new(selects.to_vec()),
+                offered: RefCell::new(Vec::new()),
             }
+        }
+        fn offered(&self) -> Vec<String> {
+            self.offered.borrow().clone()
         }
     }
     impl Prompt for ScriptPrompt {
         fn confirm(&self, _message: &str) -> bool {
             self.confirm
         }
-        fn select(&self, _message: &str, _choices: &[String]) -> Result<usize> {
+        fn select(&self, _message: &str, choices: &[String]) -> Result<usize> {
+            *self.offered.borrow_mut() = choices.to_vec();
             Ok(self.select.borrow_mut().remove(0))
         }
     }
@@ -693,5 +735,90 @@ mod tests {
         assert!(io.stderr_text().contains("Cancelled"));
         // Cancel records no MRU entry.
         assert!(crate::mru::load_mru_data(&io).is_empty());
+    }
+
+    /// NUL-framed porcelain, as `git worktree list --porcelain -z` emits it.
+    ///
+    /// The newline-framed `porcelain()` helper cannot express a path that
+    /// itself contains a newline — which is the whole point of these two tests.
+    fn porcelain_z(entries: &[(&str, &str)]) -> String {
+        let mut s = String::new();
+        for (path, branch) in entries {
+            s.push_str(&format!(
+                "worktree {path}\0HEAD abc\0branch refs/heads/{branch}\0\0"
+            ));
+        }
+        s
+    }
+
+    #[test]
+    fn selection_labels_are_sanitized_but_the_cd_target_is_not() {
+        // What it guarantees: a path carrying a literal newline (which `-z`
+        // preserves) cannot inject an extra line into the interactive chooser,
+        // while the `cd` the shell evals still points at the real directory.
+        let fx = vibe_test_support::Fixture::new();
+        let io = FakeIo::new().with_env("HOME", fx.path().to_str().unwrap());
+        let evil = "/wt/a\nFAKE-CHOICE";
+        let git = ListGit {
+            porcelain: porcelain_z(&[(evil, "feat/login"), ("/wt/b", "fix/login")]),
+        };
+        let prompt = ScriptPrompt::new(false, &[0]);
+        let start = UnimplementedStart;
+        let d = JumpDeps {
+            io: &io,
+            git: &git,
+            prompt: &prompt,
+            start: &start,
+            now_ms: 1,
+        };
+        let outcome = jump_command(&d, "login", OutputOptions::default()).unwrap();
+
+        let offered = prompt.offered();
+        assert!(
+            offered.iter().all(|c| !c.contains('\n')),
+            "a raw newline reached the chooser: {offered:?}"
+        );
+        assert!(
+            offered
+                .iter()
+                .any(|c| c.contains("/wt/a\u{fffd}FAKE-CHOICE")),
+            "the path was not sanitized in place: {offered:?}"
+        );
+        // Navigation keeps the raw bytes, or the `cd` would miss the directory.
+        assert_eq!(outcome, Outcome::cd(evil));
+    }
+
+    #[test]
+    fn verbose_match_diagnostics_are_sanitized() {
+        // What it guarantees: the single-match verbose line goes through the
+        // same display policy, so a control character in a path cannot rewrite
+        // the surrounding diagnostic.
+        let fx = vibe_test_support::Fixture::new();
+        let io = FakeIo::new().with_env("HOME", fx.path().to_str().unwrap());
+        let evil = "/wt/a\nfatal: spoofed";
+        let git = ListGit {
+            porcelain: porcelain_z(&[(evil, "feat/login")]),
+        };
+        let prompt = ScriptPrompt::new(false, &[]);
+        let start = UnimplementedStart;
+        let d = JumpDeps {
+            io: &io,
+            git: &git,
+            prompt: &prompt,
+            start: &start,
+            now_ms: 1,
+        };
+        let opts = OutputOptions {
+            verbose: true,
+            ..OutputOptions::default()
+        };
+        let outcome = jump_command(&d, "login", opts).unwrap();
+
+        let err = io.stderr_text();
+        assert!(
+            err.contains("/wt/a\u{fffd}fatal: spoofed"),
+            "the diagnostic was not sanitized: {err:?}"
+        );
+        assert_eq!(outcome, Outcome::cd(evil));
     }
 }

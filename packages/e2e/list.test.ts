@@ -1,5 +1,5 @@
 import { execFileSync } from "child_process";
-import { join } from "path";
+import { basename, join } from "path";
 import { afterEach, describe, expect, test } from "vitest";
 import { getVibePath, VibeCommandRunner } from "./helpers/pty.js";
 import { setupTestGitRepo } from "./helpers/git-setup.js";
@@ -10,7 +10,12 @@ import { assertExitCode, assertOutputContains } from "./helpers/assertions.js";
  * repository state built independently of `vibe start`.
  */
 function addWorktree(repoPath: string, branch: string, dirName: string): string {
-  const path = join(repoPath, "..", dirName);
+  // Prefixed with `basename(repoPath)` (the per-run `mkdtemp` name) rather than
+  // used bare: `join(repoPath, "..", …)` climbs back out to the shared temp
+  // root, so a bare `dirName` is a fixed path across every run. A run that dies
+  // before cleanup would then leave a directory that makes the next run's
+  // `git worktree add` fail on collision instead of testing the listing.
+  const path = join(repoPath, "..", `${basename(repoPath)}-${dirName}`);
   execFileSync("git", ["worktree", "add", "-b", branch, path], {
     cwd: repoPath,
     stdio: "pipe",
