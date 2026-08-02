@@ -411,13 +411,15 @@ fn shell_setup_wrappers_are_byte_exact_on_stdout() {
 ///
 /// The contract guard lives in `eval_output::write_outcome`: a `cd_path`
 /// containing `\n`/`\r` returns an error instead of printing, so the shell never
-/// evals a smuggled second line. A literal newline cannot exist in a real
-/// on-disk worktree path, AND the porcelain parser splits on `\n`, so the guard
-/// is genuinely UNREACHABLE through real `git` — meaning we can't manufacture a
-/// newline-bearing `cd_path` end-to-end. The guard itself is unit-tested in
+/// evals a smuggled second line. POSIX permits a newline in a path, and since
+/// the worktree list is read with `--porcelain -z` such a path now survives
+/// parsing intact instead of being mangled into two entries — so this guard is
+/// the REAL defense, not a belt-and-braces one. It is unit-tested directly in
 /// `crates/vibe/src/eval_output.rs` (`rejects_cd_path_with_newline` /
 /// `rejects_cd_path_with_carriage_return`), which drive the exact function the
-/// binary calls at its single stdout write point.
+/// binary calls at its single stdout write point; reproducing it end-to-end
+/// would require creating a newline-named directory on the test host, which not
+/// every filesystem we run CI on accepts.
 ///
 /// What we CAN assert at the process boundary is the complementary invariant the
 /// guard protects: when a command fails (here, `home` outside any git repo) the

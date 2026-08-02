@@ -10,7 +10,7 @@ use crate::error::{Result, VibeError};
 use std::path::Path;
 use std::process::Command;
 
-/// A single worktree entry parsed from `git worktree list --porcelain`.
+/// A single worktree entry parsed from `git worktree list --porcelain -z`.
 ///
 /// `branch` is `None` for a detached-HEAD worktree: git emits a bare `detached`
 /// line instead of `branch refs/heads/…` for those, and they are real worktrees
@@ -72,17 +72,34 @@ pub fn sanitize_branch_name(branch_name: &str) -> String {
     branch_name.replace('/', "-")
 }
 
-/// Parse `git worktree list --porcelain` output into ordered worktree entries.
+/// The argument vector for reading the worktree list.
+///
+/// `-z` (NUL-terminated records) rather than plain `--porcelain`: a worktree
+/// path may legally contain a literal newline, and the line-oriented format has
+/// no way to express that — git's own docs recommend `-z` for machine
+/// consumption for exactly this reason. `-z` is unconditional (not a fallback
+/// probe) because it predates every git we support.
+const WORKTREE_LIST_ARGS: [&str; 4] = ["worktree", "list", "--porcelain", "-z"];
+
+/// Parse `git worktree list --porcelain [-z]` output into ordered worktree
+/// entries.
 ///
 /// git emits entries in a stable order (main worktree first), so we preserve
 /// the emitted order rather than re-sorting — and we never depend on
 /// nondeterministic filesystem `read_dir` order anywhere.
 ///
-/// An entry is accumulated from its `worktree <path>` line and flushed when the
-/// next one starts (or at EOF), so a detached-HEAD worktree — which carries a
-/// bare `detached` line and NO `branch` line — yields `branch: None` instead of
-/// vanishing. A `bare` entry is dropped: a bare repository has no working tree
-/// to stand in or `cd` to, so it is not a worktree for any of our purposes.
+/// The record separator is detected from the payload — see
+/// [`split_worktree_records`] — so both the `-z` output we ask git for and the
+/// plain line-oriented porcelain parse identically. That is what lets a path
+/// containing a newline survive: under `-z` the newline is interior to a record
+/// rather than a record separator.
+///
+/// An entry is accumulated from its `worktree <path>` record and flushed when
+/// the next one starts (or at EOF), so a detached-HEAD worktree — which carries
+/// a bare `detached` record and NO `branch` record — yields `branch: None`
+/// instead of vanishing. A `bare` entry is dropped: a bare repository has no
+/// working tree to stand in or `cd` to, so it is not a worktree for any of our
+/// purposes.
 pub fn parse_worktree_list(output: &str) -> Vec<Worktree> {
     let mut worktrees = Vec::new();
     let mut current: Option<Worktree> = None;
@@ -97,7 +114,7 @@ pub fn parse_worktree_list(output: &str) -> Vec<Worktree> {
         }
     }
 
-    for line in output.split('\n') {
+    for line in split_worktree_records(output) {
         if let Some(rest) = line.strip_prefix("worktree ") {
             flush(&mut worktrees, current.take(), is_bare);
             is_bare = false;
@@ -116,6 +133,22 @@ pub fn parse_worktree_list(output: &str) -> Vec<Worktree> {
     flush(&mut worktrees, current.take(), is_bare);
 
     worktrees
+}
+
+/// Split worktree-list output into records, picking the separator from the data.
+///
+/// `-z` output is NUL-terminated and, by construction, uses `\n` for nothing but
+/// bytes that are genuinely part of a path; plain `--porcelain` output is
+/// newline-separated and contains no `\0` at all. So the presence of a single
+/// `\0` is an unambiguous discriminator, and keying off it — rather than
+/// splitting on both bytes — is what preserves a newline inside a path.
+///
+/// Not simply "always `-z`": the plain branch is still needed because the same
+/// parser is fed hand-written line-oriented fixtures, and keeping one parser for
+/// both beats maintaining two that can drift apart.
+fn split_worktree_records(output: &str) -> impl Iterator<Item = &str> {
+    let separator = if output.contains('\0') { '\0' } else { '\n' };
+    output.split(separator)
 }
 
 /// Normalize a git remote URL to a canonical `host/user/repo` form.
@@ -180,7 +213,7 @@ pub fn find_worktree_by_branch(
     runner: &impl GitRunner,
     branch_name: &str,
 ) -> Result<Option<String>> {
-    let output = runner.run(&["worktree", "list", "--porcelain"])?;
+    let output = runner.run(&WORKTREE_LIST_ARGS)?;
     let worktrees = parse_worktree_list(&output);
     Ok(worktrees
         .into_iter()
@@ -282,9 +315,9 @@ pub fn remote_branch_exists(runner: &impl GitRunner, branch_name: &str, remote: 
         .is_ok()
 }
 
-/// All worktrees from `git worktree list --porcelain`, in git's emitted order.
+/// All worktrees from `git worktree list --porcelain -z`, in git's emitted order.
 pub fn get_worktree_list(runner: &impl GitRunner) -> Result<Vec<Worktree>> {
-    let output = runner.run(&["worktree", "list", "--porcelain"])?;
+    let output = runner.run(&WORKTREE_LIST_ARGS)?;
     Ok(parse_worktree_list(&output))
 }
 
@@ -629,6 +662,44 @@ branch refs/heads/feat
                 path: "/repo/my worktree dir".into(),
                 branch: Some("feat".into()),
             }]
+        );
+    }
+
+    #[test]
+    fn parse_handles_nul_delimited_z_output() {
+        // What `git worktree list --porcelain -z` actually emits: every record is
+        // NUL-TERMINATED (not separated), so an entry ends with `\0\0`. Parsing
+        // must produce exactly what the line-oriented form produces.
+        let out = "worktree /repo/main\0HEAD aaaa\0branch refs/heads/main\0\0\
+                   worktree /repo/detached\0HEAD bbbb\0detached\0\0";
+        assert_eq!(
+            parse_worktree_list(out),
+            vec![
+                Worktree {
+                    path: "/repo/main".into(),
+                    branch: Some("main".into()),
+                },
+                Worktree {
+                    path: "/repo/detached".into(),
+                    branch: None,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_keeps_a_newline_inside_a_worktree_path_under_z() {
+        // A worktree path may legally contain a literal newline. Under `-z` that
+        // byte is interior to the record, so the path must survive INTACT and the
+        // entry must not be split into two bogus worktrees.
+        let out = "worktree /repo/we\nird\0HEAD aaaa\0branch refs/heads/feat\0\0";
+        assert_eq!(
+            parse_worktree_list(out),
+            vec![Worktree {
+                path: "/repo/we\nird".into(),
+                branch: Some("feat".into()),
+            }],
+            "a newline in the path must not act as a record separator"
         );
     }
 
