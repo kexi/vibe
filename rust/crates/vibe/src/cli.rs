@@ -70,6 +70,8 @@ pub enum Command {
     Scratch(ScratchArgs),
     /// Jump to an existing worktree by branch name.
     Jump(JumpArgs),
+    /// List all worktrees of the current repository.
+    List(ListArgs),
     /// Rename the current worktree's branch and directory.
     Rename(RenameArgs),
     /// Remove current worktree and return to main.
@@ -156,11 +158,21 @@ pub struct JumpArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct ListArgs {
+    /// Emit the listing as JSON for scripting and tool integrations.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
 pub struct RenameArgs {
     /// New branch/worktree name.
     pub new_name: Option<String>,
     #[arg(short = 'n', long = "dry-run")]
     pub dry_run: bool,
+    /// Allow operating on the repository's default branch.
+    #[arg(long = "allow-default-branch")]
+    pub allow_default_branch: bool,
 }
 
 #[derive(Debug, Args)]
@@ -174,6 +186,9 @@ pub struct CleanArgs {
     /// Keep the branch after removing the worktree.
     #[arg(long = "keep-branch")]
     pub keep_branch: bool,
+    /// Allow operating on the repository's default branch.
+    #[arg(long = "allow-default-branch")]
+    pub allow_default_branch: bool,
     /// Claude Code worktree-hook mode (reads JSON from stdin).
     #[arg(long = "claude-code-worktree-hook")]
     pub worktree_hook: bool,

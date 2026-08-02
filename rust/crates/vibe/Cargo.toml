@@ -26,3 +26,6 @@ vibe-core = { workspace = true, features = ["test-util"] }
 vibe-test-support.workspace = true
 # Real-binary eval-contract integration tests build temp git worktrees.
 tempfile.workspace = true
+# The eval-contract test parses `vibe list --json` output, so it asserts on a
+# real document rather than on substrings a malformed payload would also satisfy.
+serde_json.workspace = true

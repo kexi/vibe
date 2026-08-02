@@ -78,18 +78,20 @@ pub fn check_worktree_conflict(
         });
     };
 
-    if wt.branch == branch_name {
+    if wt.branch.as_deref() == Some(branch_name) {
         return Ok(WorktreeConflict {
             has_conflict: false,
             conflict_type: ConflictType::SameBranch,
-            existing_branch: Some(wt.branch),
+            existing_branch: wt.branch,
         });
     }
 
+    // A detached worktree occupies the path without being on `branch_name`, so it
+    // is a genuine conflict — reported with no branch name rather than a fake one.
     Ok(WorktreeConflict {
         has_conflict: true,
         conflict_type: ConflictType::DifferentBranch,
-        existing_branch: Some(wt.branch),
+        existing_branch: wt.branch,
     })
 }
 
