@@ -336,6 +336,8 @@ mod tests {
     use crate::settings::VibeSettings;
     use crate::worktree_path::ScriptOutput;
     use std::cell::RefCell;
+    use std::sync::LazyLock;
+    use vibe_test_support::fake_root_str;
 
     const V: &str = "1.8.1+abc";
 
@@ -540,6 +542,17 @@ mod tests {
         (fx, io)
     }
 
+    /// The three worktree paths every case below is built from: the main repo, the
+    /// `feat` worktree, and the `renamed` one the default resolver derives.
+    ///
+    /// Built per-host rather than written as `/home/u/...` literals: rename's
+    /// default path goes through `dirname` + `join`, which use the host separator,
+    /// so a `/`-joined literal would produce a mixed `\`/`/` path on Windows and
+    /// compare unequal to itself. See #570.
+    static MAIN: LazyLock<String> = LazyLock::new(|| fake_root_str("home/u/myrepo"));
+    static FEAT: LazyLock<String> = LazyLock::new(|| fake_root_str("home/u/myrepo-feat"));
+    static RENAMED: LazyLock<String> = LazyLock::new(|| fake_root_str("home/u/myrepo-renamed"));
+
     /// porcelain for [main, feat] where feat is the current (secondary) worktree.
     fn two_worktrees(main: &str, feat_path: &str, feat_branch: &str) -> String {
         format!(
@@ -684,30 +697,19 @@ mod tests {
     fn happy_path_moves_renames_and_cds() {
         let (_fx, io) = io_with_home();
         // main at /home/u/myrepo → default newPath = /home/u/myrepo-renamed.
-        let git = MockGit::new(
-            &two_worktrees("/home/u/myrepo", "/home/u/myrepo-feat", "feat"),
-            "/home/u/myrepo-feat",
-        );
+        let git = MockGit::new(&two_worktrees(&MAIN, &FEAT, "feat"), &FEAT);
         let (r, s) = (NoResolver, NoScript);
-        let p = FakeProcessControl::new("/home/u/myrepo-feat");
-        let d = deps(&io, &git, &r, &s, &p, "/home/u/myrepo-feat");
+        let p = FakeProcessControl::new(&FEAT);
+        let d = deps(&io, &git, &r, &s, &p, &FEAT);
         let outcome = rename_command(&d, "renamed", false, OutputOptions::default()).unwrap();
-        assert_eq!(outcome, Outcome::cd("/home/u/myrepo-renamed"));
+        assert_eq!(outcome, Outcome::cd(&**RENAMED));
         // Moved, chdir'd into new, then renamed branch — in that order.
-        assert!(git.calls_contain(&[
-            "worktree",
-            "move",
-            "/home/u/myrepo-feat",
-            "/home/u/myrepo-renamed"
-        ]));
+        assert!(git.calls_contain(&["worktree", "move", &FEAT, &RENAMED]));
         assert!(git.calls_contain(&["branch", "-m", "feat", "renamed"]));
-        assert_eq!(
-            p.chdir_calls.borrow().as_slice(),
-            &["/home/u/myrepo-renamed"]
-        );
+        assert_eq!(p.chdir_calls.borrow().as_slice(), [RENAMED.as_str()]);
         let out = io.stderr_text();
         assert!(out.contains("Renamed feat -> renamed"));
-        assert!(out.contains("Directory: /home/u/myrepo-feat -> /home/u/myrepo-renamed"));
+        assert!(out.contains(&format!("Directory: {} -> {}", *FEAT, *RENAMED)));
     }
 
     #[test]
@@ -715,34 +717,21 @@ mod tests {
         // SECURITY/robustness: `git branch -m` fails AFTER the move+chdir → the
         // worktree must be moved BACK and cwd restored, then exit nonzero.
         let (_fx, io) = io_with_home();
-        let git = MockGit::new(
-            &two_worktrees("/home/u/myrepo", "/home/u/myrepo-feat", "feat"),
-            "/home/u/myrepo-feat",
-        )
-        .fail_on(&["branch", "-m"]);
+        let git =
+            MockGit::new(&two_worktrees(&MAIN, &FEAT, "feat"), &FEAT).fail_on(&["branch", "-m"]);
         let (r, s) = (NoResolver, NoScript);
-        let p = FakeProcessControl::new("/home/u/myrepo-feat");
-        let d = deps(&io, &git, &r, &s, &p, "/home/u/myrepo-feat");
+        let p = FakeProcessControl::new(&FEAT);
+        let d = deps(&io, &git, &r, &s, &p, &FEAT);
         let err = rename_command(&d, "renamed", false, OutputOptions::default()).unwrap_err();
         assert!(matches!(err, VibeError::AlreadyReported));
 
         // Forward move happened, then the ROLLBACK move (new → old) happened.
-        assert!(git.calls_contain(&[
-            "worktree",
-            "move",
-            "/home/u/myrepo-feat",
-            "/home/u/myrepo-renamed"
-        ]));
-        assert!(git.calls_contain(&[
-            "worktree",
-            "move",
-            "/home/u/myrepo-renamed",
-            "/home/u/myrepo-feat"
-        ]));
+        assert!(git.calls_contain(&["worktree", "move", &FEAT, &RENAMED]));
+        assert!(git.calls_contain(&["worktree", "move", &RENAMED, &FEAT]));
         // chdir into new, then back to old.
         assert_eq!(
             p.chdir_calls.borrow().as_slice(),
-            &["/home/u/myrepo-renamed", "/home/u/myrepo-feat"]
+            [RENAMED.as_str(), FEAT.as_str()]
         );
         assert!(io
             .stderr_text()
@@ -755,30 +744,17 @@ mod tests {
         // back BEFORE attempting any branch rename, and exit nonzero. The branch
         // must NEVER be renamed in this path.
         let (_fx, io) = io_with_home();
-        let git = MockGit::new(
-            &two_worktrees("/home/u/myrepo", "/home/u/myrepo-feat", "feat"),
-            "/home/u/myrepo-feat",
-        );
+        let git = MockGit::new(&two_worktrees(&MAIN, &FEAT, "feat"), &FEAT);
         let (r, s) = (NoResolver, NoScript);
         // chdir to the NEW path fails.
-        let p = FakeProcessControl::failing_to("/home/u/myrepo-feat", "/home/u/myrepo-renamed");
-        let d = deps(&io, &git, &r, &s, &p, "/home/u/myrepo-feat");
+        let p = FakeProcessControl::failing_to(&FEAT, &RENAMED);
+        let d = deps(&io, &git, &r, &s, &p, &FEAT);
         let err = rename_command(&d, "renamed", false, OutputOptions::default()).unwrap_err();
         assert!(matches!(err, VibeError::AlreadyReported));
 
         // Forward move + rollback move both issued; branch rename NEVER attempted.
-        assert!(git.calls_contain(&[
-            "worktree",
-            "move",
-            "/home/u/myrepo-feat",
-            "/home/u/myrepo-renamed"
-        ]));
-        assert!(git.calls_contain(&[
-            "worktree",
-            "move",
-            "/home/u/myrepo-renamed",
-            "/home/u/myrepo-feat"
-        ]));
+        assert!(git.calls_contain(&["worktree", "move", &FEAT, &RENAMED]));
+        assert!(git.calls_contain(&["worktree", "move", &RENAMED, &FEAT]));
         assert!(
             !git.calls_contain(&["branch", "-m"]),
             "branch must not be renamed after a chdir failure"
@@ -797,51 +773,31 @@ mod tests {
         // `Error: rollback failed: ...` + the exact `Manual recovery:` line and
         // return Err. Uses fail_on_exact so the FORWARD move still succeeds.
         let (_fx, io) = io_with_home();
-        let git = MockGit::new(
-            &two_worktrees("/home/u/myrepo", "/home/u/myrepo-feat", "feat"),
-            "/home/u/myrepo-feat",
-        )
-        .fail_on(&["branch", "-m"])
-        .fail_on_exact(&[
-            "worktree",
-            "move",
-            "/home/u/myrepo-renamed",
-            "/home/u/myrepo-feat",
-        ]);
+        let git = MockGit::new(&two_worktrees(&MAIN, &FEAT, "feat"), &FEAT)
+            .fail_on(&["branch", "-m"])
+            .fail_on_exact(&["worktree", "move", &RENAMED, &FEAT]);
         let (r, s) = (NoResolver, NoScript);
-        let p = FakeProcessControl::new("/home/u/myrepo-feat");
-        let d = deps(&io, &git, &r, &s, &p, "/home/u/myrepo-feat");
+        let p = FakeProcessControl::new(&FEAT);
+        let d = deps(&io, &git, &r, &s, &p, &FEAT);
         let err = rename_command(&d, "renamed", false, OutputOptions::default()).unwrap_err();
         assert!(matches!(err, VibeError::AlreadyReported));
 
         // Forward move happened; rollback move (new → old) was ATTEMPTED.
-        assert!(git.calls_contain(&[
-            "worktree",
-            "move",
-            "/home/u/myrepo-feat",
-            "/home/u/myrepo-renamed"
-        ]));
-        assert!(git.calls_contain(&[
-            "worktree",
-            "move",
-            "/home/u/myrepo-renamed",
-            "/home/u/myrepo-feat"
-        ]));
+        assert!(git.calls_contain(&["worktree", "move", &FEAT, &RENAMED]));
+        assert!(git.calls_contain(&["worktree", "move", &RENAMED, &FEAT]));
         let out = io.stderr_text();
         assert!(out.contains("Error: rollback failed:"), "stderr: {out}");
         // Exact TS message (byte-for-byte from rename.ts line 190).
         assert!(
-            out.contains(
-                "Manual recovery: git worktree move '/home/u/myrepo-renamed' '/home/u/myrepo-feat'"
-            ),
+            out.contains(&format!(
+                "Manual recovery: git worktree move '{}' '{}'",
+                *RENAMED, *FEAT
+            )),
             "stderr: {out}"
         );
         // Because rollback failed, we did NOT chdir back to old (the success
         // branch's chdir-back is skipped on a failed rollback).
-        assert_eq!(
-            p.chdir_calls.borrow().as_slice(),
-            &["/home/u/myrepo-renamed"]
-        );
+        assert_eq!(p.chdir_calls.borrow().as_slice(), [RENAMED.as_str()]);
     }
 
     #[test]
@@ -850,35 +806,17 @@ mod tests {
         // the rollback move (new → old) ALSO fails → `Error: rollback failed:` +
         // the exact `Manual recovery:` line, Err, branch NEVER renamed.
         let (_fx, io) = io_with_home();
-        let git = MockGit::new(
-            &two_worktrees("/home/u/myrepo", "/home/u/myrepo-feat", "feat"),
-            "/home/u/myrepo-feat",
-        )
-        .fail_on_exact(&[
-            "worktree",
-            "move",
-            "/home/u/myrepo-renamed",
-            "/home/u/myrepo-feat",
-        ]);
+        let git = MockGit::new(&two_worktrees(&MAIN, &FEAT, "feat"), &FEAT)
+            .fail_on_exact(&["worktree", "move", &RENAMED, &FEAT]);
         let (r, s) = (NoResolver, NoScript);
         // chdir into the NEW path fails → triggers the 4a rollback path.
-        let p = FakeProcessControl::failing_to("/home/u/myrepo-feat", "/home/u/myrepo-renamed");
-        let d = deps(&io, &git, &r, &s, &p, "/home/u/myrepo-feat");
+        let p = FakeProcessControl::failing_to(&FEAT, &RENAMED);
+        let d = deps(&io, &git, &r, &s, &p, &FEAT);
         let err = rename_command(&d, "renamed", false, OutputOptions::default()).unwrap_err();
         assert!(matches!(err, VibeError::AlreadyReported));
 
-        assert!(git.calls_contain(&[
-            "worktree",
-            "move",
-            "/home/u/myrepo-feat",
-            "/home/u/myrepo-renamed"
-        ]));
-        assert!(git.calls_contain(&[
-            "worktree",
-            "move",
-            "/home/u/myrepo-renamed",
-            "/home/u/myrepo-feat"
-        ]));
+        assert!(git.calls_contain(&["worktree", "move", &FEAT, &RENAMED]));
+        assert!(git.calls_contain(&["worktree", "move", &RENAMED, &FEAT]));
         assert!(
             !git.calls_contain(&["branch", "-m"]),
             "branch must never be renamed on the 4a path"
@@ -887,9 +825,10 @@ mod tests {
         assert!(out.contains("failed to enter moved worktree directory"));
         assert!(out.contains("Error: rollback failed:"), "stderr: {out}");
         assert!(
-            out.contains(
-                "Manual recovery: git worktree move '/home/u/myrepo-renamed' '/home/u/myrepo-feat'"
-            ),
+            out.contains(&format!(
+                "Manual recovery: git worktree move '{}' '{}'",
+                *RENAMED, *FEAT
+            )),
             "stderr: {out}"
         );
     }
@@ -903,15 +842,11 @@ mod tests {
         // any ref mutation: (a) `git branch -m` is NEVER called, (b) the rollback
         // move (new → old) IS called, (c) the command returns Err.
         let (_fx, io) = io_with_home();
-        let git = MockGit::new(
-            &two_worktrees("/home/u/myrepo", "/home/u/myrepo-feat", "feat"),
-            "/home/u/myrepo-feat",
-        );
+        let git = MockGit::new(&two_worktrees(&MAIN, &FEAT, "feat"), &FEAT);
         let (r, s) = (NoResolver, NoScript);
         // chdir to new succeeds, but current_dir() reports a DIFFERENT path.
-        let p =
-            FakeProcessControl::reporting_dir("/home/u/myrepo-feat", "/somewhere/else-entirely");
-        let d = deps(&io, &git, &r, &s, &p, "/home/u/myrepo-feat");
+        let p = FakeProcessControl::reporting_dir(&FEAT, "/somewhere/else-entirely");
+        let d = deps(&io, &git, &r, &s, &p, &FEAT);
         let err = rename_command(&d, "renamed", false, OutputOptions::default()).unwrap_err();
         assert!(matches!(err, VibeError::AlreadyReported));
 
@@ -921,12 +856,7 @@ mod tests {
             "detective layer must prevent the branch rename"
         );
         // (b) rollback move (new → old) issued.
-        assert!(git.calls_contain(&[
-            "worktree",
-            "move",
-            "/home/u/myrepo-renamed",
-            "/home/u/myrepo-feat"
-        ]));
+        assert!(git.calls_contain(&["worktree", "move", &RENAMED, &FEAT]));
         // (c) the abort message is the 4b directory-check failure.
         assert!(io
             .stderr_text()
@@ -946,13 +876,10 @@ mod tests {
         // current worktree at /home/u/myrepo-renamed on branch `feat`, renaming
         // feat → renamed → default newPath = /home/u/myrepo-renamed == oldPath.
         let (_fx, io) = io_with_home();
-        let git = MockGit::new(
-            &two_worktrees("/home/u/myrepo", "/home/u/myrepo-renamed", "feat"),
-            "/home/u/myrepo-renamed",
-        );
+        let git = MockGit::new(&two_worktrees(&MAIN, &RENAMED, "feat"), &RENAMED);
         let (r, s) = (NoResolver, NoScript);
-        let p = FakeProcessControl::new("/home/u/myrepo-renamed");
-        let d = deps(&io, &git, &r, &s, &p, "/home/u/myrepo-renamed");
+        let p = FakeProcessControl::new(&RENAMED);
+        let d = deps(&io, &git, &r, &s, &p, &RENAMED);
         let outcome = rename_command(
             &d,
             "renamed",
@@ -961,7 +888,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(outcome, Outcome::cd("/home/u/myrepo-renamed"));
+        assert_eq!(outcome, Outcome::cd(&**RENAMED));
         // No move, no chdir.
         assert!(!git.calls_contain(&["worktree", "move"]));
         assert!(p.chdir_calls.borrow().is_empty());
@@ -970,7 +897,10 @@ mod tests {
 
         let out = io.stderr_text();
         assert!(
-            out.contains("[verbose] Worktree directory unchanged: /home/u/myrepo-renamed"),
+            out.contains(&format!(
+                "[verbose] Worktree directory unchanged: {}",
+                *RENAMED
+            )),
             "stderr: {out}"
         );
         assert!(out.contains("Renamed feat -> renamed"));
@@ -986,13 +916,10 @@ mod tests {
         // R-1 (dry-run variant): when newPath == oldPath, dry-run emits ONLY the
         // branch-rename + change-directory lines, NOT the move line.
         let (_fx, io) = io_with_home();
-        let git = MockGit::new(
-            &two_worktrees("/home/u/myrepo", "/home/u/myrepo-renamed", "feat"),
-            "/home/u/myrepo-renamed",
-        );
+        let git = MockGit::new(&two_worktrees(&MAIN, &RENAMED, "feat"), &RENAMED);
         let (r, s) = (NoResolver, NoScript);
-        let p = FakeProcessControl::new("/home/u/myrepo-renamed");
-        let d = deps(&io, &git, &r, &s, &p, "/home/u/myrepo-renamed");
+        let p = FakeProcessControl::new(&RENAMED);
+        let d = deps(&io, &git, &r, &s, &p, &RENAMED);
         let outcome = rename_command(&d, "renamed", true, OutputOptions::default()).unwrap();
         assert_eq!(outcome, Outcome::none());
 
@@ -1002,7 +929,10 @@ mod tests {
             "move line must be omitted on the unchanged path: {out}"
         );
         assert!(out.contains("[dry-run] Would run: git branch -m feat renamed"));
-        assert!(out.contains("[dry-run] Would change directory to: /home/u/myrepo-renamed"));
+        assert!(out.contains(&format!(
+            "[dry-run] Would change directory to: {}",
+            *RENAMED
+        )));
         // No mutating git calls in dry-run.
         assert!(!git.calls_contain(&["branch", "-m"]));
     }
@@ -1015,29 +945,21 @@ mod tests {
         // chdir back to old FAILS → `Warning: could not return to original
         // directory` + `Manual recovery: cd '<old>'`, and exit nonzero.
         let (_fx, io) = io_with_home();
-        let git = MockGit::new(
-            &two_worktrees("/home/u/myrepo", "/home/u/myrepo-feat", "feat"),
-            "/home/u/myrepo-feat",
-        )
-        .fail_on(&["branch", "-m"]);
+        let git =
+            MockGit::new(&two_worktrees(&MAIN, &FEAT, "feat"), &FEAT).fail_on(&["branch", "-m"]);
         let (r, s) = (NoResolver, NoScript);
         // chdir to NEW succeeds (first chdir), chdir BACK to old fails (second).
-        let p = FakeProcessControl::failing_to("/home/u/myrepo-feat", "/home/u/myrepo-feat");
-        let d = deps(&io, &git, &r, &s, &p, "/home/u/myrepo-feat");
+        let p = FakeProcessControl::failing_to(&FEAT, &FEAT);
+        let d = deps(&io, &git, &r, &s, &p, &FEAT);
         let err = rename_command(&d, "renamed", false, OutputOptions::default()).unwrap_err();
         assert!(matches!(err, VibeError::AlreadyReported));
 
         // Forward + rollback move both happened (rollback SUCCEEDED).
-        assert!(git.calls_contain(&[
-            "worktree",
-            "move",
-            "/home/u/myrepo-renamed",
-            "/home/u/myrepo-feat"
-        ]));
+        assert!(git.calls_contain(&["worktree", "move", &RENAMED, &FEAT]));
         // chdir into new, then attempted chdir back to old.
         assert_eq!(
             p.chdir_calls.borrow().as_slice(),
-            &["/home/u/myrepo-renamed", "/home/u/myrepo-feat"]
+            [RENAMED.as_str(), FEAT.as_str()]
         );
         let out = io.stderr_text();
         assert!(
@@ -1045,7 +967,7 @@ mod tests {
             "stderr: {out}"
         );
         assert!(
-            out.contains("Manual recovery: cd '/home/u/myrepo-feat'"),
+            out.contains(&format!("Manual recovery: cd '{}'", *FEAT)),
             "stderr: {out}"
         );
     }
@@ -1057,14 +979,11 @@ mod tests {
         // The forward `git worktree move` fails → `failed to move worktree
         // directory` + exit nonzero, and `git branch -m` is never called.
         let (_fx, io) = io_with_home();
-        let git = MockGit::new(
-            &two_worktrees("/home/u/myrepo", "/home/u/myrepo-feat", "feat"),
-            "/home/u/myrepo-feat",
-        )
-        .fail_on(&["worktree", "move"]);
+        let git = MockGit::new(&two_worktrees(&MAIN, &FEAT, "feat"), &FEAT)
+            .fail_on(&["worktree", "move"]);
         let (r, s) = (NoResolver, NoScript);
-        let p = FakeProcessControl::new("/home/u/myrepo-feat");
-        let d = deps(&io, &git, &r, &s, &p, "/home/u/myrepo-feat");
+        let p = FakeProcessControl::new(&FEAT);
+        let d = deps(&io, &git, &r, &s, &p, &FEAT);
         let err = rename_command(&d, "renamed", false, OutputOptions::default()).unwrap_err();
         assert!(matches!(err, VibeError::AlreadyReported));
 
@@ -1089,17 +1008,14 @@ mod tests {
         // location by pointing the MRU's repo paths at the real (existing) move,
         // which still resolves; the key assertion is the command returns Ok.
         let (_fx, io) = io_with_home();
-        let git = MockGit::new(
-            &two_worktrees("/home/u/myrepo", "/home/u/myrepo-feat", "feat"),
-            "/home/u/myrepo-feat",
-        );
+        let git = MockGit::new(&two_worktrees(&MAIN, &FEAT, "feat"), &FEAT);
         let (r, s) = (NoResolver, NoScript);
-        let p = FakeProcessControl::new("/home/u/myrepo-feat");
-        let d = deps(&io, &git, &r, &s, &p, "/home/u/myrepo-feat");
+        let p = FakeProcessControl::new(&FEAT);
+        let d = deps(&io, &git, &r, &s, &p, &FEAT);
         // The MRU write targets /home/u/myrepo-renamed which does not exist on
         // disk; update_mru_branch is best-effort and its failure is swallowed.
         let outcome = rename_command(&d, "renamed", false, OutputOptions::default()).unwrap();
-        assert_eq!(outcome, Outcome::cd("/home/u/myrepo-renamed"));
+        assert_eq!(outcome, Outcome::cd(&**RENAMED));
         assert!(io.stderr_text().contains("Renamed feat -> renamed"));
     }
 

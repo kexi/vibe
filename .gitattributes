@@ -7,8 +7,31 @@
 # would be checked out with CRLF, making --check report a false "stale" and the
 # generated document differ from the committed one for no real reason.
 #
-# Why not `* text=auto eol=lf` for the whole repo: nothing else here is compared
-# byte-for-byte, and a repo-wide normalization would rewrite files (including
-# test fixtures) well outside the problem this pins down.
+# Why not `* text=auto eol=lf` for the whole repo: only the files listed here
+# have their exact line endings asserted (whole-file comparisons below, and one
+# multi-line substring match), and a repo-wide normalization would rewrite files
+# (including test fixtures) well outside the problem this pins down.
 THIRD-PARTY-LICENSES.md text eol=lf
 LICENSE text eol=lf
+
+# The completion snapshots are the parity oracle for the generated zsh/fish
+# scripts: `completion::{zsh,fish}::tests::matches_typescript_snapshot_byte_for_byte`
+# `include_str!`s them and asserts equality with the generator's output, which
+# emits `\n`. Checked out with CRLF on a Windows runner, every line would differ
+# and the test would fail over the checkout rather than over any real drift.
+#
+# These are shell scripts besides: zsh and fish both choke on CRLF line endings,
+# so an LF checkout is what a user should get on any platform anyway.
+rust/crates/vibe-core/src/completion/snapshots/*.snap text eol=lf
+
+# packages/npm/test/bmp-manifest-registration.test.ts reads the RAW lockfile
+# bytes and asserts each platform's importer entry as a multi-line string —
+# `'@kexi/<pkg>':\n        specifier: <version>` — to catch the specifier drift
+# that broke the v2.1.0/v2.1.1 releases. That literal carries a real `\n`, so a
+# CRLF checkout would fail the assertion over the checkout rather than over any
+# real drift.
+#
+# CI runs `test:npm` on ubuntu only, so this is currently a guard for Windows
+# CONTRIBUTORS running `just check` locally — and for the day that suite is added
+# to a Windows leg. Pinning the lockfile costs nothing either way.
+pnpm-lock.yaml text eol=lf

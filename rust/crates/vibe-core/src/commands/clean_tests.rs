@@ -14,7 +14,7 @@ use crate::settings_io::save_user_settings;
 use crate::stdin::FakeStdin;
 use crate::timestamp::LocalTime;
 use std::cell::RefCell;
-use vibe_test_support::Fixture;
+use vibe_test_support::{fake_root_str, Fixture};
 
 const V: &str = "1.8.1+test";
 
@@ -797,7 +797,11 @@ fn hook_mode_refuses_path_not_in_worktree_set() {
         &two_worktrees("/main", "/wt/real", "feat"),
     );
     let (r, p, fk) = (NoResolver, ScriptPrompt { confirm: true }, Fakes::new());
-    let sin = FakeStdin::text(r#"{"worktree_path": "/evil/outside"}"#);
+    // Absolute on this host (the reader rejects relative paths outright) and
+    // JSON-escaped, so the containment check — not the absoluteness check — is
+    // what refuses it.
+    let outside = serde_json::json!({ "worktree_path": fake_root_str("evil/outside") }).to_string();
+    let sin = FakeStdin::text(&outside);
     let proc = FakeProcess::new("/main");
     let d = deps(&io, &git, &r, &p, &proc, &sin, &fk, "/main");
     let flags = CleanFlags {
@@ -822,7 +826,10 @@ fn hook_mode_cleans_a_contained_path() {
     let io = FakeIo::new().with_env("HOME", fx.path().to_str().unwrap());
     let git = MockGit::new("/main", "/main", &two_worktrees("/main", &wt_path, "feat"));
     let (r, p, fk) = (NoResolver, ScriptPrompt { confirm: true }, Fakes::new());
-    let sin = FakeStdin::text(&format!(r#"{{"worktree_path": "{wt_path}"}}"#));
+    // Built with a JSON serializer, not string interpolation: a Windows temp path
+    // contains `\`, which is an escape introducer inside a JSON string.
+    let json = serde_json::json!({ "worktree_path": &wt_path }).to_string();
+    let sin = FakeStdin::text(&json);
     let proc = FakeProcess::new("/main");
     let d = deps(&io, &git, &r, &p, &proc, &sin, &fk, "/main");
     let flags = CleanFlags {
