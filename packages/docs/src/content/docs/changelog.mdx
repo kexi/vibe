@@ -5,6 +5,28 @@ description: Version history and release notes for vibe
 
 All notable changes to vibe are documented here.
 
+## v3.0.0
+
+**Released:** 2026-08-02
+
+### Changed
+
+- vibe is now distributed under the **MIT License** instead of Apache-2.0. The permissions you get as a user only widen; no action is required. Alongside the relicense, the shipped artifacts now carry complete third-party license texts: `THIRD-PARTY-LICENSES.md` reproduces, verbatim, the notice files of every bundled dependency whose license requires it, and the `.deb` package ships a machine-readable Debian `copyright` file at `/usr/share/doc/vibe/copyright`.
+
+### Added
+
+- `vibe doctor` — a new command that checks your environment for known problems. Today it detects a stale nushell or PowerShell wrapper: wrappers pasted into `config.nu` or a PowerShell profile before vibe 2.2.0 are never regenerated on upgrade, so those users silently kept the old, broken behavior. `vibe doctor` reads the known profile locations, reports each pasted wrapper as current or stale, prints the command to regenerate a stale one, and exits 1 when it finds something. It never rewrites your shell configuration. See [`vibe doctor`](/commands/doctor/) for details.
+- `vibe upgrade` now appends a one-line hint pointing at `vibe doctor` when a stale wrapper is plausible — that is, when your `$SHELL` names nushell or PowerShell, or you are on Windows. The hint survives `--quiet`, because a user scripting `vibe upgrade -q` is exactly the user who would otherwise never learn their wrapper is broken.
+- zsh and fish completions now offer the `doctor` subcommand. Re-run `vibe shell-setup --shell zsh --with-completion` (or the fish equivalent) to pick it up. **Note:** this changes the generated completion bytes, which — together with the license change — is why this release is a major version, not because any existing command changed behavior.
+- Simplified Chinese documentation for the entire site. The docs, the README, and the specification documents are now available in Chinese alongside English and Japanese; use the language picker in the site header.
+
+### Fixed
+
+- `vibe doctor` no longer reports a clean bill of health when it should not. It now probes the macOS nushell config directory under `~/Library/Application Support/nushell`, decodes PowerShell profiles saved as UTF-16 or with a UTF-8 byte-order mark (the Windows PowerShell 5.1 defaults), recognizes `export def` wrappers, and reports an error instead of an all-clear when no usable profile location exists.
+- `vibe doctor` no longer tells you to replace a wrapper that is already current. Wrapper classification is now aware of quoting, comments, and PowerShell here-strings, so a marker appearing inside a string literal or a comment is no longer mistaken for real code — and vice versa. Long profiles are scanned further before giving up, and an inconclusive scan now says so instead of guessing.
+
+---
+
 ## v2.2.0
 
 **Released:** 2026-07-26
