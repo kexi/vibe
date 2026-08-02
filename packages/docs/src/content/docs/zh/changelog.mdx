@@ -5,6 +5,28 @@ description: vibe 的版本历史与发行说明
 
 vibe 的所有重要变更都记录在这里。
 
+## v3.0.0
+
+**发布日期：** 2026年8月2日
+
+### 变更
+
+- vibe 的发布许可证由 Apache-2.0 变更为 **MIT License**。你作为使用者获得的授权只会更宽松，无需做任何调整。伴随此次许可证变更，发布产物现在会完整附带第三方许可证文本：`THIRD-PARTY-LICENSES.md` 会逐字收录所有需要保留声明的内置依赖的 notice 文件，`.deb` 软件包则会在 `/usr/share/doc/vibe/copyright` 提供机器可读的 Debian `copyright` 文件。
+
+### 新增
+
+- `vibe doctor` —— 用于排查环境中已知问题的新命令。目前它负责检测过时的 nushell 或 PowerShell 包装函数：在 vibe 2.2.0 之前粘贴到 `config.nu` 或 PowerShell 配置文件中的包装函数不会随升级自动重新生成，因此这些用户会在毫不知情的情况下一直沿用旧的、有问题的行为。`vibe doctor` 会读取已知的配置文件位置，逐个报告已粘贴的包装函数是最新还是过时的，对过时的包装函数给出重新生成的命令，并在发现问题时以退出码 1 结束。它绝不会改写你的 shell 配置。详见 [`vibe doctor`](/zh/commands/doctor/)。
+- `vibe upgrade` 现在会在可能存在过时包装函数时，追加一行指向 `vibe doctor` 的提示 —— 即当你的 `$SHELL` 指向 nushell 或 PowerShell，或者你在 Windows 上时。该提示在 `--quiet` 下同样会显示，因为在脚本中使用 `vibe upgrade -q` 的用户，恰恰最没有机会通过其他途径得知自己的包装函数已经失效。
+- zsh 和 fish 补全现在包含 `doctor` 子命令。重新运行 `vibe shell-setup --shell zsh --with-completion`（fish 请使用对应命令）即可生效。**注意：** 这会改变生成的补全脚本的字节内容，因此连同许可证变更一起，本次发布采用主版本号升级，而并非因为任何既有命令的行为发生了变化。
+- 新增全站简体中文文档。文档、README 和规范文档现在除英文和日文外也提供中文版本，可通过站点顶部的语言切换器访问。
+
+### 修复
+
+- `vibe doctor` 不会再在本应报告问题时给出「一切正常」的结论。它现在会检查 macOS 上的 nushell 配置目录（`~/Library/Application Support/nushell`），能够解码以 UTF-16 或带 UTF-8 BOM 保存的 PowerShell 配置文件（Windows PowerShell 5.1 的默认格式），可以识别 `export def` 形式的包装函数，并且在找不到任何可用的配置文件位置时报告错误而非「一切正常」。
+- `vibe doctor` 不会再要求你替换本已是最新的包装函数。包装函数的判定现在能理解引号、注释和 PowerShell 的 here-string，因此出现在字符串字面量或注释中的标记不会再被误判为真实代码（反之亦然）。对较长的配置文件会扫描得更深入，若仍无法判定，则会如实说明而不是妄加猜测。
+
+---
+
 ## v2.2.0
 
 **发布日期：** 2026年7月26日
