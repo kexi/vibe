@@ -107,7 +107,12 @@ pub fn untrust(opts: OutputOptions) -> Result<Outcome> {
 }
 
 /// `vibe rename <new_name> [--dry-run]`.
-pub fn rename(new_name: &str, dry_run: bool, opts: OutputOptions) -> Result<Outcome> {
+pub fn rename(
+    new_name: &str,
+    dry_run: bool,
+    allow_default_branch: bool,
+    opts: OutputOptions,
+) -> Result<Outcome> {
     let io = RealIo;
     let git = RealGit;
     let resolver = RealRepoResolver::new(&git);
@@ -133,7 +138,11 @@ pub fn rename(new_name: &str, dry_run: bool, opts: OutputOptions) -> Result<Outc
         version: version::VERSION,
         now_ms: now_ms(),
     };
-    commands::rename::rename_command(&deps, new_name, dry_run, opts)
+    let flags = commands::rename::RenameFlags {
+        dry_run,
+        allow_default_branch,
+    };
+    commands::rename::rename_command(&deps, new_name, flags, opts)
 }
 
 /// Choose a live progress tracker (interactive stderr, not quiet) or a no-op.
@@ -271,6 +280,7 @@ pub fn clean(
     delete_branch: bool,
     keep_branch: bool,
     worktree_hook: bool,
+    allow_default_branch: bool,
     opts: OutputOptions,
 ) -> Result<Outcome> {
     let io = RealIo;
@@ -314,6 +324,7 @@ pub fn clean(
         delete_branch,
         keep_branch,
         worktree_hook,
+        allow_default_branch,
     };
     clean_command(&deps, &flags, opts)
 }

@@ -49,11 +49,13 @@ complete -c vibe -n '__fish_seen_subcommand_from list' -l json -d 'Output the li
 
 # rename flags
 complete -c vibe -n '__fish_seen_subcommand_from rename' -s n -l dry-run -d 'Show what would be executed'
+complete -c vibe -n '__fish_seen_subcommand_from rename' -l allow-default-branch -d 'Allow operating on the repository\'s default branch'
 
 # clean flags
 complete -c vibe -n '__fish_seen_subcommand_from clean' -s f -l force -d 'Skip confirmation prompts'
 complete -c vibe -n '__fish_seen_subcommand_from clean' -l delete-branch -d 'Delete the branch after removing the worktree'
 complete -c vibe -n '__fish_seen_subcommand_from clean' -l keep-branch -d 'Keep the branch after removing the worktree'
+complete -c vibe -n '__fish_seen_subcommand_from clean' -l allow-default-branch -d 'Allow operating on the repository\'s default branch'
 
 # upgrade flags
 complete -c vibe -n '__fish_seen_subcommand_from upgrade' -l check -d 'Check for updates without upgrade instructions'

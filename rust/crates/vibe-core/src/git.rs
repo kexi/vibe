@@ -438,6 +438,56 @@ pub fn branch_exists(runner: &impl GitRunner, branch_name: &str) -> bool {
         .is_ok()
 }
 
+/// Last-resort default-branch name when git tells us nothing.
+///
+/// `master` (not `main`): it is what git itself still falls back to when
+/// `init.defaultBranch` is unset, so a repository that gives us no signal at all
+/// is most likely an old-style one.
+const FALLBACK_DEFAULT_BRANCH: &str = "master";
+
+/// Resolve the repository's default branch NAME (no `origin/` prefix).
+///
+/// Resolution order, first hit wins:
+/// 1. `git symbolic-ref refs/remotes/origin/HEAD --short` → `origin/<name>`,
+///    the authoritative answer for a cloned repo.
+/// 2. `git config --get init.defaultBranch` → what a fresh `git init` here would
+///    have created (covers repos with no remote).
+/// 3. [`FALLBACK_DEFAULT_BRANCH`].
+///
+/// Never fails: every git call is best-effort, because this feeds a *guard*, and
+/// a guard that errors out would break `clean`/`rename` in repositories where
+/// git simply has no opinion.
+pub fn get_default_branch(runner: &impl GitRunner) -> String {
+    if let Ok(out) = runner.run(&["symbolic-ref", "refs/remotes/origin/HEAD", "--short"]) {
+        if let Some(name) = strip_remote_prefix(out.trim()) {
+            return name;
+        }
+    }
+
+    if let Ok(out) = runner.run(&["config", "--get", "init.defaultBranch"]) {
+        let trimmed = out.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+
+    FALLBACK_DEFAULT_BRANCH.to_string()
+}
+
+/// Strip the leading `origin/` from a `symbolic-ref --short` answer.
+///
+/// Returns `None` for an empty input or a bare `origin/` with nothing after it,
+/// so the caller falls through to the next resolution step instead of adopting
+/// an empty branch name (which would make the guard match every branch).
+fn strip_remote_prefix(short_ref: &str) -> Option<String> {
+    let name = short_ref.strip_prefix("origin/").unwrap_or(short_ref);
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
+}
+
 /// Result of [`detect_broken_worktree_link`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BrokenWorktreeLink {
@@ -1039,6 +1089,73 @@ branch refs/heads/main
                 },
             ]
         );
+    }
+
+    // --- default-branch resolution ------------------------------------------
+
+    /// A runner that answers only the calls listed in `answers` (exact arg-vector
+    /// match) and fails everything else, so each test states precisely which
+    /// resolution step git is able to satisfy.
+    struct ScriptedGit {
+        answers: Vec<(Vec<&'static str>, String)>,
+    }
+    impl ScriptedGit {
+        fn new(answers: &[(&[&'static str], &str)]) -> Self {
+            ScriptedGit {
+                answers: answers
+                    .iter()
+                    .map(|(args, out)| (args.to_vec(), out.to_string()))
+                    .collect(),
+            }
+        }
+    }
+    impl GitRunner for ScriptedGit {
+        fn run(&self, args: &[&str]) -> Result<String> {
+            for (expected, out) in &self.answers {
+                if expected.as_slice() == args {
+                    return Ok(out.clone());
+                }
+            }
+            Err(VibeError::GitOperation {
+                command: args.join(" "),
+                message: "failed: not scripted".into(),
+            })
+        }
+    }
+
+    const SYMREF: &[&str] = &["symbolic-ref", "refs/remotes/origin/HEAD", "--short"];
+    const INIT_DEFAULT: &[&str] = &["config", "--get", "init.defaultBranch"];
+
+    #[test]
+    fn default_branch_comes_from_origin_head_without_the_remote_prefix() {
+        let git = ScriptedGit::new(&[(SYMREF, "origin/develop\n")]);
+        assert_eq!(get_default_branch(&git), "develop");
+    }
+
+    #[test]
+    fn default_branch_keeps_slashes_inside_the_branch_name() {
+        // Only the leading `origin/` is stripped; `release/` is part of the name.
+        let git = ScriptedGit::new(&[(SYMREF, "origin/release/stable")]);
+        assert_eq!(get_default_branch(&git), "release/stable");
+    }
+
+    #[test]
+    fn default_branch_falls_back_to_init_default_branch_config() {
+        let git = ScriptedGit::new(&[(INIT_DEFAULT, "trunk\n")]);
+        assert_eq!(get_default_branch(&git), "trunk");
+    }
+
+    #[test]
+    fn default_branch_falls_back_to_master_when_git_knows_nothing() {
+        let git = ScriptedGit::new(&[]);
+        assert_eq!(get_default_branch(&git), "master");
+    }
+
+    #[test]
+    fn default_branch_ignores_empty_answers_and_keeps_resolving() {
+        // A bare `origin/` and a blank config value must not become the answer.
+        let git = ScriptedGit::new(&[(SYMREF, "origin/"), (INIT_DEFAULT, "   ")]);
+        assert_eq!(get_default_branch(&git), "master");
     }
 
     #[test]

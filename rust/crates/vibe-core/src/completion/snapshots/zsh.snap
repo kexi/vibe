@@ -68,14 +68,16 @@ _vibe_list() {
 
 _vibe_rename() {
   _arguments \
-    '(-n --dry-run)'{-n,--dry-run}'[Show what would be executed]'
+    '(-n --dry-run)'{-n,--dry-run}'[Show what would be executed]' \
+    '--allow-default-branch[Allow operating on the repository'\''s default branch]'
 }
 
 _vibe_clean() {
   _arguments \
     '(-f --force)'{-f,--force}'[Skip confirmation prompts]' \
     '--delete-branch[Delete the branch after removing the worktree]' \
-    '--keep-branch[Keep the branch after removing the worktree]'
+    '--keep-branch[Keep the branch after removing the worktree]' \
+    '--allow-default-branch[Allow operating on the repository'\''s default branch]'
 }
 
 _vibe_home() {
