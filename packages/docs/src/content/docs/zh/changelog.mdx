@@ -5,6 +5,23 @@ description: vibe 的版本历史与发行说明
 
 vibe 的所有重要变更都记录在这里。
 
+## v3.1.0
+
+**发布日期：** 2026年8月8日
+
+### 新增
+
+- `vibe list` 现在可以列出当前仓库中的所有 worktree，并标记当前 worktree 和 scratch worktree，同时将最近使用的 worktree 排在前面。脚本和编辑器集成可使用 `vibe list --json`。
+- `vibe start` 和 `vibe scratch` 现在可以把未跟踪且未被忽略的文件，以及本地修改过的已跟踪文件带入新的 worktree。可以在单次调用中使用 `--copy-untracked` / `--copy-modified`，也可以在 `.vibe.toml` 的 `[copy]` 下设置 `untracked = true` / `modified = true`。
+- `[copy] symlink` 现在可以让原始仓库与 worktree 通过符号链接共享缓存等指定目录，而无需复制。链接不安全或无法创建时会显示警告，但不会导致新 worktree 无法使用；已有的普通文件或目录也不会被替换。
+- `vibe clean --delete-branch` 和 `vibe rename` 现在会保护检测到的仓库默认分支。如确需执行该操作，可使用 `--allow-default-branch`。
+
+### 修复
+
+- GitHub Release 资源现在会附带 `LICENSE` 和 `THIRD-PARTY-LICENSES.md`；第三方许可证文档也会完整收录所选宽松许可证要求保留的依赖声明文本。
+
+---
+
 ## v3.0.0
 
 **发布日期：** 2026年8月2日

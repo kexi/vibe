@@ -5,6 +5,23 @@ description: vibeのバージョン履歴とリリースノート
 
 vibeの主要な変更はここに記録されています。
 
+## v3.1.0
+
+**リリース日:** 2026年8月8日
+
+### 追加
+
+- `vibe list` で現在のリポジトリにあるすべての worktree を一覧表示できるようになりました。現在の worktree と scratch worktree を識別でき、最近使った worktree が先に並びます。スクリプトやエディター連携では `vibe list --json` を利用できます。
+- `vibe start` と `vibe scratch` で、未追跡かつ無視されていないファイルや、ローカルで変更した追跡済みファイルを新しい worktree へ引き継げるようになりました。実行ごとに `--copy-untracked` / `--copy-modified` を指定するか、`.vibe.toml` の `[copy]` で `untracked = true` / `modified = true` を設定できます。
+- `[copy] symlink` で、キャッシュなどの指定ディレクトリを複製せず、origin リポジトリと worktree の間で共有できるようになりました。安全にリンクできない場合やリンクを作成できない環境では、新しい worktree を使用不能にせず警告を表示します。既存の通常ファイルやディレクトリを置き換えることもありません。
+- `vibe clean --delete-branch` と `vibe rename` が、検出したリポジトリの既定ブランチを保護するようになりました。意図的に操作する場合は `--allow-default-branch` を指定できます。
+
+### 修正
+
+- GitHub Release のアセットに `LICENSE` と `THIRD-PARTY-LICENSES.md` が含まれるようになり、第三者ライセンス文書に、選択された許容的ライセンスで必要となる依存関係の告知全文が収録されるようになりました。
+
+---
+
 ## v3.0.0
 
 **リリース日:** 2026年8月2日
