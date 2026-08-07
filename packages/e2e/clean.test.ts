@@ -1,5 +1,5 @@
 import { execFileSync } from "child_process";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "fs";
 import { basename, dirname, join } from "path";
 import { afterEach, describe, expect, test } from "vitest";
 import { getVibePath, VibeCommandRunner } from "./helpers/pty.js";
@@ -425,6 +425,50 @@ describe("clean command", () => {
 
       // Verify worktree directory no longer exists
       expect(existsSync(worktreePath)).toBe(false);
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test("Clean does not follow a [copy] symlink into the origin worktree", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+    const parentDir = dirname(repoPath);
+    const repoName = basename(repoPath);
+    const worktreePath = `${parentDir}/${repoName}-feat-shared`;
+
+    // The origin holds the shared cache the worktree will link to.
+    const sharedOrigin = join(repoPath, ".turbo");
+    mkdirSync(sharedOrigin, { recursive: true });
+    writeFileSync(join(sharedOrigin, "cache.bin"), "must-survive\n");
+
+    execFileSync("git", ["worktree", "add", "-b", "feat/shared", worktreePath], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+    // The same link `vibe start` would create for `[copy] symlink = [".turbo"]`.
+    symlinkSync(sharedOrigin, join(worktreePath, ".turbo"));
+
+    const runner = new VibeCommandRunner(vibePath, worktreePath, homePath);
+    try {
+      await runner.spawn(["clean", "--force"]);
+      await runner.waitForExit();
+
+      assertExitCode(runner.getExitCode(), 0, runner.getOutput());
+      assertOutputContains(runner.getOutput(), "has been removed");
+
+      // Removal is completed in the background; wait for the directory to go.
+      await waitForCondition(() => !existsSync(worktreePath), {
+        timeout: 10000,
+        interval: 100,
+      });
+
+      // The shared directory in the ORIGIN survives: removing the worktree must
+      // delete the link, never the tree it points at.
+      expect(existsSync(sharedOrigin)).toBe(true);
+      expect(readFileSync(join(sharedOrigin, "cache.bin"), "utf-8")).toBe("must-survive\n");
     } finally {
       runner.dispose();
     }

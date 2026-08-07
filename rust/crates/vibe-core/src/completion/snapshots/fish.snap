@@ -5,6 +5,7 @@ complete -c vibe -f
 complete -c vibe -n __fish_use_subcommand -a start -d 'Create a new worktree with the given branch'
 complete -c vibe -n __fish_use_subcommand -a scratch -d 'Create a worktree with an auto-generated scratch/<timestamp> branch'
 complete -c vibe -n __fish_use_subcommand -a jump -d 'Jump to an existing worktree by branch name'
+complete -c vibe -n __fish_use_subcommand -a list -d 'List all worktrees of the current repository'
 complete -c vibe -n __fish_use_subcommand -a rename -d 'Rename the current worktree\'s branch and directory'
 complete -c vibe -n __fish_use_subcommand -a clean -d 'Remove current worktree and return to main'
 complete -c vibe -n __fish_use_subcommand -a home -d 'Return to main worktree without removing current'
@@ -32,6 +33,8 @@ complete -c vibe -n '__fish_seen_subcommand_from start' -l base -r -d 'Base bran
 complete -c vibe -n '__fish_seen_subcommand_from start' -l track -d 'Set upstream tracking when using --base'
 complete -c vibe -n '__fish_seen_subcommand_from start' -l no-hooks -d 'Skip pre-start and post-start hooks'
 complete -c vibe -n '__fish_seen_subcommand_from start' -l no-copy -d 'Skip copying files and directories'
+complete -c vibe -n '__fish_seen_subcommand_from start' -l copy-untracked -d 'Also copy untracked, non-ignored files'
+complete -c vibe -n '__fish_seen_subcommand_from start' -l copy-modified -d 'Also copy locally modified tracked files'
 complete -c vibe -n '__fish_seen_subcommand_from start' -s n -l dry-run -d 'Show what would be executed'
 complete -c vibe -n '__fish_seen_subcommand_from start' -s f -l force -d 'Skip confirmation prompts'
 
@@ -41,15 +44,22 @@ complete -c vibe -n '__fish_seen_subcommand_from scratch' -l base -r -d 'Base br
 complete -c vibe -n '__fish_seen_subcommand_from scratch' -l track -d 'Set upstream tracking when using --base'
 complete -c vibe -n '__fish_seen_subcommand_from scratch' -l no-hooks -d 'Skip pre-start and post-start hooks'
 complete -c vibe -n '__fish_seen_subcommand_from scratch' -l no-copy -d 'Skip copying files and directories'
+complete -c vibe -n '__fish_seen_subcommand_from scratch' -l copy-untracked -d 'Also copy untracked, non-ignored files'
+complete -c vibe -n '__fish_seen_subcommand_from scratch' -l copy-modified -d 'Also copy locally modified tracked files'
 complete -c vibe -n '__fish_seen_subcommand_from scratch' -s n -l dry-run -d 'Show what would be executed'
+
+# list flags
+complete -c vibe -n '__fish_seen_subcommand_from list' -l json -d 'Output the listing as JSON'
 
 # rename flags
 complete -c vibe -n '__fish_seen_subcommand_from rename' -s n -l dry-run -d 'Show what would be executed'
+complete -c vibe -n '__fish_seen_subcommand_from rename' -l allow-default-branch -d 'Allow operating on the repository\'s default branch'
 
 # clean flags
 complete -c vibe -n '__fish_seen_subcommand_from clean' -s f -l force -d 'Skip confirmation prompts'
 complete -c vibe -n '__fish_seen_subcommand_from clean' -l delete-branch -d 'Delete the branch after removing the worktree'
 complete -c vibe -n '__fish_seen_subcommand_from clean' -l keep-branch -d 'Keep the branch after removing the worktree'
+complete -c vibe -n '__fish_seen_subcommand_from clean' -l allow-default-branch -d 'Allow operating on the repository\'s default branch'
 
 # upgrade flags
 complete -c vibe -n '__fish_seen_subcommand_from upgrade' -l check -d 'Check for updates without upgrade instructions'

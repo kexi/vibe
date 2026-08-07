@@ -5,6 +5,23 @@ description: Version history and release notes for vibe
 
 All notable changes to vibe are documented here.
 
+## v3.1.0
+
+**Released:** 2026-08-08
+
+### Added
+
+- `vibe list` shows every worktree in the current repository, marking the current and scratch worktrees and ordering recent worktrees first. Use `vibe list --json` for scripting and editor integrations.
+- `vibe start` and `vibe scratch` can now carry untracked, non-ignored files and locally modified tracked files into a new worktree. Enable this per invocation with `--copy-untracked` / `--copy-modified`, or persist it with `untracked = true` / `modified = true` under `[copy]` in `.vibe.toml`.
+- `[copy] symlink` can share exact directories such as caches between the origin repository and its worktrees instead of duplicating them. Unsafe or unavailable links produce a warning without making the new worktree unusable, and existing real files or directories are never replaced.
+- `vibe clean --delete-branch` and `vibe rename` now protect the repository's detected default branch. Use `--allow-default-branch` when the operation is intentional.
+
+### Fixed
+
+- GitHub Release assets now include `LICENSE` and `THIRD-PARTY-LICENSES.md`, and the third-party license document reproduces the required notices for dependencies whose permissive license option was selected.
+
+---
+
 ## v3.0.0
 
 **Released:** 2026-08-02

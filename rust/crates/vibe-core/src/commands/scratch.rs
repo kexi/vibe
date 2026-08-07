@@ -55,8 +55,11 @@ fn generate_scratch_name(git: &impl GitRunner, clock: &impl Clock) -> Result<Str
     let base_name = format!("{SCRATCH_PREFIX}{ts}");
 
     let mut used: HashSet<String> = HashSet::new();
+    // A detached worktree occupies no branch name, so it constrains nothing here.
     for w in get_worktree_list(git)? {
-        used.insert(w.branch);
+        if let Some(branch) = w.branch {
+            used.insert(branch);
+        }
     }
     // Existing scratch branch refs (best-effort: ignore a git error → empty).
     let refs = git
@@ -94,6 +97,7 @@ mod tests {
     use super::*;
     use crate::clock::FakeClock;
     use crate::copy::strategies::FakeCopyExecutor;
+    use crate::copy::symlink::FakeSymlinkCreator;
     use crate::copy::types::CopyStrategyKind;
     use crate::error::VibeError;
     use crate::git::RepoInfo;
@@ -264,6 +268,7 @@ mod tests {
         let (r, s, p, sin) = (NoResolver, NoScript, YesPrompt, FakeStdin::none());
         let hooks = FakeHookRunner::ok();
         let exec = FakeCopyExecutor::new(CopyStrategyKind::Standard);
+        let symlink_creator = FakeSymlinkCreator::new();
         let tracker = NullTracker;
         let d = StartDeps {
             io: &io,
@@ -274,6 +279,7 @@ mod tests {
             stdin: &sin,
             hook_runner: &hooks,
             executor: &exec,
+            symlink_creator: &symlink_creator,
             tracker: &tracker,
             version: V,
         };

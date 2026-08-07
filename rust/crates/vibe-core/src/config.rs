@@ -41,9 +41,26 @@ pub struct CopyConfig {
     pub dirs_prepend: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dirs_append: Option<Vec<String>>,
+    /// Directories SHARED with the origin worktree via a symlink instead of
+    /// being copied. Takes precedence over a `files`/`dirs` entry naming the
+    /// same path.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symlink: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symlink_prepend: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symlink_append: Option<Vec<String>>,
     /// Parallel directory-copy operations (1-32, default 4 applied at use site).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub concurrency: Option<i64>,
+    /// Also copy untracked, non-ignored files (`git ls-files --others
+    /// --exclude-standard`). Opt-in; `None` means off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub untracked: Option<bool>,
+    /// Also copy locally modified tracked files (`git ls-files --modified`).
+    /// Opt-in; `None` means off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modified: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -166,17 +183,43 @@ pub fn merge_configs(base: &VibeConfig, local: &VibeConfig) -> VibeConfig {
         deref(&local.copy, |c| &c.dirs_prepend),
         deref(&local.copy, |c| &c.dirs_append),
     );
+    let merged_symlink = merge_array_field(
+        deref(&base.copy, |c| &c.symlink),
+        deref(&local.copy, |c| &c.symlink),
+        deref(&local.copy, |c| &c.symlink_prepend),
+        deref(&local.copy, |c| &c.symlink_append),
+    );
     let concurrency = local
         .copy
         .as_ref()
         .and_then(|c| c.concurrency)
         .or_else(|| base.copy.as_ref().and_then(|c| c.concurrency));
+    // Scalar toggles: local wins when set, otherwise the base value carries.
+    let untracked = local
+        .copy
+        .as_ref()
+        .and_then(|c| c.untracked)
+        .or_else(|| base.copy.as_ref().and_then(|c| c.untracked));
+    let modified = local
+        .copy
+        .as_ref()
+        .and_then(|c| c.modified)
+        .or_else(|| base.copy.as_ref().and_then(|c| c.modified));
 
-    if merged_files.is_some() || merged_dirs.is_some() || concurrency.is_some() {
+    if merged_files.is_some()
+        || merged_dirs.is_some()
+        || merged_symlink.is_some()
+        || concurrency.is_some()
+        || untracked.is_some()
+        || modified.is_some()
+    {
         merged.copy = Some(CopyConfig {
             files: merged_files,
             dirs: merged_dirs,
+            symlink: merged_symlink,
             concurrency,
+            untracked,
+            modified,
             ..CopyConfig::default()
         });
     }
@@ -365,6 +408,60 @@ mod tests {
     }
 
     #[test]
+    fn untracked_and_modified_parse_and_default_to_absent() {
+        let cfg = parse_vibe_config("[copy]\nuntracked = true\nmodified = false\n", "/p").unwrap();
+        let copy = cfg.copy.unwrap();
+        assert_eq!(copy.untracked, Some(true));
+        assert_eq!(copy.modified, Some(false));
+
+        // Omitting them leaves them unset (the use site reads that as "off").
+        let bare = parse_vibe_config("[copy]\nfiles = []\n", "/p").unwrap();
+        let bare_copy = bare.copy.unwrap();
+        assert_eq!(bare_copy.untracked, None);
+        assert_eq!(bare_copy.modified, None);
+    }
+
+    #[test]
+    fn local_untracked_overrides_base_and_base_carries_when_local_is_silent() {
+        let base = VibeConfig {
+            copy: Some(CopyConfig {
+                untracked: Some(true),
+                modified: Some(true),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let local = VibeConfig {
+            copy: Some(CopyConfig {
+                untracked: Some(false),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let merged = merge_configs(&base, &local).copy.unwrap();
+        assert_eq!(merged.untracked, Some(false), "local wins when set");
+        assert_eq!(merged.modified, Some(true), "base carries when local omits");
+    }
+
+    #[test]
+    fn a_copy_section_holding_only_toggles_survives_the_merge() {
+        // Regression guard: the merge builds `copy` only when SOMETHING merged, so
+        // a config whose sole copy content is `untracked` must not be dropped.
+        let base = VibeConfig::default();
+        let local = VibeConfig {
+            copy: Some(CopyConfig {
+                untracked: Some(true),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            merge_configs(&base, &local).copy.unwrap().untracked,
+            Some(true)
+        );
+    }
+
+    #[test]
     fn local_concurrency_takes_precedence() {
         let base = VibeConfig {
             copy: Some(CopyConfig {
@@ -383,6 +480,65 @@ mod tests {
         assert_eq!(
             merge_configs(&base, &local).copy.unwrap().concurrency,
             Some(16)
+        );
+    }
+
+    #[test]
+    fn copy_symlink_merging_with_append() {
+        let base = VibeConfig {
+            copy: Some(CopyConfig {
+                symlink: Some(v(&[".cache"])),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let local = VibeConfig {
+            copy: Some(CopyConfig {
+                symlink_append: Some(v(&[".turbo"])),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            merge_configs(&base, &local).copy.unwrap().symlink,
+            Some(v(&[".cache", ".turbo"]))
+        );
+    }
+
+    #[test]
+    fn copy_symlink_only_still_produces_a_copy_section() {
+        // A config whose ONLY copy setting is `symlink` must survive the merge —
+        // the section presence check has to account for it.
+        let base = VibeConfig {
+            copy: Some(CopyConfig {
+                symlink: Some(v(&[".cache"])),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let merged = merge_configs(&base, &VibeConfig::default());
+        assert_eq!(merged.copy.unwrap().symlink, Some(v(&[".cache"])));
+    }
+
+    #[test]
+    fn copy_symlink_local_override_wins() {
+        let base = VibeConfig {
+            copy: Some(CopyConfig {
+                symlink: Some(v(&[".cache"])),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let local = VibeConfig {
+            copy: Some(CopyConfig {
+                symlink: Some(v(&[".turbo"])),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            merge_configs(&base, &local).copy.unwrap().symlink,
+            Some(v(&[".turbo"]))
         );
     }
 
@@ -548,6 +704,19 @@ configs = ["libs/foo"]
         assert_eq!(
             cfg.worktree.as_ref().unwrap().path_script.as_deref(),
             Some("p.sh")
+        );
+    }
+
+    #[test]
+    fn parses_copy_symlink() {
+        let cfg = parse_vibe_config(
+            "[copy]\ndirs = [\"node_modules\"]\nsymlink = [\".cache\", \".turbo\"]\n",
+            "/p/.vibe.toml",
+        )
+        .unwrap();
+        assert_eq!(
+            cfg.copy.unwrap().symlink,
+            Some(vec![".cache".into(), ".turbo".into()])
         );
     }
 

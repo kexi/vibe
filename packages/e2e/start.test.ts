@@ -1,5 +1,5 @@
 import { execFileSync } from "child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "fs";
 import { basename, dirname, join } from "path";
 import { afterEach, describe, expect, test } from "vitest";
 import { getVibePath, VibeCommandRunner } from "./helpers/pty.js";
@@ -439,6 +439,230 @@ files = [".env.local"]
     }
   });
 
+  // --- [copy] untracked / modified (issue #580) ---
+  //
+  // The names under test deliberately contain spaces and non-ASCII characters:
+  // the implementation enumerates candidates with `git ls-files -z`, and a
+  // newline-delimited listing (or the default `core.quotePath=true` octal
+  // quoting) would mangle exactly these names. Only a real `git` + real binary
+  // run proves the `-z` path end to end, which is why this lives in E2E.
+  const SPACED_UNTRACKED = "my scratch note.txt";
+  const NON_ASCII_UNTRACKED = "メモ 帳.txt";
+
+  /**
+   * Write `.vibe.toml`, commit it, and trust it — the common prelude for the
+   * copy-source tests below.
+   */
+  async function commitAndTrustConfig(
+    repoPath: string,
+    homePath: string,
+    vibePath: string,
+    toml: string,
+  ): Promise<void> {
+    writeFileSync(join(repoPath, ".vibe.toml"), toml);
+    execFileSync("git", ["add", ".vibe.toml"], { cwd: repoPath, stdio: "pipe" });
+    execFileSync("git", ["commit", "-m", "Add .vibe.toml"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+    await trustConfig(vibePath, repoPath, homePath);
+  }
+
+  function worktreePathFor(repoPath: string, branch: string): string {
+    return `${dirname(repoPath)}/${basename(repoPath)}-${branch.replace(/\//g, "-")}`;
+  }
+
+  test("[copy] untracked carries over untracked files with spaces and non-ASCII names", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+    const vibePath = getVibePath();
+
+    // Untracked and NOT ignored: exactly what `--others --exclude-standard` lists.
+    writeFileSync(join(repoPath, SPACED_UNTRACKED), "scratch\n");
+    writeFileSync(join(repoPath, NON_ASCII_UNTRACKED), "メモ\n");
+    // An ignored file must stay behind (`--exclude-standard`).
+    writeFileSync(join(repoPath, ".gitignore"), "ignored.log\n");
+    writeFileSync(join(repoPath, "ignored.log"), "noise\n");
+    execFileSync("git", ["add", ".gitignore"], { cwd: repoPath, stdio: "pipe" });
+
+    await commitAndTrustConfig(
+      repoPath,
+      homePath,
+      vibePath,
+      "[copy]\nuntracked = true\n",
+    );
+
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
+    try {
+      await runner.spawn(["start", "feat/copy-untracked"]);
+      await runner.waitForExit();
+      const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
+
+      const worktreePath = worktreePathFor(repoPath, "feat/copy-untracked");
+      await assertDirectoryExists(worktreePath);
+
+      expect(readFileSync(join(worktreePath, SPACED_UNTRACKED), "utf-8")).toBe("scratch\n");
+      expect(readFileSync(join(worktreePath, NON_ASCII_UNTRACKED), "utf-8")).toBe("メモ\n");
+      // Ignored files are not "untracked" for this purpose.
+      expect(existsSync(join(worktreePath, "ignored.log"))).toBe(false);
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test("[copy] modified carries over locally modified tracked files", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+    const vibePath = getVibePath();
+
+    // A committed file with a name that needs -z, then modified in the worktree.
+    const tracked = "docs/設計 メモ.md";
+    mkdirSync(join(repoPath, "docs"), { recursive: true });
+    writeFileSync(join(repoPath, tracked), "original\n");
+    const untouched = "docs/untouched.md";
+    writeFileSync(join(repoPath, untouched), "untouched\n");
+    execFileSync("git", ["add", "docs"], { cwd: repoPath, stdio: "pipe" });
+    execFileSync("git", ["commit", "-m", "Add docs"], { cwd: repoPath, stdio: "pipe" });
+    writeFileSync(join(repoPath, tracked), "work in progress\n");
+
+    await commitAndTrustConfig(repoPath, homePath, vibePath, "[copy]\nmodified = true\n");
+
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
+    try {
+      await runner.spawn(["start", "feat/copy-modified"]);
+      await runner.waitForExit();
+      const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
+
+      const worktreePath = worktreePathFor(repoPath, "feat/copy-modified");
+      await assertDirectoryExists(worktreePath);
+
+      // The dirty version overwrote the committed one in the new worktree...
+      expect(readFileSync(join(worktreePath, tracked), "utf-8")).toBe("work in progress\n");
+      // ...while an unmodified tracked file is just whatever git checked out.
+      expect(readFileSync(join(worktreePath, untouched), "utf-8")).toBe("untouched\n");
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test("--copy-untracked enables the source without any config", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+    const vibePath = getVibePath();
+
+    writeFileSync(join(repoPath, SPACED_UNTRACKED), "scratch\n");
+
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
+    try {
+      // No `.vibe.toml` at all: the flag alone must carry the file over.
+      await runner.spawn(["start", "feat/flag-untracked", "--copy-untracked"]);
+      await runner.waitForExit();
+      const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
+
+      const worktreePath = worktreePathFor(repoPath, "feat/flag-untracked");
+      await assertDirectoryExists(worktreePath);
+      expect(readFileSync(join(worktreePath, SPACED_UNTRACKED), "utf-8")).toBe("scratch\n");
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test("[copy] untracked sees files a pre_start hook created", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+    const vibePath = getVibePath();
+
+    // The documented order is pre_start -> copy -> post_start, so a file the
+    // hook writes into the origin repo must be enumerated by the copy step that
+    // follows it. `git ls-files` cannot report it before the hook has run.
+    await commitAndTrustConfig(
+      repoPath,
+      homePath,
+      vibePath,
+      '[copy]\nuntracked = true\n\n[hooks]\npre_start = ["echo generated-by-hook > hook-made.txt"]\n',
+    );
+
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
+    try {
+      await runner.spawn(["start", "feat/hook-created"]);
+      await runner.waitForExit();
+      const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
+
+      // The hook really did write into the origin repo.
+      expect(existsSync(join(repoPath, "hook-made.txt"))).toBe(true);
+
+      const worktreePath = worktreePathFor(repoPath, "feat/hook-created");
+      await assertDirectoryExists(worktreePath);
+      expect(readFileSync(join(worktreePath, "hook-made.txt"), "utf-8")).toBe(
+        "generated-by-hook\n",
+      );
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test("--no-copy suppresses [copy] untracked and modified", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+    const vibePath = getVibePath();
+
+    writeFileSync(join(repoPath, SPACED_UNTRACKED), "scratch\n");
+    writeFileSync(join(repoPath, "README.md"), "# Modified\n");
+
+    await commitAndTrustConfig(
+      repoPath,
+      homePath,
+      vibePath,
+      "[copy]\nuntracked = true\nmodified = true\n",
+    );
+
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
+    try {
+      await runner.spawn(["start", "feat/no-copy-wins", "--no-copy"]);
+      await runner.waitForExit();
+      const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
+
+      const worktreePath = worktreePathFor(repoPath, "feat/no-copy-wins");
+      await assertDirectoryExists(worktreePath);
+
+      // The untracked file never arrives, and README.md is the COMMITTED text,
+      // not the dirty one — proving the modified source was skipped too.
+      expect(existsSync(join(worktreePath, SPACED_UNTRACKED))).toBe(false);
+      expect(readFileSync(join(worktreePath, "README.md"), "utf-8")).toBe("# Test Repository\n");
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test("untracked and modified stay off by default", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+    const vibePath = getVibePath();
+
+    writeFileSync(join(repoPath, SPACED_UNTRACKED), "scratch\n");
+    writeFileSync(join(repoPath, "README.md"), "# Modified\n");
+
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
+    try {
+      await runner.spawn(["start", "feat/default-off"]);
+      await runner.waitForExit();
+      const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
+
+      const worktreePath = worktreePathFor(repoPath, "feat/default-off");
+      await assertDirectoryExists(worktreePath);
+      expect(existsSync(join(worktreePath, SPACED_UNTRACKED))).toBe(false);
+      expect(readFileSync(join(worktreePath, "README.md"), "utf-8")).toBe("# Test Repository\n");
+    } finally {
+      runner.dispose();
+    }
+  });
+
   test("--no-hooks and --no-copy can be combined", async () => {
     const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
     cleanup = repoCleanup;
@@ -516,6 +740,256 @@ post_start = ["touch $VIBE_WORKTREE_PATH/.hook-ran"]
 
       expect(existsSync(hookMarker)).toBe(false);
       expect(existsSync(copiedFile)).toBe(false);
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test("[copy] symlink shares a directory instead of copying it", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+
+    // A cache directory to SHARE and a dependency directory to COPY, both
+    // untracked so their presence in the worktree proves vibe put them there.
+    mkdirSync(join(repoPath, ".turbo"), { recursive: true });
+    writeFileSync(join(repoPath, ".turbo/cache.bin"), "shared-cache\n");
+    mkdirSync(join(repoPath, "node_modules"), { recursive: true });
+    writeFileSync(join(repoPath, "node_modules/dep.txt"), "copied-dep\n");
+    writeFileSync(join(repoPath, ".gitignore"), ".turbo\nnode_modules\n");
+    writeFileSync(
+      join(repoPath, ".vibe.toml"),
+      `
+[copy]
+dirs = ["node_modules"]
+symlink = [".turbo"]
+`,
+    );
+    execFileSync("git", ["add", ".vibe.toml", ".gitignore"], { cwd: repoPath, stdio: "pipe" });
+    execFileSync("git", ["commit", "-m", "Add .vibe.toml with a symlink entry"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    await trustConfig(vibePath, repoPath, homePath);
+
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
+    try {
+      await runner.spawn(["start", "feat/test-symlink"]);
+      await runner.waitForExit();
+      assertExitCode(runner.getExitCode(), 0, runner.getOutput());
+
+      const parentDir = dirname(repoPath);
+      const repoName = basename(repoPath);
+      const worktreePath = `${parentDir}/${repoName}-feat-test-symlink`;
+      await assertDirectoryExists(worktreePath);
+
+      // The shared entry is a symlink pointing back into the origin worktree.
+      const shared = join(worktreePath, ".turbo");
+      expect(lstatSync(shared).isSymbolicLink()).toBe(true);
+      expect(realpathSync(shared)).toBe(realpathSync(join(repoPath, ".turbo")));
+      // Reading through it sees the origin's content — that is the sharing.
+      expect(readFileSync(join(shared, "cache.bin"), "utf-8")).toBe("shared-cache\n");
+      // A write through the link is visible from the origin (shared state).
+      writeFileSync(join(shared, "from-worktree.bin"), "written\n");
+      expect(existsSync(join(repoPath, ".turbo/from-worktree.bin"))).toBe(true);
+
+      // The plain `dirs` entry is still a real, independent copy.
+      const copied = join(worktreePath, "node_modules");
+      expect(lstatSync(copied).isSymbolicLink()).toBe(false);
+      expect(readFileSync(join(copied, "dep.txt"), "utf-8")).toBe("copied-dep\n");
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test("[copy] symlink takes precedence over the same dirs entry", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+
+    mkdirSync(join(repoPath, ".cache"), { recursive: true });
+    writeFileSync(join(repoPath, ".cache/data.bin"), "origin\n");
+    writeFileSync(join(repoPath, ".gitignore"), ".cache\n");
+    // `.cache` is listed in BOTH dirs and symlink.
+    writeFileSync(
+      join(repoPath, ".vibe.toml"),
+      `
+[copy]
+dirs = [".cache"]
+symlink = [".cache"]
+`,
+    );
+    execFileSync("git", ["add", ".vibe.toml", ".gitignore"], { cwd: repoPath, stdio: "pipe" });
+    execFileSync("git", ["commit", "-m", "Add overlapping copy config"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    await trustConfig(vibePath, repoPath, homePath);
+
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
+    try {
+      await runner.spawn(["start", "feat/test-symlink-precedence"]);
+      await runner.waitForExit();
+      assertExitCode(runner.getExitCode(), 0, runner.getOutput());
+
+      const parentDir = dirname(repoPath);
+      const repoName = basename(repoPath);
+      const worktreePath = `${parentDir}/${repoName}-feat-test-symlink-precedence`;
+
+      // The symlink entry wins: `.cache` is a link, not a copied directory.
+      const shared = join(worktreePath, ".cache");
+      expect(lstatSync(shared).isSymbolicLink()).toBe(true);
+      expect(realpathSync(shared)).toBe(realpathSync(join(repoPath, ".cache")));
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test("[copy] symlink wins over a dirs GLOB that expands to it", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+
+    mkdirSync(join(repoPath, "shared/.cache"), { recursive: true });
+    writeFileSync(join(repoPath, "shared/.cache/data.bin"), "origin\n");
+    mkdirSync(join(repoPath, "shared/.turbo"), { recursive: true });
+    writeFileSync(join(repoPath, "shared/.turbo/data.bin"), "copied\n");
+    writeFileSync(join(repoPath, ".gitignore"), "shared\n");
+    // The glob MATCHES `shared/.cache` without naming it, so the exclusion has
+    // to survive glob expansion; otherwise the copy runs over (and through) the
+    // link and writes into the origin worktree. Scoped under `shared/` so the
+    // glob cannot wander into `.git`.
+    writeFileSync(
+      join(repoPath, ".vibe.toml"),
+      `
+[copy]
+dirs = ["shared/.*"]
+symlink = ["shared/.cache"]
+`,
+    );
+    execFileSync("git", ["add", ".vibe.toml", ".gitignore"], { cwd: repoPath, stdio: "pipe" });
+    execFileSync("git", ["commit", "-m", "Add glob copy config overlapping a symlink"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    await trustConfig(vibePath, repoPath, homePath);
+
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
+    try {
+      await runner.spawn(["start", "feat/test-symlink-glob"]);
+      await runner.waitForExit();
+      assertExitCode(runner.getExitCode(), 0, runner.getOutput());
+
+      const parentDir = dirname(repoPath);
+      const repoName = basename(repoPath);
+      const worktreePath = `${parentDir}/${repoName}-feat-test-symlink-glob`;
+
+      // `shared/.cache` stayed a link even though the glob matched it.
+      const shared = join(worktreePath, "shared/.cache");
+      expect(lstatSync(shared).isSymbolicLink()).toBe(true);
+      expect(realpathSync(shared)).toBe(realpathSync(join(repoPath, "shared/.cache")));
+      // The origin was not written through the link.
+      expect(readFileSync(join(repoPath, "shared/.cache/data.bin"), "utf8")).toBe("origin\n");
+      // The other glob match was still copied as a real directory.
+      const copied = join(worktreePath, "shared/.turbo");
+      expect(lstatSync(copied).isSymbolicLink()).toBe(false);
+      expect(lstatSync(copied).isDirectory()).toBe(true);
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test("a REJECTED [copy] symlink pattern still lets the dirs copy run", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+
+    mkdirSync(join(repoPath, "packages/app"), { recursive: true });
+    writeFileSync(join(repoPath, "packages/app/data.bin"), "copied\n");
+    writeFileSync(join(repoPath, ".gitignore"), "packages\n");
+    // A glob symlink entry is REFUSED, so no link is ever created. The `dirs`
+    // copy of the ancestor it lexically overlaps must therefore still run —
+    // suppressing it would leave the worktree without `packages` at all.
+    writeFileSync(
+      join(repoPath, ".vibe.toml"),
+      `
+[copy]
+dirs = ["packages"]
+symlink = ["packages/*"]
+`,
+    );
+    execFileSync("git", ["add", ".vibe.toml", ".gitignore"], { cwd: repoPath, stdio: "pipe" });
+    execFileSync("git", ["commit", "-m", "Add a rejected symlink pattern next to a dirs copy"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    await trustConfig(vibePath, repoPath, homePath);
+
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
+    try {
+      await runner.spawn(["start", "feat/test-symlink-rejected"]);
+      await runner.waitForExit();
+
+      const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
+      assertOutputContains(output, "globs are not supported");
+
+      const parentDir = dirname(repoPath);
+      const repoName = basename(repoPath);
+      const worktreePath = `${parentDir}/${repoName}-feat-test-symlink-rejected`;
+
+      const copied = join(worktreePath, "packages");
+      expect(lstatSync(copied).isSymbolicLink()).toBe(false);
+      expect(readFileSync(join(copied, "app/data.bin"), "utf8")).toBe("copied\n");
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test("[copy] symlink with a missing target warns but still creates the worktree", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+
+    const vibePath = getVibePath();
+
+    writeFileSync(
+      join(repoPath, ".vibe.toml"),
+      `
+[copy]
+symlink = ["never-created"]
+`,
+    );
+    execFileSync("git", ["add", ".vibe.toml"], { cwd: repoPath, stdio: "pipe" });
+    execFileSync("git", ["commit", "-m", "Add symlink config with a missing target"], {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+
+    await trustConfig(vibePath, repoPath, homePath);
+
+    const runner = new VibeCommandRunner(vibePath, repoPath, homePath);
+    try {
+      await runner.spawn(["start", "feat/test-symlink-missing"]);
+      await runner.waitForExit();
+
+      const output = runner.getOutput();
+      // Non-fatal: the worktree is created and the run succeeds.
+      assertExitCode(runner.getExitCode(), 0, output);
+      assertOutputContains(output, "target does not exist");
+
+      const parentDir = dirname(repoPath);
+      const repoName = basename(repoPath);
+      const worktreePath = `${parentDir}/${repoName}-feat-test-symlink-missing`;
+      await assertDirectoryExists(worktreePath);
+      expect(existsSync(join(worktreePath, "never-created"))).toBe(false);
     } finally {
       runner.dispose();
     }

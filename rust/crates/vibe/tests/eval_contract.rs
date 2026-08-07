@@ -411,13 +411,15 @@ fn shell_setup_wrappers_are_byte_exact_on_stdout() {
 ///
 /// The contract guard lives in `eval_output::write_outcome`: a `cd_path`
 /// containing `\n`/`\r` returns an error instead of printing, so the shell never
-/// evals a smuggled second line. A literal newline cannot exist in a real
-/// on-disk worktree path, AND the porcelain parser splits on `\n`, so the guard
-/// is genuinely UNREACHABLE through real `git` — meaning we can't manufacture a
-/// newline-bearing `cd_path` end-to-end. The guard itself is unit-tested in
+/// evals a smuggled second line. POSIX permits a newline in a path, and since
+/// the worktree list is read with `--porcelain -z` such a path now survives
+/// parsing intact instead of being mangled into two entries — so this guard is
+/// the REAL defense, not a belt-and-braces one. It is unit-tested directly in
 /// `crates/vibe/src/eval_output.rs` (`rejects_cd_path_with_newline` /
 /// `rejects_cd_path_with_carriage_return`), which drive the exact function the
-/// binary calls at its single stdout write point.
+/// binary calls at its single stdout write point; reproducing it end-to-end
+/// would require creating a newline-named directory on the test host, which not
+/// every filesystem we run CI on accepts.
 ///
 /// What we CAN assert at the process boundary is the complementary invariant the
 /// guard protects: when a command fails (here, `home` outside any git repo) the
@@ -976,6 +978,88 @@ fn bogus_eval_dialect_exits_two_with_empty_stdout() {
     assert!(
         !stderr.is_empty(),
         "parse error must explain itself on stderr"
+    );
+}
+
+/// `vibe list` renders a TABLE, which is the exact shape that would be
+/// catastrophic on the eval channel: the POSIX wrapper would execute every row
+/// as a command line (branch names and paths are attacker-influenced). The E2E
+/// suite drives a PTY, which MERGES the two streams, so only this test can prove
+/// the split. STDOUT must be byte-exact empty while the rows land on STDERR.
+#[test]
+fn list_writes_the_table_to_stderr_leaving_stdout_empty() {
+    if !git_available() {
+        eprintln!("skipping: git unavailable");
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let (main_path, secondary_path) = setup_worktrees(tmp.path(), "feat", "feature");
+
+    let out = run_vibe(&main_path, home.path(), &["list"]);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert!(out.status.success(), "list failed; stderr={stderr:?}");
+    assert!(
+        stdout.is_empty(),
+        "the listing must never reach the eval channel: {stdout:?}"
+    );
+    // The rows really were produced — otherwise an empty stdout proves nothing.
+    assert!(
+        stderr.contains("feature") && stderr.contains(&secondary_path.display().to_string()),
+        "listing missing from stderr: {stderr:?}"
+    );
+}
+
+/// The same invariant for `--json`: the payload is machine-readable and belongs
+/// on stderr too, and stdout must stay byte-exact empty. `--verbose` is passed
+/// as well, because a diagnostic line prepended to the payload would both
+/// corrupt the JSON and be the kind of stray write that lands on stdout.
+#[test]
+fn list_json_keeps_stdout_empty_and_stderr_pure_json() {
+    if !git_available() {
+        eprintln!("skipping: git unavailable");
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let (main_path, _secondary_path) = setup_worktrees(tmp.path(), "feat", "feature");
+
+    let out = run_vibe(&main_path, home.path(), &["--verbose", "list", "--json"]);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert!(
+        out.status.success(),
+        "list --json failed; stderr={stderr:?}"
+    );
+    assert!(
+        stdout.is_empty(),
+        "the JSON payload must never reach the eval channel: {stdout:?}"
+    );
+    // Every byte on stderr is the payload: no `[verbose]` preamble before it and
+    // nothing after it. (Parsing is covered by the unit tests; here the point is
+    // that the stream STARTS with the document, which a diagnostic would break.)
+    assert!(
+        !stderr.contains("[verbose]"),
+        "a diagnostic corrupted the payload: {stderr:?}"
+    );
+    // Deserialized rather than substring-matched: `starts_with('[')` +
+    // `ends_with(']')` + `contains(…)` would also accept a payload with trailing
+    // garbage or a trailing comma, which is exactly the corruption this contract
+    // exists to catch. A successful parse is the only real proof the stream is
+    // the document and nothing else.
+    let payload: serde_json::Value = serde_json::from_str(&stderr)
+        .unwrap_or_else(|e| panic!("stderr is not a single JSON document ({e}): {stderr:?}"));
+    let entries = payload
+        .as_array()
+        .unwrap_or_else(|| panic!("payload is not a JSON array: {stderr:?}"));
+    assert!(
+        entries
+            .iter()
+            .any(|e| e.get("branch") == Some(&serde_json::json!("feature"))),
+        "payload missing the worktree: {stderr:?}"
     );
 }
 

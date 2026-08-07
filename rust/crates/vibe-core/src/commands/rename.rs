@@ -4,14 +4,16 @@
 //! pushed-branch guard, path resolution (from the MAIN worktree), dry-run output
 //! and move→chdir→rename sequence (with rollback on failure) mirror the TS
 //! byte-for-byte on the success/normal paths. Two ERROR-ONLY divergences harden
-//! the move/chdir sequence — see the SECURITY notes at points 4a/4b.
+//! the move/chdir sequence — see the SECURITY notes at points 4a/4b. A third
+//! divergence refuses to rename the repository's default branch unless
+//! `--allow-default-branch` is given.
 
 use crate::commands::{Outcome, ProcessControl};
 use crate::config_loader::load_vibe_config;
 use crate::error::{Result, VibeError};
 use crate::git::{
-    branch_exists, find_worktree_by_branch, get_main_worktree_path, get_worktree_by_path,
-    is_main_worktree, sanitize_branch_name, GitRunner,
+    branch_exists, find_worktree_by_branch, get_default_branch, get_main_worktree_path,
+    get_worktree_by_path, is_main_worktree, sanitize_branch_name, GitRunner,
 };
 use crate::io::Io;
 use crate::mru::update_mru_branch;
@@ -47,11 +49,19 @@ where
     pub now_ms: i64,
 }
 
-/// Run `vibe rename <new_name>` (optionally `--dry-run`).
+/// Flags controlling a `rename` run.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RenameFlags {
+    pub dry_run: bool,
+    /// Opt out of the default-branch guard below.
+    pub allow_default_branch: bool,
+}
+
+/// Run `vibe rename <new_name>`.
 pub fn rename_command<I, G, R, S, P>(
     deps: &RenameDeps<I, G, R, S, P>,
     new_name: &str,
-    dry_run: bool,
+    flags: RenameFlags,
     opts: OutputOptions,
 ) -> Result<Outcome>
 where
@@ -77,7 +87,16 @@ where
         return Err(VibeError::AlreadyReported);
     }
 
-    let old_name = current.branch.clone();
+    // `rename` renames the checked-out BRANCH (plus the directory), so a
+    // detached-HEAD worktree has nothing to rename. Refuse explicitly rather
+    // than inventing a branch name.
+    let Some(old_name) = current.branch.clone() else {
+        error_log(
+            deps.io,
+            "Error: Cannot rename a detached HEAD worktree (no branch to rename)",
+        );
+        return Err(VibeError::AlreadyReported);
+    };
     let old_path = current.path.clone();
 
     // The branch name is kept verbatim (slashes are valid git namespacing); only
@@ -88,6 +107,31 @@ where
     if new_name == old_name {
         log(deps.io, &format!("Already named '{old_name}'"), opts);
         return Ok(Outcome::cd(old_path));
+    }
+
+    // Default-branch guard. Renaming `main`/`develop` breaks every clone, PR and
+    // CI reference pointing at it, so this is a HARD error — unlike `clean`,
+    // where the branch is incidental and skipping its deletion still leaves a
+    // useful result. Placed BEFORE the pushed-branch guard so the message names
+    // the real problem: a default branch that happens to be unpushed (a fresh
+    // repo with no remote) must still be refused.
+    if !flags.allow_default_branch {
+        let default_branch = get_default_branch(deps.git);
+        if old_name == default_branch {
+            error_log(
+                deps.io,
+                &format!("Error: '{old_name}' is this repository's default branch"),
+            );
+            error_log(
+                deps.io,
+                "Renaming it would break clones, open pull requests and CI references.",
+            );
+            error_log(
+                deps.io,
+                "Pass --allow-default-branch if you really want to rename it.",
+            );
+            return Err(VibeError::AlreadyReported);
+        }
     }
 
     // Pushed-branch guard: refuse to rename a branch tracking a remote.
@@ -155,7 +199,7 @@ where
         );
     }
 
-    if dry_run {
+    if flags.dry_run {
         if !path_unchanged {
             log_dry_run(
                 deps.io,
@@ -352,6 +396,9 @@ mod tests {
         upstream_remote: Option<String>,
         /// Branches that `show-ref` reports as existing.
         existing_branches: Vec<String>,
+        /// What `symbolic-ref refs/remotes/origin/HEAD --short` returns, or
+        /// `None` → the ref is missing (no remote HEAD configured).
+        origin_head: Option<String>,
         /// Fail any call whose args START WITH this vector (e.g. ["branch","-m"]).
         fail_on: Option<Vec<String>>,
         /// Fail any call whose args EXACTLY equal this vector. Unlike `fail_on`'s
@@ -368,6 +415,7 @@ mod tests {
                 current_root: current_root.to_string(),
                 upstream_remote: None,
                 existing_branches: vec![],
+                origin_head: None,
                 fail_on: None,
                 fail_on_exact: None,
                 calls: RefCell::new(vec![]),
@@ -389,6 +437,11 @@ mod tests {
         }
         fn with_existing_branch(mut self, branch: &str) -> Self {
             self.existing_branches.push(branch.to_string());
+            self
+        }
+        /// Make `origin/HEAD` resolve to `branch`, i.e. declare it the default.
+        fn with_default_branch(mut self, branch: &str) -> Self {
+            self.origin_head = Some(format!("origin/{branch}"));
             self
         }
         fn calls_contain(&self, prefix: &[&str]) -> bool {
@@ -427,6 +480,23 @@ mod tests {
             }
             if args.contains(&"list") && args.contains(&"worktree") {
                 return Ok(self.worktree_list.clone());
+            }
+            if args.contains(&"symbolic-ref") {
+                return match &self.origin_head {
+                    Some(h) => Ok(h.clone()),
+                    None => Err(VibeError::GitOperation {
+                        command: args.join(" "),
+                        message: "failed: is not a symbolic ref".into(),
+                    }),
+                };
+            }
+            if args.contains(&"init.defaultBranch") {
+                // Unconfigured in these tests → `get_default_branch` falls back
+                // to `master`, which no fixture branch is named.
+                return Err(VibeError::GitOperation {
+                    command: args.join(" "),
+                    message: "failed: key missing".into(),
+                });
             }
             if args.contains(&"--get") {
                 // branch.<name>.remote lookup.
@@ -586,7 +656,8 @@ mod tests {
         let git = MockGit::new("", "/main");
         let (r, s, p) = (NoResolver, NoScript, FakeProcessControl::new("/feat"));
         let d = deps(&io, &git, &r, &s, &p, "/feat");
-        let err = rename_command(&d, "   ", false, OutputOptions::default()).unwrap_err();
+        let err = rename_command(&d, "   ", RenameFlags::default(), OutputOptions::default())
+            .unwrap_err();
         assert!(matches!(err, VibeError::AlreadyReported));
         assert!(io.stderr_text().contains("New branch name is required"));
     }
@@ -598,7 +669,8 @@ mod tests {
         let git = MockGit::new(&two_worktrees("/main", "/wt/feat", "feat"), "/wt/feat");
         let (r, s, p) = (NoResolver, NoScript, FakeProcessControl::new("/elsewhere"));
         let d = deps(&io, &git, &r, &s, &p, "/elsewhere");
-        let err = rename_command(&d, "new", false, OutputOptions::default()).unwrap_err();
+        let err = rename_command(&d, "new", RenameFlags::default(), OutputOptions::default())
+            .unwrap_err();
         assert!(matches!(err, VibeError::AlreadyReported));
         assert!(io.stderr_text().contains("Not in a vibe worktree"));
     }
@@ -610,7 +682,8 @@ mod tests {
         let git = MockGit::new(&two_worktrees("/main", "/wt/feat", "feat"), "/main");
         let (r, s, p) = (NoResolver, NoScript, FakeProcessControl::new("/main"));
         let d = deps(&io, &git, &r, &s, &p, "/main");
-        let err = rename_command(&d, "new", false, OutputOptions::default()).unwrap_err();
+        let err = rename_command(&d, "new", RenameFlags::default(), OutputOptions::default())
+            .unwrap_err();
         assert!(matches!(err, VibeError::AlreadyReported));
         assert!(io.stderr_text().contains("Cannot rename main worktree"));
     }
@@ -621,7 +694,8 @@ mod tests {
         let git = MockGit::new(&two_worktrees("/main", "/wt/feat", "feat"), "/wt/feat");
         let (r, s, p) = (NoResolver, NoScript, FakeProcessControl::new("/wt/feat"));
         let d = deps(&io, &git, &r, &s, &p, "/wt/feat");
-        let outcome = rename_command(&d, "feat", false, OutputOptions::default()).unwrap();
+        let outcome =
+            rename_command(&d, "feat", RenameFlags::default(), OutputOptions::default()).unwrap();
         assert_eq!(outcome, Outcome::cd("/wt/feat"));
         assert!(io.stderr_text().contains("Already named 'feat'"));
         assert!(!git.calls_contain(&["branch", "-m"]));
@@ -635,7 +709,13 @@ mod tests {
             .with_remote("origin");
         let (r, s, p) = (NoResolver, NoScript, FakeProcessControl::new("/wt/feat"));
         let d = deps(&io, &git, &r, &s, &p, "/wt/feat");
-        let err = rename_command(&d, "renamed", false, OutputOptions::default()).unwrap_err();
+        let err = rename_command(
+            &d,
+            "renamed",
+            RenameFlags::default(),
+            OutputOptions::default(),
+        )
+        .unwrap_err();
         assert!(matches!(err, VibeError::AlreadyReported));
         let out = io.stderr_text();
         assert!(out.contains("branch 'feat' is pushed to 'origin'"));
@@ -651,7 +731,13 @@ mod tests {
             .with_existing_branch("renamed");
         let (r, s, p) = (NoResolver, NoScript, FakeProcessControl::new("/wt/feat"));
         let d = deps(&io, &git, &r, &s, &p, "/wt/feat");
-        let err = rename_command(&d, "renamed", false, OutputOptions::default()).unwrap_err();
+        let err = rename_command(
+            &d,
+            "renamed",
+            RenameFlags::default(),
+            OutputOptions::default(),
+        )
+        .unwrap_err();
         assert!(matches!(err, VibeError::AlreadyReported));
         assert!(io.stderr_text().contains("branch 'renamed' already exists"));
     }
@@ -667,7 +753,13 @@ mod tests {
         let git = MockGit::new(&porcelain, "/wt/feat");
         let (r, s, p) = (NoResolver, NoScript, FakeProcessControl::new("/wt/feat"));
         let d = deps(&io, &git, &r, &s, &p, "/wt/feat");
-        let err = rename_command(&d, "renamed", false, OutputOptions::default()).unwrap_err();
+        let err = rename_command(
+            &d,
+            "renamed",
+            RenameFlags::default(),
+            OutputOptions::default(),
+        )
+        .unwrap_err();
         assert!(matches!(err, VibeError::AlreadyReported));
         assert!(io
             .stderr_text()
@@ -681,7 +773,16 @@ mod tests {
         let git = MockGit::new(&two_worktrees("/main", "/wt/feat", "feat"), "/wt/feat");
         let (r, s, p) = (NoResolver, NoScript, FakeProcessControl::new("/wt/feat"));
         let d = deps(&io, &git, &r, &s, &p, "/wt/feat");
-        let outcome = rename_command(&d, "renamed", true, OutputOptions::default()).unwrap();
+        let outcome = rename_command(
+            &d,
+            "renamed",
+            RenameFlags {
+                dry_run: true,
+                ..RenameFlags::default()
+            },
+            OutputOptions::default(),
+        )
+        .unwrap();
         // Dry-run emits NO cd.
         assert_eq!(outcome, Outcome::none());
         let out = io.stderr_text();
@@ -701,7 +802,13 @@ mod tests {
         let (r, s) = (NoResolver, NoScript);
         let p = FakeProcessControl::new(&FEAT);
         let d = deps(&io, &git, &r, &s, &p, &FEAT);
-        let outcome = rename_command(&d, "renamed", false, OutputOptions::default()).unwrap();
+        let outcome = rename_command(
+            &d,
+            "renamed",
+            RenameFlags::default(),
+            OutputOptions::default(),
+        )
+        .unwrap();
         assert_eq!(outcome, Outcome::cd(&**RENAMED));
         // Moved, chdir'd into new, then renamed branch — in that order.
         assert!(git.calls_contain(&["worktree", "move", &FEAT, &RENAMED]));
@@ -722,7 +829,13 @@ mod tests {
         let (r, s) = (NoResolver, NoScript);
         let p = FakeProcessControl::new(&FEAT);
         let d = deps(&io, &git, &r, &s, &p, &FEAT);
-        let err = rename_command(&d, "renamed", false, OutputOptions::default()).unwrap_err();
+        let err = rename_command(
+            &d,
+            "renamed",
+            RenameFlags::default(),
+            OutputOptions::default(),
+        )
+        .unwrap_err();
         assert!(matches!(err, VibeError::AlreadyReported));
 
         // Forward move happened, then the ROLLBACK move (new → old) happened.
@@ -749,7 +862,13 @@ mod tests {
         // chdir to the NEW path fails.
         let p = FakeProcessControl::failing_to(&FEAT, &RENAMED);
         let d = deps(&io, &git, &r, &s, &p, &FEAT);
-        let err = rename_command(&d, "renamed", false, OutputOptions::default()).unwrap_err();
+        let err = rename_command(
+            &d,
+            "renamed",
+            RenameFlags::default(),
+            OutputOptions::default(),
+        )
+        .unwrap_err();
         assert!(matches!(err, VibeError::AlreadyReported));
 
         // Forward move + rollback move both issued; branch rename NEVER attempted.
@@ -779,7 +898,13 @@ mod tests {
         let (r, s) = (NoResolver, NoScript);
         let p = FakeProcessControl::new(&FEAT);
         let d = deps(&io, &git, &r, &s, &p, &FEAT);
-        let err = rename_command(&d, "renamed", false, OutputOptions::default()).unwrap_err();
+        let err = rename_command(
+            &d,
+            "renamed",
+            RenameFlags::default(),
+            OutputOptions::default(),
+        )
+        .unwrap_err();
         assert!(matches!(err, VibeError::AlreadyReported));
 
         // Forward move happened; rollback move (new → old) was ATTEMPTED.
@@ -812,7 +937,13 @@ mod tests {
         // chdir into the NEW path fails → triggers the 4a rollback path.
         let p = FakeProcessControl::failing_to(&FEAT, &RENAMED);
         let d = deps(&io, &git, &r, &s, &p, &FEAT);
-        let err = rename_command(&d, "renamed", false, OutputOptions::default()).unwrap_err();
+        let err = rename_command(
+            &d,
+            "renamed",
+            RenameFlags::default(),
+            OutputOptions::default(),
+        )
+        .unwrap_err();
         assert!(matches!(err, VibeError::AlreadyReported));
 
         assert!(git.calls_contain(&["worktree", "move", &FEAT, &RENAMED]));
@@ -847,7 +978,13 @@ mod tests {
         // chdir to new succeeds, but current_dir() reports a DIFFERENT path.
         let p = FakeProcessControl::reporting_dir(&FEAT, "/somewhere/else-entirely");
         let d = deps(&io, &git, &r, &s, &p, &FEAT);
-        let err = rename_command(&d, "renamed", false, OutputOptions::default()).unwrap_err();
+        let err = rename_command(
+            &d,
+            "renamed",
+            RenameFlags::default(),
+            OutputOptions::default(),
+        )
+        .unwrap_err();
         assert!(matches!(err, VibeError::AlreadyReported));
 
         // (a) branch rename NEVER attempted.
@@ -883,7 +1020,7 @@ mod tests {
         let outcome = rename_command(
             &d,
             "renamed",
-            false,
+            RenameFlags::default(),
             OutputOptions::new(true, false), // verbose so the unchanged line prints
         )
         .unwrap();
@@ -920,7 +1057,16 @@ mod tests {
         let (r, s) = (NoResolver, NoScript);
         let p = FakeProcessControl::new(&RENAMED);
         let d = deps(&io, &git, &r, &s, &p, &RENAMED);
-        let outcome = rename_command(&d, "renamed", true, OutputOptions::default()).unwrap();
+        let outcome = rename_command(
+            &d,
+            "renamed",
+            RenameFlags {
+                dry_run: true,
+                ..RenameFlags::default()
+            },
+            OutputOptions::default(),
+        )
+        .unwrap();
         assert_eq!(outcome, Outcome::none());
 
         let out = io.stderr_text();
@@ -951,7 +1097,13 @@ mod tests {
         // chdir to NEW succeeds (first chdir), chdir BACK to old fails (second).
         let p = FakeProcessControl::failing_to(&FEAT, &FEAT);
         let d = deps(&io, &git, &r, &s, &p, &FEAT);
-        let err = rename_command(&d, "renamed", false, OutputOptions::default()).unwrap_err();
+        let err = rename_command(
+            &d,
+            "renamed",
+            RenameFlags::default(),
+            OutputOptions::default(),
+        )
+        .unwrap_err();
         assert!(matches!(err, VibeError::AlreadyReported));
 
         // Forward + rollback move both happened (rollback SUCCEEDED).
@@ -984,7 +1136,13 @@ mod tests {
         let (r, s) = (NoResolver, NoScript);
         let p = FakeProcessControl::new(&FEAT);
         let d = deps(&io, &git, &r, &s, &p, &FEAT);
-        let err = rename_command(&d, "renamed", false, OutputOptions::default()).unwrap_err();
+        let err = rename_command(
+            &d,
+            "renamed",
+            RenameFlags::default(),
+            OutputOptions::default(),
+        )
+        .unwrap_err();
         assert!(matches!(err, VibeError::AlreadyReported));
 
         assert!(
@@ -1014,9 +1172,121 @@ mod tests {
         let d = deps(&io, &git, &r, &s, &p, &FEAT);
         // The MRU write targets /home/u/myrepo-renamed which does not exist on
         // disk; update_mru_branch is best-effort and its failure is swallowed.
-        let outcome = rename_command(&d, "renamed", false, OutputOptions::default()).unwrap();
+        let outcome = rename_command(
+            &d,
+            "renamed",
+            RenameFlags::default(),
+            OutputOptions::default(),
+        )
+        .unwrap();
         assert_eq!(outcome, Outcome::cd(&**RENAMED));
         assert!(io.stderr_text().contains("Renamed feat -> renamed"));
+    }
+
+    // --- default-branch guard (#578) ----------------------------------------
+
+    #[test]
+    fn renaming_the_default_branch_errors_without_mutating() {
+        // A secondary worktree checked out on the repo's default branch: the
+        // rename must be refused outright, with nothing moved or renamed.
+        let (_fx, io) = io_with_home();
+        let git = MockGit::new(&two_worktrees(&MAIN, &FEAT, "develop"), &FEAT)
+            .with_default_branch("develop");
+        let (r, s) = (NoResolver, NoScript);
+        let p = FakeProcessControl::new(&FEAT);
+        let d = deps(&io, &git, &r, &s, &p, &FEAT);
+        let err = rename_command(
+            &d,
+            "renamed",
+            RenameFlags::default(),
+            OutputOptions::default(),
+        )
+        .unwrap_err();
+        assert!(matches!(err, VibeError::AlreadyReported));
+
+        let out = io.stderr_text();
+        assert!(
+            out.contains("'develop' is this repository's default branch"),
+            "stderr: {out}"
+        );
+        assert!(out.contains("--allow-default-branch"), "stderr: {out}");
+        assert!(!git.calls_contain(&["branch", "-m"]));
+        assert!(!git.calls_contain(&["worktree", "move"]));
+    }
+
+    #[test]
+    fn allow_default_branch_lets_the_rename_through() {
+        // The escape hatch must reach the normal success path, not merely
+        // downgrade the message.
+        let (_fx, io) = io_with_home();
+        let git = MockGit::new(&two_worktrees(&MAIN, &FEAT, "develop"), &FEAT)
+            .with_default_branch("develop");
+        let (r, s) = (NoResolver, NoScript);
+        let p = FakeProcessControl::new(&FEAT);
+        let d = deps(&io, &git, &r, &s, &p, &FEAT);
+        let outcome = rename_command(
+            &d,
+            "renamed",
+            RenameFlags {
+                allow_default_branch: true,
+                ..RenameFlags::default()
+            },
+            OutputOptions::default(),
+        )
+        .unwrap();
+
+        assert_eq!(outcome, Outcome::cd(&**RENAMED));
+        assert!(git.calls_contain(&["branch", "-m", "develop", "renamed"]));
+        assert!(io.stderr_text().contains("Renamed develop -> renamed"));
+    }
+
+    #[test]
+    fn default_branch_guard_precedes_the_pushed_branch_guard() {
+        // Both guards apply to a pushed default branch. The default-branch one
+        // must win, because it names the actual reason the rename is refused.
+        let (_fx, io) = io_with_home();
+        let git = MockGit::new(&two_worktrees(&MAIN, &FEAT, "develop"), &FEAT)
+            .with_default_branch("develop")
+            .with_remote("origin");
+        let (r, s) = (NoResolver, NoScript);
+        let p = FakeProcessControl::new(&FEAT);
+        let d = deps(&io, &git, &r, &s, &p, &FEAT);
+        let err = rename_command(
+            &d,
+            "renamed",
+            RenameFlags::default(),
+            OutputOptions::default(),
+        )
+        .unwrap_err();
+        assert!(matches!(err, VibeError::AlreadyReported));
+
+        let out = io.stderr_text();
+        assert!(
+            out.contains("is this repository's default branch"),
+            "stderr: {out}"
+        );
+        assert!(!out.contains("is pushed to"), "stderr: {out}");
+    }
+
+    #[test]
+    fn a_non_default_branch_is_unaffected_by_the_guard() {
+        // Regression fence: declaring some OTHER branch the default must leave
+        // the ordinary rename path untouched.
+        let (_fx, io) = io_with_home();
+        let git =
+            MockGit::new(&two_worktrees(&MAIN, &FEAT, "feat"), &FEAT).with_default_branch("main");
+        let (r, s) = (NoResolver, NoScript);
+        let p = FakeProcessControl::new(&FEAT);
+        let d = deps(&io, &git, &r, &s, &p, &FEAT);
+        let outcome = rename_command(
+            &d,
+            "renamed",
+            RenameFlags::default(),
+            OutputOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(outcome, Outcome::cd(&**RENAMED));
+        assert!(git.calls_contain(&["branch", "-m", "feat", "renamed"]));
     }
 
     #[test]

@@ -7,6 +7,7 @@ _vibe_commands() {
     'start:Create a new worktree with the given branch'
     'scratch:Create a worktree with an auto-generated scratch/<timestamp> branch'
     'jump:Jump to an existing worktree by branch name'
+    'list:List all worktrees of the current repository'
     'rename:Rename the current worktree'\''s branch and directory'
     'clean:Remove current worktree and return to main'
     'home:Return to main worktree without removing current'
@@ -40,6 +41,8 @@ _vibe_start() {
     '--track[Set upstream tracking when using --base]' \
     '--no-hooks[Skip pre-start and post-start hooks]' \
     '--no-copy[Skip copying files and directories]' \
+    '--copy-untracked[Also copy untracked, non-ignored files]' \
+    '--copy-modified[Also copy locally modified tracked files]' \
     '(-n --dry-run)'{-n,--dry-run}'[Show what would be executed]' \
     '(-f --force)'{-f,--force}'[Skip confirmation prompts]' \
     '1: :_vibe_branches'
@@ -52,6 +55,8 @@ _vibe_scratch() {
     '--track[Set upstream tracking when using --base]' \
     '--no-hooks[Skip pre-start and post-start hooks]' \
     '--no-copy[Skip copying files and directories]' \
+    '--copy-untracked[Also copy untracked, non-ignored files]' \
+    '--copy-modified[Also copy locally modified tracked files]' \
     '(-n --dry-run)'{-n,--dry-run}'[Show what would be executed]'
 }
 
@@ -60,16 +65,23 @@ _vibe_jump() {
     '1: :_vibe_worktree_branches'
 }
 
+_vibe_list() {
+  _arguments \
+    '--json[Output the listing as JSON]'
+}
+
 _vibe_rename() {
   _arguments \
-    '(-n --dry-run)'{-n,--dry-run}'[Show what would be executed]'
+    '(-n --dry-run)'{-n,--dry-run}'[Show what would be executed]' \
+    '--allow-default-branch[Allow operating on the repository'\''s default branch]'
 }
 
 _vibe_clean() {
   _arguments \
     '(-f --force)'{-f,--force}'[Skip confirmation prompts]' \
     '--delete-branch[Delete the branch after removing the worktree]' \
-    '--keep-branch[Keep the branch after removing the worktree]'
+    '--keep-branch[Keep the branch after removing the worktree]' \
+    '--allow-default-branch[Allow operating on the repository'\''s default branch]'
 }
 
 _vibe_home() {
@@ -125,6 +137,7 @@ _vibe() {
         start) _vibe_start ;;
         scratch) _vibe_scratch ;;
         jump) _vibe_jump ;;
+        list) _vibe_list ;;
         rename) _vibe_rename ;;
         clean) _vibe_clean ;;
         home) _vibe_home ;;
