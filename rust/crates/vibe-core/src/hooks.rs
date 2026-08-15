@@ -121,7 +121,13 @@ pub fn run_hooks(
             Err(error) => {
                 if let Some(info) = tracker {
                     if let Some(id) = info.task_ids.get(i) {
-                        info.tracker.fail_task(*id, &error.to_string());
+                        // Sanitized because `HookExecution` renders as `Hook
+                        // "{hook_command}" failed: ...`, i.e. it re-embeds the
+                        // very config-supplied command the task LABEL was
+                        // sanitized for — the same reasoning `copy_runner`
+                        // applies to its per-file error text.
+                        info.tracker
+                            .fail_task(*id, &sanitize_for_display(&error.to_string()));
                     }
                     for id in info.task_ids.iter().skip(i + 1) {
                         info.tracker.skip_task(*id);
@@ -558,7 +564,8 @@ mod tests {
 
     /// A hook that could not be spawned closes its own bar as FAILED and the
     /// later ones as SKIPPED, so the caller's `finish` cannot stamp any of them
-    /// with the success glyph.
+    /// with the success glyph — and the failure text it renders is sanitized,
+    /// because `HookExecution` re-embeds the config-supplied command.
     #[test]
     fn tracker_closes_the_bars_when_the_hook_cannot_be_spawned() {
         use crate::progress::TrackerEvent;
@@ -580,7 +587,7 @@ mod tests {
         let err = run_hooks(
             &io,
             &UnspawnableHookRunner,
-            &cmds(&["first", "second"]),
+            &cmds(&["evil\x1b[2Kfirst", "second"]),
             "/gone",
             &env,
             Some(&info),
@@ -589,12 +596,18 @@ mod tests {
 
         assert!(matches!(err, VibeError::HookExecution { .. }));
         let events = tracker.events();
+        let failure = events
+            .iter()
+            .find_map(|e| match e {
+                TrackerEvent::Fail(id, msg) if *id == ids[0] => Some(msg.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{events:?}"));
         assert!(
-            events
-                .iter()
-                .any(|e| matches!(e, TrackerEvent::Fail(id, _) if *id == ids[0])),
-            "{events:?}"
+            !failure.contains('\x1b'),
+            "ESC must not reach the progress display: {failure:?}"
         );
+        assert!(failure.contains("evil\u{fffd}[2Kfirst"), "{failure:?}");
         assert!(events.contains(&TrackerEvent::Skip(ids[1])), "{events:?}");
         assert!(
             !events
