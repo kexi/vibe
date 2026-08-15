@@ -25,6 +25,19 @@
 //! for the reader to tell. An upstream is a fact the user configured, and the
 //! default branch is the documented fallback, so both are explainable.
 //!
+//! # SUMMARY
+//!
+//! The SUMMARY column exists only when the repository's `.vibe.toml` configures
+//! `[summary] command`; see [`crate::summary`] for the batch protocol, the
+//! cache, and the bounds applied to the command's output. Its presence follows
+//! the CONFIG rather than the command's success, so an empty cell never has to
+//! be read as "maybe the feature is off".
+//!
+//! The config is loaded from the MAIN worktree so the column does not change
+//! shape depending on which checkout the user is standing in, and it goes
+//! through the ordinary trust gate — an untrusted `.vibe.toml` fails the command
+//! rather than silently running nothing.
+//!
 //! # Divergences from the original request (#408)
 //!
 //! The default order stays "current first, then MRU, then git order" rather
@@ -42,6 +55,8 @@
 
 use crate::commands::jump::SCRATCH_PREFIX;
 use crate::commands::Outcome;
+use crate::config::DEFAULT_SUMMARY_TIMEOUT_SECONDS;
+use crate::config_loader::load_vibe_config;
 use crate::error::{Result, VibeError};
 use crate::git::{
     branch_ref_info, count_status_entries_z, detached_head_info, get_default_branch,
@@ -51,8 +66,12 @@ use crate::git::{
 use crate::io::Io;
 use crate::mru::{load_mru_data, sort_by_mru};
 use crate::output::{report_log, sanitize_for_display, verbose_log, warn_log, OutputOptions};
+use crate::settings::RepoResolver;
+use crate::summary::runner::SummaryRunner;
+use crate::summary::{entry_key, resolve_summaries, SummaryRequest, SummaryTarget};
 use serde::Serialize;
 use std::collections::HashMap;
+use std::time::Duration;
 use unicode_width::UnicodeWidthStr;
 
 /// Marker printed in the first column for the worktree the user is standing in.
@@ -130,20 +149,47 @@ pub struct ListEntry {
     /// seconds, instead of making the renderer re-parse an ISO string.
     #[serde(skip)]
     pub age: Option<String>,
+    /// The `[summary]` command's answer for this worktree.
+    ///
+    /// `skip_serializing_if`: a repository with no `[summary]` configured must
+    /// produce exactly the JSON it produced before this field existed, so a
+    /// consumer diffing the document sees no change from a feature it does not
+    /// use. When `[summary]` IS configured every row carries the field, empty
+    /// string included: the presence of the key then means "the feature is on",
+    /// and a consumer never has to distinguish "no summary" from "no feature".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    /// The raw `git status -z` bytes this row's STATUS was counted from, kept
+    /// only to key the summary cache.
+    ///
+    /// Carried on the row rather than re-fetched: the status call already
+    /// happened for the STATUS column, and asking git a second time would both
+    /// double the per-worktree cost and open a window where the two answers
+    /// disagree.
+    #[serde(skip)]
+    pub status_payload: Option<Vec<u8>>,
 }
 
 /// Inputs `list` pulls from the binary.
-pub struct ListDeps<'a, I, G>
+pub struct ListDeps<'a, I, G, R, S>
 where
     I: Io,
     G: GitRunner,
+    R: RepoResolver,
+    S: SummaryRunner,
 {
     pub io: &'a I,
     pub git: &'a G,
+    /// Resolves repo identity for the trust check on `.vibe.toml`.
+    pub resolver: &'a R,
+    /// Runs the `[summary]` command, when one is configured.
+    pub summary_runner: &'a S,
     /// The directory the command was invoked from, used to mark the current row.
     pub cwd: &'a str,
     /// Current wall-clock in epoch milliseconds, for the AGE column.
     pub now_ms: i64,
+    /// This build's version string, for the settings/trust store.
+    pub version: &'a str,
 }
 
 /// Warnings held back until the output mode is known.
@@ -153,6 +199,13 @@ where
 /// bytes to the document. Collecting instead of writing makes that structural: a
 /// warning added anywhere in the enrichment path cannot corrupt the payload,
 /// because the only flush point knows whether text mode is in effect.
+///
+/// Every message is also SANITIZED on the way in. Warning text is assembled from
+/// exactly the sources the table's cells are — git's error strings, worktree
+/// paths, and the summary command's stderr — so a warning is as capable of
+/// carrying a terminal escape as any cell, but nothing about the phrase
+/// "warning" makes a caller think to escape it. Doing it here rather than at
+/// each `push` site means a warning added later is safe by construction.
 #[derive(Debug, Default)]
 struct DeferredWarnings {
     messages: Vec<String>,
@@ -160,7 +213,9 @@ struct DeferredWarnings {
 
 impl DeferredWarnings {
     fn push(&mut self, message: String) {
-        self.messages.push(message);
+        // Sanitize on ENTRY, not at flush: the stored form is then the only
+        // form, so any future reader of `messages` gets the safe one too.
+        self.messages.push(sanitize_for_display(&message));
     }
 
     /// Emit everything collected. Called only on the text-mode path.
@@ -172,10 +227,16 @@ impl DeferredWarnings {
 }
 
 /// Run `vibe list [--json]`.
-pub fn list_command<I, G>(deps: &ListDeps<I, G>, json: bool, opts: OutputOptions) -> Result<Outcome>
+pub fn list_command<I, G, R, S>(
+    deps: &ListDeps<I, G, R, S>,
+    json: bool,
+    opts: OutputOptions,
+) -> Result<Outcome>
 where
     I: Io,
     G: GitRunner,
+    R: RepoResolver,
+    S: SummaryRunner,
 {
     let inside = is_inside_worktree(deps.git);
     if !inside {
@@ -186,7 +247,18 @@ where
     }
 
     let mut warnings = DeferredWarnings::default();
-    let entries = collect_entries(deps, &mut warnings)?;
+    let (mut entries, main_path) = collect_entries(deps, &mut warnings)?;
+    // Whether the SUMMARY column exists at all. Driven by the CONFIG, not by
+    // whether any summary came back: a column that appeared and disappeared with
+    // the command's success would make an empty cell indistinguishable from an
+    // unconfigured feature.
+    let has_summary = attach_summaries(
+        deps,
+        &mut entries,
+        main_path.as_deref(),
+        &mut warnings,
+        opts,
+    )?;
 
     if json {
         let text = serde_json::to_string_pretty(&entries).map_err(|e| {
@@ -216,25 +288,118 @@ where
         return Ok(Outcome::none());
     }
 
-    for line in render_table(&entries) {
+    for line in render_table(&entries, has_summary) {
         report_log(deps.io, &line);
     }
 
     Ok(Outcome::none())
 }
 
-/// Build the ordered entry list: the current worktree first, then the rest in
-/// MRU order (most recently jumped-to first), then never-visited worktrees in
-/// git's own emitted order.
-fn collect_entries<I, G>(
-    deps: &ListDeps<I, G>,
+/// Fill in every row's `summary`, if `[summary]` is configured. Returns whether
+/// the SUMMARY column exists.
+///
+/// The config is read from the MAIN worktree, not from the cwd: `[summary]` is a
+/// repository-wide setting, and reading it per worktree would make the column
+/// appear or disappear depending on which checkout the user happens to be
+/// standing in — and would let a feature branch's uncommitted `.vibe.toml`
+/// silently change what runs.
+///
+/// An untrusted `.vibe.toml` propagates the existing [`load_vibe_config`] error
+/// rather than being ignored: the whole point of the trust store is that an
+/// unreviewed config never runs, and silently degrading to "no summary" would
+/// hide the fact that the user's configuration is not in effect.
+fn attach_summaries<I, G, R, S>(
+    deps: &ListDeps<I, G, R, S>,
+    entries: &mut [ListEntry],
+    main_path: Option<&str>,
     warnings: &mut DeferredWarnings,
-) -> Result<Vec<ListEntry>>
+    opts: OutputOptions,
+) -> Result<bool>
 where
     I: Io,
     G: GitRunner,
+    R: RepoResolver,
+    S: SummaryRunner,
+{
+    // No main worktree means an empty listing: there is nothing to summarize,
+    // and nowhere to read a config from.
+    let Some(main_path) = main_path else {
+        return Ok(false);
+    };
+
+    let config = load_vibe_config(deps.io, deps.resolver, deps.version, main_path)?;
+    let Some(summary_config) = config.as_ref().and_then(|c| c.summary.as_ref()) else {
+        return Ok(false);
+    };
+    // A `[summary]` section with no `command` is a section that configures
+    // nothing; there is no column to show.
+    let Some(command) = summary_config.command.as_deref().filter(|c| !c.is_empty()) else {
+        return Ok(false);
+    };
+
+    let targets: Vec<SummaryTarget> = entries
+        .iter()
+        .map(|e| SummaryTarget {
+            name: e.name.clone(),
+            path: e.path.clone(),
+            base: e.base.clone(),
+            head: e.head.clone(),
+            key: entry_key(e.head.as_deref(), e.status_payload.as_deref()),
+        })
+        .collect();
+
+    let timeout = Duration::from_secs(
+        summary_config
+            .timeout_seconds
+            .unwrap_or(DEFAULT_SUMMARY_TIMEOUT_SECONDS),
+    );
+    let result = resolve_summaries(
+        deps.io,
+        deps.summary_runner,
+        &SummaryRequest {
+            command,
+            main_worktree_path: main_path,
+            timeout,
+            targets: &targets,
+        },
+        opts,
+    );
+
+    for message in result.warnings {
+        warnings.push(message);
+    }
+    for entry in entries.iter_mut() {
+        // Every row carries the field once the feature is on, so an unanswered
+        // worktree reads as "no summary" rather than "no SUMMARY column".
+        entry.summary = Some(result.by_path.get(&entry.path).cloned().unwrap_or_default());
+    }
+
+    Ok(true)
+}
+
+/// Build the ordered entry list: the current worktree first, then the rest in
+/// MRU order (most recently jumped-to first), then never-visited worktrees in
+/// git's own emitted order.
+///
+/// Also returns the MAIN worktree's path — git's first emitted entry, before any
+/// reordering. Returned from here rather than re-derived with
+/// `git::get_main_worktree_path` because that helper runs `git worktree list`
+/// all over again, and a second enumeration could disagree with the rows just
+/// built if a worktree were added between the two calls.
+fn collect_entries<I, G, R, S>(
+    deps: &ListDeps<I, G, R, S>,
+    warnings: &mut DeferredWarnings,
+) -> Result<(Vec<ListEntry>, Option<String>)>
+where
+    I: Io,
+    G: GitRunner,
+    R: RepoResolver,
+    S: SummaryRunner,
 {
     let worktrees = get_worktree_list(deps.git)?;
+    // git lists the main worktree first; captured before the MRU reordering
+    // below moves it.
+    let main_path = worktrees.first().map(|w| w.path.clone());
     // MRU is best-effort everywhere else in the codebase; a missing or corrupt
     // store must degrade to git order, never fail the listing.
     let mru = load_mru_data(deps.io);
@@ -259,7 +424,7 @@ where
     // Current worktree first; the MRU order established above is preserved for
     // everything else because `sort_by_key` is stable.
     entries.sort_by_key(|e| !e.current);
-    Ok(entries)
+    Ok((entries, main_path))
 }
 
 /// Turn parsed worktrees into rows, filling BASE / AGE / STATUS from git.
@@ -336,7 +501,7 @@ fn enrich_entries<G: GitRunner>(
                 None => None,
             };
 
-            let (status, dirty_files) = match worktree_status_z(git, &w.path) {
+            let (status, dirty_files, status_payload) = match worktree_status_z(git, &w.path) {
                 Ok(payload) => {
                     let count = count_status_entries_z(&payload);
                     let label = if count == 0 {
@@ -344,14 +509,14 @@ fn enrich_entries<G: GitRunner>(
                     } else {
                         STATUS_DIRTY
                     };
-                    (Some(label.to_string()), Some(count))
+                    (Some(label.to_string()), Some(count), Some(payload))
                 }
                 Err(e) => {
-                    warnings.push(format!(
-                        "Could not read status of {}: {e}",
-                        sanitize_for_display(&w.path)
-                    ));
-                    (None, None)
+                    // Not sanitized here: `DeferredWarnings::push` does it for
+                    // every message, and the git error `{e}` needs it just as
+                    // much as the path does.
+                    warnings.push(format!("Could not read status of {}: {e}", w.path));
+                    (None, None, None)
                 }
             };
 
@@ -371,6 +536,9 @@ fn enrich_entries<G: GitRunner>(
                 status,
                 dirty_files,
                 age: commit.map(|(unix, _)| format_age(now_secs, unix)),
+                // Filled in later, and only when `[summary]` is configured.
+                summary: None,
+                status_payload,
             }
         })
         .collect()
@@ -478,11 +646,11 @@ fn is_within(cwd: &str, base: &str) -> bool {
 /// No header row is printed. The columns are self-describing (`3d`, `clean`,
 /// `M 2`), the rows are frequently piped into `grep`, and a header would be the
 /// one line that never matches what the user is looking for.
-fn render_table(entries: &[ListEntry]) -> Vec<String> {
-    let cells: Vec<[String; 4]> = entries
+fn render_table(entries: &[ListEntry], has_summary: bool) -> Vec<String> {
+    let cells: Vec<Vec<String>> = entries
         .iter()
         .map(|e| {
-            [
+            let mut row = vec![
                 match &e.branch {
                     Some(b) => sanitize_for_display(b),
                     None => DETACHED_LABEL.to_string(),
@@ -493,18 +661,29 @@ fn render_table(entries: &[ListEntry]) -> Vec<String> {
                     .unwrap_or_else(|| UNKNOWN_CELL.to_string()),
                 e.age.clone().unwrap_or_else(|| UNKNOWN_CELL.to_string()),
                 status_cell(e),
-            ]
+            ];
+            if has_summary {
+                // Sanitized like every other cell: this text came from an
+                // external command, so it is at least as attacker-influenced as
+                // a branch name.
+                row.push(sanitize_for_display(e.summary.as_deref().unwrap_or("")));
+            }
+            row
         })
         .collect();
 
+    let column_count = 4 + usize::from(has_summary);
     // One max per column, over the sanitized text that will actually be printed.
-    let widths: [usize; 4] = std::array::from_fn(|col| {
-        cells
-            .iter()
-            .map(|row| row[col].width())
-            .max()
-            .unwrap_or_default()
-    });
+    let widths: Vec<usize> = (0..column_count)
+        .map(|col| {
+            cells
+                .iter()
+                .filter_map(|row| row.get(col))
+                .map(|cell| cell.width())
+                .max()
+                .unwrap_or_default()
+        })
+        .collect();
 
     entries
         .iter()

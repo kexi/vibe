@@ -42,6 +42,7 @@ $ vibe list
 | BASE       | このブランチのベースとなるブランチ — 後述の[BASE](#base)を参照           |
 | AGE        | tipコミットからの経過時間（`now`、`12m`、`2h`、`3d`、`1w`、`5mo`、`2y`） |
 | STATUS     | `clean`、または`M <n>` — [変更の数え方](#変更の数え方)を参照             |
+| SUMMARY    | `[summary]`が設定されている場合のみ — 後述の[SUMMARY](#summary)を参照    |
 | PATH       | Worktreeのディレクトリ                                                   |
 
 [`vibe scratch`](/ja/commands/scratch/)で作成されたWorktreeには`(scratch)`ラベルが付きます。
@@ -71,6 +72,30 @@ AGEはtipコミットのcommitter dateからの経過時間で、切り捨て（
 
 まだコミットが無いブランチ（unbornブランチ）にはtipが無いため、AGEは`-`、`last_commit_at`は`null`になります。
 
+### SUMMARY
+
+SUMMARY列は、リポジトリの`.vibe.toml`に`[summary] command`が設定されている場合のみ表示されます。vibeは`vibe list`ごとにそのコマンドを1回実行し、対象Worktreeのバッチをstdinで渡して、返ってきた内容を表示します。
+
+```toml
+[summary]
+command = "./examples/summary/last-commit.sh"
+timeout_seconds = 30
+```
+
+```
+$ vibe list
+* feat/login    develop  2h    M 3    ログインフォームを追加      /path/to/repo-feat-login
+  fix/crash     develop  3d    clean  起動時のpanicを修正         /path/to/repo-fix-crash
+```
+
+結果はWorktreeごとにキャッシュされるため、変更のないリポジトリで2回目の`vibe list`を実行してもコマンドは一切実行されません。コマンドが失敗またはタイムアウトした場合、`vibe list`は警告を出したうえで、失敗させる代わりに以前キャッシュされたサマリーを表示します。
+
+この列の有無は**設定**に従い、コマンドの成否には従いません。コマンドが回答しなかったWorktreeは空欄になるため、空の列を「機能がオフなのかもしれない」と読む必要はありません。
+
+コマンドは自分のシェルと権限で実行されるため、トラスト機構の対象となります。`[summary] command`を編集すると`.vibe.toml`のハッシュが無効になり、[`vibe trust`](/ja/commands/trust/)を再実行するまで`vibe list`は失敗します。
+
+契約仕様の全体、コマンド出力に課される制限、キャッシュの無効化条件については[`.vibe.toml` → サマリー設定](/ja/configuration/vibe-toml/#サマリー設定)を参照してください。すぐ使えるスクリプトは[`examples/summary/`](https://github.com/kexi/vibe/tree/main/examples/summary)にあります。
+
 ## JSON出力
 
 ```bash
@@ -95,8 +120,11 @@ vibe list --json 2>&1 | jq .
 | `last_commit_at` | string \| null | tipのcommitter dateのISO 8601表記。unbornブランチでは`null`           |
 | `status`         | string \| null | `"clean"`または`"dirty"`。gitに問い合わせられなかった場合は`null`     |
 | `dirty_files`    | number \| null | `git status`が報告したエントリ数。`status`が`null`のときは常に`null`  |
+| `summary`        | string         | `[summary]`が設定されている場合の**み**存在。未回答の場合は`""`       |
 
 `branch`・`path`・`current`・`scratch`はv3.1.0で出荷されたフィールドであり、名前・型・位置が維持されます。新しいフィールドは末尾に追加されるだけです。
+
+`summary`は`[summary]`が未設定の場合には完全に省略されるため、この機能を使っていないリポジトリでは、機能が存在しなかった頃とまったく同じドキュメントが出力されます。
 
 AGEの相対表記は出力されません。「3日前」が欲しい利用側は、厳密な`last_commit_at`から自分で計算するほうが適切です。
 

@@ -42,6 +42,7 @@ $ vibe list
 | BASE     | The branch this one is based on — see [BASE](#base) below                          |
 | AGE      | How long ago the tip commit was made (`now`, `12m`, `2h`, `3d`, `1w`, `5mo`, `2y`) |
 | STATUS   | `clean`, or `M <n>` — see [How changes are counted](#how-changes-are-counted)      |
+| SUMMARY  | Only when `[summary]` is configured — see [SUMMARY](#summary) below                |
 | PATH     | The worktree directory                                                             |
 
 A `(scratch)` label is appended to worktrees created by [`vibe scratch`](/commands/scratch/).
@@ -71,6 +72,30 @@ AGE is the elapsed time since the tip commit's committer date, truncated (never 
 
 A branch with no commits yet (an unborn branch) has no tip to date, so its AGE reads `-` and its `last_commit_at` is `null`.
 
+### SUMMARY
+
+The SUMMARY column appears only when the repository's `.vibe.toml` sets `[summary] command`. vibe runs that command once per `vibe list`, hands it the batch of worktrees on stdin, and shows what it prints back:
+
+```toml
+[summary]
+command = "./examples/summary/last-commit.sh"
+timeout_seconds = 30
+```
+
+```
+$ vibe list
+* feat/login    develop  2h    M 3    Adds the login form         /path/to/repo-feat-login
+  fix/crash     develop  3d    clean  Fixes the startup panic     /path/to/repo-fix-crash
+```
+
+Results are cached per worktree, so a second `vibe list` over an unchanged repository does not run the command at all. If the command fails or times out, `vibe list` warns and shows the previously cached summary rather than failing.
+
+The column's presence follows the **configuration**, not the command's success: a worktree the command stayed silent about shows an empty cell, so an empty column never has to be read as "maybe the feature is off".
+
+Because the command runs with your shell and your permissions, it is covered by the trust mechanism — editing `[summary] command` invalidates `.vibe.toml`'s hash and `vibe list` fails until you run [`vibe trust`](/commands/trust/) again.
+
+See [`.vibe.toml` → Summary Configuration](/configuration/vibe-toml/#summary-configuration) for the full contract, the limits applied to the command's output, and the cache invalidation rules. Ready-to-use scripts live in [`examples/summary/`](https://github.com/kexi/vibe/tree/main/examples/summary).
+
 ## JSON output
 
 ```bash
@@ -95,8 +120,11 @@ Each array element is an object with these fields:
 | `last_commit_at` | string \| null | The tip's committer date in ISO 8601; `null` for an unborn branch           |
 | `status`         | string \| null | `"clean"` or `"dirty"`; `null` when git could not be asked                  |
 | `dirty_files`    | number \| null | How many entries `git status` reported; `null` whenever `status` is `null`  |
+| `summary`        | string         | Present **only** when `[summary]` is configured; `""` when unanswered       |
 
 `branch`, `path`, `current` and `scratch` are the fields shipped in v3.1.0 and keep their names, types and position. New fields are only ever appended.
+
+`summary` is omitted entirely when `[summary]` is not configured, so a repository not using the feature produces exactly the document it produced before the feature existed.
 
 The relative AGE string is not published. A consumer wanting "3 days ago" is better served computing it from `last_commit_at`, which is exact.
 

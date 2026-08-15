@@ -179,6 +179,102 @@ configs = ["libs/foo", "vendor/bar"]
 - `--no-copy` 会跳过子模块的 copy 规则
 - 子模块更新、trust、路径校验或 setup 失败都会中断 `vibe start`，已创建的 worktree 会保留下来以便排查
 
+## 摘要配置 <Badge text="v3.2.0+" />
+
+为 [`vibe list`](/zh/commands/list/) 添加一个 SUMMARY 列，其内容由你提供的命令生成：
+
+```toml
+[summary]
+command = "./examples/summary/last-commit.sh"
+timeout_seconds = 30
+```
+
+- `command` — 一行 shell 命令。只有设置了它，该列才会出现
+- `timeout_seconds` — 命令被强制终止前允许运行的时长。**默认值**：`30`。**范围**：`1` 到 `3600`
+
+只要设置了 `command`，该列就会存在，无论命令是否为某个 worktree 给出了答案。命令没有回答的 worktree 只会显示一个空单元格。
+
+:::caution[命令在你的机器上执行]
+每次运行 `vibe list` 时，`[summary] command` 都会以你的 shell 和你的权限执行。它受[信任机制](/zh/configuration/settings/)保护：修改它——即使 `.vibe.toml` 中其他内容完全没变——都会改变文件的 SHA-256，`vibe list` 会一直失败，直到你重新运行 `vibe trust` 并再次确认将要执行的内容。对于不是你自己编写的 `[summary]` 配置段，请务必在信任之前审阅其内容。
+:::
+
+### 契约
+
+命令**每次 `vibe list` 只运行一次**，在**主 worktree** 中执行，待处理的 worktree 批次通过 **stdin** 传入：
+
+```json
+{
+  "worktrees": [
+    {
+      "name": "feat/login",
+      "path": "/abs/path/to/wt",
+      "base": "develop",
+      "head": "0f1e2d3c…"
+    }
+  ]
+}
+```
+
+`name` 和 `path` 始终是字符串；`base` 和 `head` 在未知时为 `null`。这里只会出现摘要**尚未被缓存**的 worktree。
+
+命令必须在 **stdout** 上打印一个 JSON 对象，将 `name` 映射到摘要文本：
+
+```json
+{ "feat/login": "添加登录表单" }
+```
+
+命令未提及的名称不会获得摘要，也不会被缓存，因此下次运行会再次询问。
+
+**一次批处理，而非每个 worktree 一次调用**：真正有价值的摘要命令是 LLM 调用和全仓库查询，N 次调用意味着 N 倍的延迟。单次调用还能让命令在通观全局后给出对比性的回答。
+
+**名称重复的 worktree 会被排除**：答案以 `name` 为键，而两个处于 detached HEAD 的 worktree 可能共用同一个目录 basename。当批次中出现重复名称时，这些 worktree 会被完全排除在请求之外（在 `--verbose` 下会报告）——缺少摘要比把摘要显示在错误的行上更安全。
+
+### 输出限制
+
+命令的 stdout 被视为不可信输入，在存储或显示之前都会施加边界：
+
+| 限制                   | 行为                                 |
+| ---------------------- | ------------------------------------ |
+| stdout 1 MiB           | 读取在上限处停止，过长的回答会被拒绝 |
+| stderr 64 KiB          | 读取在上限处停止（只有首行会被引用） |
+| 每个 worktree 4 个条目 | 远超请求规模的回答会被拒绝           |
+| 字符串值的 JSON 对象   | 数组、数字或嵌套对象属于违反契约     |
+| 仅第一行               | 多行摘要会在第一个换行处被截断       |
+| 500 个字符             | 更长的文本会以 `…` 截断              |
+| 终端控制字符           | 与分支名一样，在显示前被无害化       |
+
+### 超时与失败
+
+如果命令以非零状态退出、无法启动、超时，或打印了违反契约的内容，`vibe list` 会**发出警告并继续执行**。此前缓存的摘要会代替空单元格显示，因为略微陈旧的答案也比什么都没有更有价值。在 `--json` 模式下，警告会被抑制以保持 payload 可解析。
+
+:::note[被终止的命令与后台任务]
+超时始终会限制 `vibe list` 自身的等待时长：期限一到，vibe 就停止读取并将本次运行报告为超时，无论该命令还在做什么。
+
+但它并**不会**终止这些工作。`kill` 发送给的是 vibe 启动的那个 shell，而不是它的子孙进程，因此将工作放到后台的命令（`something &`）在 vibe 继续往下走之后仍会在后台运行。
+:::
+
+### 缓存
+
+摘要按仓库缓存在 `$XDG_CACHE_HOME/vibe/summaries/`（当 `XDG_CACHE_HOME` 未设置或格式不正确时，为 `$HOME/.cache/vibe/summaries/`）。对未发生变化的仓库第二次运行 `vibe list` 时，命令**完全不会被执行**。
+
+缓存的摘要会在以下情况失效：
+
+- worktree 的 HEAD 发生变化（新提交、切换检出），**或**
+- worktree 的未提交改动发生变化（`git status` 报告了不同的内容），**或**
+- `[summary] command` 本身发生变化——此时会丢弃**全部**条目，因为旧命令生成的摘要无法说明新命令的含义
+
+`timeout_seconds` 不参与失效判断：它只改变等待时长，不改变答案本身。已不存在的 worktree 对应的条目会在每次运行时被清理；缓存文件损坏或无法读取时会直接重新生成。
+
+### 示例脚本
+
+开箱即用的脚本位于 [`examples/summary/`](https://github.com/kexi/vibe/tree/main/examples/summary)（面向 Unix；每个脚本的文件头都写有用法和 `[summary]` 配置片段）：
+
+| 脚本             | 该列显示的内容                            | 依赖                  |
+| ---------------- | ----------------------------------------- | --------------------- |
+| `last-commit.sh` | 每个 worktree 最新提交的 subject          | `jq`、`git`           |
+| `note-file.sh`   | 每个 worktree 的 `.vibe/note.txt` 首行    | `jq`                  |
+| `claude.sh`      | 由 LLM 撰写的、说明每个 worktree 在做什么 | `jq`、`git`、`claude` |
+
 ## Worktree 配置 <Badge text="v0.6.0+" />
 
 使用外部脚本自定义 worktree 的目录路径。
@@ -241,6 +337,10 @@ post_clean = ["echo '清理完成'"]
 
 [submodules]
 configs = ["libs/foo"]
+
+[summary]
+command = "./examples/summary/last-commit.sh"
+timeout_seconds = 30
 
 [worktree]
 path_script = "~/.config/vibe/worktree-path.sh"
