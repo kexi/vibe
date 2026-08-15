@@ -60,8 +60,8 @@ use crate::config_loader::load_vibe_config;
 use crate::error::{Result, VibeError};
 use crate::git::{
     branch_ref_info, count_status_entries_z, detached_head_info, get_worktree_list,
-    is_inside_worktree, lexical_normalize_path, resolve_default_branch, worktree_status_z,
-    GitRunner, Worktree,
+    is_inside_worktree, is_resolved_oid, lexical_normalize_path, resolve_default_branch,
+    worktree_status_z, GitRunner, Worktree,
 };
 use crate::io::Io;
 use crate::mru::{load_mru_data, sort_by_mru};
@@ -122,14 +122,17 @@ pub struct ListEntry {
     /// The branch this one is based on (see the module header), or `None` for
     /// the main worktree and whenever it could not be resolved.
     pub base: Option<String>,
-    /// The commit sha the worktree's HEAD points at, or `None` when the
-    /// porcelain carried no `HEAD` record.
+    /// The commit sha the worktree's HEAD points at, or `None` when there is no
+    /// commit to name: the porcelain carried no `HEAD` record, or the branch is
+    /// unborn (see [`is_resolved_oid`]).
     ///
-    /// `Option` rather than the empty string [`Worktree::head`] uses: every
-    /// other unknown on this struct is `null` in JSON, and a consumer checking
-    /// one field for `null` and another for `""` is being asked to remember an
-    /// inconsistency for no reason. The empty string stays on `Worktree`, where
-    /// it is the parser's "no record seen" and not a published value.
+    /// `Option` rather than the raw porcelain value: every other unknown on this
+    /// struct is `null` in JSON, and a consumer checking one field for `null` and
+    /// another for `""` is being asked to remember an inconsistency for no
+    /// reason. The unborn case is worse than untidy — git spells it as the NULL
+    /// OID, which is shaped exactly like a real sha, so publishing it verbatim
+    /// hands consumers a value `git show` rejects. The published contract is
+    /// "a commit sha, or null".
     pub head: Option<String>,
     /// The tip commit's committer date in ISO 8601, or `None` for an unborn
     /// branch (no commits yet) or an unreadable worktree.
@@ -623,17 +626,27 @@ fn enrich_entries<G: GitRunner>(
     warnings: &mut DeferredWarnings,
 ) -> Vec<ListEntry> {
     let branches: Vec<String> = worktrees.iter().filter_map(|w| w.branch.clone()).collect();
-    // A failure here is not fatal: it costs the AGE and BASE columns, and an
-    // empty map makes every branch look unknown, which is the correct rendering.
+    // A failure here is not fatal — it costs the AGE and BASE columns — but it
+    // is kept DISTINCT from "the call worked and this branch had no upstream".
     //
-    // But it is RECORDED, because "unknown" and "absent" are indistinguishable
-    // in the map that results: a wholesale failure looks exactly like every
-    // branch legitimately having no ref, which sends BASE down the
-    // default-branch fallback for every row. That fallback can silently
-    // reproduce a key the cache already holds — see `ref_lookup_failed`.
-    let ref_lookup = branch_ref_info(git, &branches);
-    let ref_lookup_failed = ref_lookup.is_err();
-    let ref_info: HashMap<String, _> = ref_lookup.unwrap_or_default().into_iter().collect();
+    // Why not `unwrap_or_default()`: an empty map is indistinguishable from
+    // "every branch tracks nothing", which sends every row down the
+    // default-branch fallback below. `list` would then assert that each worktree
+    // is based on `develop` on the strength of a git call that never answered.
+    // A stated fact that happens to be wrong is worse than a `-`, so a failed
+    // call suppresses the fallback entirely and every BASE degrades to unknown.
+    // A per-branch MISS (unborn branch, ref genuinely absent) is a different
+    // thing and still falls back, because there the call did answer.
+    //
+    // This one fact has TWO consumers: the BASE column degrades to `-` (here),
+    // and the summary cache refuses to key an entry on it (`base_is_degraded`
+    // below). They are deliberately driven from the same flag — a row whose BASE
+    // is a guess must neither be displayed as fact nor cached as one.
+    let ref_info: Option<HashMap<String, _>> = branch_ref_info(git, &branches)
+        .ok()
+        .map(|entries| entries.into_iter().collect());
+    let ref_lookup_failed = ref_info.is_none();
+    let ref_info = ref_info.unwrap_or_default();
 
     // Resolved once, lazily: it is only needed when some branch has no upstream,
     // and it is the same answer for every row.
@@ -662,10 +675,15 @@ fn enrich_entries<G: GitRunner>(
             // a branch with an upstream never consults it.
             let mut base_from_guessed_default = false;
             let base = match &w.branch {
+                // The ref lookup never answered, so nothing is known about ANY
+                // branch's upstream and the fallback would be a guess.
+                Some(_) if ref_lookup_failed => None,
                 Some(branch) => ref_info
                     .get(branch)
-                    .and_then(|i| i.upstream.as_deref())
-                    .map(strip_remote_prefix)
+                    // Already a plain branch name: `branch_ref_info` resolves it
+                    // from the full refname plus git's own remote name, so there
+                    // is no prefix left here to guess at.
+                    .and_then(|i| i.upstream.clone())
                     .or_else(|| {
                         let resolved =
                             default_branch.get_or_insert_with(|| resolve_default_branch(git));
@@ -709,9 +727,11 @@ fn enrich_entries<G: GitRunner>(
                     (Some(label.to_string()), Some(count), Some(payload))
                 }
                 Err(e) => {
-                    // Not sanitized here: `DeferredWarnings::push` does it for
-                    // every message, and the git error `{e}` needs it just as
-                    // much as the path does.
+                    // Not sanitized here: `DeferredWarnings::push` sanitizes
+                    // every message as a WHOLE, which is what this needs — `e`
+                    // is git's own stderr text and quotes the offending path
+                    // back, so scrubbing only the interpolated path would let
+                    // the identical control characters through in git's copy.
                     warnings.push(format!("Could not read status of {}: {e}", w.path));
                     (None, None, None)
                 }
@@ -728,7 +748,7 @@ fn enrich_entries<G: GitRunner>(
                     .is_some_and(|b| b.starts_with(SCRATCH_PREFIX)),
                 name,
                 base,
-                head: Some(w.head.clone()).filter(|h| !h.is_empty()),
+                head: Some(w.head.clone()).filter(|h| is_resolved_oid(h)),
                 last_commit_at: commit.as_ref().map(|(_, iso)| iso.clone()),
                 status,
                 dirty_files,
@@ -754,19 +774,6 @@ fn detached_name(path: &str) -> String {
         .file_name()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.to_string())
-}
-
-/// Drop a `<remote>/` prefix from an upstream so BASE names a branch.
-///
-/// The first segment of an `upstream:short` is always the remote name (git
-/// builds it as `<remote>/<branch>`), so splitting on the first `/` is exact
-/// rather than a guess at "origin". A value with no `/` is already a plain
-/// branch name and is returned unchanged.
-fn strip_remote_prefix(upstream: &str) -> String {
-    match upstream.split_once('/') {
-        Some((_remote, branch)) if !branch.is_empty() => branch.to_string(),
-        _ => upstream.to_string(),
-    }
 }
 
 /// Number of seconds treated as a month for the AGE column (≈30 days).
