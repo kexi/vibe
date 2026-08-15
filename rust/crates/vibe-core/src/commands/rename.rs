@@ -481,6 +481,14 @@ mod tests {
             if args.contains(&"list") && args.contains(&"worktree") {
                 return Ok(self.worktree_list.clone());
             }
+            // The zero-exit probe `resolve_default_branch` uses to confirm whether
+            // refs/remotes/origin/HEAD exists: empty output = confirmed absent.
+            if args.first() == Some(&"for-each-ref") && args.contains(&"refs/remotes/origin/HEAD") {
+                return Ok(match &self.origin_head {
+                    Some(_) => "abc commit\trefs/remotes/origin/HEAD".to_string(),
+                    None => String::new(),
+                });
+            }
             if args.contains(&"symbolic-ref") {
                 return match &self.origin_head {
                     Some(h) => Ok(h.clone()),

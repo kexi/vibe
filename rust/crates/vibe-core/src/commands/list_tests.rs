@@ -48,6 +48,9 @@ struct ListGit {
     /// repository, where the default-branch fallback is permanent rather than a
     /// symptom of anything going wrong.
     origin_head_exists: bool,
+    /// Make the `init.defaultBranch` probe FAIL, so neither source can confirm
+    /// an absence and the fallback is a guess.
+    fail_config_probe: bool,
     default_branch: String,
     calls: RefCell<Vec<Vec<String>>>,
 }
@@ -80,6 +83,7 @@ impl ListGit {
             fail_for_each_ref: false,
             fail_default_branch: false,
             origin_head_exists: true,
+            fail_config_probe: false,
             default_branch: "main".to_string(),
             calls: RefCell::new(Vec::new()),
         }
@@ -128,11 +132,13 @@ impl ListGit {
         self.calls.borrow().clone()
     }
 
-    /// The argument vector git was handed for `for-each-ref`, if any.
+    /// The argument vector git was handed for the batched BRANCH lookup, if any.
+    ///
+    /// Identified by its `--format`: `resolve_default_branch` also runs a bare
+    /// `for-each-ref refs/remotes/origin/HEAD` to confirm whether that ref
+    /// exists, and the two must not be conflated.
     fn for_each_ref_call(&self) -> Option<Vec<String>> {
-        self.calls()
-            .into_iter()
-            .find(|c| c.first().map(String::as_str) == Some("for-each-ref"))
+        self.calls().into_iter().find(|c| is_branch_ref_lookup(c))
     }
 
     /// The `-C <path>` operand of every `status` invocation, in order.
@@ -143,6 +149,13 @@ impl ListGit {
             .filter_map(|c| c.get(1).cloned())
             .collect()
     }
+}
+
+/// Whether an argv is the batched BRANCH lookup (as opposed to the bare
+/// `for-each-ref` probe that confirms `refs/remotes/origin/HEAD`).
+fn is_branch_ref_lookup(args: &[String]) -> bool {
+    args.first().map(String::as_str) == Some("for-each-ref")
+        && args.iter().any(|a| a.starts_with("--format="))
 }
 
 impl GitRunner for ListGit {
@@ -156,6 +169,15 @@ impl GitRunner for ListGit {
         }
         if args.contains(&"worktree") {
             return Ok(self.porcelain.clone());
+        }
+        // The bare probe `resolve_default_branch` uses to confirm whether
+        // refs/remotes/origin/HEAD exists. Empty output = confirmed absent.
+        if args.first() == Some(&"for-each-ref") && !args.iter().any(|a| a.starts_with("--format="))
+        {
+            if !self.origin_head_exists {
+                return Ok(String::new());
+            }
+            return Ok("abc commit\trefs/remotes/origin/HEAD".to_string());
         }
         if args.first() == Some(&"for-each-ref") {
             if self.fail_for_each_ref {
@@ -179,30 +201,23 @@ impl GitRunner for ListGit {
             }
             return Ok(out);
         }
-        // `show-ref --verify` asks whether refs/remotes/origin/HEAD EXISTS.
-        // The fake models a repository that has one (so a resolution failure is
-        // a transient fault, not a permanent absence).
-        if args.first() == Some(&"show-ref") {
-            if !self.origin_head_exists {
-                return Err(VibeError::GitOperation {
-                    command: args.join(" "),
-                    message: "failed: no such ref".to_string(),
-                });
-            }
-            return Ok(String::new());
-        }
-        if args.contains(&"symbolic-ref") || args.contains(&"init.defaultBranch") {
+        if args.contains(&"symbolic-ref") {
             if self.fail_default_branch {
                 return Err(VibeError::GitOperation {
                     command: args.join(" "),
-                    message: "failed: no such ref".to_string(),
+                    message: "failed: cannot read ref".to_string(),
                 });
             }
-            // Only `symbolic-ref` has an answer; `config --get` is reached
-            // only when that failed, which this fake never does on its own.
-            if args.contains(&"symbolic-ref") {
-                return Ok(format!("origin/{}", self.default_branch));
+            return Ok(format!("origin/{}", self.default_branch));
+        }
+        if args.contains(&"init.defaultBranch") {
+            if self.fail_config_probe {
+                return Err(VibeError::GitOperation {
+                    command: args.join(" "),
+                    message: "failed: cannot read config".to_string(),
+                });
             }
+            // `--default ""` makes "unset" a successful, empty answer.
             return Ok(String::new());
         }
         if args.contains(&"log") {
@@ -1015,7 +1030,7 @@ fn branch_facts_are_read_in_a_single_for_each_ref_call() {
     let ref_calls = git
         .calls()
         .into_iter()
-        .filter(|c| c.first().map(String::as_str) == Some("for-each-ref"))
+        .filter(|c| is_branch_ref_lookup(c))
         .count();
     assert_eq!(ref_calls, 1, "the ref lookup must be batched");
     assert_eq!(git.status_paths().len(), 3, "one status per worktree");
