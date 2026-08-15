@@ -70,6 +70,15 @@ impl ListGit {
         }
     }
 
+    /// Rewrite the porcelain so every worktree reports the NULL OID, which is
+    /// what real git emits for a branch that has no commits yet.
+    fn with_unborn_head(mut self, width: usize) -> Self {
+        self.porcelain = self
+            .porcelain
+            .replace("HEAD abc", &format!("HEAD {}", "0".repeat(width)));
+        self
+    }
+
     fn empty() -> Self {
         let mut git = ListGit::with(&[]);
         git.porcelain = String::new();
@@ -827,11 +836,16 @@ fn an_unborn_branch_reports_an_unknown_age() {
     // it is simply absent from the answer. That must read as "unknown", not as
     // an error or an epoch-zero age.
     let io = no_home();
-    let git = ListGit::with(&[("/repo/new", "feat/unborn")]);
+    // The NULL OID, as real git reports it for an unborn branch — not a
+    // plausible-looking sha, which would let the head assertion below pass for
+    // the wrong reason.
+    let git = ListGit::with(&[("/repo/new", "feat/unborn")]).with_unborn_head(40);
     run(&io, &git, "/repo/new", true).unwrap();
 
     let parsed: serde_json::Value = serde_json::from_str(&io.stderr_text()).unwrap();
     assert_eq!(parsed[0]["last_commit_at"], serde_json::Value::Null);
+    // The row must be internally consistent: no commit date AND no commit sha.
+    assert_eq!(parsed[0]["head"], serde_json::Value::Null);
 
     let io = no_home();
     run(&io, &git, "/repo/new", false).unwrap();
@@ -1138,4 +1152,29 @@ fn an_uninterpretable_upstream_falls_back_rather_than_being_displayed_raw() {
 
     let parsed: serde_json::Value = serde_json::from_str(&io.stderr_text()).unwrap();
     assert_eq!(parsed[0]["base"], serde_json::json!("develop"));
+}
+
+#[test]
+fn an_unborn_head_is_null_in_a_sha256_repository_too() {
+    // The OID width follows the repository's hash algorithm, so a
+    // `git init --object-format=sha256` repo spells the NULL OID with 64 zeros.
+    // A length-based check would silently stop working there.
+    let io = no_home();
+    let git = ListGit::with(&[("/repo/new", "feat/unborn")]).with_unborn_head(64);
+    run(&io, &git, "/repo/new", true).unwrap();
+
+    let parsed: serde_json::Value = serde_json::from_str(&io.stderr_text()).unwrap();
+    assert_eq!(parsed[0]["head"], serde_json::Value::Null);
+}
+
+#[test]
+fn a_real_head_sha_is_published_unchanged() {
+    // The positive control for the null-OID filtering: an ordinary sha must
+    // still reach `--json` verbatim, so consumers can `git show` it.
+    let io = no_home();
+    let git = ListGit::with(&[("/repo/main", "main")]).with_ref("main", 60, None);
+    run(&io, &git, "/repo/main", true).unwrap();
+
+    let parsed: serde_json::Value = serde_json::from_str(&io.stderr_text()).unwrap();
+    assert_eq!(parsed[0]["head"], serde_json::json!("abc"));
 }

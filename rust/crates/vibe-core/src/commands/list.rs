@@ -45,8 +45,8 @@ use crate::commands::Outcome;
 use crate::error::{Result, VibeError};
 use crate::git::{
     branch_ref_info, count_status_entries_z, detached_head_info, get_default_branch,
-    get_worktree_list, is_inside_worktree, lexical_normalize_path, worktree_status_z, GitRunner,
-    Worktree,
+    get_worktree_list, is_inside_worktree, is_resolved_oid, lexical_normalize_path,
+    worktree_status_z, GitRunner, Worktree,
 };
 use crate::io::Io;
 use crate::mru::{load_mru_data, sort_by_mru};
@@ -103,14 +103,17 @@ pub struct ListEntry {
     /// The branch this one is based on (see the module header), or `None` for
     /// the main worktree and whenever it could not be resolved.
     pub base: Option<String>,
-    /// The commit sha the worktree's HEAD points at, or `None` when the
-    /// porcelain carried no `HEAD` record.
+    /// The commit sha the worktree's HEAD points at, or `None` when there is no
+    /// commit to name: the porcelain carried no `HEAD` record, or the branch is
+    /// unborn (see [`is_resolved_oid`]).
     ///
-    /// `Option` rather than the empty string [`Worktree::head`] uses: every
-    /// other unknown on this struct is `null` in JSON, and a consumer checking
-    /// one field for `null` and another for `""` is being asked to remember an
-    /// inconsistency for no reason. The empty string stays on `Worktree`, where
-    /// it is the parser's "no record seen" and not a published value.
+    /// `Option` rather than the raw porcelain value: every other unknown on this
+    /// struct is `null` in JSON, and a consumer checking one field for `null` and
+    /// another for `""` is being asked to remember an inconsistency for no
+    /// reason. The unborn case is worse than untidy — git spells it as the NULL
+    /// OID, which is shaped exactly like a real sha, so publishing it verbatim
+    /// hands consumers a value `git show` rejects. The published contract is
+    /// "a commit sha, or null".
     pub head: Option<String>,
     /// The tip commit's committer date in ISO 8601, or `None` for an unborn
     /// branch (no commits yet) or an unreadable worktree.
@@ -385,7 +388,7 @@ fn enrich_entries<G: GitRunner>(
                     .is_some_and(|b| b.starts_with(SCRATCH_PREFIX)),
                 name,
                 base,
-                head: Some(w.head.clone()).filter(|h| !h.is_empty()),
+                head: Some(w.head.clone()).filter(|h| is_resolved_oid(h)),
                 last_commit_at: commit.as_ref().map(|(_, iso)| iso.clone()),
                 status,
                 dirty_files,

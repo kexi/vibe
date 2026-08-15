@@ -22,7 +22,8 @@ use std::process::Command;
 /// second resolution could disagree with the listing if a concurrent checkout
 /// lands between the two calls. It is the empty string when the payload carried
 /// no `HEAD` record (hand-written fixtures, and a `bare` entry before it is
-/// dropped).
+/// dropped), and the NULL OID when the worktree's branch has no commits yet —
+/// see [`is_resolved_oid`], which callers publishing the value must consult.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Worktree {
     pub path: String,
@@ -537,6 +538,26 @@ pub fn worktree_status_z(runner: &impl GitRunner, path: &str) -> Result<Vec<u8>>
 /// this crate reads v2 — pinning v1 keeps a single porcelain dialect in the
 /// codebase.
 ///
+/// Whether an object id names an actual object, rather than "nothing yet".
+///
+/// git spells the absence of a commit as the NULL OID — all zeros — not as an
+/// empty field: `git worktree list --porcelain` reports
+/// `HEAD 0000000000000000000000000000000000000000` for a worktree whose branch
+/// has no commits (an unborn HEAD). That value looks exactly like a real sha to
+/// anything that only checks for emptiness, so a consumer handed it would run
+/// `git show <head>` and get `fatal: bad object`.
+///
+/// Tested by "every byte is `0`" rather than against a 40-character literal:
+/// the OID width is the repository's hash algorithm, so a SHA-256 repository
+/// (`git init --object-format=sha256`) emits 64 zeros instead. Matching on
+/// length would silently stop working there.
+///
+/// An empty string is not a resolved OID either, so callers get one predicate
+/// for both "no `HEAD` record" and "unborn HEAD".
+pub fn is_resolved_oid(oid: &str) -> bool {
+    !oid.is_empty() && !oid.bytes().all(|b| b == b'0')
+}
+
 /// Undecodable bytes are counted, not dropped: a file whose name is not valid
 /// UTF-8 is still a change, and the count is only ever displayed as a number.
 pub fn count_status_entries_z(payload: &[u8]) -> usize {
@@ -1949,6 +1970,27 @@ branch refs/heads/main
             "the untracked-files mode must be pinned, got: {:?}",
             git.recorded_args()
         );
+    }
+
+    #[test]
+    fn null_oid_is_not_a_resolved_object_at_either_hash_width() {
+        // What it guarantees: a worktree whose branch has no commits yet is
+        // recognised as having no HEAD. git reports that as the NULL OID, not
+        // as an empty field, and the width follows the repository's hash
+        // algorithm — 40 zeros for SHA-1, 64 for a `--object-format=sha256`
+        // repository. Both are verified against real `git worktree list`.
+        assert!(!is_resolved_oid(&"0".repeat(40)));
+        assert!(!is_resolved_oid(&"0".repeat(64)));
+        // Empty: no `HEAD` record at all.
+        assert!(!is_resolved_oid(""));
+    }
+
+    #[test]
+    fn a_real_sha_is_a_resolved_object() {
+        assert!(is_resolved_oid("93b07da74523635ff88ed6f5f17ea93a98e81bde"));
+        // A sha that merely BEGINS with zeros is a perfectly ordinary object,
+        // which is why the check is "every byte", not "starts with zero".
+        assert!(is_resolved_oid("0000000000000000000000000000000000000001"));
     }
 
     #[test]

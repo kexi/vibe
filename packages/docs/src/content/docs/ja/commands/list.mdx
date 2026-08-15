@@ -95,12 +95,14 @@ vibe list --json 2>&1 | jq .
 | `scratch`        | boolean        | 自動生成された`scratch/<timestamp>`のWorktreeかどうか                 |
 | `name`           | string         | 常に存在する名前。ブランチ名、detached HEADではディレクトリのbasename |
 | `base`           | string \| null | BASE列の値。該当しない場合や読み取れなかった場合は`null`              |
-| `head`           | string \| null | HEADが指すコミットのsha。gitが報告しなかった場合は`null`              |
+| `head`           | string \| null | HEADが指すコミットのsha。unbornブランチ（コミットなし）では`null`     |
 | `last_commit_at` | string \| null | tipのcommitter dateのISO 8601表記。unbornブランチでは`null`           |
 | `status`         | string \| null | `"clean"`または`"dirty"`。gitに問い合わせられなかった場合は`null`     |
 | `dirty_files`    | number \| null | `git status`が報告したエントリ数。`status`が`null`のときは常に`null`  |
 
 `branch`・`path`・`current`・`scratch`はv3.1.0で出荷されたフィールドであり、名前・型・位置が維持されます。新しいフィールドは末尾に追加されるだけです。
+
+`head`は常に`git show`に渡せるshaか`null`のいずれかです。まだコミットが無いブランチのWorktreeでは、gitが出力する全てゼロのプレースホルダOIDではなく`null`を報告するため、このフィールドに解決できないsha形式の値が入ることはありません。
 
 AGEの相対表記は出力されません。「3日前」が欲しい利用側は、厳密な`last_commit_at`から自分で計算するほうが適切です。
 
