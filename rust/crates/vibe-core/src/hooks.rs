@@ -157,9 +157,12 @@ pub fn run_hooks(
 /// other error passes through untouched.
 ///
 /// Returns `Ok(true)` when the hooks succeeded and `Ok(false)` when a failure
-/// was downgraded, so a warn-and-ABORT caller (`clean`'s `pre_clean`, which runs
-/// before anything is destroyed) can branch while warn-and-continue callers just
-/// apply `?`.
+/// was downgraded, so a warn-and-ABORT caller can branch while warn-and-continue
+/// callers just apply `?`. Which one a call site is depends on its POSITION in
+/// the lifecycle, not on the command: the `pre_*` hooks (`clean`'s `pre_clean`,
+/// which runs before anything is destroyed, and `start`'s `pre_start`, which
+/// runs before the worktree is provisioned) abort and emit no `cd`, while the
+/// `post_*` hooks run once the operation is complete and only warn.
 ///
 /// Why only `HookExecution` and not a catch-all: the same call chain also
 /// carries `FileSystem` copy failures and `Configuration`/`GitOperation`

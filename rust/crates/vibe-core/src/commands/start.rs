@@ -10,10 +10,20 @@
 //!
 //! The single stdout write stays in the binary: a normal run returns
 //! `Outcome::cd(path)`; the hook mode returns `Outcome::stdout(path)`. A hook
-//! that fails once the worktree exists is non-fatal in NORMAL mode too, not just
-//! in hook mode: it warns and still returns the `cd` (issue #601). Only
-//! `HookExecution` is downgraded — a failed copy or submodule step stays fatal,
-//! so no `cd` into a half-built worktree is ever emitted.
+//! failure is non-fatal in NORMAL mode too, not just in hook mode, but its
+//! effect on the `cd` depends on WHERE in the sequence it happened (issue #601),
+//! mirroring `clean`'s `pre_clean`/`post_clean` split:
+//!
+//! - `pre_start` runs before the copy and is therefore a GATE. A failure warns
+//!   and returns `Outcome::none()`: the copy and `post_start` are skipped, so
+//!   the worktree is unprovisioned and the shell must stay where it is. This
+//!   keeps a `pre_start` usable as a precondition check (secrets reachable,
+//!   licence valid, …) that blocks entry.
+//! - `post_start` runs after the worktree is fully provisioned, so a failure
+//!   only warns and the `cd` is still returned — that is the actual #601 fix.
+//!
+//! Only `HookExecution` is downgraded — a failed copy or submodule step stays
+//! fatal, so no `cd` into a half-built worktree is ever emitted.
 //!
 //! Seam strategy (architect's hybrid): the small, ubiquitous seams (`Io`,
 //! `GitRunner`, `Prompt`, `RepoResolver`, `ScriptRunner`, `ProcessControl`) are
@@ -114,6 +124,25 @@ struct ConfigAndHooks {
     copy_untracked: bool,
     copy_modified: bool,
     dry_run: bool,
+}
+
+/// Whether the config-and-hooks sequence left the worktree usable.
+///
+/// Only a `pre_start` failure yields `Gated`: it runs BEFORE the copy, so the
+/// copy and `post_start` are skipped and the worktree is unprovisioned. A
+/// `post_start` failure yields `Provisioned` — everything the worktree needs is
+/// already in place (issue #601).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Provisioning {
+    Provisioned,
+    Gated,
+}
+
+impl Provisioning {
+    /// Whether a caller holding a worktree path may return a `cd` into it.
+    fn allows_cd(self) -> bool {
+        self == Provisioning::Provisioned
+    }
 }
 
 /// Run `vibe start <branch_name>`.
@@ -253,24 +282,28 @@ where
         run_create_worktree_with_progress(deps, branch_name, &create_opts)?;
     }
 
-    // The worktree now exists, so a failing hook must not suppress the `cd`
-    // (issue #601); non-hook failures still propagate and stay fatal.
-    warn_on_hook_failure(
-        deps.io,
-        run_config_and_hooks(
-            deps,
-            config.as_ref(),
-            &repo_root,
-            &worktree_path,
-            &ConfigAndHooks {
-                skip_hooks: flags.no_hooks,
-                skip_copy: flags.no_copy,
-                copy_untracked: flags.copy_untracked,
-                copy_modified: flags.copy_modified,
-                dry_run: flags.dry_run,
-            },
-        ),
+    // The worktree now exists, so a failing `post_start` must not suppress the
+    // `cd` (issue #601); a failing `pre_start` gates it, and non-hook failures
+    // still propagate and stay fatal.
+    let provisioning = run_config_and_hooks(
+        deps,
+        config.as_ref(),
+        &repo_root,
+        &worktree_path,
+        &ConfigAndHooks {
+            skip_hooks: flags.no_hooks,
+            skip_copy: flags.no_copy,
+            copy_untracked: flags.copy_untracked,
+            copy_modified: flags.copy_modified,
+            dry_run: flags.dry_run,
+        },
     )?;
+    if !provisioning.allows_cd() {
+        // The worktree stays created (as it did before #601) — only the cd is
+        // withheld, so the user lands back in the repo they started from and
+        // can act on the warning.
+        return Ok(Outcome::none());
+    }
 
     if flags.dry_run {
         log_dry_run(
@@ -427,9 +460,10 @@ where
             deps.io,
             "Would run hooks and config, then navigate to worktree",
         );
-        // Why not wrapped in `warn_on_hook_failure`: dry-run never reaches
-        // `run_hooks` (every lifecycle step short-circuits to `log_dry_run`), so
-        // a `HookExecution` cannot occur here.
+        // The `Provisioning` verdict is ignored on purpose: dry-run never
+        // reaches `run_hooks` (every lifecycle step short-circuits to
+        // `log_dry_run`), so no hook can gate here, and the outcome below is
+        // `Outcome::none()` either way.
         run_config_and_hooks(
             deps,
             config,
@@ -455,31 +489,31 @@ where
         &format!("Note: Worktree already exists at '{worktree_path}'"),
         opts,
     );
-    // Re-entry into an existing worktree: a failing hook warns but still cds
-    // (issue #601).
+    // Re-entry into an existing worktree: a failing `post_start` warns but still
+    // cds, a failing `pre_start` gates the cd (issue #601).
     //
-    // No regression test guards this specific wrap: the same-branch case is
+    // No regression test guards this specific branch: the same-branch case is
     // currently unreachable through `start_command` because
     // `validate_branch_for_worktree` matches before `check_worktree_conflict`
     // (see `start_tests.rs::same_branch_at_target_is_idempotent_cd`). The
     // `--reuse`/interactive-reuse sibling below IS covered. If that precedence
     // ever changes, wire a case here.
-    warn_on_hook_failure(
-        deps.io,
-        run_config_and_hooks(
-            deps,
-            config,
-            repo_root,
-            worktree_path,
-            &ConfigAndHooks {
-                skip_hooks: flags.no_hooks,
-                skip_copy: flags.no_copy,
-                copy_untracked: flags.copy_untracked,
-                copy_modified: flags.copy_modified,
-                dry_run: false,
-            },
-        ),
+    let provisioning = run_config_and_hooks(
+        deps,
+        config,
+        repo_root,
+        worktree_path,
+        &ConfigAndHooks {
+            skip_hooks: flags.no_hooks,
+            skip_copy: flags.no_copy,
+            copy_untracked: flags.copy_untracked,
+            copy_modified: flags.copy_modified,
+            dry_run: false,
+        },
     )?;
+    if !provisioning.allows_cd() {
+        return Ok(Outcome::none());
+    }
     Ok(Outcome::cd(worktree_path.to_string()))
 }
 
@@ -568,24 +602,25 @@ where
     P: Prompt,
     Sr: StdinReader,
 {
-    // The reused worktree exists, so a failing hook warns but still cds
-    // (issue #601).
-    warn_on_hook_failure(
-        deps.io,
-        run_config_and_hooks(
-            deps,
-            config,
-            repo_root,
-            worktree_path,
-            &ConfigAndHooks {
-                skip_hooks: flags.no_hooks,
-                skip_copy: flags.no_copy,
-                copy_untracked: flags.copy_untracked,
-                copy_modified: flags.copy_modified,
-                dry_run: false,
-            },
-        ),
+    // The reused worktree exists, so a failing `post_start` warns but still cds;
+    // a failing `pre_start` gates the cd, since the reuse never got past its
+    // precondition (issue #601).
+    let provisioning = run_config_and_hooks(
+        deps,
+        config,
+        repo_root,
+        worktree_path,
+        &ConfigAndHooks {
+            skip_hooks: flags.no_hooks,
+            skip_copy: flags.no_copy,
+            copy_untracked: flags.copy_untracked,
+            copy_modified: flags.copy_modified,
+            dry_run: false,
+        },
     )?;
+    if !provisioning.allows_cd() {
+        return Ok(ConflictDecision::Done(Outcome::none()));
+    }
     Ok(ConflictDecision::Done(Outcome::cd(
         worktree_path.to_string(),
     )))
@@ -599,7 +634,7 @@ fn run_config_and_hooks<I, G, R, S, P, Sr>(
     repo_root: &str,
     worktree_path: &str,
     options: &ConfigAndHooks,
-) -> Result<()>
+) -> Result<Provisioning>
 where
     I: Io,
     G: GitRunner,
@@ -620,7 +655,7 @@ where
     let config = match config {
         Some(config) => config,
         None if options.skip_copy || !(options.copy_untracked || options.copy_modified) => {
-            return Ok(())
+            return Ok(Provisioning::Provisioned)
         }
         None => {
             empty_config = VibeConfig::default();
@@ -649,8 +684,11 @@ where
         deps.tracker.start();
     }
 
-    let result =
-        run_submodule_configs(deps, config, repo_root, worktree_path, options).and_then(|()| {
+    let result = run_submodule_configs(deps, config, repo_root, worktree_path, options).and_then(
+        |submodules| {
+            if submodules == Provisioning::Gated {
+                return Ok(Provisioning::Gated);
+            }
             run_config_body(
                 deps,
                 config,
@@ -660,19 +698,19 @@ where
                 git_selection,
                 options,
             )
-        });
+        },
+    );
 
-    // Finished on success and on a downgraded hook failure only: those return a
-    // `cd`, and an unfinished tracker would leave a live progress display in
-    // front of it.
+    // Finished on every non-fatal end, gated included: those return to the user
+    // with the run over, and an unfinished tracker would leave a live progress
+    // display in front of the prompt.
     //
     // Why not on every error: `IndicatifTracker::finish` closes each still-open
     // bar with the SUCCESS glyph and no annotation, so finishing after a fatal
     // copy/submodule failure would render its pending tasks as completed right
     // above the `Error:` line. Those bars are deliberately left abandoned until
     // issue #600 adds a distinct abort glyph.
-    let finish_tracker = has_ops && matches!(result, Ok(()) | Err(VibeError::HookExecution { .. }));
-    if finish_tracker {
+    if has_ops && result.is_ok() {
         deps.tracker.finish();
     }
 
@@ -693,7 +731,7 @@ fn run_config_body<I, G, R, S, P, Sr>(
     // submodule bodies (see `run_config_and_hooks`).
     git_selection: GitCopySelection,
     options: &ConfigAndHooks,
-) -> Result<()>
+) -> Result<Provisioning>
 where
     I: Io,
     G: GitRunner,
@@ -702,18 +740,29 @@ where
     P: Prompt,
     Sr: StdinReader,
 {
-    // pre_start hooks (in repo_root).
-    if !options.skip_hooks {
-        run_lifecycle_hooks(
-            deps,
-            config.hooks.as_ref().and_then(|h| h.pre_start.as_deref()),
-            "Pre-start hooks",
-            "pre-start",
-            repo_root,
-            worktree_path,
-            repo_root,
-            options.dry_run,
-        )?;
+    // pre_start hooks (in repo_root). A failure is a GATE: warn, then stop
+    // before the copy so the caller emits no cd (issue #601).
+    //
+    // Why not warn-and-continue like `post_start`: `pre_start` is the only
+    // lifecycle point a user can express a precondition at, and the copy and
+    // `post_start` below are skipped anyway, so continuing would hand back a
+    // worktree the config never finished setting up.
+    if !options.skip_hooks
+        && !warn_on_hook_failure(
+            deps.io,
+            run_lifecycle_hooks(
+                deps,
+                config.hooks.as_ref().and_then(|h| h.pre_start.as_deref()),
+                "Pre-start hooks",
+                "pre-start",
+                repo_root,
+                worktree_path,
+                repo_root,
+                options.dry_run,
+            ),
+        )?
+    {
+        return Ok(Provisioning::Gated);
     }
 
     // Enumerate the git-derived sources HERE — after `pre_start`, immediately
@@ -825,21 +874,25 @@ where
         }
     }
 
-    // post_start hooks (in worktree_path).
+    // post_start hooks (in worktree_path). The worktree is fully provisioned by
+    // now, so a failure only warns and the caller still cds (issue #601).
     if !options.skip_hooks {
-        run_lifecycle_hooks(
-            deps,
-            config.hooks.as_ref().and_then(|h| h.post_start.as_deref()),
-            "Post-start hooks",
-            "post-start",
-            worktree_path,
-            worktree_path,
-            repo_root,
-            options.dry_run,
+        warn_on_hook_failure(
+            deps.io,
+            run_lifecycle_hooks(
+                deps,
+                config.hooks.as_ref().and_then(|h| h.post_start.as_deref()),
+                "Post-start hooks",
+                "post-start",
+                worktree_path,
+                worktree_path,
+                repo_root,
+                options.dry_run,
+            ),
         )?;
     }
 
-    Ok(())
+    Ok(Provisioning::Provisioned)
 }
 
 /// Whether config has any hook/copy operation (drives starting the tracker).
@@ -898,7 +951,7 @@ fn run_submodule_configs<I, G, R, S, P, Sr>(
     repo_root: &str,
     worktree_path: &str,
     options: &ConfigAndHooks,
-) -> Result<()>
+) -> Result<Provisioning>
 where
     I: Io,
     G: GitRunner,
@@ -908,7 +961,7 @@ where
     Sr: StdinReader,
 {
     let Some(paths) = submodule_config_paths(config).filter(|paths| !paths.is_empty()) else {
-        return Ok(());
+        return Ok(Provisioning::Provisioned);
     };
 
     let paths = validate_submodule_config_paths(deps, repo_root, paths)?;
@@ -930,7 +983,10 @@ where
             )));
         };
 
-        run_config_body(
+        // A submodule's own `pre_start` gate stops the whole run: its copy and
+        // `post_start` were skipped, so the parent worktree is no more usable
+        // than if the parent's own gate had failed.
+        if run_config_body(
             deps,
             &submodule_config,
             config_root,
@@ -941,10 +997,13 @@ where
             // the parent repo, not this submodule.
             GitCopySelection::default(),
             options,
-        )?;
+        )? == Provisioning::Gated
+        {
+            return Ok(Provisioning::Gated);
+        }
     }
 
-    Ok(())
+    Ok(Provisioning::Provisioned)
 }
 
 fn init_submodules<I, G, R, S, P, Sr>(
@@ -1390,7 +1449,12 @@ where
         create_worktree(deps.git, &create_opts)?;
     }
 
-    // Post-setup is NON-FATAL in hook mode (warn but still output the path).
+    // Post-setup is NON-FATAL in hook mode (warn but still output the path),
+    // including a FATAL copy/submodule error — Claude Code has no shell to leave
+    // in the wrong place, so the path is always emitted. A `Provisioning::Gated`
+    // verdict is likewise ignored: the `pre_start` gate only decides whether a
+    // `cd` is safe, which this mode never emits (the hook failure itself has
+    // already been warned about by `warn_on_hook_failure`).
     if let Err(e) = run_config_and_hooks(
         deps,
         config.as_ref(),

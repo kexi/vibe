@@ -1715,22 +1715,114 @@ fn failing_post_start_hook_warns_and_still_cds() {
     assert!(stderr.contains("hook stderr detail"), "stderr: {stderr}");
 }
 
-/// Stop-on-first-failure is unchanged: a failing `pre_start` skips the copy phase
-/// and `post_start`, but the cd is still emitted.
+/// A failing `pre_start` GATES the cd: it runs before the copy, so the copy and
+/// `post_start` are skipped and the shell must stay in the original directory
+/// rather than land in an unprovisioned worktree. The command still succeeds
+/// (exit 0 per the `HookExecution` contract) and the warning is shown.
 #[test]
-fn failing_pre_start_hook_skips_copy_and_post_start_but_still_cds() {
+fn failing_pre_start_hook_gates_the_cd_and_skips_provisioning() {
     let content = "[hooks]\npre_start = [\"boom\"]\npost_start = [\"echo post\"]\n[copy]\nfiles = [\".env\"]\n";
-    let (_fx, _io, repo_root, _git, fk, result) =
+    let (_fx, io, _repo_root, git, fk, result) =
         start_with_failing_hook(content, "boom", None, &StartFlags::default());
 
     let outcome = result.expect("a failing hook must not fail the command");
-    assert_eq!(outcome, Outcome::cd(format!("{repo_root}-feat")));
+    assert_eq!(outcome, Outcome::none(), "a gated run must emit no cd");
+    // The worktree itself is still created: only entering it is withheld.
+    assert!(git.calls_contain(&["worktree", "add"]));
     assert_eq!(
         fk.hooks.calls.borrow().len(),
         1,
         "post_start must not run after pre_start failed"
     );
     assert!(fk.exec.file_copies.lock().unwrap().is_empty());
+    assert!(
+        io.stderr_text()
+            .contains("Warning: Hook \"boom\" failed: exit code 3"),
+        "stderr: {}",
+        io.stderr_text()
+    );
+}
+
+/// The gate applies to the reuse path too: `--reuse` into an existing worktree
+/// whose `pre_start` fails emits no cd.
+#[test]
+fn reuse_with_failing_pre_start_hook_is_gated() {
+    let content = "[hooks]\npre_start = [\"boom\"]\n";
+    let flags = StartFlags {
+        reuse: true,
+        ..Default::default()
+    };
+    let (fx, io, resolver, repo_root) = trusted_config_repo_with_content(content);
+    let _ = &fx;
+    let list = two_worktrees(&repo_root, &format!("{repo_root}-feat"), "other");
+    let git = MockGit::new(&repo_root, &list);
+    let (s, p, sin) = (NoScript, PanicPrompt, FakeStdin::none());
+    let fk = Fakes {
+        hooks: FakeHookRunner::failing_on("boom", 3, "hook stderr detail"),
+        ..Fakes::new()
+    };
+    let outcome = {
+        let d = StartDeps {
+            io: &io,
+            git: &git,
+            resolver: &resolver,
+            script_runner: &s,
+            prompt: &p,
+            stdin: &sin,
+            hook_runner: &fk.hooks,
+            executor: &fk.exec,
+            symlink_creator: &fk.symlinks,
+            tracker: &fk.tracker,
+            version: V,
+        };
+        start_command(&d, "feat", &flags, OutputOptions::default())
+            .expect("a failing hook must not fail the command")
+    };
+    assert_eq!(outcome, Outcome::none());
+    assert!(io
+        .stderr_text()
+        .contains("Warning: Hook \"boom\" failed: exit code 3"));
+}
+
+/// A submodule config's own `pre_start` gate stops the parent run as well: the
+/// submodule was left unprovisioned, so the parent worktree is not ready either.
+#[test]
+fn failing_submodule_pre_start_hook_gates_the_cd() {
+    let (fx, io, resolver, repo_root) = trusted_repo_with_submodule_config();
+    let _ = &fx;
+    let git = MockGit::new(
+        &repo_root,
+        &format!("worktree {repo_root}\nbranch refs/heads/main\n\n"),
+    );
+    let (s, p, sin) = (NoScript, ScriptPrompt::confirming(true), FakeStdin::none());
+    // The submodule config's own pre_start is "echo sub-pre".
+    let fk = Fakes {
+        hooks: FakeHookRunner::failing_on("sub-pre", 3, "hook stderr detail"),
+        ..Fakes::new()
+    };
+    let outcome = {
+        let d = StartDeps {
+            io: &io,
+            git: &git,
+            resolver: &resolver,
+            script_runner: &s,
+            prompt: &p,
+            stdin: &sin,
+            hook_runner: &fk.hooks,
+            executor: &fk.exec,
+            symlink_creator: &fk.symlinks,
+            tracker: &fk.tracker,
+            version: V,
+        };
+        start_command(&d, "feat", &StartFlags::default(), OutputOptions::default())
+            .expect("a failing hook must not fail the command")
+    };
+    assert_eq!(outcome, Outcome::none());
+    assert_eq!(
+        fk.hooks.calls.borrow().len(),
+        1,
+        "nothing after the gated submodule pre_start may run"
+    );
 }
 
 /// The interactive "Reuse (use existing)" choice also keeps its cd when a hook
@@ -1835,6 +1927,30 @@ fn submodule_error_stays_fatal_after_hook_downgrade() {
         .to_string()
         .contains("must be a parent-repo-relative submodule path"));
     assert_eq!(git.submodule_update_calls(), 0);
+}
+
+/// The gated path closes the progress display too: the run is over, so a live
+/// bar must not be left in front of the shell prompt.
+#[test]
+fn tracker_finishes_when_the_run_is_gated() {
+    let content = "[hooks]\npre_start = [\"boom\"]\n[copy]\nfiles = [\".env\"]\n";
+    let (_fx, _io, _repo_root, _git, fk, result) =
+        start_with_failing_hook(content, "boom", None, &StartFlags::default());
+    assert_eq!(
+        result.expect("a failing hook must not fail the command"),
+        Outcome::none()
+    );
+
+    let events = fk.tracker.events();
+    let started = events
+        .iter()
+        .filter(|e| **e == TrackerEvent::Started)
+        .count();
+    let finished = events
+        .iter()
+        .filter(|e| **e == TrackerEvent::Finished)
+        .count();
+    assert_eq!(started, finished, "unbalanced tracker events: {events:?}");
 }
 
 /// The progress display is closed even when a hook fails, so the warn-and-cd
@@ -2311,7 +2427,8 @@ fn worktree_hook_mode_post_setup_failure_is_non_fatal() {
     let wt = outcome.stdout.clone().expect("must output a path");
     assert!(wt.ends_with("-hooked"), "unexpected path: {wt}");
     assert!(
-        io.stderr_text().contains("Post-setup failed"),
+        io.stderr_text()
+            .contains("Warning: Hook \"echo post\" failed"),
         "should warn about the failed post-setup: {}",
         io.stderr_text()
     );

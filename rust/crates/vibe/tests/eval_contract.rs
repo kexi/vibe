@@ -1297,3 +1297,54 @@ fn clean_with_failing_pre_clean_hook_keeps_stdout_empty_and_worktree_intact() {
         "the worktree must survive the aborted clean: {secondary_path:?}"
     );
 }
+
+/// The `start` mirror image of the `pre_clean` abort: a failing `pre_start` runs
+/// BEFORE the copy, so the worktree is left unprovisioned and the eval channel
+/// stays empty — the user's shell must not be moved into it. The worktree
+/// directory itself is still created (only entering it is withheld), and the
+/// exit code stays 0 because a hook failure is warning severity.
+#[test]
+fn start_with_failing_pre_start_hook_keeps_stdout_empty() {
+    if !git_available() {
+        eprintln!("skipping: git unavailable");
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let main_path = setup_main_repo(tmp.path());
+
+    std::fs::write(
+        main_path.join(".vibe.toml"),
+        "[hooks]\npre_start = [\"exit 3\"]\npost_start = [\"exit 0\"]\n",
+    )
+    .unwrap();
+    let trust = run_vibe(&main_path, home.path(), &["trust"]);
+    assert!(
+        trust.status.success(),
+        "trust failed: {}",
+        String::from_utf8_lossy(&trust.stderr)
+    );
+
+    let out = run_vibe(&main_path, home.path(), &["start", "feature"]);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "a hook failure is warning severity (exit 0); stderr={stderr:?}"
+    );
+    assert!(
+        stdout.is_empty(),
+        "a gated start must emit no cd: {stdout:?}"
+    );
+    assert!(
+        stderr.contains("Warning: Hook \"exit 3\" failed: exit code 3"),
+        "the warning must be on stderr: {stderr:?}"
+    );
+    let expected = main_path.parent().unwrap().join("main-feature");
+    assert!(
+        expected.exists(),
+        "the worktree is still created, only entering it is withheld: {expected:?}"
+    );
+}

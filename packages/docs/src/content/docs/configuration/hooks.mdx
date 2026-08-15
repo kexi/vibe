@@ -91,6 +91,26 @@ For `vibe clean`:
 2. Worktree is removed
 3. `post_clean` hooks run in main repository
 
+## Hook Failure Behavior
+
+A hook that exits non-zero is a warning, not an error: vibe prints
+`Warning: Hook "..." failed: ...` and still exits with status 0. What changes is
+whether the directory change happens, and that depends on where the hook sits in
+the lifecycle.
+
+| Hook         | On failure                                                                                       |
+| ------------ | ------------------------------------------------------------------------------------------------ |
+| `pre_start`  | Acts as a **gate**: the copy and `post_start` are skipped and you stay in the original directory |
+| `post_start` | Warns only: the worktree is fully set up, so vibe still moves you into it                        |
+| `pre_clean`  | Acts as a **gate**: the worktree is not removed and you stay in it                               |
+| `post_clean` | Warns only: the worktree is already gone, so vibe still moves you back to the main repository    |
+
+This makes `pre_start` and `pre_clean` usable as precondition checks — for
+example, a `pre_start` that verifies a secrets vault is reachable will keep you
+out of a worktree it could not provision. A gated `vibe start` still leaves the
+worktree directory on disk; only entering it is withheld, so you can fix the
+cause and re-run `vibe start`.
+
 ## Common Patterns
 
 ### Node.js Project
