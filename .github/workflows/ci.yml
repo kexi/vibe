@@ -592,7 +592,12 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-toolchain
+      # pinact resolves each `uses:` against the GitHub API. Unauthenticated it
+      # shares the runner's IP quota (60 req/h) and dies with a 403 on busy
+      # hours; GITHUB_TOKEN lifts it to 1000 req/h for this repo.
       - run: pinact run --check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   gitleaks:
     runs-on: ubuntu-latest
