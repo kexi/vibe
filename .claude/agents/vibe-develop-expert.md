@@ -316,13 +316,18 @@ they never print one.
 - Template `"{prefix}{spinner} {msg}"`; braille tick strings
   `⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏`, steady tick 80 ms.
 - Prefixes build the tree: phase `"┗ "`, task `"   ┗ "`.
-- Final lines come from the pure `render_line(TaskOutcome, prefix, label, error, color)`:
+- Final lines come from the pure `render_line(TaskOutcome, prefix, label, color)`:
   completion → `<prefix>☒ <label>` (never colored), failure →
-  `<prefix>✗ <label> (failed: <err>)` in RED, and a task still pending at
-  `finish` → `<prefix>☐ <label>` in DIM. The three must stay visually distinct.
-- The event protocol **and** the rendered glyphs are tested (`render_line` unit
-  tests in `progress.rs`). Add UI polish without breaking `add_phase`/`add_task`/
-  `start_task`/`complete_task`/`fail_task`/`start`/`finish`.
+  `<prefix>✗ <label> (failed: <err>)` in RED (the message rides on
+  `TaskOutcome::Failed { error }`), and a node still pending at `finish` →
+  `<prefix>⊘ <label>` in DIM. The three must stay visually distinct, and `⊘` is
+  deliberately not `☐` — the README legend spends `☐` on "queued, will still run".
+- `finish()` closes each open node via the pure `closing_outcomes`: a **task** is
+  abandoned, but a **phase** is a header with no `complete_task` caller, so it
+  closes as `☒` unless a task under it was still pending.
+- The event protocol **and** the rendered glyphs are tested (`render_line` plus
+  `finish_*` unit tests in `progress.rs`). Add UI polish without breaking
+  `add_phase`/`add_task`/`start_task`/`complete_task`/`fail_task`/`start`/`finish`.
 
 ### Status Indicators (`commands/verify.rs`)
 

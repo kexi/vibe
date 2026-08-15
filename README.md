@@ -608,6 +608,16 @@ Example progress display:
      ☐ node_modules/
 ```
 
+Markers:
+
+| Marker | Meaning                                                         |
+| ------ | --------------------------------------------------------------- |
+| `⠋`    | Running                                                          |
+| `☐`    | Queued — has not started yet                                     |
+| `☒`    | Completed successfully                                           |
+| `✗`    | Failed (red); the reason follows as `(failed: …)`                |
+| `⊘`    | Abandoned (dim) — still pending when the run ended               |
+
 **Note**: Progress display auto-disables in non-TTY environments (e.g., CI/CD), and hook output will be shown normally.
 
 ### Environment Variables

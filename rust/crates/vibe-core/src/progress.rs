@@ -10,7 +10,10 @@
 //! success / failure / abandoned renderings can be asserted without a tty: the
 //! three outcomes must stay visually distinct (the TS `TreeFormatter` used
 //! `☒` for success and a red `✗` for failure; rendering all three as `☒` made a
-//! failed copy indistinguishable from a successful one).
+//! failed copy indistinguishable from a successful one). Which outcome each
+//! node gets at `finish()` is likewise decided by the pure `closing_outcomes`,
+//! because phases are headers rather than units of work and must not be
+//! abandoned just because nobody calls `complete_task` on them.
 //!
 //! SECURITY/contract: the live renderer draws to `ProgressDrawTarget::stderr()`
 //! so stdout stays clean for the eval'd `cd` line.
@@ -84,22 +87,29 @@ impl ProgressTracker for NullTracker {
 }
 
 /// How a node's line is rendered once it stops spinning.
+///
+/// [`TaskOutcome::Failed`] carries its reason so a failed line cannot be built
+/// without one (the pairing is unrepresentable rather than merely documented).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TaskOutcome {
+pub enum TaskOutcome<'a> {
     /// Ran to completion — `☒`.
     Completed,
     /// Errored — a red `✗`, plus the error in parentheses.
-    Failed,
-    /// Still pending when the run ended — a dim `☐`.
+    Failed { error: &'a str },
+    /// Still pending when the run ended — a dim `⊘`.
+    ///
+    /// Why not `☐`: the docs already use `☐` for "queued, will still run"
+    /// (README "Progress display" legend), so reusing it would make "gave up"
+    /// and "not started yet" the same glyph.
     Abandoned,
 }
 
-impl TaskOutcome {
+impl TaskOutcome<'_> {
     fn glyph(self) -> &'static str {
         match self {
             TaskOutcome::Completed => "☒",
-            TaskOutcome::Failed => "✗",
-            TaskOutcome::Abandoned => "☐",
+            TaskOutcome::Failed { .. } => "✗",
+            TaskOutcome::Abandoned => "⊘",
         }
     }
 }
@@ -107,22 +117,16 @@ impl TaskOutcome {
 /// Render the final line of a progress node.
 ///
 /// Pure so glyph regressions are caught by a unit test; the live renderer only
-/// hands the result to `indicatif`. `error` is rendered only for
-/// [`TaskOutcome::Failed`], for which it is always present in practice.
-pub fn render_line(
-    outcome: TaskOutcome,
-    prefix: &str,
-    label: &str,
-    error: Option<&str>,
-    color: bool,
-) -> String {
-    let body = match (outcome, error) {
-        (TaskOutcome::Failed, Some(err)) => format!("{} {label} (failed: {err})", outcome.glyph()),
-        _ => format!("{} {label}", outcome.glyph()),
+/// hands the result to `indicatif`.
+pub fn render_line(outcome: TaskOutcome<'_>, prefix: &str, label: &str, color: bool) -> String {
+    let glyph = outcome.glyph();
+    let body = match outcome {
+        TaskOutcome::Failed { error } => format!("{glyph} {label} (failed: {error})"),
+        _ => format!("{glyph} {label}"),
     };
     let painted = match outcome {
         TaskOutcome::Completed => body,
-        TaskOutcome::Failed => colorize(RED, &body, color),
+        TaskOutcome::Failed { .. } => colorize(RED, &body, color),
         TaskOutcome::Abandoned => colorize(DIM, &body, color),
     };
     format!("{prefix}{painted}")
@@ -135,30 +139,35 @@ pub struct IndicatifTracker {
     color: bool,
 }
 
+/// What a node is, which decides how [`IndicatifTracker::finish`] closes it: a
+/// task is closed by its own caller, whereas a phase is only ever a header and
+/// is closed from the state of the tasks below it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NodeKind {
+    Phase,
+    /// Task under the phase node at this index (an id from another tracker
+    /// simply matches nothing, so a bad parent cannot panic).
+    Task {
+        phase: usize,
+    },
+}
+
 struct BarNode {
     bar: indicatif::ProgressBar,
+    kind: NodeKind,
     prefix: String,
     label: String,
     done: bool,
 }
 
-impl Default for IndicatifTracker {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl IndicatifTracker {
-    /// Create a tracker drawing to stderr (keeps stdout clean for the `cd` line).
+    /// Create a tracker drawing to stderr (keeps stdout clean for the `cd`
+    /// line), with the caller's resolved [`crate::ansi::is_color_enabled`]
+    /// value.
     ///
-    /// Colors the failure/abandoned glyphs; the live tracker is only ever built
-    /// for an interactive stderr, but callers that have already resolved
-    /// `NO_COLOR`/`FORCE_COLOR` should use [`IndicatifTracker::with_color`].
-    pub fn new() -> Self {
-        Self::with_color(true)
-    }
-
-    /// Same, with the caller's resolved [`crate::ansi::is_color_enabled`] value.
+    /// Why not a `new()`/`Default`: the color decision must come from the
+    /// caller's `NO_COLOR`/`FORCE_COLOR` probe, and a parameterless constructor
+    /// could only guess it.
     pub fn with_color(color: bool) -> Self {
         let multi =
             indicatif::MultiProgress::with_draw_target(indicatif::ProgressDrawTarget::stderr());
@@ -169,7 +178,7 @@ impl IndicatifTracker {
         }
     }
 
-    fn push_bar(&self, label: &str, prefix: &str) -> NodeId {
+    fn push_bar(&self, label: &str, prefix: &str, kind: NodeKind) -> NodeId {
         let bar = self.multi.add(indicatif::ProgressBar::new_spinner());
         let style = indicatif::ProgressStyle::with_template("{prefix}{spinner} {msg}")
             .expect("static progress template must be valid")
@@ -181,6 +190,7 @@ impl IndicatifTracker {
         let id = NodeId(bars.len());
         bars.push(BarNode {
             bar,
+            kind,
             prefix: prefix.to_string(),
             label: label.to_string(),
             done: false,
@@ -196,12 +206,41 @@ impl IndicatifTracker {
     }
 }
 
+/// Decide how each still-open node is closed by `finish()`.
+///
+/// `None` = already closed by its own caller, leave the line alone. Split out
+/// of `finish` (and driven by a unit test) because the phase rule is the part
+/// that regressed: a phase is a header, so it is `Completed` unless a task
+/// under it was still pending when the run ended.
+fn closing_outcomes(bars: &[BarNode]) -> Vec<Option<TaskOutcome<'static>>> {
+    let mut phase_has_pending_task = vec![false; bars.len()];
+    for node in bars.iter() {
+        if let (NodeKind::Task { phase }, false) = (node.kind, node.done) {
+            if let Some(flag) = phase_has_pending_task.get_mut(phase) {
+                *flag = true;
+            }
+        }
+    }
+    bars.iter()
+        .enumerate()
+        .map(|(i, node)| {
+            if node.done {
+                return None;
+            }
+            match node.kind {
+                NodeKind::Phase if !phase_has_pending_task[i] => Some(TaskOutcome::Completed),
+                _ => Some(TaskOutcome::Abandoned),
+            }
+        })
+        .collect()
+}
+
 impl ProgressTracker for IndicatifTracker {
     fn add_phase(&self, label: &str) -> NodeId {
-        self.push_bar(label, "┗ ")
+        self.push_bar(label, "┗ ", NodeKind::Phase)
     }
-    fn add_task(&self, _phase: NodeId, label: &str) -> NodeId {
-        self.push_bar(label, "   ┗ ")
+    fn add_task(&self, phase: NodeId, label: &str) -> NodeId {
+        self.push_bar(label, "   ┗ ", NodeKind::Task { phase: phase.0 })
     }
     fn start_task(&self, id: NodeId) {
         self.with_bar(id, |node| {
@@ -218,7 +257,6 @@ impl ProgressTracker for IndicatifTracker {
                 TaskOutcome::Completed,
                 &node.prefix,
                 &node.label,
-                None,
                 color,
             ));
         });
@@ -229,10 +267,9 @@ impl ProgressTracker for IndicatifTracker {
             node.done = true;
             node.bar.set_prefix("");
             node.bar.abandon_with_message(render_line(
-                TaskOutcome::Failed,
+                TaskOutcome::Failed { error: err },
                 &node.prefix,
                 &node.label,
-                Some(err),
                 color,
             ));
         });
@@ -241,21 +278,30 @@ impl ProgressTracker for IndicatifTracker {
     fn finish(&self) {
         let color = self.color;
         let mut bars = self.bars.lock().expect("progress mutex poisoned");
-        for node in bars.iter_mut() {
-            let is_unfinished = !node.done;
-            if is_unfinished {
-                node.done = true;
-                node.bar.set_prefix("");
+        let outcomes = closing_outcomes(&bars);
+        for (node, outcome) in bars.iter_mut().zip(outcomes) {
+            let Some(outcome) = outcome else { continue };
+            node.done = true;
+            node.bar.set_prefix("");
+            match outcome {
+                // A phase header is not a unit of work: it closes as done once
+                // nothing under it is still pending, so an all-green run keeps
+                // rendering `☒ <phase>` as the README documents.
+                TaskOutcome::Completed => node.bar.finish_with_message(render_line(
+                    TaskOutcome::Completed,
+                    &node.prefix,
+                    &node.label,
+                    color,
+                )),
                 // Why not finish these as completed: a node still pending when
                 // the run ends never succeeded, and painting it `☒` is exactly
                 // the ambiguity this rendering is meant to remove.
-                node.bar.abandon_with_message(render_line(
+                _ => node.bar.abandon_with_message(render_line(
                     TaskOutcome::Abandoned,
                     &node.prefix,
                     &node.label,
-                    None,
                     color,
-                ));
+                )),
             }
         }
     }
@@ -385,40 +431,48 @@ mod tests {
 
     #[test]
     fn success_failure_and_abandon_render_distinct_glyphs() {
-        let done = render_line(TaskOutcome::Completed, "   ┗ ", "npm install", None, false);
+        let done = render_line(TaskOutcome::Completed, "   ┗ ", "npm install", false);
         let failed = render_line(
-            TaskOutcome::Failed,
+            TaskOutcome::Failed {
+                error: "Exit code 1",
+            },
             "   ┗ ",
             "npm install",
-            Some("Exit code 1"),
             false,
         );
-        let abandoned = render_line(TaskOutcome::Abandoned, "   ┗ ", "npm install", None, false);
+        let abandoned = render_line(TaskOutcome::Abandoned, "   ┗ ", "npm install", false);
 
         assert_eq!(done, "   ┗ ☒ npm install");
         assert_eq!(failed, "   ┗ ✗ npm install (failed: Exit code 1)");
-        assert_eq!(abandoned, "   ┗ ☐ npm install");
+        assert_eq!(abandoned, "   ┗ ⊘ npm install");
         assert_ne!(done, failed);
         assert_ne!(done, abandoned);
         assert_ne!(failed, abandoned);
     }
 
     #[test]
+    fn abandoned_does_not_reuse_the_documented_pending_glyph() {
+        // README's legend spends `☐` on "queued, will still run".
+        let abandoned = render_line(TaskOutcome::Abandoned, "   ┗ ", "node_modules/", false);
+        assert!(!abandoned.contains('☐'), "glyph clash in {abandoned:?}");
+    }
+
+    #[test]
     fn failure_is_red_and_abandon_is_dim_when_color_is_enabled() {
         assert_eq!(
-            render_line(TaskOutcome::Failed, "┗ ", "copy", Some("denied"), true),
+            render_line(TaskOutcome::Failed { error: "denied" }, "┗ ", "copy", true),
             format!("┗ {RED}✗ copy (failed: denied){RESET}")
         );
         assert_eq!(
-            render_line(TaskOutcome::Abandoned, "┗ ", "copy", None, true),
-            format!("┗ {DIM}☐ copy{RESET}")
+            render_line(TaskOutcome::Abandoned, "┗ ", "copy", true),
+            format!("┗ {DIM}⊘ copy{RESET}")
         );
     }
 
     #[test]
     fn success_is_never_colored() {
         assert_eq!(
-            render_line(TaskOutcome::Completed, "┗ ", "copy", None, true),
+            render_line(TaskOutcome::Completed, "┗ ", "copy", true),
             "┗ ☒ copy"
         );
     }
@@ -427,10 +481,10 @@ mod tests {
     fn color_is_suppressed_when_disabled() {
         for outcome in [
             TaskOutcome::Completed,
-            TaskOutcome::Failed,
+            TaskOutcome::Failed { error: "boom" },
             TaskOutcome::Abandoned,
         ] {
-            let line = render_line(outcome, "┗ ", "copy", Some("boom"), false);
+            let line = render_line(outcome, "┗ ", "copy", false);
             assert!(!line.contains('\x1b'), "unexpected escape in {line:?}");
         }
     }
@@ -438,8 +492,98 @@ mod tests {
     #[test]
     fn prefix_and_tree_shape_are_preserved() {
         assert_eq!(
-            render_line(TaskOutcome::Completed, "┗ ", "Pre-start hooks", None, false),
+            render_line(TaskOutcome::Completed, "┗ ", "Pre-start hooks", false),
             "┗ ☒ Pre-start hooks"
+        );
+    }
+
+    /// Drives the real tracker's `add_phase`/`add_task`/… sequence and reports
+    /// what `finish()` would paint on each line, so the outcome selection is
+    /// asserted end to end and not just `render_line`'s formatting.
+    fn finish_lines(build: impl FnOnce(&IndicatifTracker)) -> Vec<String> {
+        let tracker = IndicatifTracker::with_color(false);
+        build(&tracker);
+        let bars = tracker.bars.lock().unwrap();
+        let outcomes = closing_outcomes(&bars);
+        bars.iter()
+            .zip(outcomes)
+            .map(|(node, outcome)| match outcome {
+                // Already closed by complete_task/fail_task: finish() leaves it.
+                None => format!("{}<kept>", node.prefix),
+                Some(outcome) => render_line(outcome, &node.prefix, &node.label, false),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn finish_leaves_a_successful_phase_marked_done_not_abandoned() {
+        let lines = finish_lines(|t| {
+            let phase = t.add_phase("Pre-start hooks");
+            let task = t.add_task(phase, "npm install");
+            t.start_task(task);
+            t.complete_task(task);
+        });
+
+        assert_eq!(lines, vec!["┗ ☒ Pre-start hooks", "   ┗ <kept>"]);
+    }
+
+    #[test]
+    fn finish_keeps_a_failed_task_and_still_closes_its_phase() {
+        let lines = finish_lines(|t| {
+            let phase = t.add_phase("Post-start hooks");
+            let task = t.add_task(phase, "sh -c 'exit 3'");
+            t.start_task(task);
+            t.fail_task(task, "Exit code 3");
+        });
+
+        // The phase header must not steal the failure marker; the ✗ line is the
+        // one fail_task already painted.
+        assert_eq!(lines, vec!["┗ ☒ Post-start hooks", "   ┗ <kept>"]);
+    }
+
+    #[test]
+    fn finish_abandons_a_pending_task_and_its_phase() {
+        let lines = finish_lines(|t| {
+            let phase = t.add_phase("Copying files");
+            let done = t.add_task(phase, ".env");
+            t.complete_task(done);
+            let pending = t.add_task(phase, "node_modules/");
+            t.start_task(pending);
+        });
+
+        assert_eq!(
+            lines,
+            vec!["┗ ⊘ Copying files", "   ┗ <kept>", "   ┗ ⊘ node_modules/",]
+        );
+    }
+
+    #[test]
+    fn finish_completes_a_phase_that_never_got_a_task() {
+        let lines = finish_lines(|t| {
+            t.add_phase("Initializing submodules");
+        });
+
+        assert_eq!(lines, vec!["┗ ☒ Initializing submodules"]);
+    }
+
+    #[test]
+    fn finish_scopes_pending_tasks_to_their_own_phase() {
+        let lines = finish_lines(|t| {
+            let first = t.add_phase("Pre-start hooks");
+            let ok = t.add_task(first, "echo hi");
+            t.complete_task(ok);
+            let second = t.add_phase("Copying files");
+            t.add_task(second, "node_modules/");
+        });
+
+        assert_eq!(
+            lines,
+            vec![
+                "┗ ☒ Pre-start hooks",
+                "   ┗ <kept>",
+                "┗ ⊘ Copying files",
+                "   ┗ ⊘ node_modules/",
+            ]
         );
     }
 

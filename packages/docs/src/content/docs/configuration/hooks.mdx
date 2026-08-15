@@ -62,6 +62,16 @@ vibe displays a real-time progress tree during hook execution:
      ☐ node_modules/
 ```
 
+### Markers
+
+| Marker | Meaning                                            |
+| ------ | -------------------------------------------------- |
+| `⠋`    | Running                                            |
+| `☐`    | Queued — has not started yet                       |
+| `☒`    | Completed successfully                             |
+| `✗`    | Failed (red); the reason follows as `(failed: …)`  |
+| `⊘`    | Abandoned (dim) — still pending when the run ended |
+
 ### Output Handling
 
 | Situation                 | stdout            | stderr       |
