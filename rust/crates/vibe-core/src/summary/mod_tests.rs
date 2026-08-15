@@ -12,6 +12,16 @@ fn target(name: &str, path: &str, key: &str) -> SummaryTarget {
         base: Some("develop".to_string()),
         head: Some("abc123".to_string()),
         key: key.to_string(),
+        cacheable: true,
+    }
+}
+
+/// A worktree whose `git status` could not be read, so its key is not a
+/// trustworthy description of its state.
+fn uncacheable_target(name: &str, path: &str, key: &str) -> SummaryTarget {
+    SummaryTarget {
+        cacheable: false,
+        ..target(name, path, key)
     }
 }
 
@@ -523,4 +533,125 @@ fn the_stored_summary_is_the_truncated_one() {
 
     let cache = load_cache(&io, "/repo", &command_hash("./summary.sh"));
     assert_eq!(cache.get("/repo/main", "k"), Some("line one"));
+}
+
+// --- an unreadable status opts the row out of the cache -------------------
+
+/// What it guarantees: a worktree whose status could not be read never HITS the
+/// cache, even against an entry whose key is byte-identical.
+///
+/// The key digests the status payload, and an absent payload digests exactly
+/// like an empty (clean) one. Without the opt-out, a worktree cached while clean
+/// would be served that summary on any later run where the status call happened
+/// to fail — however much the working tree had changed in between.
+#[test]
+fn a_worktree_with_an_unreadable_status_does_not_hit_the_cache() {
+    let fx = Fixture::new();
+    let io = io_for(&fx);
+
+    // Cached while clean.
+    let first = FakeSummaryRunner::with_stdout(r#"{"main":"cached while clean"}"#);
+    resolve(&io, &first, &[target("main", "/repo/main", "k")]);
+    assert_eq!(first.calls().len(), 1);
+
+    // Now the status call fails. The key is the SAME string, so only the
+    // `cacheable` flag can prevent the hit.
+    let second = FakeSummaryRunner::with_stdout(r#"{"main":"asked again"}"#);
+    let result = resolve(
+        &io,
+        &second,
+        &[uncacheable_target("main", "/repo/main", "k")],
+    );
+
+    assert_eq!(second.calls().len(), 1, "an untrustworthy key must not hit");
+    assert_eq!(result.by_path.get("/repo/main").unwrap(), "asked again");
+}
+
+/// What it guarantees: nor is such a row WRITTEN, so it cannot poison a later
+/// run that does manage to read the status.
+#[test]
+fn a_worktree_with_an_unreadable_status_is_not_stored() {
+    let fx = Fixture::new();
+    let io = io_for(&fx);
+    let runner = FakeSummaryRunner::with_stdout(r#"{"main":"answered anyway"}"#);
+    let result = resolve(
+        &io,
+        &runner,
+        &[uncacheable_target("main", "/repo/main", "k")],
+    );
+
+    // The answer is still used for THIS run.
+    assert_eq!(result.by_path.get("/repo/main").unwrap(), "answered anyway");
+    // But nothing was persisted under a key that does not describe the worktree.
+    let cache = load_cache(&io, "/repo", &command_hash("./summary.sh"));
+    assert!(
+        !cache.entries.contains_key("/repo/main"),
+        "an untrustworthy key must not be written: {:?}",
+        cache.entries
+    );
+}
+
+/// What it guarantees: the opt-out is per row — a readable neighbour in the same
+/// batch still caches normally.
+#[test]
+fn an_unreadable_status_does_not_disable_the_cache_for_other_worktrees() {
+    let fx = Fixture::new();
+    let io = io_for(&fx);
+    let runner = FakeSummaryRunner::with_stdout(r#"{"main":"m","feat/a":"a"}"#);
+    resolve(
+        &io,
+        &runner,
+        &[
+            uncacheable_target("main", "/repo/main", "k"),
+            target("feat/a", "/repo/a", "k"),
+        ],
+    );
+
+    let cache = load_cache(&io, "/repo", &command_hash("./summary.sh"));
+    assert!(!cache.entries.contains_key("/repo/main"));
+    assert_eq!(cache.get("/repo/a", "k"), Some("a"));
+}
+
+// --- pruning survives a failing command -----------------------------------
+
+/// What it guarantees: a worktree removed since the last successful run has its
+/// entry dropped even while the command is failing.
+///
+/// The failure path returns early to serve stale values; without an explicit
+/// prune there, a misconfigured command would keep every dead worktree's entry
+/// alive indefinitely — the failure is exactly the state that persists.
+#[test]
+fn a_failing_command_still_prunes_entries_for_deleted_worktrees() {
+    let fx = Fixture::new();
+    let io = io_for(&fx);
+
+    let ok = FakeSummaryRunner::with_stdout(r#"{"main":"m","feat/a":"a"}"#);
+    resolve(
+        &io,
+        &ok,
+        &[
+            target("main", "/repo/main", "k"),
+            target("feat/a", "/repo/a", "k"),
+        ],
+    );
+    assert_eq!(
+        load_cache(&io, "/repo", &command_hash("./summary.sh"))
+            .entries
+            .len(),
+        2
+    );
+
+    // feat/a is gone, main has changed (so the command is consulted), and the
+    // command fails.
+    let failing = FakeSummaryRunner::timing_out();
+    let result = resolve(&io, &failing, &[target("main", "/repo/main", "k2")]);
+    assert!(!result.warnings.is_empty(), "the failure is still reported");
+
+    let cache = load_cache(&io, "/repo", &command_hash("./summary.sh"));
+    assert!(
+        !cache.entries.contains_key("/repo/a"),
+        "the deleted worktree must be pruned even on the failure path"
+    );
+    // And the surviving entry is untouched, so the stale fallback keeps working.
+    assert_eq!(cache.get_stale("/repo/main"), Some("m"));
 }

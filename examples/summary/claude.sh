@@ -63,14 +63,19 @@ markdown, no code fence, no commentary.
 #
 # Splitting the stages makes each failure explicit and guarantees exactly one
 # JSON document reaches stdout.
+#
+# On failure this EXITS NON-ZERO rather than printing `{}`. The difference
+# matters: `{}` with exit 0 means "I ran fine and have nothing to say about any
+# of these worktrees", which vibe takes at face value — it shows blank cells and
+# suppresses the fallback. A non-zero exit means "I could not answer", which is
+# what actually happened, and vibe responds by keeping the previously cached
+# summaries and printing one warning. A transient outage then costs nothing.
 answer=$(printf '%s%s' "$prompt" "$context" | claude -p 2>/dev/null) || answer=""
 
 if [ -z "$answer" ]; then
     # The model could not be reached (offline, not logged in, rate limited).
-    # An empty object is a valid answer meaning "no summaries this run"; vibe
-    # keeps whatever it had cached and the column simply does not update.
-    echo '{}'
-    exit 0
+    echo "claude produced no output" >&2
+    exit 1
 fi
 
 # The model is asked for bare JSON, but a code fence still slips through
@@ -78,9 +83,11 @@ fi
 answer=$(printf '%s' "$answer" | sed -e 's/^```json$//' -e 's/^```$//')
 
 # `jq -c .` normalizes AND validates: vibe rejects non-JSON stdout outright, so
-# a malformed answer would cost the whole batch. Better a blank column this run.
-# Captured first, printed once, so a jq that fails halfway cannot emit a partial
-# document followed by the fallback.
+# a malformed answer would cost the whole batch. Captured first, printed once,
+# so a jq that fails halfway cannot emit a partial document.
 normalized=$(printf '%s' "$answer" | jq -c '.' 2>/dev/null) || normalized=""
-[ -n "$normalized" ] || normalized='{}'
+if [ -z "$normalized" ]; then
+    echo "claude did not return valid JSON" >&2
+    exit 1
+fi
 printf '%s\n' "$normalized"

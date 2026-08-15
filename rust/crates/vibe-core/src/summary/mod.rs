@@ -93,6 +93,21 @@ pub struct SummaryTarget {
     /// The cache key for this worktree's current state (see
     /// [`cache::entry_key`]).
     pub key: String,
+    /// Whether [`key`](Self::key) is trustworthy enough to cache against.
+    ///
+    /// `false` when git could not report the worktree's status. The key is built
+    /// from a digest of the status payload, and an ABSENT payload digests
+    /// identically to an EMPTY one — so a worktree cached while clean would be
+    /// served that stale summary on any later run where the status call happened
+    /// to fail, no matter how much the working tree had changed in between.
+    ///
+    /// Rather than encode "unknown" as a third state in the key (which makes
+    /// every such run a guaranteed miss but still WRITES an entry keyed on a
+    /// fact we do not have), a target with an untrustworthy key is excluded from
+    /// the cache entirely: not read, not written. The command is asked afresh
+    /// and the answer is used but not stored. Missing the cache costs a
+    /// spawn; trusting a bad key costs correctness.
+    pub cacheable: bool,
 }
 
 /// What [`resolve_summaries`] needs from the caller.
@@ -133,10 +148,16 @@ pub fn resolve_summaries<I: Io, R: SummaryRunner>(
     let hash = command_hash(request.command);
     let mut cache = load_cache(io, request.main_worktree_path, &hash);
 
-    // Split into hits (answered from disk) and misses (must be asked for).
+    // Split into hits (answered from disk) and misses (must be asked for). A
+    // target whose key cannot be trusted skips the lookup entirely — see
+    // `SummaryTarget::cacheable`.
     let mut misses: Vec<&SummaryTarget> = Vec::new();
     for target in request.targets {
-        match cache.get(&target.path, &target.key) {
+        let hit = target
+            .cacheable
+            .then(|| cache.get(&target.path, &target.key))
+            .flatten();
+        match hit {
             Some(summary) => {
                 result
                     .by_path
@@ -189,6 +210,13 @@ pub fn resolve_summaries<I: Io, R: SummaryRunner>(
                         .insert(target.path.clone(), stale.to_string());
                 }
             }
+            // Prune even here. Nothing NEW can be stored on this path, but a
+            // worktree that was removed since the last successful run still has
+            // an entry, and returning early would keep it for as long as the
+            // command keeps failing — which for a misconfigured command is
+            // forever. `persist` only ever removes on this path, so a failing
+            // command cannot corrupt what is already cached.
+            persist(io, request, &mut cache, opts);
             return result;
         }
     };
@@ -200,7 +228,11 @@ pub fn resolve_summaries<I: Io, R: SummaryRunner>(
             continue;
         };
         let summary = truncate_summary(summary);
-        cache.insert(&target.path, &target.key, &summary);
+        // Used, but only stored when the key it would be stored under actually
+        // describes the worktree's state.
+        if target.cacheable {
+            cache.insert(&target.path, &target.key, &summary);
+        }
         result.by_path.insert(target.path.clone(), summary);
     }
 

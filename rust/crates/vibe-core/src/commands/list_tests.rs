@@ -1532,3 +1532,115 @@ fn renaming_a_branch_makes_the_summary_a_cache_miss() {
         fixture.io.stderr_text()
     );
 }
+
+/// What it guarantees: a warning collected before an error is still shown.
+///
+/// The `skipHashCheck` notice is emitted by the trust loader, captured, and then
+/// the run fails because a SECOND config file is untrusted. Deferral exists to
+/// protect the `--json` payload, and an error path produces no payload — so
+/// withholding here would simply discard the warning, which is frequently the
+/// explanation for the error that follows.
+#[test]
+fn warnings_captured_before_an_error_are_still_flushed() {
+    let fixture = SummaryFixture::trusted_with_skip_hash_check(SUMMARY_TOML);
+    // A second config file that is NOT in the trust store: loading it fails
+    // AFTER the first file's warning has already been captured.
+    fixture
+        .fx
+        .write("repo/.vibe.local.toml", "[summary]\ncommand = \"./x.sh\"\n");
+
+    let git = fixture.git(&[]);
+    let runner = FakeSummaryRunner::with_stdout("{}");
+    let err = fixture.run(&git, &runner, false).unwrap_err();
+    assert!(err.to_string().contains("not trusted"), "got: {err}");
+
+    assert!(
+        fixture
+            .io
+            .stderr_text()
+            .contains("Hash verification is disabled"),
+        "the captured warning must survive the error: {:?}",
+        fixture.io.stderr_text()
+    );
+}
+
+/// What it guarantees: a captured warning carries no ANSI escapes, so the
+/// sanitize-then-recolor sequence cannot render `<ESC>[33m` as literal text.
+///
+/// On a TTY, `warn_log` colors its message. A callee writing through the capture
+/// would embed real escapes in the buffered string; `DeferredWarnings::push`
+/// then neutralizes them to `\u{fffd}` and the flush colors the result again, so
+/// the user sees a mangled `?[33m` in the middle of the warning. Capturing the
+/// PLAIN message and coloring once at flush is the only ordering that works.
+#[test]
+fn captured_warnings_are_colorless_so_sanitizing_cannot_mangle_them() {
+    let fixture = SummaryFixture::trusted_with_skip_hash_check(SUMMARY_TOML);
+    // A terminal, which is what makes `warn_log` colorize at all.
+    let tty_io = FakeIo::new()
+        .with_env("HOME", fixture.fx.path().to_str().unwrap())
+        .stderr_tty(true);
+
+    let git = fixture.git(&[]);
+    let runner = FakeSummaryRunner::with_stdout(r#"{"main":"m"}"#);
+    run_with(
+        &tty_io,
+        &git,
+        &fixture.resolver,
+        &runner,
+        &fixture.main_path,
+        false,
+        OutputOptions::default(),
+    )
+    .unwrap();
+
+    let text = tty_io.stderr_text();
+    let warning = text
+        .lines()
+        .find(|l| l.contains("Hash verification is disabled"))
+        .expect("the trust warning is shown");
+    // The replacement character is the tell-tale of a mangled escape.
+    assert!(
+        !warning.contains('\u{fffd}'),
+        "an escape was sanitized inside the captured message: {warning:?}"
+    );
+    // Exactly one color wrap, applied at flush: opening and closing sequence.
+    assert!(warning.starts_with("\u{1b}[33m"), "got: {warning:?}");
+    assert_eq!(
+        warning.matches('\u{1b}').count(),
+        2,
+        "expected one colorize, got: {warning:?}"
+    );
+}
+
+/// What it guarantees: `FORCE_COLOR` cannot put the escapes back either — it
+/// overrides the tty check inside `is_color_enabled`, so the capture has to mask
+/// it as well as report a non-tty.
+#[test]
+fn force_color_does_not_reintroduce_escapes_into_captured_warnings() {
+    let fixture = SummaryFixture::trusted_with_skip_hash_check(SUMMARY_TOML);
+    let io = FakeIo::new()
+        .with_env("HOME", fixture.fx.path().to_str().unwrap())
+        .with_env("FORCE_COLOR", "1");
+
+    let git = fixture.git(&[]);
+    let runner = FakeSummaryRunner::with_stdout(r#"{"main":"m"}"#);
+    run_with(
+        &io,
+        &git,
+        &fixture.resolver,
+        &runner,
+        &fixture.main_path,
+        false,
+        OutputOptions::default(),
+    )
+    .unwrap();
+
+    let warning = io
+        .stderr_text()
+        .lines()
+        .find(|l| l.contains("Hash verification is disabled"))
+        .expect("the trust warning is shown")
+        .to_string();
+    assert!(!warning.contains('\u{fffd}'), "got: {warning:?}");
+    assert_eq!(warning.matches('\u{1b}').count(), 2, "got: {warning:?}");
+}

@@ -279,15 +279,38 @@ impl<I: Io> Io for CapturingIo<'_, I> {
         self.inner.read_line()
     }
 
+    /// Always `false`, so callees write PLAIN text into the buffer.
+    ///
+    /// This is not a lie about the terminal, it is the truth about this stream:
+    /// nothing written here is going to a terminal, it is going into a `Vec`.
+    /// `is_color_enabled` reads exactly this signal, so a callee that colors its
+    /// own warning (`warn_log` does) would otherwise embed real ANSI escapes in
+    /// the captured string — which `DeferredWarnings::push` then neutralizes to
+    /// `\u{fffd}`, and the flush re-colors, so the user sees a literal
+    /// `<?>[33m` in the middle of their warning.
+    ///
+    /// Capturing the uncolored message and letting the flush color it once is
+    /// the only ordering in which sanitization and coloring do not fight: the
+    /// escapes that end up on the terminal are then only the ones `warn_log`
+    /// adds at the very end, after sanitization has run.
     fn is_stderr_terminal(&self) -> bool {
-        self.inner.is_stderr_terminal()
+        false
     }
 
     fn is_stdin_terminal(&self) -> bool {
         self.inner.is_stdin_terminal()
     }
 
+    /// Forwarded EXCEPT for the color-forcing variable, for the reason given on
+    /// [`is_stderr_terminal`](Self::is_stderr_terminal): `FORCE_COLOR` overrides
+    /// the tty check, so leaving it visible would put the escapes back.
+    ///
+    /// `NO_COLOR` is left alone — it can only ever disable color, which is
+    /// already what this stream wants.
     fn env(&self, key: &str) -> Option<String> {
+        if key == "FORCE_COLOR" {
+            return None;
+        }
         self.inner.env(key)
     }
 }
@@ -403,7 +426,24 @@ where
     // config can turn out to be untrusted, and dropping the warning because of
     // the error would lose the more informative of the two.
     warnings.absorb(captured_io.into_captured());
-    let (has_summary, summary_warnings) = outcome?;
+
+    let (has_summary, summary_warnings) = match outcome {
+        Ok(pair) => pair,
+        Err(e) => {
+            // Deferral exists to protect the `--json` payload, and there is no
+            // payload on this path: the error propagates to `main`, which prints
+            // it and exits non-zero, so nothing will ever be parsed. Withholding
+            // the collected warnings here would discard them for good, and they
+            // are frequently the reason for the error that follows (the settings
+            // store failed validation, so the trust entry was not found, so the
+            // config reads as untrusted). Flushed BEFORE returning so they
+            // appear above the error, in the order they happened.
+            std::mem::take(&mut warnings.messages)
+                .into_iter()
+                .for_each(|m| warn_log(deps.io, &m));
+            return Err(e);
+        }
+    };
 
     for message in summary_warnings {
         warnings.push(message);
@@ -453,6 +493,10 @@ where
                 head: e.head.as_deref(),
                 status_payload: e.status_payload.as_deref(),
             }),
+            // An unreadable status makes the key indistinguishable from a clean
+            // tree's, so the row opts out of the cache entirely rather than
+            // risking a stale hit. See `SummaryTarget::cacheable`.
+            cacheable: e.status_payload.is_some(),
         })
         .collect();
 
