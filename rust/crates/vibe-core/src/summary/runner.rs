@@ -119,10 +119,22 @@ pub struct SummaryInvocation<'a> {
 pub struct SummaryOutput {
     /// Exit status, or `-1` when the process was killed / left no code.
     pub code: i32,
+    /// The command's stdout, empty when it was not valid UTF-8 (see
+    /// [`stdout_invalid_utf8`](Self::stdout_invalid_utf8)).
     pub stdout: String,
     pub stderr: String,
     /// Whether the deadline expired and the process was killed.
     pub timed_out: bool,
+    /// Whether stdout contained bytes that are not valid UTF-8.
+    ///
+    /// A separate flag rather than a sentinel inside `stdout`, because the
+    /// obvious sentinel — U+FFFD — is a character a command may legitimately
+    /// emit, and the two cases must not be confused. Decoding leniently would
+    /// REWRITE the answer: `{"main":"x\xffy"}` becomes valid JSON reading
+    /// `{"main":"x\u{fffd}y"}`, and vibe would accept, display and cache a
+    /// summary the command never produced. The contract is UTF-8 JSON; bytes
+    /// that are not UTF-8 are a violation of it, not something to repair.
+    pub stdout_invalid_utf8: bool,
 }
 
 /// Runs the `[summary]` command.
@@ -263,11 +275,23 @@ impl SummaryRunner for RealSummaryRunner {
         // deadline, whatever the child's own exit status said.
         timed_out = timed_out || stdout_late || stderr_late || writer_late;
 
+        // stdout is PARSED, so it is decoded strictly: see
+        // `SummaryOutput::stdout_invalid_utf8`.
+        let (stdout, stdout_invalid_utf8) = match String::from_utf8(stdout) {
+            Ok(text) => (text, false),
+            Err(_) => (String::new(), true),
+        };
+
         Ok(SummaryOutput {
             code: status.and_then(|s| s.code()).unwrap_or(-1),
-            stdout: String::from_utf8_lossy(&stdout).into_owned(),
+            stdout,
+            // stderr stays LOSSY: nothing is parsed out of it, at most its first
+            // line is quoted back in a warning, and a diagnostic that happens to
+            // carry a stray byte is still worth showing. Refusing to decode it
+            // would discard the only explanation a failing command gave us.
             stderr: String::from_utf8_lossy(&stderr).into_owned(),
             timed_out,
+            stdout_invalid_utf8,
         })
     }
 }
@@ -380,6 +404,7 @@ mod fake {
                     stdout: stdout.to_string(),
                     stderr: String::new(),
                     timed_out: false,
+                    stdout_invalid_utf8: false,
                 }),
             }
         }
@@ -393,6 +418,7 @@ mod fake {
                     stdout: String::new(),
                     stderr: stderr.to_string(),
                     timed_out: false,
+                    stdout_invalid_utf8: false,
                 }),
             }
         }
@@ -406,6 +432,24 @@ mod fake {
                     stdout: String::new(),
                     stderr: String::new(),
                     timed_out: true,
+                    stdout_invalid_utf8: false,
+                }),
+            }
+        }
+
+        /// Exits 0 but its stdout was not valid UTF-8.
+        pub fn invalid_utf8_stdout() -> Self {
+            FakeSummaryRunner {
+                calls: RefCell::new(vec![]),
+                response: Ok(SummaryOutput {
+                    code: 0,
+                    // Empty, exactly as the real runner leaves it: the bytes are
+                    // not representable as a `String`, and inventing a lossy
+                    // stand-in here would hide the very bug this models.
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    timed_out: false,
+                    stdout_invalid_utf8: true,
                 }),
             }
         }
@@ -638,6 +682,40 @@ mod real_tests {
         // And the parser turns that into the documented violation.
         let err = crate::summary::parse_summary_stdout(&out.stdout, 1).unwrap_err();
         assert!(err.contains("bytes"), "got: {err}");
+    }
+
+    /// What it guarantees: stdout that is not valid UTF-8 is REPORTED as such,
+    /// not silently repaired into something that parses.
+    ///
+    /// `from_utf8_lossy` would turn `{"main":"x\xffy"}` into valid JSON reading
+    /// `{"main":"x\u{fffd}y"}` — a summary the command never produced, which
+    /// vibe would then display and cache as if it had.
+    #[test]
+    fn invalid_utf8_on_stdout_is_flagged_rather_than_repaired() {
+        // A lone 0xff byte inside an otherwise well-formed JSON document.
+        let out = run(r#"printf '{"main":"x\377y"}'"#, "", 10);
+        assert_eq!(out.code, 0, "the command itself succeeded: {out:?}");
+        assert!(
+            out.stdout_invalid_utf8,
+            "the undecodable bytes must be reported: {out:?}"
+        );
+        assert!(
+            out.stdout.is_empty(),
+            "no repaired stand-in may be handed on: {:?}",
+            out.stdout
+        );
+    }
+
+    /// The complement: a summary that legitimately CONTAINS U+FFFD is valid
+    /// UTF-8 and must pass through untouched, which is why the failure needs a
+    /// flag of its own rather than sniffing for the replacement character.
+    #[test]
+    fn a_genuine_replacement_character_is_not_mistaken_for_invalid_utf8() {
+        let out = run(r#"printf '{"main":"x\357\277\275y"}'"#, "", 10);
+        assert!(!out.stdout_invalid_utf8, "got: {out:?}");
+        assert_eq!(out.stdout, "{\"main\":\"x\u{fffd}y\"}");
+        // And it parses, so such a summary is usable.
+        assert!(crate::summary::parse_summary_stdout(&out.stdout, 1).is_ok());
     }
 
     /// What it guarantees: the deadline bounds the CALL, not merely the child.

@@ -359,6 +359,15 @@ fn interpret(
         ));
     }
 
+    if output.stdout_invalid_utf8 {
+        // Same path as any other contract violation: warn, fall back to the
+        // cached values, cache nothing. Deliberately NOT decoded leniently —
+        // that would invent a summary the command never produced.
+        return Err(
+            "Summary command produced output that is not valid UTF-8; ignoring it.".to_string(),
+        );
+    }
+
     parse_summary_stdout(&output.stdout, asked)
 }
 

@@ -731,3 +731,52 @@ fn a_corrupt_cache_file_is_still_replaced() {
         "a worthless file must not block the write-back"
     );
 }
+
+/// What it guarantees: undecodable stdout takes the ordinary contract-violation
+/// path — warn, fall back to the cached value, write nothing.
+///
+/// Before this, the bytes were decoded leniently and the resulting document
+/// parsed, so a summary the command never produced was displayed AND cached,
+/// outliving the run that invented it.
+#[test]
+fn invalid_utf8_stdout_is_rejected_and_falls_back_to_the_cache() {
+    let fx = Fixture::new();
+    let io = io_for(&fx);
+
+    // A healthy run puts a real summary in the cache.
+    let ok = FakeSummaryRunner::with_stdout(r#"{"main":"the real summary"}"#);
+    resolve(&io, &ok, &[target("main", "/repo/main", "k1")]);
+
+    // The worktree changes, and this time stdout is not valid UTF-8.
+    let bad = FakeSummaryRunner::invalid_utf8_stdout();
+    let result = resolve(&io, &bad, &[target("main", "/repo/main", "k2")]);
+
+    assert_eq!(
+        result.by_path.get("/repo/main").unwrap(),
+        "the real summary",
+        "the cached value must stand in"
+    );
+    assert_eq!(result.warnings.len(), 1);
+    assert!(
+        result.warnings[0].contains("not valid UTF-8"),
+        "got: {:?}",
+        result.warnings
+    );
+
+    // Nothing was written under the new key.
+    let cache = loaded(&io, "/repo", &command_hash("./summary.sh"));
+    assert_eq!(cache.get("/repo/main", "k2"), None);
+    assert_eq!(cache.get("/repo/main", "k1"), Some("the real summary"));
+}
+
+/// What it guarantees: with nothing cached, the cell is simply blank — the
+/// undecodable bytes never become a summary.
+#[test]
+fn invalid_utf8_stdout_yields_no_summary_when_nothing_is_cached() {
+    let fx = Fixture::new();
+    let io = io_for(&fx);
+    let runner = FakeSummaryRunner::invalid_utf8_stdout();
+    let result = resolve(&io, &runner, &[target("main", "/repo/main", "k")]);
+    assert!(result.by_path.is_empty());
+    assert_eq!(result.warnings.len(), 1);
+}
