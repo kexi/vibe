@@ -17,7 +17,7 @@
 //! implementation of the array algebra.
 //!
 //! Because that divergence turns previously-inert fields into executable
-//! configuration, [`CONFIG_SEMANTICS_REV`] versions the interpretation itself
+//! configuration, `CONFIG_SEMANTICS_REV` versions the interpretation itself
 //! and the loader refuses to run a config that relies on the new positions
 //! under a trust grant issued before the change.
 
@@ -36,7 +36,11 @@ use serde::{Deserialize, Serialize};
 /// file's BYTES, not how vibe interprets them. Upgrading the binary would
 /// otherwise silently activate hook entries the user trusted while they were
 /// inert, with no re-trust prompt.
-pub const CONFIG_SEMANTICS_REV: u32 = 1;
+///
+/// Crate-internal: the revision is an implementation detail of the trust guard,
+/// not part of the library surface, and keeping it so means the guard's
+/// consumers can be enumerated.
+pub(crate) const CONFIG_SEMANTICS_REV: u32 = 1;
 
 /// Parsed `.vibe.toml` config. Every section is optional.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -141,11 +145,42 @@ pub struct SubmodulesConfig {
     pub configs: Option<Vec<String>>,
 }
 
-/// Parse a `VibeConfig` from TOML text, validating it like the Zod schema.
+/// A config exactly as it was written on disk, before [`normalize_config`]
+/// folds each `*_prepend`/`*_append` slot into its base field.
+///
+/// Exists so the semantics-revision guard cannot be handed an already-normalized
+/// config: the detectors it relies on
+/// (`config_loader::newly_effective_fields`) inspect the very slots
+/// normalization empties, so a normalized input would report "no newly-effective
+/// fields" and fail OPEN. Only [`parse_vibe_config`] mints one, so the raw
+/// provenance the guard depends on is expressed in the type rather than in prose.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RawConfig(VibeConfig);
+
+impl RawConfig {
+    /// Borrow the un-normalized config.
+    ///
+    /// Needed by the cross-file merge, which must see the local file's extension
+    /// slots UNFOLDED so they wrap the base's effective arrays instead of
+    /// overriding them. Not a general escape hatch: the guard's detectors take
+    /// `&RawConfig` precisely so they can never be reached this way.
+    pub(crate) fn as_config(&self) -> &VibeConfig {
+        &self.0
+    }
+
+    /// Resolve this file's own `*_prepend`/`*_append` fields, consuming the
+    /// raw-ness: the result is a plain [`VibeConfig`] and no longer admissible
+    /// to the guard.
+    pub(crate) fn normalize(&self) -> VibeConfig {
+        normalize_config(&self.0)
+    }
+}
+
+/// Parse a [`RawConfig`] from TOML text, validating it like the Zod schema.
 ///
 /// `file_path` is woven into the error message exactly as the TS
 /// `parseVibeConfig` does (`Invalid configuration in <path>: ...`).
-pub fn parse_vibe_config(toml_text: &str, file_path: &str) -> Result<VibeConfig> {
+pub fn parse_vibe_config(toml_text: &str, file_path: &str) -> Result<RawConfig> {
     let config: VibeConfig = toml::from_str(toml_text).map_err(|e| {
         VibeError::Configuration(format!("Invalid configuration in {file_path}:\n  - {e}"))
     })?;
@@ -159,7 +194,7 @@ pub fn parse_vibe_config(toml_text: &str, file_path: &str) -> Result<VibeConfig>
         }
     }
 
-    Ok(config)
+    Ok(RawConfig(config))
 }
 
 /// Merge a base array with override/prepend/append.
@@ -388,9 +423,13 @@ fn extension_triplets(config: &VibeConfig) -> Vec<(&'static str, bool, bool, boo
 }
 
 /// Dotted names of the `*_prepend`/`*_append` fields set in a raw config.
-pub fn extension_fields_in_use(config: &VibeConfig) -> Vec<String> {
+///
+/// Takes [`RawConfig`], not `&VibeConfig`: on a normalized config every slot is
+/// already folded to `None` and this would answer "none in use" — a fail-OPEN
+/// verdict from a security guard.
+pub(crate) fn extension_fields_in_use(config: &RawConfig) -> Vec<String> {
     let mut names = Vec::new();
-    for (name, _, prepend, append) in extension_triplets(config) {
+    for (name, _, prepend, append) in extension_triplets(&config.0) {
         if prepend {
             names.push(format!("{name}_prepend"));
         }
@@ -404,9 +443,12 @@ pub fn extension_fields_in_use(config: &VibeConfig) -> Vec<String> {
 /// Dotted names of the `*_prepend`/`*_append` fields a raw config sets ALONGSIDE
 /// their own base field (the position the TS `mergeArrayField` dropped even when
 /// both config files were present).
-pub fn extension_fields_beside_own_field(config: &VibeConfig) -> Vec<String> {
+///
+/// Takes [`RawConfig`] for the same fail-open reason as
+/// [`extension_fields_in_use`].
+pub(crate) fn extension_fields_beside_own_field(config: &RawConfig) -> Vec<String> {
     let mut names = Vec::new();
-    for (name, field, prepend, append) in extension_triplets(config) {
+    for (name, field, prepend, append) in extension_triplets(&config.0) {
         if !field {
             continue;
         }
@@ -744,13 +786,13 @@ mod tests {
 
     #[test]
     fn untracked_and_modified_parse_and_default_to_absent() {
-        let cfg = parse_vibe_config("[copy]\nuntracked = true\nmodified = false\n", "/p").unwrap();
+        let cfg = parse_fields("[copy]\nuntracked = true\nmodified = false\n", "/p");
         let copy = cfg.copy.unwrap();
         assert_eq!(copy.untracked, Some(true));
         assert_eq!(copy.modified, Some(false));
 
         // Omitting them leaves them unset (the use site reads that as "off").
-        let bare = parse_vibe_config("[copy]\nfiles = []\n", "/p").unwrap();
+        let bare = parse_fields("[copy]\nfiles = []\n", "/p");
         let bare_copy = bare.copy.unwrap();
         assert_eq!(bare_copy.untracked, None);
         assert_eq!(bare_copy.modified, None);
@@ -1001,12 +1043,15 @@ mod tests {
 
     // --- parse_vibe_config ---
 
+    /// Parse and unwrap the [`RawConfig`] for tests that assert on parsed
+    /// FIELDS rather than on the raw-ness the newtype protects.
+    fn parse_fields(toml_text: &str, path: &str) -> VibeConfig {
+        parse_vibe_config(toml_text, path).unwrap().0
+    }
+
     #[test]
     fn parses_empty_config() {
-        assert_eq!(
-            parse_vibe_config("", "/p/.vibe.toml").unwrap(),
-            VibeConfig::default()
-        );
+        assert_eq!(parse_fields("", "/p/.vibe.toml"), VibeConfig::default());
     }
 
     #[test]
@@ -1029,7 +1074,7 @@ delete_branch = true
 [submodules]
 configs = ["libs/foo"]
 "#;
-        let cfg = parse_vibe_config(toml, "/p/.vibe.toml").unwrap();
+        let cfg = parse_fields(toml, "/p/.vibe.toml");
         assert_eq!(cfg.copy.as_ref().unwrap().concurrency, Some(8));
         assert_eq!(cfg.clean.as_ref().unwrap().delete_branch, Some(true));
         assert_eq!(
@@ -1044,11 +1089,10 @@ configs = ["libs/foo"]
 
     #[test]
     fn parses_copy_symlink() {
-        let cfg = parse_vibe_config(
+        let cfg = parse_fields(
             "[copy]\ndirs = [\"node_modules\"]\nsymlink = [\".cache\", \".turbo\"]\n",
             "/p/.vibe.toml",
-        )
-        .unwrap();
+        );
         assert_eq!(
             cfg.copy.unwrap().symlink,
             Some(vec![".cache".into(), ".turbo".into()])
@@ -1057,8 +1101,7 @@ configs = ["libs/foo"]
 
     #[test]
     fn parses_submodules_configs() {
-        let cfg =
-            parse_vibe_config("[submodules]\nconfigs = [\"libs/foo\"]\n", "/p/.vibe.toml").unwrap();
+        let cfg = parse_fields("[submodules]\nconfigs = [\"libs/foo\"]\n", "/p/.vibe.toml");
         assert_eq!(
             cfg.submodules.unwrap().configs,
             Some(vec!["libs/foo".into()])
@@ -1102,16 +1145,14 @@ configs = ["libs/foo"]
     #[test]
     fn accepts_concurrency_bounds() {
         assert_eq!(
-            parse_vibe_config("[copy]\nconcurrency = 1\n", "/p")
-                .unwrap()
+            parse_fields("[copy]\nconcurrency = 1\n", "/p")
                 .copy
                 .unwrap()
                 .concurrency,
             Some(1)
         );
         assert_eq!(
-            parse_vibe_config("[copy]\nconcurrency = 32\n", "/p")
-                .unwrap()
+            parse_fields("[copy]\nconcurrency = 32\n", "/p")
                 .copy
                 .unwrap()
                 .concurrency,
@@ -1121,7 +1162,7 @@ configs = ["libs/foo"]
 
     // --- extension-field detection (semantics-revision guard input) ---
 
-    fn parse(toml_text: &str) -> VibeConfig {
+    fn parse(toml_text: &str) -> RawConfig {
         parse_vibe_config(toml_text, "/p").unwrap()
     }
 

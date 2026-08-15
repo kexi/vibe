@@ -44,7 +44,7 @@ pub struct AllowEntry {
     #[serde(rename = "skipHashCheck", skip_serializing_if = "Option::is_none")]
     pub skip_hash_check: Option<bool>,
     /// The config-interpretation revision this trust was granted under
-    /// ([`crate::config::CONFIG_SEMANTICS_REV`]). Absent means revision 0: trust
+    /// (`config::CONFIG_SEMANTICS_REV`). Absent means revision 0: trust
     /// predating the change that made `*_prepend`/`*_append` effective in every
     /// load path, so the loader must not silently activate those fields.
     ///

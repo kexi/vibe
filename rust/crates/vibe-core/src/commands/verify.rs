@@ -5,20 +5,28 @@
 //! a trust status line (trusted / not-trusted / hash-mismatch / skip), and the
 //! stored hash history. Every line is reproduced to match the TS exactly,
 //! including the emoji markers. No `cd` is produced.
+//!
+//! Divergence from the TS (issue #599 follow-up): a status block also reports
+//! when a file is hash-trusted but its trust predates
+//! `config::CONFIG_SEMANTICS_REV` AND it uses a position that revision made
+//! effective. Without it `verify` would print `✅ TRUSTED` and exit 0 for
+//! exactly the configs `start`/`clean`/`rename` hard-fail on — and `verify` is
+//! the command a user reaches for to diagnose that failure. The verdict comes
+//! from `config_loader::newly_effective_fields`, the same predicate the loader
+//! fails closed on, so the diagnostic cannot drift from the error.
 
 use crate::commands::Outcome;
+use crate::config::{parse_vibe_config, RawConfig, CONFIG_SEMANTICS_REV};
+use crate::config_loader::{newly_effective_fields, ConfigRole, VIBE_LOCAL_TOML, VIBE_TOML};
 use crate::error::{Result, VibeError};
 use crate::git::{get_repo_root, GitRunner};
-use crate::hash::hash_file;
+use crate::hash::hash_content;
 use crate::io::Io;
 use crate::output::{error_log, log, success_log, warn_log, OutputOptions};
 use crate::settings::RepoResolver;
-use crate::settings::{find_matching_entry, should_skip_hash_check, VibeSettings};
+use crate::settings::{find_matching_entry, should_skip_hash_check, AllowEntry, VibeSettings};
 use crate::settings_io::load_user_settings;
 use std::path::Path;
-
-const VIBE_TOML: &str = ".vibe.toml";
-const VIBE_LOCAL_TOML: &str = ".vibe.local.toml";
 
 /// Run `vibe verify`.
 pub fn verify_command(
@@ -46,6 +54,10 @@ pub fn verify_command(
 
     log(io, "=== Vibe Configuration Verification ===\n", opts);
 
+    // Which positions became newly effective depends on how many config files
+    // the repo has, so mirror the loader's own case split.
+    let both = vibe_exists && local_exists;
+
     if vibe_exists {
         display_file_status(
             io,
@@ -53,6 +65,11 @@ pub fn verify_command(
             &settings,
             vibe_toml_path.to_str().unwrap_or_default(),
             VIBE_TOML,
+            if both {
+                ConfigRole::BaseOfPair
+            } else {
+                ConfigRole::Single
+            },
             opts,
         );
     }
@@ -67,6 +84,11 @@ pub fn verify_command(
             &settings,
             vibe_local_path.to_str().unwrap_or_default(),
             VIBE_LOCAL_TOML,
+            if both {
+                ConfigRole::LocalOfPair
+            } else {
+                ConfigRole::Single
+            },
             opts,
         );
     }
@@ -100,6 +122,7 @@ fn display_file_status(
     settings: &VibeSettings,
     file_path: &str,
     file_name: &str,
+    role: ConfigRole,
     opts: OutputOptions,
 ) {
     log(io, &format!("File: {file_name}"), opts);
@@ -139,13 +162,22 @@ fn display_file_status(
         return;
     };
 
-    let current_hash = match hash_file(file_path) {
-        Ok(h) => h,
+    // Read once and derive both the hash and the semantics check from those
+    // bytes, so the two verdicts in one status block always describe the same
+    // file content (the same single-read discipline as `verify_trust_and_read`).
+    let content = match std::fs::read(file_path) {
+        Ok(c) => c,
         Err(e) => {
-            error_log(io, &format!("Status: ❌ ERROR - Cannot read file: {e}"));
+            error_log(
+                io,
+                &format!(
+                    "Status: ❌ ERROR - Cannot read file: Failed to read \"{file_path}\": {e}"
+                ),
+            );
             return;
         }
     };
+    let current_hash = hash_content(&content);
 
     let hash_matches = entry.hashes.contains(&current_hash);
     let skip = should_skip_hash_check(entry, settings);
@@ -165,6 +197,8 @@ fn display_file_status(
             opts,
         );
     }
+
+    display_semantics_status(io, entry, &content, file_path, role, opts);
 
     log(
         io,
@@ -188,13 +222,70 @@ fn display_file_status(
     }
 }
 
+/// Report a trust grant that predates the current config-interpretation
+/// revision, and whether the file actually relies on the positions that
+/// revision activated.
+///
+/// Always echoes the stored revision (a plain fact about the entry, free of any
+/// parsing), and additionally warns when the loader will refuse this file. Why
+/// only warn rather than fail: `verify` is a read-only diagnostic that reports
+/// state and exits 0 — the enforcement point is the loader.
+///
+/// A file whose bytes do not parse gets the revision line but no verdict: the
+/// detectors need a [`RawConfig`], and an unparsable file already fails earlier
+/// in every command that loads it, so there is no "trusted but will fail on
+/// semantics" surprise left to warn about.
+fn display_semantics_status(
+    io: &impl Io,
+    entry: &AllowEntry,
+    content: &[u8],
+    file_path: &str,
+    role: ConfigRole,
+    opts: OutputOptions,
+) {
+    if entry.semantics_rev() >= CONFIG_SEMANTICS_REV {
+        return;
+    }
+    log(
+        io,
+        &format!(
+            "Config Semantics: trusted at revision {} (current: {CONFIG_SEMANTICS_REV})",
+            entry.semantics_rev()
+        ),
+        opts,
+    );
+
+    let Ok(text) = std::str::from_utf8(content) else {
+        return;
+    };
+    let Ok(config): Result<RawConfig> = parse_vibe_config(text, file_path) else {
+        return;
+    };
+    let fields = newly_effective_fields(&config, role);
+    if fields.is_empty() {
+        return;
+    }
+
+    warn_log(io, "Status: ⚠️  STALE CONFIG SEMANTICS");
+    warn_log(
+        io,
+        &format!(
+            "These fields were accepted but ignored when this file was trusted and now take effect: {}",
+            fields.join(", ")
+        ),
+    );
+    warn_log(
+        io,
+        "Action: Review the file, then re-approve it with 'vibe trust' (other commands will refuse it until then)",
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::git::RepoInfo;
-    use crate::hash::hash_content;
     use crate::io::FakeIo;
-    use crate::settings::{AllowEntry, RepoId};
+    use crate::settings::RepoId;
     use crate::settings_io::save_user_settings;
     use std::cell::RefCell;
     use std::collections::HashMap;
@@ -618,5 +709,179 @@ mod tests {
         let text = s.io.stderr_text();
         assert!(text.contains("Repository: github.com/u/r"), "got: {text}");
         assert!(!text.contains("(local)"));
+    }
+
+    // --- config-semantics revision reporting (issue #599 follow-up) ---
+
+    /// A lone `.vibe.toml` using a newly-effective position under a pre-#599
+    /// trust is NOT reported as plainly trusted: `verify` names the offending
+    /// fields, so it agrees with the hard failure `start`/`clean` will produce.
+    #[test]
+    fn warns_when_pre_599_trust_meets_newly_effective_fields() {
+        let fx = Fixture::new();
+        let content = "[hooks]\npost_start_append = [\"echo hi\"]\n";
+        let hash = hash_content(content.as_bytes());
+        let (s, _) = scenario(&fx, content, Some(&[&hash]), None, None, None);
+        verify_command(&s.io, &s.git, &s.resolver, V, OutputOptions::default()).unwrap();
+
+        let text = s.io.stderr_text();
+        assert!(text.contains("✅ TRUSTED"), "got: {text}");
+        assert!(
+            text.contains("Config Semantics: trusted at revision 0"),
+            "got: {text}"
+        );
+        assert!(text.contains("⚠️  STALE CONFIG SEMANTICS"), "got: {text}");
+        assert!(text.contains("hooks.post_start_append"), "got: {text}");
+        assert!(
+            text.contains("re-approve it with 'vibe trust'"),
+            "got: {text}"
+        );
+    }
+
+    /// A pre-#599 trust over a config that uses none of the newly-effective
+    /// positions still reports its stored revision, but raises no warning: its
+    /// meaning did not change, and the loader will accept it.
+    #[test]
+    fn reports_revision_without_warning_when_no_field_became_effective() {
+        let fx = Fixture::new();
+        let content = "[hooks]\npost_start = [\"echo hi\"]\n";
+        let hash = hash_content(content.as_bytes());
+        let (s, _) = scenario(&fx, content, Some(&[&hash]), None, None, None);
+        verify_command(&s.io, &s.git, &s.resolver, V, OutputOptions::default()).unwrap();
+
+        let text = s.io.stderr_text();
+        assert!(
+            text.contains("Config Semantics: trusted at revision 0"),
+            "got: {text}"
+        );
+        assert!(!text.contains("STALE CONFIG SEMANTICS"), "got: {text}");
+    }
+
+    /// A trust granted at the current revision says nothing about semantics at
+    /// all — the status block is unchanged for everyone who re-trusted.
+    #[test]
+    fn stays_silent_when_trust_is_at_the_current_revision() {
+        let fx = Fixture::new();
+        let repo = fx.mkdir("repo");
+        let content = "[hooks]\npost_start_append = [\"echo hi\"]\n";
+        let vibe = fx.write("repo/.vibe.toml", content);
+        let vibe_str = vibe.to_str().unwrap().to_string();
+
+        let io = FakeIo::new().with_env("HOME", fx.path().to_str().unwrap());
+        let mut settings = VibeSettings::default_settings();
+        settings.permissions.allow.push(AllowEntry {
+            repo_id: RepoId {
+                remote_url: None,
+                repo_root: Some(repo.to_str().unwrap().into()),
+            },
+            relative_path: ".vibe.toml".into(),
+            hashes: vec![hash_content(content.as_bytes())],
+            skip_hash_check: None,
+            config_semantics_rev: Some(CONFIG_SEMANTICS_REV),
+        });
+        save_user_settings(&io, &settings, V).unwrap();
+
+        let mut repos = HashMap::new();
+        repos.insert(
+            vibe_str,
+            RepoInfo {
+                remote_url: None,
+                repo_root: repo.to_str().unwrap().into(),
+                relative_path: ".vibe.toml".into(),
+            },
+        );
+        let resolver = MapResolver {
+            repos,
+            hashes: RefCell::new(HashMap::new()),
+        };
+        let git = FakeGit {
+            repo_root: repo.to_str().unwrap().to_string(),
+        };
+        verify_command(&io, &git, &resolver, V, OutputOptions::default()).unwrap();
+
+        let text = io.stderr_text();
+        assert!(text.contains("✅ TRUSTED"), "got: {text}");
+        assert!(!text.contains("Config Semantics:"), "got: {text}");
+        assert!(!text.contains("STALE CONFIG SEMANTICS"), "got: {text}");
+    }
+
+    /// With BOTH config files present, the local file's extension is only
+    /// newly-effective when it sits beside its own base field — the same case
+    /// split the loader applies, so verify never over-warns.
+    #[test]
+    fn applies_the_two_file_role_split_to_the_local_file() {
+        let fx = Fixture::new();
+        let repo = fx.mkdir("repo");
+        // Base: plain, nothing became effective.
+        let base_content = "[hooks]\npost_start = [\"base\"]\n";
+        // Local: an append with NO `post_start` beside it → always was effective.
+        let local_content = "[hooks]\npost_start_append = [\"local\"]\n";
+        let base = fx.write("repo/.vibe.toml", base_content);
+        let local = fx.write("repo/.vibe.local.toml", local_content);
+
+        let io = FakeIo::new().with_env("HOME", fx.path().to_str().unwrap());
+        let mut settings = VibeSettings::default_settings();
+        let mut repos = HashMap::new();
+        for (path, rel, content) in [
+            (&base, ".vibe.toml", base_content),
+            (&local, ".vibe.local.toml", local_content),
+        ] {
+            let path_str = path.to_str().unwrap().to_string();
+            settings.permissions.allow.push(AllowEntry {
+                repo_id: RepoId {
+                    remote_url: None,
+                    repo_root: Some(repo.to_str().unwrap().into()),
+                },
+                relative_path: rel.into(),
+                hashes: vec![hash_content(content.as_bytes())],
+                skip_hash_check: None,
+                config_semantics_rev: None, // pre-#599 trust
+            });
+            repos.insert(
+                path_str,
+                RepoInfo {
+                    remote_url: None,
+                    repo_root: repo.to_str().unwrap().into(),
+                    relative_path: rel.into(),
+                },
+            );
+        }
+        save_user_settings(&io, &settings, V).unwrap();
+
+        let resolver = MapResolver {
+            repos,
+            hashes: RefCell::new(HashMap::new()),
+        };
+        let git = FakeGit {
+            repo_root: repo.to_str().unwrap().to_string(),
+        };
+        verify_command(&io, &git, &resolver, V, OutputOptions::default()).unwrap();
+
+        // Neither file changed meaning, so no warning despite revision-0 trust.
+        let text = io.stderr_text();
+        assert!(
+            text.contains("Config Semantics: trusted at revision 0"),
+            "got: {text}"
+        );
+        assert!(!text.contains("STALE CONFIG SEMANTICS"), "got: {text}");
+    }
+
+    /// An unparsable-but-trusted file gets the revision line and no verdict:
+    /// the detectors need a parsed config, and the parse error surfaces from
+    /// every command that actually loads it.
+    #[test]
+    fn skips_the_semantics_verdict_for_an_unparsable_file() {
+        let fx = Fixture::new();
+        let content = "this is not toml\n";
+        let hash = hash_content(content.as_bytes());
+        let (s, _) = scenario(&fx, content, Some(&[&hash]), None, None, None);
+        verify_command(&s.io, &s.git, &s.resolver, V, OutputOptions::default()).unwrap();
+
+        let text = s.io.stderr_text();
+        assert!(
+            text.contains("Config Semantics: trusted at revision 0"),
+            "got: {text}"
+        );
+        assert!(!text.contains("STALE CONFIG SEMANTICS"), "got: {text}");
     }
 }

@@ -98,6 +98,15 @@ Review the file, then re-approve it with: vibe trust
 
 这只影响真正使用了新生效位置的文件。其他配置照常工作，无需任何操作。
 
+`vibe verify` 会在你真正遇到该错误之前报告同样的信息。如果某个文件的信任是在此变更之前授予的，它的状态块会显示授予信任时的修订号；若该文件正属于受影响的范围，还会给出列明相关字段的警告：
+
+```
+Config Semantics: trusted at revision 0 (current: 1)
+Status: ⚠️  STALE CONFIG SEMANTICS
+These fields were accepted but ignored when this file was trusted and now take effect: hooks.post_start_append
+Action: Review the file, then re-approve it with 'vibe trust' (other commands will refuse it until then)
+```
+
 ## Worktree 路径覆盖
 
 你可以在 `.vibe.local.toml` 中覆盖 worktree 路径脚本：

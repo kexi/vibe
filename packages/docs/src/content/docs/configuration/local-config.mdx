@@ -110,6 +110,17 @@ Review the file, then re-approve it with: vibe trust
 This affects only files that actually use one of the newly effective positions. Every other
 config keeps working without any action.
 
+`vibe verify` reports the same thing before you hit it. When a file's trust predates the
+change, its status block shows the revision it was trusted at, plus a warning naming the
+fields if that file is one of the affected ones:
+
+```
+Config Semantics: trusted at revision 0 (current: 1)
+Status: ⚠️  STALE CONFIG SEMANTICS
+These fields were accepted but ignored when this file was trusted and now take effect: hooks.post_start_append
+Action: Review the file, then re-approve it with 'vibe trust' (other commands will refuse it until then)
+```
+
 ## Worktree Path Override
 
 You can override the worktree path script in `.vibe.local.toml`:

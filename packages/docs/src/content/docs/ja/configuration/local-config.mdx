@@ -98,6 +98,15 @@ Review the file, then re-approve it with: vibe trust
 
 対象となるのは、新たに有効化された位置を実際に使っているファイルだけです。それ以外の設定はこれまでどおり動作し、操作は不要です。
 
+`vibe verify`は、実際にエラーに遭遇する前に同じ内容を報告します。ファイルの信頼が変更前に付与されている場合、そのステータスブロックに信頼時のリビジョンが表示され、対象ファイルであれば該当フィールド名とともに警告が出ます：
+
+```
+Config Semantics: trusted at revision 0 (current: 1)
+Status: ⚠️  STALE CONFIG SEMANTICS
+These fields were accepted but ignored when this file was trusted and now take effect: hooks.post_start_append
+Action: Review the file, then re-approve it with 'vibe trust' (other commands will refuse it until then)
+```
+
 ## Worktreeパスの上書き
 
 `.vibe.local.toml`でWorktreeパススクリプトを上書きできます：

@@ -16,8 +16,9 @@
 //! Second divergence (issue #599): the TS reached `mergeConfigs` only when BOTH
 //! files existed, so with a lone `.vibe.toml` every `*_prepend`/`*_append` field
 //! was parsed and then silently ignored. Every arm now runs the file through
-//! [`normalize_config`], making the within-file extension fields effective
-//! regardless of how many config files a repo has.
+//! [`crate::config::normalize_config`] (via `RawConfig::normalize`), making the
+//! within-file extension fields effective regardless of how many config files a
+//! repo has.
 //!
 //! SECURITY: that divergence promotes dormant config to executable config. A
 //! `.vibe.toml` trusted under the old rules could carry, say,
@@ -25,14 +26,14 @@
 //! binary would run it on the next `vibe start`, and the SHA-256 trust hash
 //! cannot notice because the bytes did not change. [`load_vibe_config`]
 //! therefore fails closed when a config actually USES one of the newly-effective
-//! positions while its trust entry predates
-//! [`crate::config::CONFIG_SEMANTICS_REV`], demanding an explicit `vibe trust`.
+//! positions while its trust entry predates `config::CONFIG_SEMANTICS_REV`,
+//! demanding an explicit `vibe trust`.
 //! Configs that do not use those positions are unaffected: nobody is forced to
 //! re-trust for a change that cannot alter their config's meaning.
 
 use crate::config::{
-    extension_fields_beside_own_field, extension_fields_in_use, merge_configs, normalize_config,
-    parse_vibe_config, VibeConfig, CONFIG_SEMANTICS_REV,
+    extension_fields_beside_own_field, extension_fields_in_use, merge_configs, parse_vibe_config,
+    RawConfig, VibeConfig, CONFIG_SEMANTICS_REV,
 };
 use crate::error::{Result, VibeError};
 use crate::io::Io;
@@ -56,8 +57,8 @@ pub const VIBE_LOCAL_TOML: &str = ".vibe.local.toml";
 /// merged config, or `None` when neither file exists. An existing-but-untrusted
 /// (or modified) file is an error — per file, naming that file. A file that
 /// relies on a position which only became effective in
-/// [`CONFIG_SEMANTICS_REV`] while its trust predates that revision is likewise
-/// an error demanding a re-run of `vibe trust`.
+/// `CONFIG_SEMANTICS_REV` while its trust predates that revision is likewise an
+/// error demanding a re-run of `vibe trust`.
 pub fn load_vibe_config(
     io: &impl Io,
     resolver: &impl RepoResolver,
@@ -78,10 +79,10 @@ pub fn load_vibe_config(
     // cross-file merge table depends on that distinction.
     let merged = match (base, local) {
         (Some(base), Some(local)) => Some(merge_configs(
-            &normalize_config(&base.config),
-            &local.config,
+            &base.config.normalize(),
+            local.config.as_config(),
         )),
-        (Some(single), None) | (None, Some(single)) => Some(normalize_config(&single.config)),
+        (Some(single), None) | (None, Some(single)) => Some(single.config.normalize()),
         (None, None) => None,
     };
     Ok(merged)
@@ -92,14 +93,34 @@ pub fn load_vibe_config(
 struct LoadedFile {
     file_name: &'static str,
     path: String,
-    config: VibeConfig,
+    config: RawConfig,
     /// The [`CONFIG_SEMANTICS_REV`] the trust entry was granted under.
     semantics_rev: u32,
 }
 
-/// Reject a config whose meaning changed since it was trusted.
+/// Which file of a load a config plays, since the set of newly-effective
+/// positions differs between them (see [`newly_effective_fields`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ConfigRole {
+    /// Only one of the two config files exists in the repo.
+    Single,
+    /// `.vibe.toml` with a `.vibe.local.toml` beside it.
+    BaseOfPair,
+    /// `.vibe.local.toml` with a `.vibe.toml` beside it.
+    LocalOfPair,
+}
+
+/// Dotted names of the positions in `config` that were parsed-but-inert before
+/// issue #599 and now take effect, given the file's `role` in the load.
 ///
-/// The positions that were parsed-but-inert before issue #599 are:
+/// The single source of truth for "did this file's meaning change?": the
+/// fail-closed loader guard ([`check_semantics_rev`]) and the advisory
+/// `vibe verify` status line both call it, so a diagnostic can never disagree
+/// with the error it is meant to explain. Taking [`RawConfig`] is what keeps a
+/// normalized config — whose folded slots would read as "nothing newly
+/// effective" — out of the guard.
+///
+/// The inert positions were:
 ///
 /// - any `*_prepend`/`*_append` in a single-file load (only `.vibe.toml` or only
 ///   `.vibe.local.toml`) — the TS never reached `mergeConfigs` at all;
@@ -108,8 +129,19 @@ struct LoadedFile {
 /// - a `*_prepend`/`*_append` set beside its own base field in either file — the
 ///   TS returned the override outright and dropped the extension.
 ///
-/// A file using none of these is unaffected by the change and loads regardless
-/// of its entry's revision.
+/// A file using none of these is unaffected by the change.
+pub(crate) fn newly_effective_fields(config: &RawConfig, role: ConfigRole) -> Vec<String> {
+    match role {
+        ConfigRole::Single | ConfigRole::BaseOfPair => extension_fields_in_use(config),
+        ConfigRole::LocalOfPair => extension_fields_beside_own_field(config),
+    }
+}
+
+/// Reject a config whose meaning changed since it was trusted.
+///
+/// Loads regardless of the entry's revision when the file uses none of the
+/// newly-effective positions: nobody is forced to re-trust for a change that
+/// cannot alter their config's meaning.
 fn check_semantics_rev(base: Option<&LoadedFile>, local: Option<&LoadedFile>) -> Result<()> {
     let single_file = base.is_none() || local.is_none();
 
@@ -118,11 +150,12 @@ fn check_semantics_rev(base: Option<&LoadedFile>, local: Option<&LoadedFile>) ->
         if file.semantics_rev >= CONFIG_SEMANTICS_REV {
             continue;
         }
-        let newly_effective = if single_file || is_base {
-            extension_fields_in_use(&file.config)
-        } else {
-            extension_fields_beside_own_field(&file.config)
+        let role = match (single_file, is_base) {
+            (true, _) => ConfigRole::Single,
+            (false, true) => ConfigRole::BaseOfPair,
+            (false, false) => ConfigRole::LocalOfPair,
         };
+        let newly_effective = newly_effective_fields(&file.config, role);
         if !newly_effective.is_empty() {
             return Err(semantics_changed_error(file, &newly_effective));
         }

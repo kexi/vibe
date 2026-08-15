@@ -203,7 +203,7 @@ pub fn verify_trust_and_read(
 /// repository, hashes its content, then either appends the hash to a matching
 /// entry (dedup + FIFO ≤100) or pushes a new repository-based entry, and saves.
 /// Either way the entry is stamped with the current
-/// [`CONFIG_SEMANTICS_REV`], recording WHICH interpretation of the file the user
+/// `CONFIG_SEMANTICS_REV`, recording WHICH interpretation of the file the user
 /// consented to (see `config_loader`'s semantics guard).
 ///
 /// SECURITY (Phase 3, point 6): the TS computed the stored identity and the
