@@ -24,7 +24,7 @@ use crate::hash::hash_content;
 use crate::io::Io;
 use crate::output::{error_log, log, success_log, warn_log, OutputOptions};
 use crate::settings::RepoResolver;
-use crate::settings::{find_matching_entry, should_skip_hash_check, AllowEntry, VibeSettings};
+use crate::settings::{find_matching_entry, should_skip_hash_check, VibeSettings};
 use crate::settings_io::load_user_settings;
 use std::path::Path;
 
@@ -198,7 +198,20 @@ fn display_file_status(
         );
     }
 
-    display_semantics_status(io, entry, &current_hash, &content, file_path, role, opts);
+    // Mirror the loader's own branch structure: it consults the entry-wide
+    // revision when hashing is skipped, the matched hash's revision otherwise,
+    // and never reaches the guard at all on a mismatch (the file is untrusted,
+    // so reporting a revision for it would describe trust that does not exist).
+    let semantics_rev = if skip {
+        Some(entry.semantics_rev())
+    } else if hash_matches {
+        Some(entry.semantics_rev_for(&current_hash))
+    } else {
+        None
+    };
+    if let Some(rev) = semantics_rev {
+        display_semantics_status(io, rev, &content, file_path, role, opts);
+    }
 
     log(
         io,
@@ -235,19 +248,18 @@ fn display_file_status(
 /// detectors need a [`RawConfig`], and an unparsable file already fails earlier
 /// in every command that loads it, so there is no "trusted but will fail on
 /// semantics" surprise left to warn about.
+///
+/// `rev` is resolved by the caller rather than derived here, because which
+/// revision applies depends on HOW trust was established (matched hash vs.
+/// skipped hash check) — a distinction only the caller has made.
 fn display_semantics_status(
     io: &impl Io,
-    entry: &AllowEntry,
-    current_hash: &str,
+    rev: u32,
     content: &[u8],
     file_path: &str,
     role: ConfigRole,
     opts: OutputOptions,
 ) {
-    // The revision for the bytes ON DISK, matching what the loader will consult;
-    // reading the entry-wide stamp instead would report "current" for a file
-    // whose own hash was approved under an older revision and still be rejected.
-    let rev = entry.semantics_rev_for(current_hash);
     if rev >= CONFIG_SEMANTICS_REV {
         return;
     }
@@ -287,7 +299,7 @@ mod tests {
     use super::*;
     use crate::git::RepoInfo;
     use crate::io::FakeIo;
-    use crate::settings::RepoId;
+    use crate::settings::{AllowEntry, RepoId};
     use crate::settings_io::save_user_settings;
     use std::cell::RefCell;
     use std::collections::HashMap;
@@ -741,6 +753,88 @@ mod tests {
             text.contains("re-approve it with 'vibe trust'"),
             "got: {text}"
         );
+    }
+
+    /// With hash checking disabled the loader consults the ENTRY-wide revision,
+    /// because no matched hash exists to attribute consent to. The diagnostic
+    /// must use the same one, or it would report STALE for a file the loader
+    /// accepts and executes.
+    #[test]
+    fn skip_hash_check_reports_the_entry_revision_not_the_on_disk_hash() {
+        let fx = Fixture::new();
+        let content = "[hooks]\npost_start_append = [\"echo hi\"]\n";
+        let repo = fx.mkdir("repo");
+        let vibe = fx.write("repo/.vibe.toml", content);
+        let io = FakeIo::new().with_env("HOME", fx.path().to_str().unwrap());
+
+        // Entry at the CURRENT revision whose history also holds an unmapped
+        // older hash — and the file on disk is that older revision.
+        let mut settings = VibeSettings::default_settings();
+        settings.permissions.allow.push(AllowEntry {
+            repo_id: RepoId {
+                remote_url: None,
+                repo_root: Some(repo.to_str().unwrap().into()),
+            },
+            relative_path: ".vibe.toml".into(),
+            hashes: vec![
+                hash_content(content.as_bytes()),
+                hash_content(b"other = true\n"),
+            ],
+            skip_hash_check: Some(true),
+            config_semantics_rev: Some(CONFIG_SEMANTICS_REV),
+            config_semantics_revs: Some(std::collections::BTreeMap::from([(
+                hash_content(b"other = true\n"),
+                CONFIG_SEMANTICS_REV,
+            )])),
+        });
+        save_user_settings(&io, &settings, V).unwrap();
+
+        let mut repos = HashMap::new();
+        repos.insert(
+            vibe.to_str().unwrap().to_string(),
+            RepoInfo {
+                remote_url: None,
+                repo_root: repo.to_str().unwrap().into(),
+                relative_path: ".vibe.toml".into(),
+            },
+        );
+        let s = Scenario {
+            io,
+            git: FakeGit {
+                repo_root: repo.to_str().unwrap().to_string(),
+            },
+            resolver: MapResolver {
+                repos,
+                hashes: RefCell::new(HashMap::new()),
+            },
+        };
+
+        verify_command(&s.io, &s.git, &s.resolver, V, OutputOptions::default()).unwrap();
+        let text = s.io.stderr_text();
+        assert!(
+            text.contains("TRUSTED (hash check disabled)"),
+            "got: {text}"
+        );
+        // The entry is at the current revision, so nothing stale to report.
+        assert!(!text.contains("Config Semantics:"), "got: {text}");
+        assert!(!text.contains("STALE CONFIG SEMANTICS"), "got: {text}");
+    }
+
+    /// A file whose hash matches nothing is UNTRUSTED, and the loader never
+    /// reaches the semantics guard for it. Printing a "trusted at revision N"
+    /// line would describe trust the file does not have.
+    #[test]
+    fn hash_mismatch_reports_no_semantics_revision() {
+        let fx = Fixture::new();
+        let content = "[hooks]\npost_start_append = [\"echo hi\"]\n";
+        let other = hash_content(b"unrelated = true\n");
+        let (s, _) = scenario(&fx, content, Some(&[&other]), None, None, None);
+        verify_command(&s.io, &s.git, &s.resolver, V, OutputOptions::default()).unwrap();
+
+        let text = s.io.stderr_text();
+        assert!(text.contains("❌ HASH MISMATCH"), "got: {text}");
+        assert!(!text.contains("Config Semantics:"), "got: {text}");
+        assert!(!text.contains("STALE CONFIG SEMANTICS"), "got: {text}");
     }
 
     /// A pre-#599 trust over a config that uses none of the newly-effective
