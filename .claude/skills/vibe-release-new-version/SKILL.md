@@ -610,6 +610,11 @@ the release, its verify step re-asserts the full published asset set, and
 `update-homebrew` downloads the published binaries and converges the tap
 (idempotent — it commits only when the formula content actually differs).
 
+Re-run promptly, though: `update-homebrew` skips with a `::warning::` once the
+release is no longer the latest stable, so re-running an old run after a newer
+release shipped will not roll `Formula/vibe.rb` back — but it also will not
+repair that old release's tap entry. Fix the tap by hand in that case.
+
 **Do not dispatch a fresh run to recover.** `prepare` binds a resume to the
 commit the published release targets: if main has moved past that commit, a
 fresh dispatch fails with `::error::Release vX.Y.Z targets <sha> but this run

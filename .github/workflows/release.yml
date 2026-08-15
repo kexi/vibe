@@ -544,7 +544,36 @@ jobs:
         uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
+      # Guard against rolling the tap backwards. Making `release` resumable
+      # (#598) also made this job reachable on a re-run of an OLD run: prepare's
+      # commit-binding check compares the release to ITS OWN run's commit, which
+      # still matches, so a 3.1.0 run re-run after 3.2.0 shipped would rewrite
+      # the unversioned Formula/vibe.rb back to 3.1.0 and push it. Why isLatest
+      # and not a version comparison: `gh release edit --draft=false --latest`
+      # is what publishing sets, so GitHub's own answer to "which stable is
+      # current" is the same fact the tap is supposed to mirror. Skipping (not
+      # failing) keeps the re-run's purpose — repairing an old release's assets
+      # or npm publish — from being blocked by an untouchable tap.
+      - name: Confirm this release is still the latest stable
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          IS_LATEST=$(gh release view "$TAG" --json isLatest --jq .isLatest)
+          if [ "$IS_LATEST" != "true" ]; then
+            LATEST=$(gh release list --exclude-pre-releases --limit 1 \
+              --json tagName --jq '.[0].tagName')
+            echo "::warning::$TAG is no longer the latest stable release ($LATEST is); leaving the Homebrew tap untouched."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
+
       - name: Download released binaries
+        if: steps.latest.outputs.proceed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -567,6 +596,7 @@ jobs:
 
       - name: Calculate SHA256
         id: sha256
+        if: steps.latest.outputs.proceed == 'true'
         run: |
           set -euo pipefail
           # Assignment form: inside `echo "$(...)"` a sha256sum failure would be
@@ -583,10 +613,12 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.latest.outputs.proceed == 'true'
         with:
           path: vibe-source
 
       - name: Update Homebrew formula
+        if: steps.latest.outputs.proceed == 'true'
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           VERSION: ${{ needs.prepare.outputs.version }}
