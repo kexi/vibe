@@ -1347,4 +1347,63 @@ fn start_with_failing_pre_start_hook_keeps_stdout_empty() {
         expected.exists(),
         "the worktree is still created, only entering it is withheld: {expected:?}"
     );
+
+    // The gate is DURABLE. The worktree the first run left behind means the
+    // retry takes the "branch already used in worktree X" navigate path; before
+    // the #601 re-review that path cd'd straight in, so the precondition was
+    // enforced exactly once and bypassed forever after.
+    let again = run_vibe(&main_path, home.path(), &["start", "feature", "--force"]);
+    let again_stdout = String::from_utf8(again.stdout).unwrap();
+    let again_stderr = String::from_utf8(again.stderr).unwrap();
+    assert_eq!(again.status.code(), Some(0), "stderr={again_stderr:?}");
+    assert!(
+        again_stdout.is_empty(),
+        "the retry must be gated too, not cd into the unprovisioned worktree: {again_stdout:?}"
+    );
+    assert!(
+        again_stderr.contains("Warning: Hook \"exit 3\" failed: exit code 3"),
+        "the gate must have re-run: {again_stderr:?}"
+    );
+}
+
+/// `--quiet` suppresses the hook-failure summary line, exactly as it did when
+/// the binary printed it via `report_error(&io, &error, quiet)`. Moving that
+/// write into `vibe-core` must not promote the line to unsuppressable. The
+/// verdict is unaffected: the `post_start` is a warn-and-continue site, so the
+/// cd is still written.
+#[test]
+fn start_with_failing_post_start_hook_is_silent_under_quiet() {
+    if !git_available() {
+        eprintln!("skipping: git unavailable");
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let main_path = setup_main_repo(tmp.path());
+
+    // `exit 3` writes nothing to its own stderr, so the summary line is the only
+    // thing `--quiet` could be hiding here.
+    std::fs::write(
+        main_path.join(".vibe.toml"),
+        "[hooks]\npost_start = [\"exit 3\"]\n",
+    )
+    .unwrap();
+    let trust = run_vibe(&main_path, home.path(), &["trust"]);
+    assert!(trust.status.success());
+
+    let out = run_vibe(&main_path, home.path(), &["start", "feature", "--quiet"]);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert_eq!(out.status.code(), Some(0), "stderr={stderr:?}");
+    assert!(
+        !stderr.contains("Warning: Hook"),
+        "--quiet must suppress the hook-failure summary: {stderr:?}"
+    );
+    let expected = main_path.parent().unwrap().join("main-feature");
+    assert_eq!(
+        stdout,
+        format!("cd '{}'\n", expected.display()),
+        "quiet changes what is PRINTED, never the eval channel"
+    );
 }

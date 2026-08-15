@@ -168,6 +168,7 @@ where
             &current_worktree_path,
             &main_path,
         ),
+        opts,
     )?;
     if !pre_clean_ok {
         // Nothing has been removed yet, so no cd: the shell stays in the
@@ -202,6 +203,7 @@ where
     warn_on_hook_failure(
         deps.io,
         run_post_clean_hooks(deps, config.as_ref(), &current_worktree_path, &main_path),
+        opts,
     )?;
 
     success_log(
@@ -614,6 +616,7 @@ where
             &worktree_path,
             &main_path,
         ),
+        opts,
     )?;
     if !pre_clean_ok {
         // Same abort semantics as the normal path: a failing safety hook must
@@ -648,6 +651,7 @@ where
     warn_on_hook_failure(
         deps.io,
         run_post_clean_hooks(deps, config.as_ref(), &worktree_path, &main_path),
+        opts,
     )?;
 
     verbose_log(

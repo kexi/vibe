@@ -714,6 +714,7 @@ mod tests {
                 .expect("failures mutex poisoned")
                 .push(err.to_string());
         }
+        fn skip_task(&self, _id: NodeId) {}
         fn start(&self) {}
         fn finish(&self) {}
     }

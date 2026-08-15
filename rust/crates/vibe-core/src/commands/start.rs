@@ -22,6 +22,14 @@
 //! - `post_start` runs after the worktree is fully provisioned, so a failure
 //!   only warns and the `cd` is still returned — that is the actual #601 fix.
 //!
+//! The gate is DURABLE, which it only is because every path that hands back an
+//! existing worktree re-runs the sequence first: creation, same-branch re-entry,
+//! `--reuse`, and — the case that made it one-shot until the #601 review — the
+//! "branch is already used in worktree X, navigate?" path. A gated run leaves
+//! the worktree directory on disk, so the retry necessarily arrives through one
+//! of those; if any of them cd'd without re-running the hooks, the precondition
+//! would be enforced exactly once and bypassed forever after.
+//!
 //! Only `HookExecution` is downgraded — a failed copy or submodule step stays
 //! fatal, so no `cd` into a half-built worktree is ever emitted.
 //!
@@ -124,6 +132,11 @@ struct ConfigAndHooks {
     copy_untracked: bool,
     copy_modified: bool,
     dry_run: bool,
+    /// Carried so the hook-failure summary can honour `--quiet`. `run_config_*`
+    /// deliberately has no `OutputOptions` param of its own (TS parity: the inner
+    /// copy/hook helpers own their progress output), so the one message that must
+    /// respect the flag rides along in the options bundle instead.
+    opts: OutputOptions,
 }
 
 /// Whether the config-and-hooks sequence left the worktree usable.
@@ -188,15 +201,21 @@ where
 
     let validation = validate_branch_for_worktree(deps.git, branch_name)?;
 
+    // The branch is already checked out somewhere else. Resolved BEFORE the
+    // config load below so the "cancelled"/dry-run answers cost nothing, but the
+    // accepted answer is deliberately NOT returned here: re-entry has to go
+    // through `run_config_and_hooks` like every other navigate path (see
+    // `navigate_to_existing_branch_worktree`).
+    let mut existing_branch_worktree = None;
     if !validation.is_valid {
         let Some(existing) = validation.existing_worktree_path.clone() else {
             return Err(VibeError::Worktree(
                 "Branch is in use but worktree path is unknown".to_string(),
             ));
         };
-        if let Some(outcome) = handle_existing_branch_worktree(deps, branch_name, &existing, flags)?
-        {
-            return Ok(outcome);
+        match handle_existing_branch_worktree(deps, branch_name, &existing, flags)? {
+            ExistingBranchDecision::Done(outcome) => return Ok(outcome),
+            ExistingBranchDecision::Navigate(path) => existing_branch_worktree = Some(path),
         }
     }
 
@@ -216,6 +235,17 @@ where
 
     let settings = load_user_settings(deps.io, deps.resolver, deps.version)?;
     let config = load_vibe_config(deps.io, deps.resolver, deps.version, &repo_root)?;
+
+    if let Some(existing) = existing_branch_worktree {
+        return navigate_to_existing_branch_worktree(
+            deps,
+            config.as_ref(),
+            &repo_root,
+            &existing,
+            flags,
+            opts,
+        );
+    }
 
     let worktree_path = resolve_worktree_path(
         deps.io,
@@ -252,6 +282,7 @@ where
             &worktree_path,
             &existing_branch,
             flags,
+            opts,
         )? {
             ConflictDecision::Continue => {}
             ConflictDecision::Done(outcome) => return Ok(outcome),
@@ -296,12 +327,16 @@ where
             copy_untracked: flags.copy_untracked,
             copy_modified: flags.copy_modified,
             dry_run: flags.dry_run,
+            opts,
         },
     )?;
     if !provisioning.allows_cd() {
         // The worktree stays created (as it did before #601) — only the cd is
         // withheld, so the user lands back in the repo they started from and
-        // can act on the warning.
+        // can act on the warning. Re-running after the fix reaches the same
+        // sequence via `navigate_to_existing_branch_worktree` (the branch is now
+        // checked out here), so the gate is re-evaluated and the copy and
+        // `post_start` finally run.
         return Ok(Outcome::none());
     }
 
@@ -394,14 +429,28 @@ where
     BaseRef::Present(trimmed.to_string())
 }
 
-/// Handle a branch already used by another worktree. Returns `Some(outcome)`
-/// when fully handled.
+/// What the caller should do about a branch already checked out elsewhere.
+///
+/// Split from the `Outcome` on purpose: the accepted answer is a *request* to
+/// navigate, not a finished result. Returning `Outcome::cd` straight from here
+/// is what made the `pre_start` gate one-shot (issue #601 review) — the second
+/// `vibe start` for the same branch matched this path and cd'd in without ever
+/// re-running the hook that had gated the first one.
+enum ExistingBranchDecision {
+    /// Fully handled (dry-run, or the user declined): return this outcome as-is.
+    Done(Outcome),
+    /// The user wants the existing worktree at this path; the caller must still
+    /// run the config-and-hooks sequence against it before emitting a `cd`.
+    Navigate(String),
+}
+
+/// Handle a branch already used by another worktree: decide whether to navigate.
 fn handle_existing_branch_worktree<I, G, R, S, P, Sr>(
     deps: &StartDeps<I, G, R, S, P, Sr>,
     branch_name: &str,
     existing: &str,
     flags: &StartFlags,
-) -> Result<Option<Outcome>>
+) -> Result<ExistingBranchDecision>
 where
     I: Io,
     G: GitRunner,
@@ -416,22 +465,69 @@ where
             &format!("Branch '{branch_name}' is already used in worktree '{existing}'"),
         );
         log_dry_run(deps.io, &format!("Would navigate to: {existing}"));
-        return Ok(Some(Outcome::none()));
+        return Ok(ExistingBranchDecision::Done(Outcome::none()));
     }
 
     if flags.force {
-        return Ok(Some(Outcome::cd(existing.to_string())));
+        return Ok(ExistingBranchDecision::Navigate(existing.to_string()));
     }
 
     let navigate = deps.prompt.confirm(&format!(
         "Branch '{branch_name}' is already used in worktree '{existing}'.\nNavigate to the existing worktree? (Y/n)"
     ));
     if navigate {
-        Ok(Some(Outcome::cd(existing.to_string())))
+        Ok(ExistingBranchDecision::Navigate(existing.to_string()))
     } else {
         log(deps.io, "Cancelled", OutputOptions::new(false, false));
-        Ok(Some(Outcome::none()))
+        Ok(ExistingBranchDecision::Done(Outcome::none()))
     }
+}
+
+/// Re-entry into the worktree a branch is already checked out in: run the
+/// config-and-hooks sequence against it, then cd (or gate).
+///
+/// Why the hooks run again on a pure navigate: a `pre_start` is a PRECONDITION,
+/// and a precondition that is only checked on the run that happens to create the
+/// worktree is not a precondition at all. Before this, a gated first run left the
+/// worktree on disk, so every retry took this path and walked straight in with
+/// the gate never re-evaluated. Re-running also re-does the copy and
+/// `post_start`, which is what makes "fix the cause and re-run `vibe start`"
+/// actually provision the worktree — the same semantics
+/// `handle_same_branch_worktree` and `reuse_existing_worktree` already have.
+fn navigate_to_existing_branch_worktree<I, G, R, S, P, Sr>(
+    deps: &StartDeps<I, G, R, S, P, Sr>,
+    config: Option<&VibeConfig>,
+    repo_root: &str,
+    existing: &str,
+    flags: &StartFlags,
+    opts: OutputOptions,
+) -> Result<Outcome>
+where
+    I: Io,
+    G: GitRunner,
+    R: RepoResolver,
+    S: ScriptRunner,
+    P: Prompt,
+    Sr: StdinReader,
+{
+    let provisioning = run_config_and_hooks(
+        deps,
+        config,
+        repo_root,
+        existing,
+        &ConfigAndHooks {
+            skip_hooks: flags.no_hooks,
+            skip_copy: flags.no_copy,
+            copy_untracked: flags.copy_untracked,
+            copy_modified: flags.copy_modified,
+            dry_run: false,
+            opts,
+        },
+    )?;
+    if !provisioning.allows_cd() {
+        return Ok(Outcome::none());
+    }
+    Ok(Outcome::cd(existing.to_string()))
 }
 
 /// Same-branch worktree: idempotent re-entry (run hooks/config, then cd).
@@ -475,6 +571,7 @@ where
                 copy_untracked: flags.copy_untracked,
                 copy_modified: flags.copy_modified,
                 dry_run: true,
+                opts,
             },
         )?;
         log_dry_run(
@@ -509,6 +606,7 @@ where
             copy_untracked: flags.copy_untracked,
             copy_modified: flags.copy_modified,
             dry_run: false,
+            opts,
         },
     )?;
     if !provisioning.allows_cd() {
@@ -533,6 +631,7 @@ fn handle_different_branch_conflict<I, G, R, S, P, Sr>(
     worktree_path: &str,
     existing_branch: &str,
     flags: &StartFlags,
+    opts: OutputOptions,
 ) -> Result<ConflictDecision>
 where
     I: Io,
@@ -558,7 +657,7 @@ where
 
     if flags.reuse {
         // --reuse auto-selects the Reuse choice (the --force opposite): no prompt.
-        return reuse_existing_worktree(deps, config, repo_root, worktree_path, flags);
+        return reuse_existing_worktree(deps, config, repo_root, worktree_path, flags, opts);
     }
 
     let choice = deps.prompt.select(
@@ -576,7 +675,7 @@ where
             remove_worktree(deps.git, worktree_path, true)?;
             Ok(ConflictDecision::Continue)
         }
-        1 => reuse_existing_worktree(deps, config, repo_root, worktree_path, flags),
+        1 => reuse_existing_worktree(deps, config, repo_root, worktree_path, flags, opts),
         _ => {
             // Cancel.
             log(deps.io, "Cancelled", OutputOptions::new(false, false));
@@ -593,6 +692,7 @@ fn reuse_existing_worktree<I, G, R, S, P, Sr>(
     repo_root: &str,
     worktree_path: &str,
     flags: &StartFlags,
+    opts: OutputOptions,
 ) -> Result<ConflictDecision>
 where
     I: Io,
@@ -616,6 +716,7 @@ where
             copy_untracked: flags.copy_untracked,
             copy_modified: flags.copy_modified,
             dry_run: false,
+            opts,
         },
     )?;
     if !provisioning.allows_cd() {
@@ -703,13 +804,15 @@ where
 
     // Finished on every non-fatal end, gated included: those return to the user
     // with the run over, and an unfinished tracker would leave a live progress
-    // display in front of the prompt.
+    // display in front of the prompt. Safe on the gated path because `run_hooks`
+    // closes the commands it skipped as SKIPPED before returning, so `finish`
+    // has no never-run bar left to stamp with the success glyph.
     //
     // Why not on every error: `IndicatifTracker::finish` closes each still-open
     // bar with the SUCCESS glyph and no annotation, so finishing after a fatal
-    // copy/submodule failure would render its pending tasks as completed right
-    // above the `Error:` line. Those bars are deliberately left abandoned until
-    // issue #600 adds a distinct abort glyph.
+    // copy/submodule failure would render its pending COPY tasks as completed
+    // right above the `Error:` line. Those bars are deliberately left abandoned
+    // until issue #600 adds a distinct abort glyph.
     if has_ops && result.is_ok() {
         deps.tracker.finish();
     }
@@ -760,6 +863,7 @@ where
                 repo_root,
                 options.dry_run,
             ),
+            options.opts,
         )?
     {
         return Ok(Provisioning::Gated);
@@ -889,6 +993,7 @@ where
                 repo_root,
                 options.dry_run,
             ),
+            options.opts,
         )?;
     }
 
@@ -1404,6 +1509,7 @@ where
                 copy_untracked: flags.copy_untracked,
                 copy_modified: flags.copy_modified,
                 dry_run: flags.dry_run,
+                opts,
             },
         );
         if flags.dry_run {
@@ -1466,6 +1572,7 @@ where
             copy_untracked: flags.copy_untracked,
             copy_modified: flags.copy_modified,
             dry_run: flags.dry_run,
+            opts,
         },
     ) {
         warn_log(deps.io, &format!("Warning: Post-setup failed: {e}"));

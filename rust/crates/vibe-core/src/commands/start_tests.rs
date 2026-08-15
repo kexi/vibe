@@ -1743,6 +1743,140 @@ fn failing_pre_start_hook_gates_the_cd_and_skips_provisioning() {
     );
 }
 
+/// Drive `start` for a branch that is ALREADY checked out in another worktree —
+/// the state a gated first run leaves behind — over a trusted config.
+fn start_into_existing_branch_worktree(
+    content: &str,
+    fail_suffix: &str,
+    flags: &StartFlags,
+    prompt: ScriptPrompt,
+) -> (Fixture, FakeIo, String, MockGit, Fakes, Result<Outcome>) {
+    let (fx, io, resolver, repo_root) = trusted_config_repo_with_content(content);
+    let wt = format!("{repo_root}-feat");
+    let git = MockGit::new(&repo_root, &two_worktrees(&repo_root, &wt, "feat"));
+    let (s, sin) = (NoScript, FakeStdin::none());
+    let fk = Fakes {
+        hooks: FakeHookRunner::failing_on(fail_suffix, 3, "hook stderr detail"),
+        ..Fakes::new()
+    };
+    let result = {
+        let d = StartDeps {
+            io: &io,
+            git: &git,
+            resolver: &resolver,
+            script_runner: &s,
+            prompt: &prompt,
+            stdin: &sin,
+            hook_runner: &fk.hooks,
+            executor: &fk.exec,
+            symlink_creator: &fk.symlinks,
+            tracker: &fk.tracker,
+            version: V,
+        };
+        start_command(&d, "feat", flags, OutputOptions::default())
+    };
+    (fx, io, wt, git, fk, result)
+}
+
+/// The `pre_start` gate is DURABLE, not one-shot. A gated run leaves the
+/// worktree on disk, so the retry arrives with the branch already checked out
+/// there — the "Branch is already used in worktree X, navigate?" path. That path
+/// must re-run the gate rather than cd straight in, otherwise a precondition
+/// (secrets vault reachable, licence valid) is enforced exactly once and
+/// bypassed on every subsequent invocation.
+#[test]
+fn second_run_into_the_gated_worktree_re_runs_the_pre_start_gate() {
+    let content = "[hooks]\npre_start = [\"boom\"]\npost_start = [\"echo post\"]\n[copy]\nfiles = [\".env\"]\n";
+    let (_fx, io, _wt, git, fk, result) = start_into_existing_branch_worktree(
+        content,
+        "boom",
+        &StartFlags::default(),
+        ScriptPrompt::confirming(true),
+    );
+
+    assert_eq!(
+        result.expect("a failing hook must not fail the command"),
+        Outcome::none(),
+        "the second run must be gated too, not cd into the unprovisioned worktree"
+    );
+    assert!(!git.calls_contain(&["worktree", "add"]));
+    assert_eq!(
+        fk.hooks.calls.borrow()[0].0,
+        "boom",
+        "the gate must actually re-run: {:?}",
+        fk.hooks.calls.borrow()
+    );
+    assert_eq!(
+        fk.hooks.calls.borrow().len(),
+        1,
+        "post_start must not run after the re-run pre_start failed"
+    );
+    assert!(fk.exec.file_copies.lock().unwrap().is_empty());
+    assert!(io
+        .stderr_text()
+        .contains("Warning: Hook \"boom\" failed: exit code 3"));
+}
+
+/// `--force` takes the same navigate path without prompting, so it must not be
+/// an escape hatch around the gate either.
+#[test]
+fn force_into_the_gated_worktree_re_runs_the_pre_start_gate() {
+    let content = "[hooks]\npre_start = [\"boom\"]\n";
+    let flags = StartFlags {
+        force: true,
+        ..Default::default()
+    };
+    let (_fx, io, _wt, _git, fk, result) = start_into_existing_branch_worktree(
+        content,
+        "boom",
+        &flags,
+        // --force must never prompt; a call here would return the wrong verdict
+        // silently, so make the answer the opposite of "navigate".
+        ScriptPrompt::confirming(false),
+    );
+
+    assert_eq!(
+        result.expect("a failing hook must not fail the command"),
+        Outcome::none()
+    );
+    assert_eq!(fk.hooks.calls.borrow().len(), 1);
+    assert!(io
+        .stderr_text()
+        .contains("Warning: Hook \"boom\" failed: exit code 3"));
+}
+
+/// The flip side: once the cause is fixed, re-running actually PROVISIONS the
+/// worktree — the copy and `post_start` that the gated run skipped both run, and
+/// the cd is emitted. Without this the "fix the cause and re-run" recovery story
+/// would just cd into a worktree the config never finished setting up.
+#[test]
+fn re_running_after_the_gate_clears_provisions_and_cds() {
+    let content =
+        "[hooks]\npre_start = [\"pre\"]\npost_start = [\"post\"]\n[copy]\nfiles = [\".env\"]\n";
+    let (_fx, io, wt, git, fk, result) = start_into_existing_branch_worktree(
+        content,
+        // Nothing fails this time: the precondition is now satisfied.
+        "never-matches",
+        &StartFlags::default(),
+        ScriptPrompt::confirming(true),
+    );
+
+    assert_eq!(result.unwrap(), Outcome::cd(&wt));
+    assert!(!git.calls_contain(&["worktree", "add"]));
+    let calls = fk.hooks.calls.borrow();
+    assert_eq!(
+        calls.iter().map(|c| c.0.as_str()).collect::<Vec<_>>(),
+        vec!["pre", "post"],
+        "both hooks must run on re-entry"
+    );
+    assert_eq!(
+        fk.exec.file_copies.lock().unwrap().len(),
+        1,
+        "the copy the gated run skipped must run on re-entry"
+    );
+    assert!(!io.stderr_text().contains("Warning: Hook"));
+}
+
 /// The gate applies to the reuse path too: `--reuse` into an existing worktree
 /// whose `pre_start` fails emits no cd.
 #[test]

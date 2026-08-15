@@ -105,9 +105,13 @@ vibe 会在钩子执行期间显示实时的进度树：
 | `post_clean` | 仅警告：worktree 已被删除，因此 vibe 仍会切换回主仓库        |
 
 因此 `pre_start` 和 `pre_clean` 可以用作前置条件检查。例如，用 `pre_start` 检查密钥
-保险库是否可达，就能避免进入一个无法完成配置的 worktree。被闸门拦下的 `vibe start`
-仍会在磁盘上保留 worktree 目录，被拦下的只是目录切换，你可以在修复原因后重新运行
-`vibe start`。
+保险库是否可达，就能避免进入一个无法完成配置的 worktree。
+
+被闸门拦下的 `vibe start` 仍会在磁盘上保留 worktree 目录，被拦下的只是目录切换。
+针对同一分支再次运行 `vibe start` 时会找到该 worktree 并询问是否切换过去，而闸门在
+这条路径上同样会再次执行：只要 `pre_start` 仍然失败，你依旧进不去。修复原因之后，
+重新运行还会补上被闸门拦下那次所跳过的复制和 `post_start`，因此你最终进入的 worktree
+是配置完整的。
 
 ## 常见模式
 
