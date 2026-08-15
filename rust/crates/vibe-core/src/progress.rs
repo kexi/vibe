@@ -16,9 +16,22 @@
 //! abandoned just because nobody calls `complete_task` on them.
 //!
 //! SECURITY/contract: the live renderer draws to `ProgressDrawTarget::stderr()`
-//! so stdout stays clean for the eval'd `cd` line.
+//! so stdout stays clean for the eval'd `cd` line. Node labels and error texts
+//! are attacker-influenced (hook command strings and copy patterns come from
+//! `.vibe.toml`, file names come from the repository), so [`render_line`]
+//! neutralizes both with [`crate::output::sanitize_for_display`] before they
+//! reach the terminal. Why there and not at the call sites: sanitizing in the
+//! one function every rendered line passes through means a new `add_task` /
+//! `fail_task` caller cannot reintroduce the hole by forgetting to.
+//!
+//! Why the callers in `copy_runner` still sanitize too: the same strings also
+//! go to plain stderr through `warn_log`/`log_dry_run`, which do not render
+//! through `render_line`. `sanitize_for_display` maps unsafe characters to
+//! U+FFFD, which is itself safe, so passing an already-sanitized label through
+//! it again is a no-op (asserted by `sanitize_is_idempotent`).
 
 use crate::ansi::{colorize, DIM, RED};
+use crate::output::sanitize_for_display;
 
 /// Opaque handle to a phase or task node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,10 +131,20 @@ impl TaskOutcome<'_> {
 ///
 /// Pure so glyph regressions are caught by a unit test; the live renderer only
 /// hands the result to `indicatif`.
+///
+/// `label` and `error` are neutralized with
+/// [`crate::output::sanitize_for_display`], because both carry text a repository
+/// controls (hook commands and copy patterns out of `.vibe.toml`, file names out
+/// of the working tree) into a line that is wrapped in ANSI codes and drawn onto
+/// a live, redrawable display. `prefix` is not sanitized: it is one of this
+/// module's two hard-coded tree strings.
 pub fn render_line(outcome: TaskOutcome<'_>, prefix: &str, label: &str, color: bool) -> String {
     let glyph = outcome.glyph();
+    let label = sanitize_for_display(label);
     let body = match outcome {
-        TaskOutcome::Failed { error } => format!("{glyph} {label} (failed: {error})"),
+        TaskOutcome::Failed { error } => {
+            format!("{glyph} {label} (failed: {})", sanitize_for_display(error))
+        }
         _ => format!("{glyph} {label}"),
     };
     let painted = match outcome {
@@ -584,6 +607,72 @@ mod tests {
                 "┗ ⊘ Copying files",
                 "   ┗ ⊘ node_modules/",
             ]
+        );
+    }
+
+    /// Guarantees that no progress line can carry a raw terminal control
+    /// sequence or a bidi override out of a label, whatever the outcome: a hook
+    /// command from `.vibe.toml` that erases the line above and redraws it
+    /// renders as inert U+FFFD text instead of moving the cursor.
+    #[test]
+    fn labels_cannot_carry_control_sequences_for_any_outcome() {
+        let hostile = "npm install\x1b[2K\x1b[A\u{202e}gnitsurt";
+        for outcome in [
+            TaskOutcome::Completed,
+            TaskOutcome::Failed { error: "boom" },
+            TaskOutcome::Abandoned,
+        ] {
+            for color in [false, true] {
+                let line = render_line(outcome, "   ┗ ", hostile, color);
+                let body = line.trim_start_matches("   ┗ ");
+                let body = body
+                    .trim_start_matches(RED)
+                    .trim_start_matches(DIM)
+                    .trim_end_matches(RESET);
+                assert!(
+                    !body.contains('\u{1b}'),
+                    "escape survived in {line:?} ({outcome:?})"
+                );
+                assert!(
+                    !body.contains('\u{202e}'),
+                    "bidi override survived in {line:?} ({outcome:?})"
+                );
+                assert!(
+                    body.contains("npm install\u{fffd}[2K\u{fffd}[A\u{fffd}gnitsurt"),
+                    "label was dropped instead of neutralized: {line:?}"
+                );
+            }
+        }
+    }
+
+    /// Guarantees the failure reason is neutralized too — it is interpolated
+    /// into the same line as `(failed: …)`.
+    #[test]
+    fn failure_reason_cannot_carry_control_sequences() {
+        let line = render_line(
+            TaskOutcome::Failed {
+                error: "Exit code 1\x1b[2K\u{2028}",
+            },
+            "   ┗ ",
+            "npm install",
+            false,
+        );
+        assert_eq!(
+            line,
+            "   ┗ ✗ npm install (failed: Exit code 1\u{fffd}[2K\u{fffd})"
+        );
+    }
+
+    /// Guarantees that sanitizing twice equals sanitizing once, which is what
+    /// lets `copy_runner` keep sanitizing at its own stderr call sites while
+    /// `render_line` also sanitizes centrally.
+    #[test]
+    fn sanitize_is_idempotent() {
+        let once = sanitize_for_display("a\x1b[2Kb\u{202e}c\nd");
+        assert_eq!(sanitize_for_display(&once), once);
+        assert_eq!(
+            render_line(TaskOutcome::Completed, "┗ ", &once, false),
+            render_line(TaskOutcome::Completed, "┗ ", "a\x1b[2Kb\u{202e}c\nd", false)
         );
     }
 
