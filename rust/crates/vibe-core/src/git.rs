@@ -756,20 +756,83 @@ const FALLBACK_DEFAULT_BRANCH: &str = "master";
 /// a guard that errors out would break `clean`/`rename` in repositories where
 /// git simply has no opinion.
 pub fn get_default_branch(runner: &impl GitRunner) -> String {
+    resolve_default_branch(runner).name
+}
+
+/// A default-branch answer, plus whether it is REPEATABLE.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DefaultBranch {
+    pub name: String,
+    /// `true` when the answer will be the same on the next run; `false` when a
+    /// git command FAILED, so the same repository could answer differently a
+    /// moment later.
+    ///
+    /// Note what this is NOT: "git gave us a name". A repository with no remote
+    /// and no `init.defaultBranch` is answered from
+    /// [`FALLBACK_DEFAULT_BRANCH`], and that is still `resolved: true` — the
+    /// absence is a stable property of the repository, so the fallback is
+    /// deterministic and every run produces it. Treating it as unresolved would
+    /// permanently disable anything keyed on the answer for the very common
+    /// case of a purely local repository.
+    ///
+    /// What makes an answer unrepeatable is an ERROR: a `symbolic-ref` or
+    /// `config` invocation that failed for a reason unrelated to the value
+    /// being absent (a locked index, a permission problem, a corrupt ref
+    /// store). Then the hardcoded name is standing in for something git would
+    /// normally have told us, and the next run may well disagree.
+    pub resolved: bool,
+}
+
+/// [`get_default_branch`] with the resolution outcome attached.
+///
+/// Split out rather than changing the existing signature: `clean`, `rename` and
+/// `start` use this as a guard, where a guessed name is exactly as usable as a
+/// resolved one — only the summary cache needs to tell them apart.
+pub fn resolve_default_branch(runner: &impl GitRunner) -> DefaultBranch {
+    let resolved = |name: String| DefaultBranch {
+        name,
+        resolved: true,
+    };
+
+    // Whether the remote's HEAD exists at all. When it does NOT, the fallback
+    // chain below is the repository's stable, permanent answer; when it does,
+    // reaching the fallback means something went wrong on this run only.
+    //
+    // `show-ref --verify --quiet` distinguishes the two, and it is the same
+    // question `symbolic-ref` answers — just without conflating "absent" with
+    // "failed", which is exactly the conflation that makes an error and a
+    // legitimate absence indistinguishable at the `GitRunner` seam (every
+    // non-zero exit is an `Err`).
+    let origin_head_exists = runner
+        .run(&[
+            "show-ref",
+            "--verify",
+            "--quiet",
+            "refs/remotes/origin/HEAD",
+        ])
+        .is_ok();
+
     if let Ok(out) = runner.run(&["symbolic-ref", "refs/remotes/origin/HEAD", "--short"]) {
         if let Some(name) = strip_remote_prefix(out.trim()) {
-            return name;
+            return resolved(name);
         }
     }
 
     if let Ok(out) = runner.run(&["config", "--get", "init.defaultBranch"]) {
         let trimmed = out.trim();
         if !trimmed.is_empty() {
-            return trimmed.to_string();
+            return resolved(trimmed.to_string());
         }
     }
 
-    FALLBACK_DEFAULT_BRANCH.to_string()
+    DefaultBranch {
+        name: FALLBACK_DEFAULT_BRANCH.to_string(),
+        // The ref exists but we could not read through it: this run's answer is
+        // a stand-in for one git would normally have given, so it is not
+        // evidence anything may be keyed on. With no `origin/HEAD` at all, the
+        // hardcoded name is simply what this repository always resolves to.
+        resolved: !origin_head_exists,
+    }
 }
 
 /// Strip the leading `origin/` from a `symbolic-ref --short` answer.

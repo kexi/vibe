@@ -14,8 +14,8 @@
 //!
 //! The BASE column answers "what is this branch based on", and is resolved as
 //! the branch's configured upstream with the remote prefix stripped, falling
-//! back to [`get_default_branch`] when the branch tracks nothing. The main
-//! worktree (the one already on the default branch) shows `-`.
+//! back to the repository's default branch when the branch tracks nothing. The
+//! main worktree (the one already on the default branch) shows `-`.
 //!
 //! Why not a per-branch `git merge-base`: it costs one git invocation per
 //! worktree on top of the status calls, and its answer is a COMMIT, not a
@@ -59,9 +59,9 @@ use crate::config::DEFAULT_SUMMARY_TIMEOUT_SECONDS;
 use crate::config_loader::load_vibe_config;
 use crate::error::{Result, VibeError};
 use crate::git::{
-    branch_ref_info, count_status_entries_z, detached_head_info, get_default_branch,
-    get_worktree_list, is_inside_worktree, lexical_normalize_path, worktree_status_z, GitRunner,
-    Worktree,
+    branch_ref_info, count_status_entries_z, detached_head_info, get_worktree_list,
+    is_inside_worktree, lexical_normalize_path, resolve_default_branch, worktree_status_z,
+    GitRunner, Worktree,
 };
 use crate::io::Io;
 use crate::mru::{load_mru_data, sort_by_mru};
@@ -603,7 +603,7 @@ where
 ///
 /// The git budget is deliberately bounded at roughly `N + 4`: one
 /// [`branch_ref_info`] call covers every branch's commit time AND upstream,
-/// [`get_default_branch`] is resolved at most once (it costs up to two git
+/// the default branch is resolved at most once (it costs up to two git
 /// calls), and only the per-worktree status has to be asked `N` times because
 /// git has no batch form for it. A naive implementation resolving each column
 /// per row would be `4N`.
@@ -637,7 +637,7 @@ fn enrich_entries<G: GitRunner>(
 
     // Resolved once, lazily: it is only needed when some branch has no upstream,
     // and it is the same answer for every row.
-    let mut default_branch: Option<String> = None;
+    let mut default_branch: Option<crate::git::DefaultBranch> = None;
     let now_secs = now_ms / 1_000;
 
     worktrees
@@ -657,17 +657,20 @@ fn enrich_entries<G: GitRunner>(
                 None => detached_head_info(git, &w.path),
             };
 
+            // Tracked per row, because only a row that ACTUALLY took the
+            // default-branch fallback is affected by that answer being a guess:
+            // a branch with an upstream never consults it.
+            let mut base_from_guessed_default = false;
             let base = match &w.branch {
                 Some(branch) => ref_info
                     .get(branch)
                     .and_then(|i| i.upstream.as_deref())
                     .map(strip_remote_prefix)
                     .or_else(|| {
-                        Some(
-                            default_branch
-                                .get_or_insert_with(|| get_default_branch(git))
-                                .clone(),
-                        )
+                        let resolved =
+                            default_branch.get_or_insert_with(|| resolve_default_branch(git));
+                        base_from_guessed_default = !resolved.resolved;
+                        Some(resolved.name.clone())
                     })
                     // A branch is not based on itself; the main worktree would
                     // otherwise read "develop ← develop".
@@ -677,6 +680,17 @@ fn enrich_entries<G: GitRunner>(
                 // the default branch.
                 None => None,
             };
+
+            // Two ways this row's base can be a guess rather than a fact: the
+            // ref lookup failed wholesale (so every branch's upstream is
+            // invisible and all of them take the fallback), or the fallback
+            // itself could not resolve and assumed a hardcoded name.
+            //
+            // `base.is_some()` gates the second: when the self-base filter drops
+            // the value, BASE is `None` on every run whatever the default branch
+            // resolved to, so nothing was actually guessed.
+            let base_is_degraded = (ref_lookup_failed && w.branch.is_some())
+                || (base_from_guessed_default && base.is_some());
 
             let (status, dirty_files, status_payload) = match worktree_status_z(git, &w.path) {
                 Ok(payload) => {
@@ -719,7 +733,7 @@ fn enrich_entries<G: GitRunner>(
                 // Only a BRANCH row's base comes from the ref lookup. A detached
                 // HEAD's base is `None` by construction on every run, degraded
                 // or not, so its key is unaffected.
-                base_is_degraded: ref_lookup_failed && w.branch.is_some(),
+                base_is_degraded,
             }
         })
         .collect()

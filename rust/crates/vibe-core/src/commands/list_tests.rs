@@ -40,6 +40,14 @@ struct ListGit {
     /// permission problem). Distinct from "no branch has a ref", which the same
     /// call reports as an empty answer.
     fail_for_each_ref: bool,
+    /// Make BOTH default-branch resolution steps fail (`symbolic-ref` and
+    /// `config --get init.defaultBranch`), so `resolve_default_branch` falls
+    /// through to its hardcoded `master`.
+    fail_default_branch: bool,
+    /// Whether `refs/remotes/origin/HEAD` exists. `false` models a purely local
+    /// repository, where the default-branch fallback is permanent rather than a
+    /// symptom of anything going wrong.
+    origin_head_exists: bool,
     default_branch: String,
     calls: RefCell<Vec<Vec<String>>>,
 }
@@ -70,6 +78,8 @@ impl ListGit {
             failing_status: Vec::new(),
             detached_log: None,
             fail_for_each_ref: false,
+            fail_default_branch: false,
+            origin_head_exists: true,
             default_branch: "main".to_string(),
             calls: RefCell::new(Vec::new()),
         }
@@ -169,8 +179,31 @@ impl GitRunner for ListGit {
             }
             return Ok(out);
         }
-        if args.contains(&"symbolic-ref") {
-            return Ok(format!("origin/{}", self.default_branch));
+        // `show-ref --verify` asks whether refs/remotes/origin/HEAD EXISTS.
+        // The fake models a repository that has one (so a resolution failure is
+        // a transient fault, not a permanent absence).
+        if args.first() == Some(&"show-ref") {
+            if !self.origin_head_exists {
+                return Err(VibeError::GitOperation {
+                    command: args.join(" "),
+                    message: "failed: no such ref".to_string(),
+                });
+            }
+            return Ok(String::new());
+        }
+        if args.contains(&"symbolic-ref") || args.contains(&"init.defaultBranch") {
+            if self.fail_default_branch {
+                return Err(VibeError::GitOperation {
+                    command: args.join(" "),
+                    message: "failed: no such ref".to_string(),
+                });
+            }
+            // Only `symbolic-ref` has an answer; `config --get` is reached
+            // only when that failed, which this fake never does on its own.
+            if args.contains(&"symbolic-ref") {
+                return Ok(format!("origin/{}", self.default_branch));
+            }
+            return Ok(String::new());
         }
         if args.contains(&"log") {
             let Some((unix, iso)) = &self.detached_log else {
@@ -1770,5 +1803,167 @@ fn a_failed_ref_lookup_does_not_disturb_a_detached_row() {
         payload_names,
         vec!["main"],
         "only the branch row degrades; the detached row stays cached"
+    );
+}
+
+/// (a) What it guarantees: a run where the DEFAULT BRANCH could not be resolved
+/// neither trusts nor writes the summary cache, for the rows that depend on it.
+///
+/// `resolve_default_branch` falls through to a hardcoded `master` when both
+/// `symbolic-ref` and `init.defaultBranch` are silent. That guess is
+/// indistinguishable from a repository that genuinely uses `master`, so after
+/// `origin/HEAD` is re-pointed a transient resolution failure reproduces the old
+/// key exactly and the stale summary is served with nothing to signal it.
+#[test]
+fn a_guessed_default_branch_neither_hits_nor_writes_the_cache() {
+    let fixture = SummaryFixture::trusted(SUMMARY_TOML);
+
+    // A healthy run in a repository whose default branch really IS `master`,
+    // for a branch with no upstream — so BASE comes from the fallback.
+    let healthy = ListGit::with(&[
+        (fixture.main_path.as_str(), "main"),
+        (format!("{}-feat", fixture.main_path).as_str(), "feat/x"),
+    ])
+    .with_ref("main", 60, None)
+    .with_ref("feat/x", 60, None)
+    .with_default_branch("master");
+    let first = FakeSummaryRunner::with_stdout(r#"{"main":"m","feat/x":"cached while healthy"}"#);
+    fixture.run(&healthy, &first, false).unwrap();
+    assert_eq!(first.calls().len(), 1);
+
+    // Same repository, but neither resolution step answers. BASE degrades to
+    // the hardcoded `master` — byte-identical to the key just cached.
+    let mut degraded = ListGit::with(&[
+        (fixture.main_path.as_str(), "main"),
+        (format!("{}-feat", fixture.main_path).as_str(), "feat/x"),
+    ])
+    .with_ref("main", 60, None)
+    .with_ref("feat/x", 60, None)
+    .with_default_branch("master");
+    degraded.fail_default_branch = true;
+
+    let second = FakeSummaryRunner::with_stdout(r#"{"feat/x":"asked again"}"#);
+    fixture.run(&degraded, &second, false).unwrap();
+    assert_eq!(
+        second.calls().len(),
+        1,
+        "a guessed default branch must not be trusted"
+    );
+
+    // Nor written: the healthy entry survives untouched.
+    let cache = crate::summary::load_cache(
+        &fixture.io,
+        &fixture.main_path,
+        &crate::summary::command_hash("./summarize.sh"),
+    )
+    .cache;
+    assert_eq!(
+        cache.get_stale(&format!("{}-feat", fixture.main_path)),
+        Some("cached while healthy"),
+        "the degraded answer must not overwrite the healthy entry"
+    );
+}
+
+/// (b) What it guarantees: a run whose default branch resolves normally caches
+/// as before — the opt-out is scoped to the degradation, not to the fallback.
+#[test]
+fn a_resolved_default_branch_still_caches_normally() {
+    let fixture = SummaryFixture::trusted(SUMMARY_TOML);
+    let git = || {
+        ListGit::with(&[(fixture.main_path.as_str(), "main")])
+            .with_ref("main", 60, None)
+            .with_default_branch("develop")
+    };
+
+    let first = FakeSummaryRunner::with_stdout(r#"{"main":"cached"}"#);
+    fixture.run(&git(), &first, false).unwrap();
+    assert_eq!(first.calls().len(), 1);
+
+    let second = FakeSummaryRunner::with_stdout(r#"{"main":"should not be asked"}"#);
+    fixture.run(&git(), &second, false).unwrap();
+    assert_eq!(
+        second.calls().len(),
+        0,
+        "a resolved fallback is a fact, and must still be cacheable"
+    );
+}
+
+/// (c) What it guarantees: a row whose BASE came from its own upstream is
+/// unaffected by a default-branch resolution failure — it never consulted it.
+#[test]
+fn an_upstream_backed_row_is_unaffected_by_a_default_branch_failure() {
+    let fixture = SummaryFixture::trusted(SUMMARY_TOML);
+    let feat = format!("{}-feat", fixture.main_path);
+
+    let healthy = ListGit::with(&[
+        (fixture.main_path.as_str(), "main"),
+        (feat.as_str(), "feat/x"),
+    ])
+    .with_ref("main", 60, None)
+    // An explicit upstream: this row resolves BASE without the fallback.
+    .with_ref("feat/x", 60, Some("origin/release/2.0"))
+    .with_default_branch("master");
+    let first = FakeSummaryRunner::with_stdout(r#"{"main":"m","feat/x":"upstream backed"}"#);
+    fixture.run(&healthy, &first, false).unwrap();
+
+    let mut degraded = ListGit::with(&[
+        (fixture.main_path.as_str(), "main"),
+        (feat.as_str(), "feat/x"),
+    ])
+    .with_ref("main", 60, None)
+    .with_ref("feat/x", 60, Some("origin/release/2.0"))
+    .with_default_branch("master");
+    degraded.fail_default_branch = true;
+
+    let second = FakeSummaryRunner::with_stdout(r#"{"main":"m2"}"#);
+    fixture.run(&degraded, &second, false).unwrap();
+
+    // `main` takes the (now guessed) fallback and re-asks; `feat/x` does not.
+    let payload: serde_json::Value =
+        serde_json::from_str(&second.calls()[0].stdin_payload).unwrap();
+    let names: Vec<&str> = payload["worktrees"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|w| w["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        vec!["main"],
+        "only the fallback-dependent row degrades"
+    );
+}
+
+/// What it guarantees: a purely LOCAL repository — no remote, so no
+/// `origin/HEAD`, and no `init.defaultBranch` — still caches normally.
+///
+/// Its default branch comes from the same hardcoded fallback, but that absence
+/// is a permanent property of the repository, so the answer is identical on
+/// every run. Treating it as a guess would disable the summary cache outright
+/// for a very common setup, which is a worse regression than the stale hit the
+/// degradation check exists to prevent.
+#[test]
+fn a_repository_with_no_origin_head_still_caches() {
+    let fixture = SummaryFixture::trusted(SUMMARY_TOML);
+    let git = || {
+        let mut g =
+            ListGit::with(&[(fixture.main_path.as_str(), "main")]).with_ref("main", 60, None);
+        // No `origin/HEAD` to read, and no `init.defaultBranch` either: every
+        // resolution step legitimately has nothing to say.
+        g.fail_default_branch = true;
+        g.origin_head_exists = false;
+        g
+    };
+
+    let first = FakeSummaryRunner::with_stdout(r#"{"main":"cached"}"#);
+    fixture.run(&git(), &first, false).unwrap();
+    assert_eq!(first.calls().len(), 1);
+
+    let second = FakeSummaryRunner::with_stdout(r#"{"main":"should not be asked"}"#);
+    fixture.run(&git(), &second, false).unwrap();
+    assert_eq!(
+        second.calls().len(),
+        0,
+        "a stable absence is not a degradation"
     );
 }
