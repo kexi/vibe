@@ -277,9 +277,26 @@ impl SummaryRunner for RealSummaryRunner {
 
         // stdout is PARSED, so it is decoded strictly: see
         // `SummaryOutput::stdout_invalid_utf8`.
-        let (stdout, stdout_invalid_utf8) = match String::from_utf8(stdout) {
-            Ok(text) => (text, false),
-            Err(_) => (String::new(), true),
+        //
+        // Size is judged FIRST. The buffer stops at `cap + 1` bytes, and that
+        // cut lands wherever it lands — mid-character for any answer whose
+        // overflow happens to begin inside a multi-byte sequence. Decoding
+        // before measuring would report such an answer as "not valid UTF-8"
+        // when the command's real mistake was being too long, and the two
+        // diagnostics send the user looking in completely different places.
+        // Over-cap output is rejected either way, so the only question is which
+        // reason it is rejected FOR, and the truncation is ours, not theirs.
+        let over_cap = stdout.len() > MAX_SUMMARY_STDOUT_BYTES;
+        let (stdout, stdout_invalid_utf8) = if over_cap {
+            // Handed on verbatim-but-lossy: `parse_summary_stdout` only needs
+            // its LENGTH to reject it, and a lossy decode cannot make an
+            // over-length answer look acceptable.
+            (String::from_utf8_lossy(&stdout).into_owned(), false)
+        } else {
+            match String::from_utf8(stdout) {
+                Ok(text) => (text, false),
+                Err(_) => (String::new(), true),
+            }
         };
 
         Ok(SummaryOutput {
@@ -716,6 +733,40 @@ mod real_tests {
         assert_eq!(out.stdout, "{\"main\":\"x\u{fffd}y\"}");
         // And it parses, so such a summary is usable.
         assert!(crate::summary::parse_summary_stdout(&out.stdout, 1).is_ok());
+    }
+
+    /// What it guarantees: an over-cap answer is diagnosed as TOO LARGE even
+    /// when our own truncation lands inside a multi-byte character.
+    ///
+    /// The buffer stops at `cap + 1` bytes wherever that falls. An answer made
+    /// of multi-byte characters will, for most lengths, be cut mid-sequence —
+    /// so decoding before measuring reported "not valid UTF-8" about output the
+    /// command had encoded perfectly well. The two diagnostics send the reader
+    /// looking in completely different places, and the truncation is ours.
+    #[test]
+    fn an_over_cap_multibyte_answer_is_a_size_violation_not_an_encoding_one() {
+        // Three-byte characters, so `cap + 1` cannot be a character boundary:
+        // 1 MiB is divisible by 3 only at offsets the `+ 1` steps past.
+        let out = run(
+            &format!(
+                "python3 -c 'import sys; sys.stdout.write(\"\\u3042\" * {})'",
+                MAX_SUMMARY_STDOUT_BYTES
+            ),
+            "",
+            30,
+        );
+        assert_eq!(out.code, 0, "the command itself succeeded: {out:?}");
+        assert!(
+            !out.stdout_invalid_utf8,
+            "our own mid-character cut must not be blamed on the command"
+        );
+
+        // And the parser calls it what it is.
+        let err = crate::summary::parse_summary_stdout(&out.stdout, 1).unwrap_err();
+        assert!(
+            err.contains("bytes"),
+            "expected a size violation, got: {err}"
+        );
     }
 
     /// What it guarantees: the deadline bounds the CALL, not merely the child.
