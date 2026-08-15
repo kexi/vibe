@@ -13,7 +13,10 @@
 //! failed copy indistinguishable from a successful one). Which outcome each
 //! node gets at `finish()` is likewise decided by the pure `closing_outcomes`,
 //! because phases are headers rather than units of work and must not be
-//! abandoned just because nobody calls `complete_task` on them.
+//! abandoned just because nobody calls `complete_task` on them. A node that
+//! stops spinning also swaps to a `{msg}`-only style (`closed_style`), because
+//! `indicatif` renders `{spinner}` on a finished bar as the last `tick_strings`
+//! entry and would otherwise stamp a running glyph in front of every outcome.
 //!
 //! SECURITY/contract: the live renderer draws to `ProgressDrawTarget::stderr()`
 //! so stdout stays clean for the eval'd `cd` line. Node labels and error texts
@@ -118,9 +121,9 @@ pub enum TaskOutcome<'a> {
     Failed { error: &'a str },
     /// Still pending when the run ended — a dim `⊘`.
     ///
-    /// Why not `☐`: the docs already use `☐` for "queued, will still run"
-    /// (README "Progress display" legend), so reusing it would make "gave up"
-    /// and "not started yet" the same glyph.
+    /// Why not `☒`/`✗`: the node neither succeeded nor reported an error, so
+    /// borrowing either glyph would state something the run never observed. It
+    /// gets a marker of its own so "we gave up on this" is legible at a glance.
     Abandoned,
 }
 
@@ -249,6 +252,39 @@ impl IndicatifTracker {
     }
 }
 
+/// The style a node wears once it stops spinning: the whole line is already
+/// baked by [`render_line`], so the template must emit `{msg}` and nothing else.
+///
+/// Why not keep the spinner template and only clear the prefix: `indicatif`
+/// expands `{spinner}` on a finished bar to the *last* `tick_strings` entry
+/// (`ProgressStyle::get_final_tick_str`), so a closed node would keep a stray
+/// `⠏ ` in front of its outcome glyph and read as still-running — exactly the
+/// success/failure ambiguity this rendering exists to remove.
+/// The empty `tick_strings` are belt-and-braces: the template already drops
+/// `{spinner}`, but blanking the ticks makes "a closed bar renders no spinner"
+/// an assertable property (`ProgressStyle::get_final_tick_str`) instead of one
+/// that can only be eyeballed in the template string.
+fn closed_style() -> indicatif::ProgressStyle {
+    indicatif::ProgressStyle::with_template("{msg}")
+        .expect("static progress template must be valid")
+        .tick_strings(&["", ""])
+}
+
+/// Paint a node's final line: style first, so the finished bar never redraws
+/// through the spinner template.
+fn close_bar(node: &mut BarNode, outcome: TaskOutcome<'_>, color: bool) {
+    node.done = true;
+    node.bar.set_style(closed_style());
+    node.bar.set_prefix("");
+    let line = render_line(outcome, &node.prefix, &node.label, color);
+    match outcome {
+        TaskOutcome::Completed => node.bar.finish_with_message(line),
+        // `abandon_with_message` leaves the line in place without the
+        // "finished successfully" semantics indicatif attaches to `finish`.
+        _ => node.bar.abandon_with_message(line),
+    }
+}
+
 /// Decide how each still-open node is closed by `finish()`.
 ///
 /// `None` = already closed by its own caller, leave the line alone. Split out
@@ -294,27 +330,13 @@ impl ProgressTracker for IndicatifTracker {
     fn complete_task(&self, id: NodeId) {
         let color = self.color;
         self.with_bar(id, |node| {
-            node.done = true;
-            node.bar.set_prefix("");
-            node.bar.finish_with_message(render_line(
-                TaskOutcome::Completed,
-                &node.prefix,
-                &node.label,
-                color,
-            ));
+            close_bar(node, TaskOutcome::Completed, color);
         });
     }
     fn fail_task(&self, id: NodeId, err: &str) {
         let color = self.color;
         self.with_bar(id, |node| {
-            node.done = true;
-            node.bar.set_prefix("");
-            node.bar.abandon_with_message(render_line(
-                TaskOutcome::Failed { error: err },
-                &node.prefix,
-                &node.label,
-                color,
-            ));
+            close_bar(node, TaskOutcome::Failed { error: err }, color);
         });
     }
     fn start(&self) {}
@@ -323,29 +345,13 @@ impl ProgressTracker for IndicatifTracker {
         let mut bars = self.bars.lock().expect("progress mutex poisoned");
         let outcomes = closing_outcomes(&bars);
         for (node, outcome) in bars.iter_mut().zip(outcomes) {
+            // A phase header is not a unit of work: `closing_outcomes` gives it
+            // `Completed` once nothing under it is still pending, so an all-green
+            // run keeps rendering `☒ <phase>` as the README documents. Why not
+            // finish a still-pending *task* as completed: it never succeeded, and
+            // painting it `☒` is the ambiguity this rendering exists to remove.
             let Some(outcome) = outcome else { continue };
-            node.done = true;
-            node.bar.set_prefix("");
-            match outcome {
-                // A phase header is not a unit of work: it closes as done once
-                // nothing under it is still pending, so an all-green run keeps
-                // rendering `☒ <phase>` as the README documents.
-                TaskOutcome::Completed => node.bar.finish_with_message(render_line(
-                    TaskOutcome::Completed,
-                    &node.prefix,
-                    &node.label,
-                    color,
-                )),
-                // Why not finish these as completed: a node still pending when
-                // the run ends never succeeded, and painting it `☒` is exactly
-                // the ambiguity this rendering is meant to remove.
-                _ => node.bar.abandon_with_message(render_line(
-                    TaskOutcome::Abandoned,
-                    &node.prefix,
-                    &node.label,
-                    color,
-                )),
-            }
+            close_bar(node, outcome, color);
         }
     }
 }
@@ -493,11 +499,18 @@ mod tests {
         assert_ne!(failed, abandoned);
     }
 
+    /// Guarantees an abandoned line borrows no other state's marker: the README
+    /// legend gives `⠋` to pending/running, `☒` to success and `✗` to failure,
+    /// so reusing any of them would report something the run never observed.
     #[test]
-    fn abandoned_does_not_reuse_the_documented_pending_glyph() {
-        // README's legend spends `☐` on "queued, will still run".
+    fn abandoned_reuses_no_other_states_glyph() {
         let abandoned = render_line(TaskOutcome::Abandoned, "   ┗ ", "node_modules/", false);
-        assert!(!abandoned.contains('☐'), "glyph clash in {abandoned:?}");
+        for claimed in ['⠋', '☒', '✗', '☐'] {
+            assert!(
+                !abandoned.contains(claimed),
+                "glyph clash on {claimed:?} in {abandoned:?}"
+            );
+        }
     }
 
     #[test]
@@ -540,22 +553,98 @@ mod tests {
         );
     }
 
-    /// Drives the real tracker's `add_phase`/`add_task`/… sequence and reports
-    /// what `finish()` would paint on each line, so the outcome selection is
-    /// asserted end to end and not just `render_line`'s formatting.
+    /// Drives the real tracker's `add_phase`/`add_task`/… sequence, calls the
+    /// real `finish()`, and reads back the message each bar actually ended up
+    /// with, so the outcome selection is asserted through the tracker rather
+    /// than by re-running `closing_outcomes` in the test.
+    ///
+    /// A node already closed by `complete_task`/`fail_task` is reported as
+    /// `<kept:…>` carrying its own line, which is what proves `finish()` does
+    /// not overwrite a `✗` with a phase-level marker.
     fn finish_lines(build: impl FnOnce(&IndicatifTracker)) -> Vec<String> {
         let tracker = IndicatifTracker::with_color(false);
         build(&tracker);
+        let closed_before: Vec<bool> = tracker
+            .bars
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|node| node.done)
+            .collect();
+        tracker.finish();
         let bars = tracker.bars.lock().unwrap();
-        let outcomes = closing_outcomes(&bars);
         bars.iter()
-            .zip(outcomes)
-            .map(|(node, outcome)| match outcome {
-                // Already closed by complete_task/fail_task: finish() leaves it.
-                None => format!("{}<kept>", node.prefix),
-                Some(outcome) => render_line(outcome, &node.prefix, &node.label, false),
+            .zip(closed_before)
+            .map(|(node, was_closed)| {
+                let line = node.bar.message();
+                if was_closed {
+                    format!("<kept:{line}>")
+                } else {
+                    line
+                }
             })
             .collect()
+    }
+
+    /// Guarantees `finish()` closes every node it touches, so a second
+    /// `finish()` is a no-op rather than a repaint.
+    #[test]
+    fn finish_marks_every_node_done() {
+        let tracker = IndicatifTracker::with_color(false);
+        let phase = tracker.add_phase("Copying files");
+        tracker.add_task(phase, "node_modules/");
+        tracker.finish();
+
+        let bars = tracker.bars.lock().unwrap();
+        assert!(bars.iter().all(|node| node.done));
+        assert!(closing_outcomes(&bars).iter().all(Option::is_none));
+    }
+
+    /// Guarantees the *spinning* style really would stamp a glyph on a finished
+    /// bar, so `closed_nodes_stop_rendering_the_spinner` below is testing a live
+    /// hazard rather than a hypothetical one. `indicatif` expands `{spinner}` on
+    /// a finished bar to the last `tick_strings` entry, not to nothing.
+    #[test]
+    fn the_spinning_style_would_stamp_a_glyph_on_a_finished_bar() {
+        let tracker = IndicatifTracker::with_color(false);
+        tracker.add_phase("Copying files");
+
+        let bars = tracker.bars.lock().unwrap();
+        let spinning = bars[0].bar.style();
+        assert_eq!(
+            spinning.get_final_tick_str(),
+            "⠏",
+            "the running style must be the one whose final tick has to be escaped"
+        );
+    }
+
+    /// Guarantees every node closed by `complete_task`, `fail_task` or `finish`
+    /// swaps to a style that renders `{msg}` alone: its final tick string must
+    /// be empty, otherwise the outcome line is drawn as `⠏ ┗ ✗ …` and a failed
+    /// task reads as still running.
+    #[test]
+    fn closed_nodes_stop_rendering_the_spinner() {
+        let tracker = IndicatifTracker::with_color(false);
+        let phase = tracker.add_phase("Post-start hooks");
+        let ok = tracker.add_task(phase, "echo hi");
+        tracker.complete_task(ok);
+        let bad = tracker.add_task(phase, "sh -c 'exit 3'");
+        tracker.fail_task(bad, "Exit code 3");
+        // Left pending on purpose: finish() closes it, and it must be styled
+        // the same way as the two the callers closed.
+        tracker.add_task(phase, "node_modules/");
+        tracker.finish();
+
+        let bars = tracker.bars.lock().unwrap();
+        assert_eq!(bars.len(), 4);
+        for node in bars.iter() {
+            assert_eq!(
+                node.bar.style().get_final_tick_str(),
+                "",
+                "closed node {:?} still renders a spinner glyph",
+                node.label
+            );
+        }
     }
 
     #[test]
@@ -567,7 +656,10 @@ mod tests {
             t.complete_task(task);
         });
 
-        assert_eq!(lines, vec!["┗ ☒ Pre-start hooks", "   ┗ <kept>"]);
+        assert_eq!(
+            lines,
+            vec!["┗ ☒ Pre-start hooks", "<kept:   ┗ ☒ npm install>"]
+        );
     }
 
     #[test]
@@ -579,9 +671,15 @@ mod tests {
             t.fail_task(task, "Exit code 3");
         });
 
-        // The phase header must not steal the failure marker; the ✗ line is the
-        // one fail_task already painted.
-        assert_eq!(lines, vec!["┗ ☒ Post-start hooks", "   ┗ <kept>"]);
+        // The phase header must not steal the failure marker, and finish() must
+        // not repaint over the ✗ line fail_task already produced.
+        assert_eq!(
+            lines,
+            vec![
+                "┗ ☒ Post-start hooks",
+                "<kept:   ┗ ✗ sh -c 'exit 3' (failed: Exit code 3)>",
+            ]
+        );
     }
 
     #[test]
@@ -596,7 +694,11 @@ mod tests {
 
         assert_eq!(
             lines,
-            vec!["┗ ⊘ Copying files", "   ┗ <kept>", "   ┗ ⊘ node_modules/",]
+            vec![
+                "┗ ⊘ Copying files",
+                "<kept:   ┗ ☒ .env>",
+                "   ┗ ⊘ node_modules/",
+            ]
         );
     }
 
@@ -623,7 +725,7 @@ mod tests {
             lines,
             vec![
                 "┗ ☒ Pre-start hooks",
-                "   ┗ <kept>",
+                "<kept:   ┗ ☒ echo hi>",
                 "┗ ⊘ Copying files",
                 "   ┗ ⊘ node_modules/",
             ]

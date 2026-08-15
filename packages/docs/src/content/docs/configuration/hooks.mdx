@@ -59,18 +59,17 @@ vibe displays a real-time progress tree during hook execution:
      ☒ cargo build --release
   ⠋ Copying files
    ┗ ⠋ .env.local
-     ☐ node_modules/
+     ⠋ node_modules/
 ```
 
 ### Markers
 
-| Marker | Meaning                                            |
-| ------ | -------------------------------------------------- |
-| `⠋`    | Running                                            |
-| `☐`    | Queued — has not started yet                       |
-| `☒`    | Completed successfully                             |
-| `✗`    | Failed (red); the reason follows as `(failed: …)`  |
-| `⊘`    | Abandoned (dim) — still pending when the run ended |
+| Marker | Meaning                                                  |
+| ------ | -------------------------------------------------------- |
+| `⠋`    | Pending or running (the spinner animates once it starts) |
+| `☒`    | Completed successfully                                   |
+| `✗`    | Failed (red); the reason follows as `(failed: …)`        |
+| `⊘`    | Abandoned (dim) — still pending when the run ended       |
 
 ### Output Handling
 
