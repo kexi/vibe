@@ -77,6 +77,11 @@
 //! post-read length check stays where it is, because it is what turns "we
 //! stopped reading" into the user-visible contract violation.
 //!
+//! Past the cap the stream is DRAINED, not closed — see
+//! [`spawn_capped_reader`]. Closing it would `SIGPIPE` a command whose only
+//! sin was being verbose, and the deadline already bounds how long the drain
+//! can go on.
+//!
 //! # Known limitation: grandchildren survive
 //!
 //! `kill()` signals the shell we spawned, not its descendants. A command that
@@ -267,11 +272,27 @@ impl SummaryRunner for RealSummaryRunner {
     }
 }
 
-/// Read `handle` to EOF or `cap + 1` bytes, whichever comes first, on its own
-/// thread; the bytes come back over the returned channel.
+/// Buffer at most `cap + 1` bytes of `handle`, then keep READING and discarding
+/// until EOF, on its own thread; the buffered bytes come back over the returned
+/// channel.
 ///
 /// `cap + 1` so the caller can still tell "exactly at the cap" from "over it"
 /// while never buffering more than one byte beyond the limit.
+///
+/// # Why the rest is drained rather than left unread
+///
+/// Stopping at the cap and dropping the handle closes our end of the pipe, and
+/// the next write from the command gets `SIGPIPE`/`EPIPE`. That kills a
+/// perfectly well-behaved command for being verbose: measured, a `python3` that
+/// writes 200 KB of diagnostics to stderr and then prints a valid `{}` exits
+/// **120** with its answer lost, and vibe reports "summary command exited with
+/// code 120" instead of using the summary it actually produced. The cap exists
+/// to bound our MEMORY, not to censor the command mid-sentence.
+///
+/// Draining costs nothing in the normal case (there is nothing left to read) and
+/// is bounded in the abnormal one: an endless stream keeps this thread reading,
+/// but the parent collects with `recv_timeout` against the deadline and abandons
+/// it, so the run ends as a timeout rather than a hang.
 fn spawn_capped_reader<R>(handle: Option<R>, cap: usize) -> std::sync::mpsc::Receiver<Vec<u8>>
 where
     R: std::io::Read + Send + 'static,
@@ -279,11 +300,17 @@ where
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let mut buf = Vec::new();
-        if let Some(handle) = handle {
+        if let Some(mut handle) = handle {
             use std::io::Read;
             // A read error (the pipe died mid-stream) keeps whatever arrived:
             // a partial answer is still worth the contract check.
-            let _ = handle.take(cap as u64 + 1).read_to_end(&mut buf);
+            let _ = (&mut handle).take(cap as u64 + 1).read_to_end(&mut buf);
+            // Over the cap: keep the pipe OPEN and swallow the remainder, so the
+            // command can finish saying what it was saying and exit on its own
+            // terms. `io::sink` discards without accumulating.
+            if buf.len() > cap {
+                let _ = std::io::copy(&mut handle, &mut std::io::sink());
+            }
         }
         let _ = tx.send(buf);
     });
@@ -536,6 +563,81 @@ mod real_tests {
         assert_eq!(out.stderr.len(), MAX_SUMMARY_STDERR_BYTES + 1);
         // The command still succeeded, and its stdout is intact.
         assert_eq!(out.stdout.trim(), "{}");
+    }
+
+    /// What it guarantees: a command that writes MORE than the stderr cap and
+    /// then answers correctly is still treated as a success.
+    ///
+    /// Closing the read end at the cap sends SIGPIPE (or an EPIPE write error)
+    /// to a perfectly well-behaved command that happened to be chatty — Python
+    /// dies with exit 120 — turning "the diagnostics were long" into "the
+    /// summary command failed", which discards a valid answer and warns.
+    #[test]
+    fn a_chatty_but_successful_command_is_not_killed_by_the_stderr_cap() {
+        let out = run(
+            &format!(
+                "yes e | head -c {} >&2; echo '{{}}'",
+                MAX_SUMMARY_STDERR_BYTES * 4
+            ),
+            "",
+            30,
+        );
+        assert_eq!(out.code, 0, "a chatty command must not be failed");
+        assert!(!out.timed_out);
+        assert_eq!(out.stdout.trim(), "{}", "its answer must survive");
+        assert_eq!(
+            out.stderr.len(),
+            MAX_SUMMARY_STDERR_BYTES + 1,
+            "stderr is still capped in memory"
+        );
+    }
+
+    /// The same shape with a real interpreter, which is what surfaces the
+    /// SIGPIPE: `yes | head` can mask it, but Python reports exit 120 when its
+    /// stderr flush fails at interpreter shutdown.
+    #[test]
+    fn a_python_command_writing_past_the_stderr_cap_still_succeeds() {
+        let out = run(
+            "python3 -c 'import sys; sys.stderr.write(\"x\" * 200000); print(\"{}\")'",
+            "",
+            30,
+        );
+        assert_eq!(
+            out.code, 0,
+            "python must not die on a broken stderr pipe: {out:?}"
+        );
+        assert_eq!(out.stdout.trim(), "{}");
+    }
+
+    /// (b) What it guarantees: an over-cap STDOUT is still rejected, and the
+    /// failure mode is the stable "too large" one rather than a killed command.
+    ///
+    /// The drain matters here too: without it the command dies on a broken
+    /// stdout pipe and the run reports a non-zero exit, so the same input
+    /// produces "exited with code N" or "produced more than N bytes" depending
+    /// on how fast it wrote. Draining pins it to the contract violation.
+    #[test]
+    fn an_over_cap_stdout_is_rejected_not_killed() {
+        let out = run(
+            &format!(
+                "python3 -c 'import sys; sys.stdout.write(\"x\" * {})'",
+                MAX_SUMMARY_STDOUT_BYTES * 2
+            ),
+            "",
+            30,
+        );
+        assert_eq!(
+            out.code, 0,
+            "the command must exit on its own terms: {out:?}"
+        );
+        assert_eq!(
+            out.stdout.len(),
+            MAX_SUMMARY_STDOUT_BYTES + 1,
+            "only the cap plus the overflow byte is buffered"
+        );
+        // And the parser turns that into the documented violation.
+        let err = crate::summary::parse_summary_stdout(&out.stdout, 1).unwrap_err();
+        assert!(err.contains("bytes"), "got: {err}");
     }
 
     /// What it guarantees: the deadline bounds the CALL, not merely the child.
