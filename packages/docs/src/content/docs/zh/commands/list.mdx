@@ -1,0 +1,139 @@
+---
+title: vibe list
+description: 列出当前仓库的所有 worktree，并显示基础分支、时间和状态
+sidebar:
+  order: 4
+---
+
+`list` 命令会在一张对齐的表格中列出当前仓库的所有 worktree，同时显示每个 worktree 基于的分支、最新提交距今多久，以及是否存在未提交的更改。
+
+## 使用方法
+
+```bash
+vibe list [选项]
+```
+
+## 选项
+
+| 选项              | 说明                     |
+| ----------------- | ------------------------ |
+| `--json`          | 以 JSON 数组形式输出列表 |
+| `-V`, `--verbose` | 显示详细输出             |
+| `-q`, `--quiet`   | 抑制非必要输出           |
+
+`--quiet` **不会**抑制列表本身：表格就是这个命令的产出，否则 `vibe list --quiet` 会在什么都没打印的情况下以 0 退出。被抑制的只有周边的诊断信息。
+
+## 示例
+
+```
+$ vibe list
+* feat/login    develop  2h    M 3    /path/to/repo-feat-login
+  fix/crash     develop  3d    clean  /path/to/repo-fix-crash
+  (detached)    -        1w    clean  /path/to/repo-detached
+  scratch/2026… develop  12m   clean  /path/to/scratch-20260101 (scratch)
+```
+
+## 列说明
+
+| 列       | 含义                                                              |
+| -------- | ----------------------------------------------------------------- |
+| （标记） | `*` 标记你当前所在的 worktree                                     |
+| BRANCH   | 已检出的分支；分离 HEAD 的 worktree 显示为 `(detached)`           |
+| BASE     | 该分支所基于的分支 —— 参见下文的 [BASE](#base)                    |
+| AGE      | 最新提交距今的时间（`now`、`12m`、`2h`、`3d`、`1w`、`5mo`、`2y`） |
+| STATUS   | `clean`，或 `M <n>` —— 参见[变更的计数方式](#变更的计数方式)      |
+| PATH     | worktree 所在目录                                                 |
+
+由 [`vibe scratch`](/zh/commands/scratch/) 创建的 worktree 会附加 `(scratch)` 标签。
+
+### 变更的计数方式
+
+`M <n>` 中的数字（以及 `dirty_files` 字段）是 `git status` 报告的条目数，**并不**总是等于发生变更的文件数。git 会把整体未跟踪的**目录**合并为一个条目，因此包含 5 个文件的新目录计为 `1` 而非 `5`。已跟踪文件的修改、已暂存的变更和单独的未跟踪文件各计为一个条目，重命名计为一次而非两次。
+
+这是 git 的默认报告方式（`-unormal`）。`vibe` 刻意不传 `-uall`：`-uall` 会展开所有未跟踪目录，但这会让 git 在列表的每一行都完整遍历未跟踪的目录树 —— 在最不希望付出这种代价的仓库（陈旧的 `node_modules`、庞大的构建产物）中造成无上限的开销，而所优化的只是一个用来表达“这里有变更”的数字。
+
+无法确定取值的单元格会显示为 `-`。即使是 git 无法读取的 worktree（例如已删除检出所遗留的损坏 worktree）也一定会作为一行出现，只有受影响的单元格会降级。
+
+读取 worktree 的 **STATUS** 失败时，原因会作为警告输出到 stderr。而 **AGE** 或 **BASE** 解析失败时（例如 `git log` 无法读取分离 HEAD 的 worktree），会静默降级为 `-` —— 这种情况足够常见，为此发出警告只会成为噪音。
+
+### BASE
+
+BASE 按以下顺序解析：
+
+1. 分支所配置的 **upstream**，去掉远程前缀（`origin/develop` → `develop`）
+2. 否则使用仓库的**默认分支**（来自 `refs/remotes/origin/HEAD`，其次是 `init.defaultBranch`）
+
+分支绝不会显示为基于其自身，因此主 worktree —— 以及 upstream 就是自身远程跟踪引用的分支 —— 会显示 `-`。分离 HEAD 同样显示 `-`：没有任何能够如实陈述的基础分支。
+
+`vibe list` 刻意**不**为每个 worktree 运行 `git merge-base`。那会让每一行多出一次 git 调用，而且它的答案是*提交*而非分支 —— 当多个分支共享合并点时（刚分支出来的常见情况），把该提交映射回分支名是有歧义的。upstream 是用户配置的事实，默认分支是有文档记载的回退方案，二者都可以解释清楚。
+
+### AGE
+
+AGE 是最新提交的 committer date 至今的时间，采用截断（而非向上取整），因此绝不会声称经过了比实际更长的时间。`mo` 和 `y` 单位只用于显示，是近似值（分别为 30 天和 365 天）；`--json` 输出的是精确时间戳 `last_commit_at`。
+
+尚无任何提交的分支（unborn 分支）没有可用的最新提交，因此 AGE 显示 `-`，`last_commit_at` 为 `null`。
+
+## JSON 输出
+
+```bash
+vibe list --json 2>&1 | jq .
+```
+
+`2>&1` 是必需的。`vibe` 将 JSON 负载写入 **stderr**，因为 stdout 是 shell 的 eval 通道：shell 包装函数执行 `eval "$(command vibe "$@")"`，写到那里的任何内容都会被当作 shell 代码执行。在 `--json` 模式下，`list` 自身写入 stderr 的只有负载 —— 为了让文档保持可解析，连 `--verbose` 诊断信息和命令自身的警告也会被扣留。
+
+有一个例外不在本命令的控制范围内：关于**全局**标志冲突的警告（`vibe --verbose --quiet list --json` 会输出 `Warning: Both --verbose and --quiet specified.`）在子命令运行之前发出，因此会出现在负载之前。解析输出时请避免同时使用相互冲突的全局标志。
+
+### 结构
+
+数组中的每个元素都是包含以下字段的对象：
+
+| 字段             | 类型           | 说明                                                           |
+| ---------------- | -------------- | -------------------------------------------------------------- |
+| `branch`         | string \| null | 已检出的分支；分离 HEAD 为 `null`                              |
+| `path`           | string         | worktree 的绝对路径                                            |
+| `current`        | boolean        | 是否为执行该命令时所在的 worktree                              |
+| `scratch`        | boolean        | 分支是否为自动生成的 `scratch/<timestamp>` worktree            |
+| `name`           | string         | 始终存在的名称：分支名，分离 HEAD 时为目录基名                 |
+| `base`           | string \| null | BASE 列的取值；不适用或无法读取时为 `null`                     |
+| `head`           | string \| null | HEAD 指向的提交 sha；unborn 分支（尚无提交）为 `null`          |
+| `last_commit_at` | string \| null | 最新提交 committer date 的 ISO 8601 表示；unborn 分支为 `null` |
+| `status`         | string \| null | `"clean"` 或 `"dirty"`；无法询问 git 时为 `null`               |
+| `dirty_files`    | number \| null | `git status` 报告的条目数；`status` 为 `null` 时始终为 `null`  |
+
+`branch`、`path`、`current` 和 `scratch` 是 v3.1.0 发布的字段，其名称、类型和位置保持不变。新字段只会追加到末尾。
+
+`head` 始终要么是可以传给 `git show` 的 sha，要么是 `null`。分支尚无提交的 worktree 会报告 `null`，而不是 git 输出的全零占位 OID，因此该字段绝不会出现形似 sha 却无法解析的值。
+
+相对时间的 AGE 字符串不会输出。需要"3 天前"这类展示的使用方，从精确的 `last_commit_at` 自行计算会更合适。
+
+### 示例
+
+```bash
+# 所有存在改动的 worktree
+vibe list --json 2>&1 | jq -r '.[] | select(.status == "dirty") | .path'
+
+# 以表格形式列出分支与基础分支
+vibe list --json 2>&1 | jq -r '.[] | "\(.name)\t\(.base // "-")"'
+
+# 你当前所在的 worktree
+vibe list --json 2>&1 | jq -r '.[] | select(.current) | .path'
+```
+
+## 排序
+
+行的顺序为：当前 worktree 最先，然后是其余 worktree 按最近 jump 过的先后排列（与 [`vibe jump`](/zh/commands/jump/) 选择提示所用的 MRU 顺序一致），最后是从未访问过的 worktree，按 git 自身的顺序排列。
+
+MRU 存储缺失或损坏时会降级为 git 的顺序，绝不会导致列表失败。
+
+## 退出码
+
+| 退出码 | 条件            |
+| ------ | --------------- |
+| `0`    | 成功输出列表    |
+| `1`    | 不在 git 仓库内 |
+
+## 相关
+
+- [jump](/zh/commands/jump/) - 跳转到列表中的某个 worktree
+- [start](/zh/commands/start/) - 创建新的 worktree
+- [clean](/zh/commands/clean/) - 删除当前 worktree

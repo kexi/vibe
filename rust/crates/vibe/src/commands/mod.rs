@@ -86,6 +86,7 @@ pub fn list(json: bool, opts: OutputOptions) -> Result<Outcome> {
         io: &io,
         git: &git,
         cwd: &cwd,
+        now_ms: now_ms(),
     };
     commands::list::list_command(&deps, json, opts)
 }
