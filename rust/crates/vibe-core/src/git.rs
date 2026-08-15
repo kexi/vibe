@@ -830,6 +830,15 @@ pub struct DefaultBranch {
 /// symref's own contents regardless of its target, so asking it first both
 /// resolves that case correctly and keeps the enumeration's blind spot off the
 /// value path entirely.
+///
+/// # The one rule for everything below step 1
+///
+/// Every answer that is NOT `symbolic-ref`'s — the configured name and the
+/// hardcoded fallback alike — is only reached because step 1 produced nothing,
+/// so each is repeatable exactly when that nothing was CONFIRMED: the probe
+/// answered, and answered empty. If step 1 merely failed, the next run may read
+/// `origin/HEAD` perfectly well and return something else, which makes anything
+/// keyed on today's answer stale without a single visible change.
 pub fn resolve_default_branch(runner: &impl GitRunner) -> DefaultBranch {
     let resolved = |name: String| DefaultBranch {
         name,
@@ -862,7 +871,18 @@ pub fn resolve_default_branch(runner: &impl GitRunner) -> DefaultBranch {
     if let Ok(out) = &configured {
         let trimmed = out.trim();
         if !trimmed.is_empty() {
-            return resolved(trimmed.to_string());
+            // The VALUE is this config's, whatever the probe said. Its
+            // REPEATABILITY, though, depends on origin/HEAD really being absent:
+            // this config is only the answer because step 1 produced nothing, so
+            // if step 1 merely FAILED, the next run may read origin/HEAD fine
+            // and return something else entirely. Re-pointing origin/HEAD at
+            // `develop` while `symbolic-ref` is momentarily unavailable would
+            // otherwise report the config's `main` as confirmed, and a cache key
+            // built on the old BASE would hit.
+            return DefaultBranch {
+                name: trimmed.to_string(),
+                resolved: origin_head_absent,
+            };
         }
     }
 
@@ -1790,9 +1810,60 @@ branch refs/heads/main
             answer.name, "trunk",
             "the config source must still be tried"
         );
-        // The name came from a command that succeeded, so it is repeatable
-        // regardless of what the probe could not tell us.
-        assert!(answer.resolved);
+        // But NOT repeatable: the config is only the answer because step 1
+        // produced nothing, and a failed probe cannot confirm that nothing was
+        // real. See `a_config_name_is_unconfirmed_while_origin_head_may_exist`.
+        assert!(
+            !answer.resolved,
+            "an unconfirmed step-1 absence cannot make step 2 repeatable"
+        );
+    }
+
+    /// (a) What it guarantees: a config-sourced name is NOT repeatable while
+    /// `origin/HEAD` might still exist.
+    ///
+    /// The scenario: `origin/HEAD` is re-pointed at `develop`, then
+    /// `symbolic-ref` momentarily fails. The probe reports the ref is there, so
+    /// the config's `main` is only standing in for a value git would normally
+    /// have given — and treating it as confirmed lets a cache key built on the
+    /// OLD base hit, silently serving a summary for the wrong upstream.
+    #[test]
+    fn a_config_name_is_unconfirmed_while_origin_head_may_exist() {
+        // symbolic-ref unscripted (=> Err); the probe says the ref is present.
+        let git = ScriptedGit::new(&[
+            (ORIGIN_HEAD_PROBE, ORIGIN_HEAD_PRESENT),
+            (INIT_DEFAULT, "main\n"),
+        ]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "main", "the VALUE is still the config's");
+        assert!(
+            !answer.resolved,
+            "origin/HEAD exists but could not be read, so nothing below it is confirmed"
+        );
+    }
+
+    /// (b) What it guarantees: the same holds when the probe itself failed —
+    /// an unaskable probe confirms nothing either.
+    #[test]
+    fn a_config_name_is_unconfirmed_when_the_probe_cannot_answer() {
+        // Only the config is scripted: symbolic-ref AND the probe both error.
+        let git = ScriptedGit::new(&[(INIT_DEFAULT, "main\n")]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "main");
+        assert!(!answer.resolved);
+    }
+
+    /// (c) What it guarantees: a CONFIRMED absence still makes the config's name
+    /// repeatable — the purely local repository keeps its cache.
+    #[test]
+    fn a_config_name_is_confirmed_when_origin_head_is_confirmed_absent() {
+        let git = ScriptedGit::new(&[(ORIGIN_HEAD_PROBE, ""), (INIT_DEFAULT, "main\n")]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "main");
+        assert!(
+            answer.resolved,
+            "a confirmed absence makes the config the repository's stable answer"
+        );
     }
 
     /// (b) What it guarantees: both probes answering EMPTY is a confirmed,
