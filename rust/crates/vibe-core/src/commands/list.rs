@@ -168,6 +168,21 @@ pub struct ListEntry {
     /// disagree.
     #[serde(skip)]
     pub status_payload: Option<Vec<u8>>,
+    /// Whether this row's [`base`](Self::base) is a GUESS made after the batched
+    /// ref lookup failed outright.
+    ///
+    /// A failed `git for-each-ref` yields an empty map, which is
+    /// indistinguishable from "no branch has an upstream" — so every branch row
+    /// takes the default-branch fallback. That fallback frequently reproduces
+    /// the base a row USED to have, which makes the summary cache key match an
+    /// entry describing a different upstream, and the stale summary is shown
+    /// with nothing to hint that anything degraded.
+    ///
+    /// Recorded per row rather than returned as an error because the listing
+    /// must still be produced: this is the flag that lets the cache decline to
+    /// trust the row without the column disappearing.
+    #[serde(skip)]
+    pub base_is_degraded: bool,
 }
 
 /// Inputs `list` pulls from the binary.
@@ -493,10 +508,18 @@ where
                 head: e.head.as_deref(),
                 status_payload: e.status_payload.as_deref(),
             }),
-            // An unreadable status makes the key indistinguishable from a clean
-            // tree's, so the row opts out of the cache entirely rather than
-            // risking a stale hit. See `SummaryTarget::cacheable`.
-            cacheable: e.status_payload.is_some(),
+            // A row opts out of the cache whenever any KEY MATERIAL was
+            // guessed rather than read:
+            //
+            // - an unreadable status digests identically to a clean tree's, and
+            // - a base invented by the default-branch fallback (after the ref
+            //   lookup failed wholesale) frequently reproduces the row's former
+            //   base.
+            //
+            // Either way the key can collide with an entry describing a
+            // different state, so a degraded run neither trusts the cache nor
+            // writes to it. See `SummaryTarget::cacheable`.
+            cacheable: e.status_payload.is_some() && !e.base_is_degraded,
         })
         .collect();
 
@@ -602,10 +625,15 @@ fn enrich_entries<G: GitRunner>(
     let branches: Vec<String> = worktrees.iter().filter_map(|w| w.branch.clone()).collect();
     // A failure here is not fatal: it costs the AGE and BASE columns, and an
     // empty map makes every branch look unknown, which is the correct rendering.
-    let ref_info: HashMap<String, _> = branch_ref_info(git, &branches)
-        .unwrap_or_default()
-        .into_iter()
-        .collect();
+    //
+    // But it is RECORDED, because "unknown" and "absent" are indistinguishable
+    // in the map that results: a wholesale failure looks exactly like every
+    // branch legitimately having no ref, which sends BASE down the
+    // default-branch fallback for every row. That fallback can silently
+    // reproduce a key the cache already holds — see `ref_lookup_failed`.
+    let ref_lookup = branch_ref_info(git, &branches);
+    let ref_lookup_failed = ref_lookup.is_err();
+    let ref_info: HashMap<String, _> = ref_lookup.unwrap_or_default().into_iter().collect();
 
     // Resolved once, lazily: it is only needed when some branch has no upstream,
     // and it is the same answer for every row.
@@ -688,6 +716,10 @@ fn enrich_entries<G: GitRunner>(
                 // Filled in later, and only when `[summary]` is configured.
                 summary: None,
                 status_payload,
+                // Only a BRANCH row's base comes from the ref lookup. A detached
+                // HEAD's base is `None` by construction on every run, degraded
+                // or not, so its key is unaffected.
+                base_is_degraded: ref_lookup_failed && w.branch.is_some(),
             }
         })
         .collect()

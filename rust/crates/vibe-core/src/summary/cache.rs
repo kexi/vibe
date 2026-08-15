@@ -248,31 +248,68 @@ fn cache_file_path(io: &impl Io, main_worktree_path: &str) -> Result<PathBuf> {
 /// matters to a process.
 pub const MAX_CACHE_FILE_BYTES: usize = 16 * 1024 * 1024;
 
+/// The result of a load: the cache, plus whether it may be written back over.
+///
+/// Every failure yields an empty cache — that part is unchanged, and it is what
+/// keeps an unusable cache costing a regeneration rather than the listing. What
+/// this adds is WHY it is empty, because two of the reasons are not alike:
+///
+/// - The file is absent, unparseable, over the size cap, or pinned to a
+///   different command. In every one of those the stored bytes are worthless as
+///   data, so replacing them wholesale loses nothing.
+/// - The file could not be READ (permissions, a transient I/O error, a lock).
+///   The content is presumably intact and valuable — it is exactly the stale
+///   fallback a failing summary command depends on — and we simply cannot see
+///   it. Writing an empty cache over it on this run would destroy the asset
+///   that a temporary condition merely hid.
+pub struct LoadedCache {
+    pub cache: SummaryCache,
+    /// `false` when the file exists but could not be read; the caller must then
+    /// skip its write-back rather than clobber content it never saw.
+    pub writable: bool,
+}
+
 /// Load the cache, or an empty one on ANY failure or `command_hash` mismatch.
-pub fn load_cache(io: &impl Io, main_worktree_path: &str, command_hash: &str) -> SummaryCache {
-    let empty = SummaryCache::empty(command_hash);
+pub fn load_cache(io: &impl Io, main_worktree_path: &str, command_hash: &str) -> LoadedCache {
+    let discardable = |cache| LoadedCache {
+        cache,
+        writable: true,
+    };
+    let empty = || SummaryCache::empty(command_hash);
 
     let Ok(path) = cache_file_path(io, main_worktree_path) else {
-        return empty;
+        return discardable(empty());
     };
-    let Ok(bytes) = read_capped(&path, MAX_CACHE_FILE_BYTES) else {
-        return empty;
+
+    let bytes = match read_capped(&path, MAX_CACHE_FILE_BYTES) {
+        Ok(bytes) => bytes,
+        // A file that is not there cannot be clobbered, so a fresh write is
+        // exactly right. Anything else — a permission denial, a device error —
+        // means content we could not see, and must not overwrite.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return discardable(empty()),
+        Err(_) => {
+            return LoadedCache {
+                cache: empty(),
+                writable: false,
+            }
+        }
     };
+
     // Over the cap is treated as corrupt, not as an error: the caller's contract
     // is that an unusable cache costs a regeneration, never the listing.
     if bytes.len() > MAX_CACHE_FILE_BYTES {
-        return empty;
+        return discardable(empty());
     }
     let Ok(content) = String::from_utf8(bytes) else {
-        return empty;
+        return discardable(empty());
     };
     let Ok(cache) = serde_json::from_str::<SummaryCache>(&content) else {
-        return empty;
+        return discardable(empty());
     };
     if cache.version != CACHE_VERSION || cache.command_hash != command_hash {
-        return empty;
+        return discardable(empty());
     }
-    cache
+    discardable(cache)
 }
 
 /// Read at most `cap + 1` bytes of `path`.
@@ -312,6 +349,12 @@ mod tests {
     use crate::io::FakeIo;
     use vibe_test_support::Fixture;
 
+    /// The cache itself, for the assertions that do not care whether the file
+    /// was writable (see [`LoadedCache`]).
+    fn loaded(io: &FakeIo, repo: &str, hash: &str) -> SummaryCache {
+        load_cache(io, repo, hash).cache
+    }
+
     fn io_for(fx: &Fixture) -> FakeIo {
         FakeIo::new().with_env("HOME", fx.path().to_str().unwrap())
     }
@@ -325,7 +368,7 @@ mod tests {
         cache.insert("/repo/a", "head1:st", "did a thing");
         save_cache(&io, "/repo", &cache).unwrap();
 
-        let loaded = load_cache(&io, "/repo", &hash);
+        let loaded = loaded(&io, "/repo", &hash);
         assert_eq!(loaded.get("/repo/a", "head1:st"), Some("did a thing"));
     }
 
@@ -338,7 +381,7 @@ mod tests {
         cache.insert("/repo/a", "head1:st", "old summary");
         save_cache(&io, "/repo", &cache).unwrap();
 
-        let loaded = load_cache(&io, "/repo", &hash);
+        let loaded = loaded(&io, "/repo", &hash);
         assert_eq!(loaded.get("/repo/a", "head2:st"), None);
         assert_eq!(loaded.get_stale("/repo/a"), Some("old summary"));
     }
@@ -354,7 +397,7 @@ mod tests {
         cache.insert("/repo/a", "k", "from the old command");
         save_cache(&io, "/repo", &cache).unwrap();
 
-        let loaded = load_cache(&io, "/repo", &command_hash("./new.sh"));
+        let loaded = loaded(&io, "/repo", &command_hash("./new.sh"));
         assert!(loaded.entries.is_empty());
         assert_eq!(loaded.command_hash, command_hash("./new.sh"));
     }
@@ -367,9 +410,7 @@ mod tests {
         let io = io_for(&fx);
         let path = cache_file_path(&io, "/repo").unwrap();
         std::fs::write(&path, "{not json").unwrap();
-        assert!(load_cache(&io, "/repo", &command_hash("c"))
-            .entries
-            .is_empty());
+        assert!(loaded(&io, "/repo", &command_hash("c")).entries.is_empty());
     }
 
     #[test]
@@ -382,14 +423,14 @@ mod tests {
             r#"{"version":99,"command_hash":"x","entries":{"/a":{"key":"k","summary":"s"}}}"#,
         )
         .unwrap();
-        assert!(load_cache(&io, "/repo", "x").entries.is_empty());
+        assert!(loaded(&io, "/repo", "x").entries.is_empty());
     }
 
     #[test]
     fn a_missing_file_loads_as_empty() {
         let fx = Fixture::new();
         let io = io_for(&fx);
-        assert!(load_cache(&io, "/never-written", "x").entries.is_empty());
+        assert!(loaded(&io, "/never-written", "x").entries.is_empty());
     }
 
     /// What it guarantees: the file cannot grow without bound as worktrees come
@@ -507,7 +548,7 @@ mod tests {
             format!(r#"{{"version":1,"command_hash":"h","entries":{{}},"pad":"{filler}"}}"#),
         )
         .unwrap();
-        assert!(load_cache(&io, "/repo", "h").entries.is_empty());
+        assert!(loaded(&io, "/repo", "h").entries.is_empty());
     }
 
     #[test]
@@ -517,10 +558,7 @@ mod tests {
         let mut cache = SummaryCache::empty("h");
         cache.insert("/repo/a", "k", "kept");
         save_cache(&io, "/repo", &cache).unwrap();
-        assert_eq!(
-            load_cache(&io, "/repo", "h").get("/repo/a", "k"),
-            Some("kept")
-        );
+        assert_eq!(loaded(&io, "/repo", "h").get("/repo/a", "k"), Some("kept"));
     }
 
     #[test]

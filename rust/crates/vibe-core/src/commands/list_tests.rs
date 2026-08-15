@@ -35,6 +35,11 @@ struct ListGit {
     failing_status: Vec<String>,
     /// Answer for `git log -1` on a detached worktree, as `(unix, iso)`.
     detached_log: Option<(i64, String)>,
+    /// Make the batched `for-each-ref` call FAIL outright, standing in for a
+    /// git that could not enumerate refs at all (a corrupt refs store, a
+    /// permission problem). Distinct from "no branch has a ref", which the same
+    /// call reports as an empty answer.
+    fail_for_each_ref: bool,
     default_branch: String,
     calls: RefCell<Vec<Vec<String>>>,
 }
@@ -64,6 +69,7 @@ impl ListGit {
             statuses: Vec::new(),
             failing_status: Vec::new(),
             detached_log: None,
+            fail_for_each_ref: false,
             default_branch: "main".to_string(),
             calls: RefCell::new(Vec::new()),
         }
@@ -142,6 +148,12 @@ impl GitRunner for ListGit {
             return Ok(self.porcelain.clone());
         }
         if args.first() == Some(&"for-each-ref") {
+            if self.fail_for_each_ref {
+                return Err(VibeError::GitOperation {
+                    command: args.join(" "),
+                    message: "failed: cannot read refs".to_string(),
+                });
+            }
             // Only the branches actually asked for, matching git's behaviour of
             // silently omitting a pattern that matches nothing.
             let wanted: Vec<&str> = args[2..].to_vec();
@@ -1643,4 +1655,120 @@ fn force_color_does_not_reintroduce_escapes_into_captured_warnings() {
         .to_string();
     assert!(!warning.contains('\u{fffd}'), "got: {warning:?}");
     assert_eq!(warning.matches('\u{1b}').count(), 2, "got: {warning:?}");
+}
+
+/// What it guarantees: a run whose batched ref lookup failed neither trusts nor
+/// writes the summary cache.
+///
+/// A failed `git for-each-ref` returns an empty map, which is indistinguishable
+/// from "no branch has an upstream" — so BASE falls back to the default branch
+/// for every row. That guess frequently reproduces the base a branch USED to
+/// have, so the key matches an entry describing a different upstream and the
+/// stale summary is shown with nothing to signal the degradation.
+#[test]
+fn a_failed_ref_lookup_neither_hits_nor_writes_the_cache() {
+    let fixture = SummaryFixture::trusted(SUMMARY_TOML);
+
+    // A healthy run: `main` has no upstream, so BASE is the default branch and
+    // the summary is cached against it.
+    let healthy = fixture.git(&[]).with_ref("main", 60, None);
+    let first = FakeSummaryRunner::with_stdout(r#"{"main":"cached while healthy"}"#);
+    fixture.run(&healthy, &first, false).unwrap();
+    assert_eq!(first.calls().len(), 1);
+
+    // Same repository, but `for-each-ref` now fails outright. BASE degrades to
+    // the very same default branch, so the key is byte-identical — only the
+    // degradation flag can prevent the hit.
+    let mut degraded = fixture.git(&[]);
+    degraded.fail_for_each_ref = true;
+    let second = FakeSummaryRunner::with_stdout(r#"{"main":"asked again"}"#);
+    let result = fixture.run(&degraded, &second, false).unwrap();
+    assert_eq!(result, Outcome::none());
+    assert_eq!(
+        second.calls().len(),
+        1,
+        "a degraded run must not trust the cache"
+    );
+
+    // Nor may it write: the entry it would store is keyed on a guessed base.
+    let cache = crate::summary::load_cache(
+        &fixture.io,
+        &fixture.main_path,
+        &crate::summary::command_hash("./summarize.sh"),
+    )
+    .cache;
+    assert_eq!(
+        cache.get_stale(&fixture.main_path),
+        Some("cached while healthy"),
+        "the degraded answer must not overwrite the healthy entry"
+    );
+}
+
+/// What it guarantees: the opt-out is scoped to the degradation. Once the ref
+/// lookup succeeds again, the cache is used normally.
+#[test]
+fn a_recovered_ref_lookup_uses_the_cache_again() {
+    let fixture = SummaryFixture::trusted(SUMMARY_TOML);
+    let healthy = fixture.git(&[]).with_ref("main", 60, None);
+
+    let first = FakeSummaryRunner::with_stdout(r#"{"main":"cached"}"#);
+    fixture.run(&healthy, &first, false).unwrap();
+    assert_eq!(first.calls().len(), 1);
+
+    let healthy_again = fixture.git(&[]).with_ref("main", 60, None);
+    let second = FakeSummaryRunner::with_stdout(r#"{"main":"should not be asked"}"#);
+    fixture.run(&healthy_again, &second, false).unwrap();
+    assert_eq!(second.calls().len(), 0, "a healthy run must hit the cache");
+}
+
+/// What it guarantees: a detached row is unaffected. Its base is `None` by
+/// construction on every run, degraded or not, so its key never moves and
+/// excluding it would cost a spawn for no benefit.
+#[test]
+fn a_failed_ref_lookup_does_not_disturb_a_detached_row() {
+    let fixture = SummaryFixture::trusted(SUMMARY_TOML);
+    let detached = format!("{}-det", fixture.main_path);
+
+    let mut git = ListGit::with_optional_branches(&[
+        (fixture.main_path.as_str(), Some("main")),
+        (detached.as_str(), None),
+    ]);
+    git.detached_log = Some((NOW_SECS - 60, "iso".to_string()));
+
+    // The detached row's name is its directory BASENAME, which is what the
+    // command must answer under for it to be cached at all.
+    let det_name = std::path::Path::new(&detached)
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let first = FakeSummaryRunner::with_stdout(&format!(r#"{{"main":"m","{det_name}":"d"}}"#));
+    fixture.run(&git, &first, false).unwrap();
+
+    // Now the ref lookup fails. The branch row re-asks; the detached row does
+    // not have to, so it is answered from the cache.
+    let mut degraded = ListGit::with_optional_branches(&[
+        (fixture.main_path.as_str(), Some("main")),
+        (detached.as_str(), None),
+    ]);
+    degraded.detached_log = Some((NOW_SECS - 60, "iso".to_string()));
+    degraded.fail_for_each_ref = true;
+
+    let second = FakeSummaryRunner::with_stdout(r#"{"main":"m2"}"#);
+    let payload_names = {
+        fixture.run(&degraded, &second, false).unwrap();
+        let payload: serde_json::Value =
+            serde_json::from_str(&second.calls()[0].stdin_payload).unwrap();
+        payload["worktrees"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|w| w["name"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        payload_names,
+        vec!["main"],
+        "only the branch row degrades; the detached row stays cached"
+    );
 }

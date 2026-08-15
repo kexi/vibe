@@ -25,6 +25,12 @@ fn uncacheable_target(name: &str, path: &str, key: &str) -> SummaryTarget {
     }
 }
 
+/// The cache itself, for the assertions that do not care whether the file
+/// was writable (see [`LoadedCache`]).
+fn loaded(io: &FakeIo, repo: &str, hash: &str) -> SummaryCache {
+    load_cache(io, repo, hash).cache
+}
+
 fn io_for(fx: &Fixture) -> FakeIo {
     FakeIo::new().with_env("HOME", fx.path().to_str().unwrap())
 }
@@ -221,7 +227,7 @@ fn entries_for_worktrees_that_are_gone_are_pruned_on_write() {
     let runner2 = FakeSummaryRunner::with_stdout("{}");
     resolve(&io, &runner2, &[target("main", "/repo/main", "k")]);
 
-    let cache = load_cache(&io, "/repo", &command_hash("./summary.sh"));
+    let cache = loaded(&io, "/repo", &command_hash("./summary.sh"));
     assert_eq!(cache.entries.len(), 1);
     assert!(cache.entries.contains_key("/repo/main"));
 }
@@ -335,7 +341,7 @@ fn a_missing_name_produces_no_summary_and_no_cache_entry() {
     let result = resolve(&io, &runner, &targets);
     assert!(!result.by_path.contains_key("/repo/a"));
 
-    let cache = load_cache(&io, "/repo", &command_hash("./summary.sh"));
+    let cache = loaded(&io, "/repo", &command_hash("./summary.sh"));
     assert!(!cache.entries.contains_key("/repo/a"));
 
     // The next run asks about it again.
@@ -531,7 +537,7 @@ fn the_stored_summary_is_the_truncated_one() {
     let runner = FakeSummaryRunner::with_stdout(r#"{"main":"line one\nline two"}"#);
     resolve(&io, &runner, &[target("main", "/repo/main", "k")]);
 
-    let cache = load_cache(&io, "/repo", &command_hash("./summary.sh"));
+    let cache = loaded(&io, "/repo", &command_hash("./summary.sh"));
     assert_eq!(cache.get("/repo/main", "k"), Some("line one"));
 }
 
@@ -583,7 +589,7 @@ fn a_worktree_with_an_unreadable_status_is_not_stored() {
     // The answer is still used for THIS run.
     assert_eq!(result.by_path.get("/repo/main").unwrap(), "answered anyway");
     // But nothing was persisted under a key that does not describe the worktree.
-    let cache = load_cache(&io, "/repo", &command_hash("./summary.sh"));
+    let cache = loaded(&io, "/repo", &command_hash("./summary.sh"));
     assert!(
         !cache.entries.contains_key("/repo/main"),
         "an untrustworthy key must not be written: {:?}",
@@ -607,7 +613,7 @@ fn an_unreadable_status_does_not_disable_the_cache_for_other_worktrees() {
         ],
     );
 
-    let cache = load_cache(&io, "/repo", &command_hash("./summary.sh"));
+    let cache = loaded(&io, "/repo", &command_hash("./summary.sh"));
     assert!(!cache.entries.contains_key("/repo/main"));
     assert_eq!(cache.get("/repo/a", "k"), Some("a"));
 }
@@ -635,7 +641,7 @@ fn a_failing_command_still_prunes_entries_for_deleted_worktrees() {
         ],
     );
     assert_eq!(
-        load_cache(&io, "/repo", &command_hash("./summary.sh"))
+        loaded(&io, "/repo", &command_hash("./summary.sh"))
             .entries
             .len(),
         2
@@ -647,11 +653,81 @@ fn a_failing_command_still_prunes_entries_for_deleted_worktrees() {
     let result = resolve(&io, &failing, &[target("main", "/repo/main", "k2")]);
     assert!(!result.warnings.is_empty(), "the failure is still reported");
 
-    let cache = load_cache(&io, "/repo", &command_hash("./summary.sh"));
+    let cache = loaded(&io, "/repo", &command_hash("./summary.sh"));
     assert!(
         !cache.entries.contains_key("/repo/a"),
         "the deleted worktree must be pruned even on the failure path"
     );
     // And the surviving entry is untouched, so the stale fallback keeps working.
     assert_eq!(cache.get_stale("/repo/main"), Some("m"));
+}
+
+// --- an unreadable cache file is preserved, not clobbered ------------------
+
+/// What it guarantees: a cache file that EXISTS but cannot be read is left
+/// exactly as it was.
+///
+/// Load degrades to an empty cache either way, so without distinguishing the
+/// reason the write-back would replace intact content with `{}` — destroying
+/// the stale fallback a failing command depends on, over a condition (a
+/// permission blip, a transient I/O error) that may clear on the next run.
+#[cfg(unix)]
+#[test]
+fn an_unreadable_cache_file_is_not_overwritten() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fx = Fixture::new();
+    let io = io_for(&fx);
+
+    // Populate the cache normally.
+    let first = FakeSummaryRunner::with_stdout(r#"{"main":"valuable summary"}"#);
+    resolve(&io, &first, &[target("main", "/repo/main", "k")]);
+    let path = crate::config_path::ensure_cache_subdir(&io, "summaries")
+        .unwrap()
+        .join(format!("{}.json", crate::hash::hash_content(b"/repo")));
+    let before = std::fs::read(&path).unwrap();
+    assert!(!before.is_empty());
+
+    // Write-only: present, but unreadable.
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o200)).unwrap();
+
+    let second = FakeSummaryRunner::with_stdout(r#"{"main":"regenerated"}"#);
+    let result = resolve(&io, &second, &[target("main", "/repo/main", "k")]);
+    // The run still works — it just cannot consult the cache.
+    assert_eq!(second.calls().len(), 1);
+    assert_eq!(result.by_path.get("/repo/main").unwrap(), "regenerated");
+
+    // And the file is byte-identical: nothing was written over it.
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        before,
+        "an unreadable cache must survive the run untouched"
+    );
+    // Which means the fallback asset is still there once the condition clears.
+    assert_eq!(
+        loaded(&io, "/repo", &command_hash("./summary.sh")).get_stale("/repo/main"),
+        Some("valuable summary")
+    );
+}
+
+/// What it guarantees: the preservation is scoped to UNREADABLE files. A
+/// corrupt or absent one carries no value, so it is still replaced — otherwise
+/// a single bad byte would wedge the cache permanently.
+#[test]
+fn a_corrupt_cache_file_is_still_replaced() {
+    let fx = Fixture::new();
+    let io = io_for(&fx);
+    let dir = crate::config_path::ensure_cache_subdir(&io, "summaries").unwrap();
+    let path = dir.join(format!("{}.json", crate::hash::hash_content(b"/repo")));
+    std::fs::write(&path, "{ truncated").unwrap();
+
+    let runner = FakeSummaryRunner::with_stdout(r#"{"main":"fresh"}"#);
+    resolve(&io, &runner, &[target("main", "/repo/main", "k")]);
+
+    assert_eq!(
+        loaded(&io, "/repo", &command_hash("./summary.sh")).get("/repo/main", "k"),
+        Some("fresh"),
+        "a worthless file must not block the write-back"
+    );
 }

@@ -70,7 +70,9 @@ use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::time::Duration;
 
-pub use cache::{command_hash, entry_key, load_cache, save_cache, EntryKeyParts, SummaryCache};
+pub use cache::{
+    command_hash, entry_key, load_cache, save_cache, EntryKeyParts, LoadedCache, SummaryCache,
+};
 pub use runner::{RealSummaryRunner, SummaryOutput};
 
 #[cfg(any(test, feature = "test-util"))]
@@ -146,7 +148,10 @@ pub fn resolve_summaries<I: Io, R: SummaryRunner>(
     let mut result = SummaryResult::default();
 
     let hash = command_hash(request.command);
-    let mut cache = load_cache(io, request.main_worktree_path, &hash);
+    let LoadedCache {
+        mut cache,
+        writable,
+    } = load_cache(io, request.main_worktree_path, &hash);
 
     // Split into hits (answered from disk) and misses (must be asked for). A
     // target whose key cannot be trusted skips the lookup entirely — see
@@ -184,7 +189,7 @@ pub fn resolve_summaries<I: Io, R: SummaryRunner>(
         // ambiguous. Either way the command must not run — but the prune still
         // has to happen, or a worktree removed while its summary was cached
         // would keep its entry for as long as nothing else was ever asked.
-        persist(io, request, &mut cache, opts);
+        persist(io, request, &mut cache, writable, opts);
         return result;
     }
 
@@ -216,7 +221,7 @@ pub fn resolve_summaries<I: Io, R: SummaryRunner>(
             // command keeps failing — which for a misconfigured command is
             // forever. `persist` only ever removes on this path, so a failing
             // command cannot corrupt what is already cached.
-            persist(io, request, &mut cache, opts);
+            persist(io, request, &mut cache, writable, opts);
             return result;
         }
     };
@@ -236,7 +241,7 @@ pub fn resolve_summaries<I: Io, R: SummaryRunner>(
         result.by_path.insert(target.path.clone(), summary);
     }
 
-    persist(io, request, &mut cache, opts);
+    persist(io, request, &mut cache, writable, opts);
     result
 }
 
@@ -245,7 +250,26 @@ pub fn resolve_summaries<I: Io, R: SummaryRunner>(
 /// Called on every path that consulted the cache, including the full-hit one:
 /// otherwise a worktree deleted while its summary was cached would keep its
 /// entry for as long as no other worktree ever changed.
-fn persist<I: Io>(io: &I, request: &SummaryRequest, cache: &mut SummaryCache, opts: OutputOptions) {
+fn persist<I: Io>(
+    io: &I,
+    request: &SummaryRequest,
+    cache: &mut SummaryCache,
+    writable: bool,
+    opts: OutputOptions,
+) {
+    if !writable {
+        // The file exists but could not be read, so `cache` is empty for a
+        // reason that says nothing about what is IN it. Writing would replace
+        // content we never saw — and that content is precisely the stale
+        // fallback a failing command relies on. Skipping the write costs a
+        // regeneration once the condition clears; doing it costs the data.
+        verbose_log(
+            io,
+            "Summary cache is unreadable; leaving it untouched this run.",
+            opts,
+        );
+        return;
+    }
     let live: Vec<String> = request.targets.iter().map(|t| t.path.clone()).collect();
     cache.retain_paths(&live);
     if let Err(e) = save_cache(io, request.main_worktree_path, cache) {
