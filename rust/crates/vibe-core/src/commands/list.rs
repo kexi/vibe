@@ -32,6 +32,16 @@
 //! the same world, and `jump`'s selection prompt is MRU-ordered. Age ordering
 //! is available as an opt-in sort instead.
 //!
+//! # Filtering, sorting and limiting
+//!
+//! Selection is a pipeline of pure functions applied in a fixed order:
+//! **filter (AND) → sort → reverse → limit**. Reversing before limiting is what
+//! makes "the five oldest worktrees" expressible as
+//! `--sort age --reverse --limit 5`; the other order would take the five
+//! newest and then print them backwards, which is a different set. Every stage
+//! operates on the already-enriched rows, so a filter and the JSON payload can
+//! never disagree about a worktree's status or base.
+//!
 //! # Injection surface
 //!
 //! Branch names reach git as *operands*, never as bare arguments that could be
@@ -130,6 +140,15 @@ pub struct ListEntry {
     /// seconds, instead of making the renderer re-parse an ISO string.
     #[serde(skip)]
     pub age: Option<String>,
+    /// The tip commit's committer date in epoch seconds.
+    ///
+    /// Not serialized for the same reason as `age`: `last_commit_at` already
+    /// publishes the instant, in a format that is unambiguous without knowing
+    /// which epoch we mean. It is carried on the row so `--recent`/`--stale`
+    /// and `--sort age` can compare integers instead of re-parsing an ISO
+    /// string that git, not we, formatted.
+    #[serde(skip)]
+    pub commit_secs: Option<i64>,
 }
 
 /// Inputs `list` pulls from the binary.
@@ -171,8 +190,60 @@ impl DeferredWarnings {
     }
 }
 
-/// Run `vibe list [--json]`.
-pub fn list_command<I, G>(deps: &ListDeps<I, G>, json: bool, opts: OutputOptions) -> Result<Outcome>
+/// The sort key requested by `--sort`.
+///
+/// Deliberately NOT `Option<ListSort>` folded into a "default" variant: the
+/// absence of `--sort` means "keep the current-first MRU order", which is not a
+/// key at all, and modelling it as one would force every comparator to carry a
+/// branch for a case it can never see.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListSort {
+    /// Newest tip commit first.
+    Age,
+    /// Lexicographic by [`ListEntry::name`].
+    Name,
+    /// Dirty worktrees first, most changed first.
+    Status,
+}
+
+/// Everything `--dirty`/`--clean`/`--base`/`--recent`/`--stale` ask for.
+///
+/// `--dirty` and `--clean` are two booleans rather than one tri-state because
+/// clap already proves they cannot both be set (`conflicts_with`), and a
+/// tri-state would move that guarantee into a runtime invariant this module
+/// would have to restate.
+#[derive(Debug, Default, Clone)]
+pub struct ListFilter {
+    pub dirty: bool,
+    pub clean: bool,
+    /// Match rows whose resolved BASE equals this branch. Compared after
+    /// stripping a remote prefix from BOTH sides, so `--base origin/develop`
+    /// and `--base develop` select the same rows.
+    pub base: Option<String>,
+    /// Keep rows whose tip commit is no older than this.
+    pub recent: Option<std::time::Duration>,
+    /// Keep rows whose tip commit is strictly older than this.
+    pub stale: Option<std::time::Duration>,
+}
+
+/// The full selection request: what to keep, in what order, and how much.
+#[derive(Debug, Default, Clone)]
+pub struct ListOptions {
+    pub filter: ListFilter,
+    pub sort: Option<ListSort>,
+    pub reverse: bool,
+    /// Maximum rows to display. Guaranteed `>= 1` by the CLI's value parser, so
+    /// this module never has to decide what `--limit 0` would mean.
+    pub limit: Option<usize>,
+}
+
+/// Run `vibe list [--json]` with the given selection.
+pub fn list_command<I, G>(
+    deps: &ListDeps<I, G>,
+    json: bool,
+    options: &ListOptions,
+    opts: OutputOptions,
+) -> Result<Outcome>
 where
     I: Io,
     G: GitRunner,
@@ -187,6 +258,10 @@ where
 
     let mut warnings = DeferredWarnings::default();
     let entries = collect_entries(deps, &mut warnings)?;
+    // Applied to BOTH output modes: `--json` is a rendering choice, not a
+    // different query, so a script and a human passing the same flags must be
+    // looking at the same set of worktrees.
+    let entries = select_entries(entries, options, deps.now_ms / 1_000);
 
     if json {
         let text = serde_json::to_string_pretty(&entries).map_err(|e| {
@@ -212,7 +287,17 @@ where
     );
 
     if entries.is_empty() {
-        report_log(deps.io, "No worktrees found.");
+        // Distinguished on purpose: "no worktrees" and "your filter matched
+        // nothing" call for different next actions, and reporting the first when
+        // the second is true reads as a broken repository.
+        report_log(
+            deps.io,
+            if options.filter.is_active() {
+                "No worktrees matched the given filters."
+            } else {
+                "No worktrees found."
+            },
+        );
         return Ok(Outcome::none());
     }
 
@@ -260,6 +345,200 @@ where
     // everything else because `sort_by_key` is stable.
     entries.sort_by_key(|e| !e.current);
     Ok(entries)
+}
+
+impl ListFilter {
+    /// Whether any filter was requested at all.
+    fn is_active(&self) -> bool {
+        self.dirty
+            || self.clean
+            || self.base.is_some()
+            || self.recent.is_some()
+            || self.stale.is_some()
+    }
+}
+
+/// Apply the whole selection pipeline: **filter → sort → reverse → limit**.
+///
+/// Pure: given the same rows, options and instant it produces the same answer,
+/// which is what lets the whole flag surface be tested without a git or an
+/// [`Io`].
+pub fn select_entries(
+    entries: Vec<ListEntry>,
+    options: &ListOptions,
+    now_secs: i64,
+) -> Vec<ListEntry> {
+    let mut entries = apply_filters(entries, &options.filter, now_secs);
+    apply_sort(&mut entries, options.sort);
+    if options.reverse {
+        // Reverses the FINAL display order, whatever produced it — including
+        // the default current-first MRU order, so `--reverse` alone is a
+        // meaningful request rather than an error.
+        entries.reverse();
+        if options.sort == Some(ListSort::Age) {
+            // ...except for the rows with no age. `--sort age --reverse` means
+            // "oldest first"; a row whose tip commit is unknown is not the
+            // oldest worktree, it is a worktree the question does not apply to,
+            // so it stays at the bottom in both directions — and, crucially,
+            // `--limit 5` then still returns five *answers*.
+            pin_unknown_age_last(&mut entries);
+        }
+    }
+    if let Some(limit) = options.limit {
+        entries.truncate(limit);
+    }
+    entries
+}
+
+/// Move every row with no known commit time to the end, preserving the relative
+/// order within both groups.
+fn pin_unknown_age_last(entries: &mut Vec<ListEntry>) {
+    let (known, unknown): (Vec<ListEntry>, Vec<ListEntry>) = std::mem::take(entries)
+        .into_iter()
+        .partition(|e| e.commit_secs.is_some());
+    entries.extend(known);
+    entries.extend(unknown);
+}
+
+/// Keep the rows matching EVERY requested predicate.
+///
+/// AND, not OR: each flag narrows the question the user is asking
+/// (`--recent 1w --dirty` is "what did I touch this week and leave unfinished"),
+/// and an OR would make adding a flag return *more* rows, which no other filter
+/// surface behaves like.
+pub fn apply_filters(
+    entries: Vec<ListEntry>,
+    filter: &ListFilter,
+    now_secs: i64,
+) -> Vec<ListEntry> {
+    entries
+        .into_iter()
+        .filter(|e| matches_filter(e, filter, now_secs))
+        .collect()
+}
+
+/// Whether one row satisfies every active predicate.
+fn matches_filter(entry: &ListEntry, filter: &ListFilter, now_secs: i64) -> bool {
+    // An UNKNOWN status is excluded by BOTH `--dirty` and `--clean`. Defaulting
+    // it either way would put a worktree git could not read into an answer that
+    // claims to know its state; a user asking "what is dirty" is better served
+    // by a short list than by a confident wrong one (the unfiltered listing
+    // still shows the row, with `-`, and warns).
+    if filter.dirty && entry.status.as_deref() != Some(STATUS_DIRTY) {
+        return false;
+    }
+    if filter.clean && entry.status.as_deref() != Some(STATUS_CLEAN) {
+        return false;
+    }
+
+    if let Some(wanted) = &filter.base {
+        // Both sides are stripped, so the argument may be written either as the
+        // remote-tracking ref the user sees in `git branch -vv` or as the plain
+        // branch name the BASE column prints.
+        let wanted = strip_remote_prefix(wanted);
+        // A detached HEAD has no base at all, so it is excluded by any
+        // `--base`, never matched by an "unknown means anything" rule.
+        match &entry.base {
+            Some(base) => {
+                if *base != wanted {
+                    return false;
+                }
+            }
+            None => return false,
+        }
+    }
+
+    // A row with no tip commit (an unborn branch, or a worktree whose log could
+    // not be read) matches NEITHER `--recent` nor `--stale`: both questions are
+    // about a commit date this row does not have, and answering them would mean
+    // inventing one.
+    if let Some(window) = filter.recent {
+        let Some(commit) = entry.commit_secs else {
+            return false;
+        };
+        if !is_recent(now_secs, commit, window) {
+            return false;
+        }
+    }
+    if let Some(window) = filter.stale {
+        let Some(commit) = entry.commit_secs else {
+            return false;
+        };
+        if is_recent(now_secs, commit, window) {
+            return false;
+        }
+    }
+
+    true
+}
+
+/// `now − commit <= window`, the exact complement of "stale".
+///
+/// `saturating_sub` makes a commit dated in the FUTURE (routine clock skew
+/// between the machine that made it and this one) read as elapsed `0` — i.e.
+/// recent — matching what the AGE column already renders as `now`. The two must
+/// agree, or `--recent 1h` would hide a row the table calls `now`.
+fn is_recent(now_secs: i64, commit_secs: i64, window: std::time::Duration) -> bool {
+    let elapsed = now_secs.saturating_sub(commit_secs).max(0);
+    // `as i64` is safe for every duration the parser can build: it rejects
+    // anything above `u64::MAX` seconds only, so clamp rather than wrap.
+    let window_secs = i64::try_from(window.as_secs()).unwrap_or(i64::MAX);
+    elapsed <= window_secs
+}
+
+/// Reorder the rows in place for `--sort`, leaving them untouched when no sort
+/// was requested.
+///
+/// A requested sort REPLACES the default ordering entirely, including the
+/// current-worktree-first rule: `--sort age` promises the newest row first, and
+/// silently exempting one row from that promise would make the output impossible
+/// to reason about (and would move whichever worktree you happened to be in).
+///
+/// Every comparator is total and ends in a name tie-break, so the result does
+/// not depend on the incoming MRU order.
+pub fn apply_sort(entries: &mut [ListEntry], sort: Option<ListSort>) {
+    let Some(sort) = sort else {
+        return;
+    };
+    match sort {
+        // Newest first. `None` ages sort AFTER every known age — see
+        // `age_rank`.
+        ListSort::Age => entries.sort_by(|a, b| {
+            age_rank(a)
+                .cmp(&age_rank(b))
+                .then_with(|| a.name.cmp(&b.name))
+        }),
+        ListSort::Name => entries.sort_by(|a, b| a.name.cmp(&b.name)),
+        // Dirty first, then most-changed first, then by name.
+        ListSort::Status => entries.sort_by(|a, b| {
+            status_rank(a)
+                .cmp(&status_rank(b))
+                .then_with(|| b.dirty_files.unwrap_or(0).cmp(&a.dirty_files.unwrap_or(0)))
+                .then_with(|| a.name.cmp(&b.name))
+        }),
+    }
+}
+
+/// Sort key for `--sort age`: newest first, unknown last.
+///
+/// Encoded as `(is_unknown, negated_commit_time)` so a single ascending sort
+/// expresses both rules. `--reverse` would flip the unknown group to the top,
+/// which [`pin_unknown_age_last`] undoes.
+fn age_rank(entry: &ListEntry) -> (bool, i64) {
+    match entry.commit_secs {
+        // Negated so a LARGER timestamp (more recent) sorts first.
+        Some(secs) => (false, secs.saturating_neg()),
+        None => (true, 0),
+    }
+}
+
+/// Sort key for `--sort status`: dirty (0) before clean (1) before unknown (2).
+fn status_rank(entry: &ListEntry) -> u8 {
+    match entry.status.as_deref() {
+        Some(STATUS_DIRTY) => 0,
+        Some(STATUS_CLEAN) => 1,
+        _ => 2,
+    }
 }
 
 /// Turn parsed worktrees into rows, filling BASE / AGE / STATUS from git.
@@ -370,7 +649,8 @@ fn enrich_entries<G: GitRunner>(
                 last_commit_at: commit.as_ref().map(|(_, iso)| iso.clone()),
                 status,
                 dirty_files,
-                age: commit.map(|(unix, _)| format_age(now_secs, unix)),
+                age: commit.as_ref().map(|(unix, _)| format_age(now_secs, *unix)),
+                commit_secs: commit.map(|(unix, _)| unix),
             }
         })
         .collect()

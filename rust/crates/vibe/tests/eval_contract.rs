@@ -1264,3 +1264,216 @@ fn doctor_without_any_profile_root_exits_one_with_empty_stdout() {
     assert!(stderr.contains("Error:"), "got: {stderr:?}");
     assert!(stderr.contains("HOME"), "got: {stderr:?}");
 }
+
+/// `--recent` and `--stale` are contradictory questions about the same commit
+/// date. clap rejects the pair at parse time, and — like every other parse
+/// failure — the eval channel must stay byte-exact empty: the wrapper runs
+/// `eval "$(command vibe "$@")"`, so a diagnostic that leaked to stdout would be
+/// executed as a shell command.
+#[test]
+fn list_recent_and_stale_together_exits_two_with_empty_stdout() {
+    let home = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+
+    // clap's conflict check runs before any git work, so no repo is needed.
+    let out = run_vibe(
+        tmp.path(),
+        home.path(),
+        &["list", "--recent", "1d", "--stale", "1d"],
+    );
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "conflicting filters must exit 2; stderr={stderr:?}"
+    );
+    assert!(
+        stdout.is_empty(),
+        "parse error must keep the eval channel empty: {stdout:?}"
+    );
+    assert!(
+        stderr.contains("--stale") && stderr.contains("--recent"),
+        "the conflict must name both flags: {stderr:?}"
+    );
+}
+
+/// The same for `--dirty` / `--clean`: a worktree cannot be both, so asking for
+/// both is a mistake worth reporting rather than an empty listing.
+#[test]
+fn list_dirty_and_clean_together_exits_two_with_empty_stdout() {
+    let home = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+
+    let out = run_vibe(tmp.path(), home.path(), &["list", "--dirty", "--clean"]);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "conflicting filters must exit 2; stderr={stderr:?}"
+    );
+    assert!(
+        stdout.is_empty(),
+        "parse error must keep the eval channel empty: {stdout:?}"
+    );
+    assert!(
+        stderr.contains("--dirty") && stderr.contains("--clean"),
+        "the conflict must name both flags: {stderr:?}"
+    );
+}
+
+/// A malformed duration is rejected by the value parser (exit 2) with the
+/// core's own message, and never reaches the command. Includes `6mo`, which the
+/// AGE column *displays* but the filter grammar deliberately does not accept.
+#[test]
+fn list_rejects_a_malformed_duration_with_exit_two() {
+    let home = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+
+    for value in ["", "30", "1.5d", "6mo", "0d", "abc"] {
+        let out = run_vibe(tmp.path(), home.path(), &["list", "--recent", value]);
+        let stdout = String::from_utf8(out.stdout).unwrap();
+        let stderr = String::from_utf8(out.stderr).unwrap();
+
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "`--recent {value}` must exit 2; stderr={stderr:?}"
+        );
+        assert!(
+            stdout.is_empty(),
+            "parse error must keep the eval channel empty: {stdout:?}"
+        );
+        assert!(
+            !stderr.is_empty(),
+            "`--recent {value}` must explain itself on stderr"
+        );
+    }
+}
+
+/// `--limit 0` is rejected rather than silently printing nothing: an empty
+/// listing would be indistinguishable from a repository with no worktrees, and
+/// `0` is far more often an unexpanded shell variable than a real request.
+#[test]
+fn list_rejects_a_zero_limit_with_exit_two() {
+    let home = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+
+    let out = run_vibe(tmp.path(), home.path(), &["list", "--limit", "0"]);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "`--limit 0` must exit 2; stderr={stderr:?}"
+    );
+    assert!(
+        stdout.is_empty(),
+        "parse error must keep the eval channel empty: {stdout:?}"
+    );
+    assert!(
+        stderr.contains("--limit must be at least 1"),
+        "got: {stderr:?}"
+    );
+}
+
+/// An unknown `--sort` key is a clap ValueEnum rejection, and the error names
+/// the accepted values so the user does not have to consult the docs.
+#[test]
+fn list_rejects_an_unknown_sort_key_with_exit_two() {
+    let home = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+
+    let out = run_vibe(tmp.path(), home.path(), &["list", "--sort", "bogus"]);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "an unknown sort key must exit 2; stderr={stderr:?}"
+    );
+    assert!(
+        stdout.is_empty(),
+        "parse error must keep the eval channel empty: {stdout:?}"
+    );
+    assert!(
+        stderr.contains("age") && stderr.contains("name") && stderr.contains("status"),
+        "the error must list the accepted keys: {stderr:?}"
+    );
+}
+
+/// The filtered/sorted/limited listing is still a TABLE, so the same stdout
+/// guarantee the unfiltered case has must hold with every flag in play — the
+/// rows are attacker-influenced and would be executed if they reached stdout.
+#[test]
+fn list_with_filters_keeps_stdout_empty() {
+    if !git_available() {
+        eprintln!("skipping: git unavailable");
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let (main_path, _secondary_path) = setup_worktrees(tmp.path(), "feat", "feature");
+
+    for args in [
+        vec!["list", "--sort", "age"],
+        vec!["list", "--sort", "name", "--reverse"],
+        vec!["list", "--clean"],
+        vec!["list", "--recent", "1w"],
+        vec!["list", "--stale", "1w"],
+        vec!["list", "--limit", "1"],
+        vec!["list", "--sort", "age", "--reverse", "--limit", "1"],
+        vec!["list", "--json", "--sort", "status"],
+    ] {
+        let out = run_vibe(&main_path, home.path(), &args);
+        let stdout = String::from_utf8(out.stdout).unwrap();
+        let stderr = String::from_utf8(out.stderr).unwrap();
+
+        assert!(out.status.success(), "{args:?} failed; stderr={stderr:?}");
+        assert!(
+            stdout.is_empty(),
+            "{args:?} leaked to the eval channel: {stdout:?}"
+        );
+    }
+}
+
+/// `--limit` really does bound the listing end to end, and `--json` stays a
+/// parseable document at the bounded size. Proven against a REAL git with two
+/// worktrees so the count is not an artifact of a fake.
+#[test]
+fn list_limit_bounds_the_json_payload() {
+    if !git_available() {
+        eprintln!("skipping: git unavailable");
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let (main_path, _secondary_path) = setup_worktrees(tmp.path(), "feat", "feature");
+
+    let unbounded = run_vibe(&main_path, home.path(), &["list", "--json"]);
+    let unbounded: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(unbounded.stderr).unwrap()).unwrap();
+    assert_eq!(
+        unbounded.as_array().map(Vec::len),
+        Some(2),
+        "the fixture must have two worktrees for the limit to bound anything"
+    );
+
+    let out = run_vibe(&main_path, home.path(), &["list", "--json", "--limit", "1"]);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert!(out.status.success(), "list failed; stderr={stderr:?}");
+    assert!(
+        stdout.is_empty(),
+        "the payload must never reach the eval channel: {stdout:?}"
+    );
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stderr).expect("stderr must be pure JSON");
+    assert_eq!(parsed.as_array().map(Vec::len), Some(1), "got: {parsed}");
+}

@@ -17,6 +17,7 @@ pub mod config_loader;
 pub mod config_path;
 pub mod copy;
 pub mod copy_runner;
+pub mod duration;
 pub mod error;
 pub mod fast_remove;
 pub mod fuzzy;

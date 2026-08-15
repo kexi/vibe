@@ -8,6 +8,8 @@
 //! block, which we handle ourselves.
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use vibe_core::commands::list::ListSort;
+use vibe_core::duration::parse_duration;
 use vibe_core::shell::EvalDialect;
 
 #[derive(Debug, Parser)]
@@ -162,6 +164,71 @@ pub struct ListArgs {
     /// Emit the listing as JSON for scripting and tool integrations.
     #[arg(long)]
     pub json: bool,
+    /// Only worktrees with uncommitted changes.
+    #[arg(long, conflicts_with = "clean")]
+    pub dirty: bool,
+    /// Only worktrees with no uncommitted changes.
+    #[arg(long)]
+    pub clean: bool,
+    /// Only worktrees based on this branch.
+    #[arg(long)]
+    pub base: Option<String>,
+    /// Only worktrees committed to within this duration (e.g. 2d, 1w).
+    #[arg(long, value_parser = parse_duration_arg, conflicts_with = "stale")]
+    pub recent: Option<std::time::Duration>,
+    /// Only worktrees not committed to for this duration (e.g. 30d).
+    #[arg(long, value_parser = parse_duration_arg)]
+    pub stale: Option<std::time::Duration>,
+    /// Sort by age (newest first), name, or status (dirty first).
+    #[arg(long, value_enum)]
+    pub sort: Option<ListSortArg>,
+    /// Reverse the final display order.
+    #[arg(long)]
+    pub reverse: bool,
+    /// Show at most this many worktrees.
+    #[arg(long, value_parser = parse_limit_arg)]
+    pub limit: Option<usize>,
+}
+
+/// clap mirror of [`ListSort`], for the same reason as [`EvalDialectArg`]:
+/// vibe-core carries no clap dependency.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum ListSortArg {
+    Age,
+    Name,
+    Status,
+}
+
+impl From<ListSortArg> for ListSort {
+    fn from(value: ListSortArg) -> Self {
+        match value {
+            ListSortArg::Age => ListSort::Age,
+            ListSortArg::Name => ListSort::Name,
+            ListSortArg::Status => ListSort::Status,
+        }
+    }
+}
+
+/// `value_parser` adapter: clap wants an `Err` that is `Display`, and the core
+/// parser's message is already the user-facing explanation.
+fn parse_duration_arg(value: &str) -> Result<std::time::Duration, String> {
+    parse_duration(value)
+}
+
+/// `--limit` must be at least 1.
+///
+/// Rejected at parse time (exit 2) rather than treated as "show nothing":
+/// `--limit 0` is far more likely a shell variable that expanded to empty than a
+/// deliberate request for no output, and silently printing nothing would look
+/// like the repository has no worktrees.
+fn parse_limit_arg(value: &str) -> Result<usize, String> {
+    let n: usize = value
+        .parse()
+        .map_err(|_| format!("`{value}` is not a positive number"))?;
+    if n == 0 {
+        return Err("--limit must be at least 1".to_string());
+    }
+    Ok(n)
 }
 
 #[derive(Debug, Args)]
@@ -422,6 +489,53 @@ mod consistency_tests {
                 "--eval-dialect spellings drifted for {variant:?}"
             );
         }
+    }
+
+    /// Drift guard for the `list --sort` vocabulary.
+    ///
+    /// The flag-NAME checks above compare long names only, so they would stay
+    /// green if clap gained a fourth sort key that the completion spec's
+    /// candidate list did not know about — the flag would still be offered, just
+    /// never that value, and the omission would be silent. Reading the
+    /// candidates back out of `SUBCOMMANDS` rather than out of the private
+    /// `LIST_SORT_CANDIDATES` const is deliberate: `SUBCOMMANDS` is what the
+    /// fish/zsh generators actually consume, so this also catches the candidate
+    /// list being attached to the wrong flag.
+    #[test]
+    fn list_sort_candidates_match_the_clap_value_enum() {
+        use clap::ValueEnum;
+        use std::collections::BTreeSet;
+        use vibe_core::completion::SUBCOMMANDS;
+
+        let clap_values: BTreeSet<String> = super::ListSortArg::value_variants()
+            .iter()
+            .map(|variant| {
+                variant
+                    .to_possible_value()
+                    .expect("every sort key is selectable")
+                    .get_name()
+                    .to_string()
+            })
+            .collect();
+
+        let spec_values: BTreeSet<String> = SUBCOMMANDS
+            .iter()
+            .find(|c| c.name == "list")
+            .expect("the list subcommand is in the spec")
+            .flags
+            .iter()
+            .find(|f| f.long == "sort")
+            .expect("--sort is declared for list")
+            .value_candidates
+            .expect("--sort must offer its candidate values")
+            .iter()
+            .map(|v| (*v).to_string())
+            .collect();
+
+        assert_eq!(
+            clap_values, spec_values,
+            "list --sort candidates drifted between clap and the completion spec"
+        );
     }
 
     /// Per-subcommand cross-check: each subcommand's clap flags must exactly
