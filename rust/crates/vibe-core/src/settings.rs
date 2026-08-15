@@ -16,6 +16,7 @@
 use crate::git::RepoInfo;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 /// Current on-disk schema version.
 pub const CURRENT_SCHEMA_VERSION: u32 = 3;
@@ -56,12 +57,47 @@ pub struct AllowEntry {
     /// information that is, by definition, absent from those files.
     #[serde(rename = "configSemanticsRev", skip_serializing_if = "Option::is_none")]
     pub config_semantics_rev: Option<u32>,
+    /// Per-hash interpretation revisions, keyed by the content hash the consent
+    /// was given for.
+    ///
+    /// Why not the entry-wide `configSemanticsRev` alone: `hashes` is a HISTORY,
+    /// and a hash matched from anywhere in it grants trust. Stamping only the
+    /// entry means re-trusting a benign edit retroactively certifies every older
+    /// hash — including one whose dormant `*_append` was never reviewed under the
+    /// current rules — so checking out that old revision would run it. The
+    /// revision must therefore be bound to the bytes it was granted for. A hash
+    /// missing from this map falls back to `configSemanticsRev` only when it is
+    /// the sole hash (see [`AllowEntry::semantics_rev_for`]), else revision 0.
+    #[serde(
+        rename = "configSemanticsRevs",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub config_semantics_revs: Option<BTreeMap<String, u32>>,
 }
 
 impl AllowEntry {
     /// The entry's config-interpretation revision, defaulting to 0 (pre-#599).
     pub fn semantics_rev(&self) -> u32 {
         self.config_semantics_rev.unwrap_or(0)
+    }
+
+    /// The interpretation revision consented to for `hash` specifically.
+    ///
+    /// Falls back to the entry-wide revision only for a single-hash entry, where
+    /// the stamp is unambiguously about the one set of bytes present; with a
+    /// history, an unmapped hash predates per-hash tracking and reads as 0.
+    pub fn semantics_rev_for(&self, hash: &str) -> u32 {
+        if let Some(rev) = self
+            .config_semantics_revs
+            .as_ref()
+            .and_then(|m| m.get(hash))
+        {
+            return *rev;
+        }
+        if self.hashes.len() == 1 && self.hashes[0] == hash {
+            return self.semantics_rev();
+        }
+        0
     }
 }
 
@@ -317,14 +353,20 @@ pub fn find_matching_entry<'a>(
 /// Add `hash` to an entry's history with dedup + FIFO eviction. Returns `true`
 /// if the history changed.
 pub fn push_hash_fifo(hashes: &mut Vec<String>, hash: String) -> bool {
+    push_hash_fifo_evicting(hashes, hash).0
+}
+
+/// [`push_hash_fifo`] that also reports the hash evicted by the FIFO cap, so
+/// callers holding per-hash side tables can drop its row instead of leaking it.
+pub fn push_hash_fifo_evicting(hashes: &mut Vec<String>, hash: String) -> (bool, Option<String>) {
     if hashes.contains(&hash) {
-        return false;
+        return (false, None);
     }
     hashes.push(hash);
     if hashes.len() > MAX_HASH_HISTORY {
-        hashes.remove(0); // Drop the oldest (FIFO).
+        return (true, Some(hashes.remove(0))); // Drop the oldest (FIFO).
     }
-    true
+    (true, None)
 }
 
 /// Whether to skip hash verification for an entry: per-entry overrides global,
@@ -368,6 +410,7 @@ mod tests {
             hashes: hashes.iter().map(|s| s.to_string()).collect(),
             skip_hash_check: None,
             config_semantics_rev: None,
+            config_semantics_revs: None,
         }
     }
 
@@ -514,6 +557,7 @@ mod tests {
             hashes: vec![],
             skip_hash_check: None,
             config_semantics_rev: None,
+            config_semantics_revs: None,
         }];
         // remote_url matches even though repo_root differs.
         let info = RepoInfo {

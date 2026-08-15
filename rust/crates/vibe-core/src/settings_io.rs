@@ -11,11 +11,12 @@ use crate::error::{Result, VibeError};
 use crate::hash::hash_content;
 use crate::io::Io;
 use crate::settings::{
-    find_matching_entry, get_schema_version, migrate_settings, push_hash_fifo,
+    find_matching_entry, get_schema_version, migrate_settings, push_hash_fifo_evicting,
     should_skip_hash_check, AllowEntry, RepoId, RepoResolver, VibeSettings, CURRENT_SCHEMA_VERSION,
 };
 use crate::{config_path, output};
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// `$HOME/.config/vibe/settings.json`.
@@ -165,7 +166,6 @@ pub fn verify_trust_and_read(
     let Some(entry) = find_matching_entry(&settings.permissions.allow, &repo_info) else {
         return Ok(TrustVerdict::untrusted());
     };
-    let semantics_rev = Some(entry.semantics_rev());
 
     // Read the file exactly once; all decisions use this content.
     let content = std::fs::read_to_string(vibe_file_path)
@@ -177,20 +177,26 @@ pub fn verify_trust_and_read(
             io,
             &format!("Warning: Hash verification is disabled for {vibe_file_path}"),
         );
+        // Why the entry-wide revision here: with hashing disabled there is no
+        // matched hash to attribute consent to, and the user has explicitly
+        // opted out of content verification for this entry.
         return Ok(TrustVerdict {
             trusted: true,
             content: Some(content),
-            semantics_rev,
+            semantics_rev: Some(entry.semantics_rev()),
         });
     }
 
     let file_hash = hash_content(content.as_bytes());
     let hash_matches = entry.hashes.contains(&file_hash);
     if hash_matches {
+        // The revision is the one recorded for THESE bytes, not the entry's
+        // latest: `hashes` is a history, so a newer re-trust must not
+        // retroactively certify an older, never-reviewed revision of the file.
         return Ok(TrustVerdict {
             trusted: true,
             content: Some(content),
-            semantics_rev,
+            semantics_rev: Some(entry.semantics_rev_for(&file_hash)),
         });
     }
 
@@ -259,11 +265,22 @@ pub fn add_trusted_path(
     match find_matching_entry_mut(&mut settings.permissions.allow, &repo_info) {
         Some(entry) => {
             // Dedup + FIFO ≤ MAX_HASH_HISTORY; no-op if the hash is already known.
-            push_hash_fifo(&mut entry.hashes, hash);
+            let (_, evicted) = push_hash_fifo_evicting(&mut entry.hashes, hash.clone());
             // The user is re-consenting NOW, under the current interpretation
             // rules, so an entry granted before CONFIG_SEMANTICS_REV was raised
             // is brought up to date even when the content hash is unchanged.
             entry.config_semantics_rev = Some(CONFIG_SEMANTICS_REV);
+            // Bind the consent to THESE bytes. Only the hash just approved is
+            // stamped: the other hashes in the history were approved under
+            // whatever revision was current then, and re-trusting one revision of
+            // a file is not consent to the others.
+            let revs = entry
+                .config_semantics_revs
+                .get_or_insert_with(BTreeMap::new);
+            revs.insert(hash, CONFIG_SEMANTICS_REV);
+            if let Some(dropped) = evicted {
+                revs.remove(&dropped); // Keep the map from outliving the history.
+            }
         }
         None => {
             settings.permissions.allow.push(AllowEntry {
@@ -272,9 +289,10 @@ pub fn add_trusted_path(
                     repo_root: Some(repo_info.repo_root.clone()),
                 },
                 relative_path: repo_info.relative_path.clone(),
-                hashes: vec![hash],
+                hashes: vec![hash.clone()],
                 skip_hash_check: None,
                 config_semantics_rev: Some(CONFIG_SEMANTICS_REV),
+                config_semantics_revs: Some(BTreeMap::from([(hash, CONFIG_SEMANTICS_REV)])),
             });
         }
     }
@@ -526,6 +544,7 @@ mod tests {
                 hashes: vec!["h1".into()],
                 skip_hash_check: None,
                 config_semantics_rev: None,
+                config_semantics_revs: None,
             }],
             deny: vec![],
         };
@@ -609,6 +628,7 @@ mod tests {
             hashes: vec![content_hash],
             skip_hash_check: None,
             config_semantics_rev: None,
+            config_semantics_revs: None,
         });
         save_user_settings(&io, &settings, V).unwrap();
 
@@ -650,6 +670,7 @@ mod tests {
             hashes: vec![hash_content(b"trusted = true\n")],
             skip_hash_check: None,
             config_semantics_rev: Some(CONFIG_SEMANTICS_REV),
+            config_semantics_revs: None,
         });
         save_user_settings(&io, &settings, V).unwrap();
 
@@ -699,6 +720,7 @@ mod tests {
             hashes: vec!["stale-hash".into()],
             skip_hash_check: None,
             config_semantics_rev: None,
+            config_semantics_revs: None,
         });
         save_user_settings(&io, &settings, V).unwrap();
 
@@ -867,6 +889,7 @@ mod tests {
             hashes: vec![hash_content(b"trusted = true\n")],
             skip_hash_check: None,
             config_semantics_rev: None,
+            config_semantics_revs: None,
         });
         save_user_settings(&io, &settings, V).unwrap();
 
@@ -879,6 +902,54 @@ mod tests {
             Some(CONFIG_SEMANTICS_REV)
         );
         assert_eq!(loaded.permissions.allow[0].hashes.len(), 1, "hash dedup");
+    }
+
+    #[test]
+    fn add_trusted_path_stamps_only_the_approved_hash() {
+        // Consent is per-bytes: trusting an edited file records the CURRENT
+        // revision for the new hash only, leaving the older hash's recorded
+        // revision untouched so it cannot be silently promoted.
+        let fx = Fixture::new();
+        let io = io_for(fx.path());
+        let file = fx.write("repo/.vibe.toml", "v = 1\n");
+        let resolver = resolver_for(
+            &file,
+            RepoInfo {
+                remote_url: None,
+                repo_root: "/repo".into(),
+                relative_path: ".vibe.toml".into(),
+            },
+        );
+
+        // Pre-existing entry from a pre-#599 trust of `v = 1`: no per-hash map.
+        let mut settings = VibeSettings::default_settings();
+        settings.permissions.allow.push(AllowEntry {
+            repo_id: RepoId {
+                remote_url: None,
+                repo_root: Some("/repo".into()),
+            },
+            relative_path: ".vibe.toml".into(),
+            hashes: vec![hash_content(b"v = 1\n")],
+            skip_hash_check: None,
+            config_semantics_rev: None,
+            config_semantics_revs: None,
+        });
+        save_user_settings(&io, &settings, V).unwrap();
+
+        // Trust the EDITED content.
+        std::fs::write(&file, b"v = 2\n").unwrap();
+        add_trusted_path(&io, &resolver, V, file.to_str().unwrap()).unwrap();
+
+        let loaded = load_user_settings(&io, &resolver, V).unwrap();
+        let entry = &loaded.permissions.allow[0];
+        assert_eq!(entry.hashes.len(), 2, "history keeps both revisions");
+        // The newly approved bytes carry the current revision...
+        assert_eq!(
+            entry.semantics_rev_for(&hash_content(b"v = 2\n")),
+            CONFIG_SEMANTICS_REV
+        );
+        // ...while the never-reviewed older bytes stay at revision 0.
+        assert_eq!(entry.semantics_rev_for(&hash_content(b"v = 1\n")), 0);
     }
 
     #[test]

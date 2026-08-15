@@ -871,6 +871,7 @@ fn trusted_config_repo_with_content(content: &str) -> (Fixture, FakeIo, TrustRes
         hashes: vec![hash_content(content.as_bytes())],
         skip_hash_check: None,
         config_semantics_rev: None,
+        config_semantics_revs: None,
     });
     save_user_settings(&io, &settings, V).unwrap();
 
@@ -936,6 +937,7 @@ fn trusted_repo_with_submodule_config() -> (Fixture, FakeIo, TrustResolver, Stri
             hashes: vec![hash_content(content.as_bytes())],
             skip_hash_check: None,
             config_semantics_rev: None,
+            config_semantics_revs: None,
         });
     }
     save_user_settings(&io, &settings, V).unwrap();

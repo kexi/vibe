@@ -198,7 +198,7 @@ fn display_file_status(
         );
     }
 
-    display_semantics_status(io, entry, &content, file_path, role, opts);
+    display_semantics_status(io, entry, &current_hash, &content, file_path, role, opts);
 
     log(
         io,
@@ -238,20 +238,22 @@ fn display_file_status(
 fn display_semantics_status(
     io: &impl Io,
     entry: &AllowEntry,
+    current_hash: &str,
     content: &[u8],
     file_path: &str,
     role: ConfigRole,
     opts: OutputOptions,
 ) {
-    if entry.semantics_rev() >= CONFIG_SEMANTICS_REV {
+    // The revision for the bytes ON DISK, matching what the loader will consult;
+    // reading the entry-wide stamp instead would report "current" for a file
+    // whose own hash was approved under an older revision and still be rejected.
+    let rev = entry.semantics_rev_for(current_hash);
+    if rev >= CONFIG_SEMANTICS_REV {
         return;
     }
     log(
         io,
-        &format!(
-            "Config Semantics: trusted at revision {} (current: {CONFIG_SEMANTICS_REV})",
-            entry.semantics_rev()
-        ),
+        &format!("Config Semantics: trusted at revision {rev} (current: {CONFIG_SEMANTICS_REV})"),
         opts,
     );
 
@@ -355,6 +357,7 @@ mod tests {
             hashes: vec![content_hash],
             skip_hash_check: None,
             config_semantics_rev: None,
+            config_semantics_revs: None,
         });
         save_user_settings(&io, &settings, V).unwrap();
 
@@ -451,6 +454,7 @@ mod tests {
                 hashes: hashes.iter().map(|s| s.to_string()).collect(),
                 skip_hash_check: entry_skip,
                 config_semantics_rev: None,
+                config_semantics_revs: None,
             });
         }
         save_user_settings(&io, &settings, V).unwrap();
@@ -661,6 +665,7 @@ mod tests {
             hashes: vec!["whatever".into()],
             skip_hash_check: None,
             config_semantics_rev: None,
+            config_semantics_revs: None,
         });
         save_user_settings(&io, &settings, V).unwrap();
 
@@ -778,6 +783,7 @@ mod tests {
             hashes: vec![hash_content(content.as_bytes())],
             skip_hash_check: None,
             config_semantics_rev: Some(CONFIG_SEMANTICS_REV),
+            config_semantics_revs: None,
         });
         save_user_settings(&io, &settings, V).unwrap();
 
@@ -836,6 +842,7 @@ mod tests {
                 hashes: vec![hash_content(content.as_bytes())],
                 skip_hash_check: None,
                 config_semantics_rev: None, // pre-#599 trust
+                config_semantics_revs: None,
             });
             repos.insert(
                 path_str,
