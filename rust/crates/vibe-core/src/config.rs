@@ -15,9 +15,28 @@
 //! override/base survives. [`normalize_config`] applies that within-file rule to
 //! a single file so the single-file and two-file loaders share one
 //! implementation of the array algebra.
+//!
+//! Because that divergence turns previously-inert fields into executable
+//! configuration, [`CONFIG_SEMANTICS_REV`] versions the interpretation itself
+//! and the loader refuses to run a config that relies on the new positions
+//! under a trust grant issued before the change.
 
 use crate::error::{Result, VibeError};
 use serde::{Deserialize, Serialize};
+
+/// Revision of the `.vibe.toml` INTERPRETATION rules.
+///
+/// Bumped whenever a change makes previously-parsed-but-ignored config
+/// positions take effect. Trust entries record the revision they were granted
+/// under (see `AllowEntry::config_semantics_rev`); an entry without one is
+/// revision 0, i.e. trust granted before issue #599 made `*_prepend`/`*_append`
+/// effective in every load path.
+///
+/// Why not rely on the content hash alone: the SHA-256 trust hash covers the
+/// file's BYTES, not how vibe interprets them. Upgrading the binary would
+/// otherwise silently activate hook entries the user trusted while they were
+/// inert, with no re-trust prompt.
+pub const CONFIG_SEMANTICS_REV: u32 = 1;
 
 /// Parsed `.vibe.toml` config. Every section is optional.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -302,6 +321,103 @@ pub fn merge_configs(base: &VibeConfig, local: &VibeConfig) -> VibeConfig {
 /// loading share ONE implementation of the array semantics (issue #599).
 pub fn normalize_config(config: &VibeConfig) -> VibeConfig {
     merge_configs(&VibeConfig::default(), config)
+}
+
+/// Every `(field, prepend, append)` triplet of a raw (un-normalized) config,
+/// as `(dotted name, field set?, prepend set?, append set?)`.
+///
+/// Drives the semantics-revision guard in the loader: it must reason about the
+/// raw slots, which [`normalize_config`] folds away.
+fn extension_triplets(config: &VibeConfig) -> Vec<(&'static str, bool, bool, bool)> {
+    let mut out = Vec::new();
+    macro_rules! triplet {
+        ($name:literal, $section:expr, $field:ident, $prepend:ident, $append:ident) => {{
+            let s = $section.as_ref();
+            out.push((
+                $name,
+                s.is_some_and(|x| x.$field.is_some()),
+                s.is_some_and(|x| x.$prepend.is_some()),
+                s.is_some_and(|x| x.$append.is_some()),
+            ));
+        }};
+    }
+    triplet!(
+        "copy.files",
+        config.copy,
+        files,
+        files_prepend,
+        files_append
+    );
+    triplet!("copy.dirs", config.copy, dirs, dirs_prepend, dirs_append);
+    triplet!(
+        "copy.symlink",
+        config.copy,
+        symlink,
+        symlink_prepend,
+        symlink_append
+    );
+    triplet!(
+        "hooks.pre_start",
+        config.hooks,
+        pre_start,
+        pre_start_prepend,
+        pre_start_append
+    );
+    triplet!(
+        "hooks.post_start",
+        config.hooks,
+        post_start,
+        post_start_prepend,
+        post_start_append
+    );
+    triplet!(
+        "hooks.pre_clean",
+        config.hooks,
+        pre_clean,
+        pre_clean_prepend,
+        pre_clean_append
+    );
+    triplet!(
+        "hooks.post_clean",
+        config.hooks,
+        post_clean,
+        post_clean_prepend,
+        post_clean_append
+    );
+    out
+}
+
+/// Dotted names of the `*_prepend`/`*_append` fields set in a raw config.
+pub fn extension_fields_in_use(config: &VibeConfig) -> Vec<String> {
+    let mut names = Vec::new();
+    for (name, _, prepend, append) in extension_triplets(config) {
+        if prepend {
+            names.push(format!("{name}_prepend"));
+        }
+        if append {
+            names.push(format!("{name}_append"));
+        }
+    }
+    names
+}
+
+/// Dotted names of the `*_prepend`/`*_append` fields a raw config sets ALONGSIDE
+/// their own base field (the position the TS `mergeArrayField` dropped even when
+/// both config files were present).
+pub fn extension_fields_beside_own_field(config: &VibeConfig) -> Vec<String> {
+    let mut names = Vec::new();
+    for (name, field, prepend, append) in extension_triplets(config) {
+        if !field {
+            continue;
+        }
+        if prepend {
+            names.push(format!("{name}_prepend"));
+        }
+        if append {
+            names.push(format!("{name}_append"));
+        }
+    }
+    names
 }
 
 /// Helper: project an `Option<Section>` to an inner `Option<Vec<String>>` slice.
@@ -1000,6 +1116,60 @@ configs = ["libs/foo"]
                 .unwrap()
                 .concurrency,
             Some(32)
+        );
+    }
+
+    // --- extension-field detection (semantics-revision guard input) ---
+
+    fn parse(toml_text: &str) -> VibeConfig {
+        parse_vibe_config(toml_text, "/p").unwrap()
+    }
+
+    #[test]
+    fn reports_no_extension_fields_for_plain_config() {
+        let cfg = parse("[copy]\nfiles = [\".env\"]\n[hooks]\npost_start = [\"a\"]\n");
+        assert!(extension_fields_in_use(&cfg).is_empty());
+        assert!(extension_fields_beside_own_field(&cfg).is_empty());
+    }
+
+    #[test]
+    fn reports_every_extension_field_in_use_by_dotted_name() {
+        let cfg = parse(concat!(
+            "[copy]\n",
+            "files_append = [\"a\"]\n",
+            "dirs_prepend = [\"b\"]\n",
+            "symlink_append = [\"c\"]\n",
+            "[hooks]\n",
+            "pre_start_prepend = [\"d\"]\n",
+            "post_start_append = [\"e\"]\n",
+            "pre_clean_append = [\"f\"]\n",
+            "post_clean_prepend = [\"g\"]\n",
+        ));
+        let mut names = extension_fields_in_use(&cfg);
+        names.sort();
+        assert_eq!(
+            names,
+            vec![
+                "copy.dirs_prepend",
+                "copy.files_append",
+                "copy.symlink_append",
+                "hooks.post_clean_prepend",
+                "hooks.post_start_append",
+                "hooks.pre_clean_append",
+                "hooks.pre_start_prepend",
+            ]
+        );
+    }
+
+    #[test]
+    fn reports_only_extensions_sharing_their_own_base_field() {
+        // `files` + `files_append` collide (the TS dropped the append);
+        // `dirs_append` alone does not.
+        let cfg =
+            parse("[copy]\nfiles = [\".env\"]\nfiles_append = [\"x\"]\ndirs_append = [\"y\"]\n");
+        assert_eq!(
+            extension_fields_beside_own_field(&cfg),
+            vec!["copy.files_append"]
         );
     }
 }

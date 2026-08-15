@@ -84,6 +84,20 @@ files_append = [".env.local"]
 `files = []`はリストを無効化するための書き方ですが、同じファイル内の拡張フィールドは引き続き適用されます。`files = []`と`files_append = ["x"]`を併記すると、結果は`[]`ではなく`["x"]`になります。空の結果が欲しい場合は`_append`の行も削除してください。
 :::
 
+### アップグレード時の再信頼登録
+
+以前のバージョンは上記の位置にある拡張フィールドを解析はするものの無視していました。そのため、当時に信頼登録された設定ファイルには、一度も実行されなかった`_prepend` / `_append`の記述が残っている可能性があります。信頼登録のハッシュはファイルのバイト列を対象としており、vibeがそれをどう解釈するかまでは含みません。
+
+これらを黙って有効化しないよう、vibeは該当するファイルの読み込みを拒否し、内容を確認したうえで`vibe trust`を再実行するよう促します：
+
+```
+.vibe.toml was trusted under older configuration semantics.
+These fields were accepted but ignored back then and now take effect: hooks.post_start_append
+Review the file, then re-approve it with: vibe trust
+```
+
+対象となるのは、新たに有効化された位置を実際に使っているファイルだけです。それ以外の設定はこれまでどおり動作し、操作は不要です。
+
 ## Worktreeパスの上書き
 
 `.vibe.local.toml`でWorktreeパススクリプトを上書きできます：

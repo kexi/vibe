@@ -6,6 +6,7 @@
 //! [`RepoResolver`], and implements the security-hardened atomic write.
 
 use crate::atomic::atomic_write;
+use crate::config::CONFIG_SEMANTICS_REV;
 use crate::error::{Result, VibeError};
 use crate::hash::hash_content;
 use crate::io::Io;
@@ -114,32 +115,57 @@ pub fn save_user_settings(io: &impl Io, settings: &VibeSettings, version: &str) 
     atomic_write(&path, content.as_bytes())
 }
 
+/// Outcome of a trust check: whether the file is trusted, the exact bytes the
+/// decision was made on, and the config-interpretation revision the trust was
+/// granted under.
+///
+/// `semantics_rev` is `None` when there is no matching entry (untrusted); it is
+/// carried so the config loader can refuse to activate config positions that
+/// were inert when the trust was granted, without re-reading settings.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TrustVerdict {
+    pub trusted: bool,
+    pub content: Option<String>,
+    pub semantics_rev: Option<u32>,
+}
+
+impl TrustVerdict {
+    /// The untrusted verdict (not in a repo, no entry, or hash mismatch).
+    fn untrusted() -> Self {
+        TrustVerdict {
+            trusted: false,
+            content: None,
+            semantics_rev: None,
+        }
+    }
+}
+
 /// Verify trust and return the exact content that was hashed (TOCTOU-safe).
 ///
-/// Returns `(trusted, content)`. When trusted, `content` is the bytes the trust
-/// decision was made on. Callers MUST use this returned content and never
-/// re-open the file: re-reading would reintroduce a time-of-check/time-of-use
-/// race where an attacker swaps the file between verification and use.
+/// When trusted, `content` is the bytes the trust decision was made on. Callers
+/// MUST use this returned content and never re-open the file: re-reading would
+/// reintroduce a time-of-check/time-of-use race where an attacker swaps the file
+/// between verification and use.
 ///
-/// Mirrors `verifyTrustAndRead`: not in a repo → `(false, None)`; no matching
-/// allow entry → `(false, None)`; skip-hash-check → `(true, Some(content))`
-/// with a warning; hash match → `(true, Some(content))`; mismatch →
-/// `(false, None)`.
+/// Mirrors `verifyTrustAndRead`: not in a repo → untrusted; no matching allow
+/// entry → untrusted; skip-hash-check → trusted with a warning; hash match →
+/// trusted; mismatch → untrusted.
 pub fn verify_trust_and_read(
     io: &impl Io,
     resolver: &impl RepoResolver,
     version: &str,
     vibe_file_path: &str,
-) -> Result<(bool, Option<String>)> {
+) -> Result<TrustVerdict> {
     let settings = load_user_settings(io, resolver, version)?;
 
     let Some(repo_info) = resolver.repo_info(vibe_file_path) else {
-        return Ok((false, None)); // Not in a git repository.
+        return Ok(TrustVerdict::untrusted()); // Not in a git repository.
     };
 
     let Some(entry) = find_matching_entry(&settings.permissions.allow, &repo_info) else {
-        return Ok((false, None));
+        return Ok(TrustVerdict::untrusted());
     };
+    let semantics_rev = Some(entry.semantics_rev());
 
     // Read the file exactly once; all decisions use this content.
     let content = std::fs::read_to_string(vibe_file_path)
@@ -151,16 +177,24 @@ pub fn verify_trust_and_read(
             io,
             &format!("Warning: Hash verification is disabled for {vibe_file_path}"),
         );
-        return Ok((true, Some(content)));
+        return Ok(TrustVerdict {
+            trusted: true,
+            content: Some(content),
+            semantics_rev,
+        });
     }
 
     let file_hash = hash_content(content.as_bytes());
     let hash_matches = entry.hashes.contains(&file_hash);
     if hash_matches {
-        return Ok((true, Some(content)));
+        return Ok(TrustVerdict {
+            trusted: true,
+            content: Some(content),
+            semantics_rev,
+        });
     }
 
-    Ok((false, None))
+    Ok(TrustVerdict::untrusted())
 }
 
 /// Trust a config file: record (or extend) its allow-list entry.
@@ -168,6 +202,9 @@ pub fn verify_trust_and_read(
 /// Ported from `addTrustedPath`. Validates the path is absolute, resolves its
 /// repository, hashes its content, then either appends the hash to a matching
 /// entry (dedup + FIFO ≤100) or pushes a new repository-based entry, and saves.
+/// Either way the entry is stamped with the current
+/// [`CONFIG_SEMANTICS_REV`], recording WHICH interpretation of the file the user
+/// consented to (see `config_loader`'s semantics guard).
 ///
 /// SECURITY (Phase 3, point 6): the TS computed the stored identity and the
 /// stored hash from two *different* views of the path. `getRepoInfoFromPath`
@@ -223,6 +260,10 @@ pub fn add_trusted_path(
         Some(entry) => {
             // Dedup + FIFO ≤ MAX_HASH_HISTORY; no-op if the hash is already known.
             push_hash_fifo(&mut entry.hashes, hash);
+            // The user is re-consenting NOW, under the current interpretation
+            // rules, so an entry granted before CONFIG_SEMANTICS_REV was raised
+            // is brought up to date even when the content hash is unchanged.
+            entry.config_semantics_rev = Some(CONFIG_SEMANTICS_REV);
         }
         None => {
             settings.permissions.allow.push(AllowEntry {
@@ -233,6 +274,7 @@ pub fn add_trusted_path(
                 relative_path: repo_info.relative_path.clone(),
                 hashes: vec![hash],
                 skip_hash_check: None,
+                config_semantics_rev: Some(CONFIG_SEMANTICS_REV),
             });
         }
     }
@@ -483,6 +525,7 @@ mod tests {
                 relative_path: ".vibe.toml".into(),
                 hashes: vec!["h1".into()],
                 skip_hash_check: None,
+                config_semantics_rev: None,
             }],
             deny: vec![],
         };
@@ -565,6 +608,7 @@ mod tests {
             relative_path: ".vibe.toml".into(),
             hashes: vec![content_hash],
             skip_hash_check: None,
+            config_semantics_rev: None,
         });
         save_user_settings(&io, &settings, V).unwrap();
 
@@ -579,10 +623,50 @@ mod tests {
         );
         let resolver = MapResolver { repos };
 
-        let (trusted, content) = verify_trust_and_read(&io, &resolver, V, &vibe_path_str).unwrap();
-        assert!(trusted);
+        let verdict = verify_trust_and_read(&io, &resolver, V, &vibe_path_str).unwrap();
+        assert!(verdict.trusted);
         // The returned content is exactly what was hashed (TOCTOU-safe).
-        assert_eq!(content.as_deref(), Some("trusted = true\n"));
+        assert_eq!(verdict.content.as_deref(), Some("trusted = true\n"));
+        // An entry without `configSemanticsRev` reports the pre-#599 revision 0.
+        assert_eq!(verdict.semantics_rev, Some(0));
+    }
+
+    #[test]
+    fn verify_reports_entry_semantics_rev() {
+        // A trust entry stamped with a semantics revision surfaces it, so the
+        // config loader can tell WHICH interpretation the user consented to.
+        let fx = Fixture::new();
+        let io = io_for(fx.path());
+        let vibe_path = fx.write("repo/.vibe.toml", "trusted = true\n");
+        let vibe_path_str = vibe_path.to_str().unwrap().to_string();
+
+        let mut settings = VibeSettings::default_settings();
+        settings.permissions.allow.push(AllowEntry {
+            repo_id: RepoId {
+                remote_url: None,
+                repo_root: Some("/repo".into()),
+            },
+            relative_path: ".vibe.toml".into(),
+            hashes: vec![hash_content(b"trusted = true\n")],
+            skip_hash_check: None,
+            config_semantics_rev: Some(CONFIG_SEMANTICS_REV),
+        });
+        save_user_settings(&io, &settings, V).unwrap();
+
+        let mut repos = HashMap::new();
+        repos.insert(
+            vibe_path_str.clone(),
+            RepoInfo {
+                remote_url: None,
+                repo_root: "/repo".into(),
+                relative_path: ".vibe.toml".into(),
+            },
+        );
+        let resolver = MapResolver { repos };
+
+        let verdict = verify_trust_and_read(&io, &resolver, V, &vibe_path_str).unwrap();
+        assert!(verdict.trusted);
+        assert_eq!(verdict.semantics_rev, Some(CONFIG_SEMANTICS_REV));
     }
 
     #[test]
@@ -591,10 +675,11 @@ mod tests {
         let io = io_for(fx.path());
         let vibe_path = fx.write("loose/.vibe.toml", "x\n");
         let resolver = MapResolver::default(); // No repo info.
-        let (trusted, content) =
+        let verdict =
             verify_trust_and_read(&io, &resolver, V, vibe_path.to_str().unwrap()).unwrap();
-        assert!(!trusted);
-        assert_eq!(content, None);
+        assert!(!verdict.trusted);
+        assert_eq!(verdict.content, None);
+        assert_eq!(verdict.semantics_rev, None);
     }
 
     #[test]
@@ -613,6 +698,7 @@ mod tests {
             relative_path: ".vibe.toml".into(),
             hashes: vec!["stale-hash".into()],
             skip_hash_check: None,
+            config_semantics_rev: None,
         });
         save_user_settings(&io, &settings, V).unwrap();
 
@@ -626,9 +712,9 @@ mod tests {
             },
         );
         let resolver = MapResolver { repos };
-        let (trusted, content) = verify_trust_and_read(&io, &resolver, V, &vibe_path_str).unwrap();
-        assert!(!trusted);
-        assert_eq!(content, None);
+        let verdict = verify_trust_and_read(&io, &resolver, V, &vibe_path_str).unwrap();
+        assert!(!verdict.trusted);
+        assert_eq!(verdict.content, None);
     }
 
     // --- add_trusted_path / remove_trusted_path -----------------------------
@@ -749,6 +835,50 @@ mod tests {
             entry.get("skipHashCheck").is_none(),
             "skipHashCheck must be omitted when None: {entry}"
         );
+        // The grant records the interpretation the user consented to.
+        assert_eq!(
+            entry["configSemanticsRev"],
+            serde_json::json!(CONFIG_SEMANTICS_REV)
+        );
+    }
+
+    #[test]
+    fn add_trusted_path_upgrades_semantics_rev_of_existing_entry() {
+        // Re-running `vibe trust` on unchanged content is fresh consent under the
+        // current rules, so a pre-#599 entry (no configSemanticsRev) is brought up
+        // to the current revision even though no new hash is recorded.
+        let fx = Fixture::new();
+        let io = io_for(fx.path());
+        let file = fx.write("repo/.vibe.toml", "trusted = true\n");
+        let info = RepoInfo {
+            remote_url: None,
+            repo_root: "/repo".into(),
+            relative_path: ".vibe.toml".into(),
+        };
+        let resolver = resolver_for(&file, info);
+
+        let mut settings = VibeSettings::default_settings();
+        settings.permissions.allow.push(AllowEntry {
+            repo_id: RepoId {
+                remote_url: None,
+                repo_root: Some("/repo".into()),
+            },
+            relative_path: ".vibe.toml".into(),
+            hashes: vec![hash_content(b"trusted = true\n")],
+            skip_hash_check: None,
+            config_semantics_rev: None,
+        });
+        save_user_settings(&io, &settings, V).unwrap();
+
+        add_trusted_path(&io, &resolver, V, file.to_str().unwrap()).unwrap();
+
+        let loaded = load_user_settings(&io, &resolver, V).unwrap();
+        assert_eq!(loaded.permissions.allow.len(), 1, "no duplicate entry");
+        assert_eq!(
+            loaded.permissions.allow[0].config_semantics_rev,
+            Some(CONFIG_SEMANTICS_REV)
+        );
+        assert_eq!(loaded.permissions.allow[0].hashes.len(), 1, "hash dedup");
     }
 
     #[test]

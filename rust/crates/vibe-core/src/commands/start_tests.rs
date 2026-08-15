@@ -870,6 +870,7 @@ fn trusted_config_repo_with_content(content: &str) -> (Fixture, FakeIo, TrustRes
         relative_path: ".vibe.toml".into(),
         hashes: vec![hash_content(content.as_bytes())],
         skip_hash_check: None,
+        config_semantics_rev: None,
     });
     save_user_settings(&io, &settings, V).unwrap();
 
@@ -934,6 +935,7 @@ fn trusted_repo_with_submodule_config() -> (Fixture, FakeIo, TrustResolver, Stri
             relative_path: file.into(),
             hashes: vec![hash_content(content.as_bytes())],
             skip_hash_check: None,
+            config_semantics_rev: None,
         });
     }
     save_user_settings(&io, &settings, V).unwrap();

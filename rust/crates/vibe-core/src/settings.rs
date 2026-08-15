@@ -43,6 +43,26 @@ pub struct AllowEntry {
     pub hashes: Vec<String>,
     #[serde(rename = "skipHashCheck", skip_serializing_if = "Option::is_none")]
     pub skip_hash_check: Option<bool>,
+    /// The config-interpretation revision this trust was granted under
+    /// ([`crate::config::CONFIG_SEMANTICS_REV`]). Absent means revision 0: trust
+    /// predating the change that made `*_prepend`/`*_append` effective in every
+    /// load path, so the loader must not silently activate those fields.
+    ///
+    /// Why not a schema-version bump (v3 → v4): this is an ADDITIVE optional
+    /// field, and neither `AllowEntry` nor `VibeSettings` deserializes with
+    /// `deny_unknown_fields`, so a v3 reader tolerates it. A version bump would
+    /// force every existing v3 file through the migration ladder — and the
+    /// ladder's transforms are lossy for keys they do not model — to add
+    /// information that is, by definition, absent from those files.
+    #[serde(rename = "configSemanticsRev", skip_serializing_if = "Option::is_none")]
+    pub config_semantics_rev: Option<u32>,
+}
+
+impl AllowEntry {
+    /// The entry's config-interpretation revision, defaulting to 0 (pre-#599).
+    pub fn semantics_rev(&self) -> u32 {
+        self.config_semantics_rev.unwrap_or(0)
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -347,6 +367,7 @@ mod tests {
             relative_path: rel.into(),
             hashes: hashes.iter().map(|s| s.to_string()).collect(),
             skip_hash_check: None,
+            config_semantics_rev: None,
         }
     }
 
@@ -492,6 +513,7 @@ mod tests {
             relative_path: ".vibe.toml".into(),
             hashes: vec![],
             skip_hash_check: None,
+            config_semantics_rev: None,
         }];
         // remote_url matches even though repo_root differs.
         let info = RepoInfo {

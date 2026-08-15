@@ -579,6 +579,12 @@ Each file is resolved that way first; only then is `.vibe.local.toml` merged ove
 shared file's effective array — a local field replaces it, and a local
 `_prepend` / `_append` wraps it.
 
+> [!IMPORTANT]
+> Older versions parsed these fields in the positions above but ignored them. A config
+> file trusted back then keeps working, but if it actually uses one of the newly
+> effective positions, vibe asks you to review it and run `vibe trust` once before it
+> takes effect.
+
 **Example:**
 
 ```toml

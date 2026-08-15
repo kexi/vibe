@@ -81,6 +81,11 @@
               "skipHashCheck": {
                 "type": "boolean",
                 "description": "Skip hash verification for this specific file"
+              },
+              "configSemanticsRev": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Configuration interpretation revision this trust was granted under (absent means 0)"
               }
             },
             "required": ["repoId", "relativePath", "hashes"],

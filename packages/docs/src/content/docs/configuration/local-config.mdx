@@ -92,6 +92,24 @@ still apply: `files = []` together with `files_append = ["x"]` yields `["x"]`, n
 Remove the `_append` line as well if you want an empty result.
 :::
 
+### Upgrading: one-time re-trust
+
+Older versions parsed these fields in the positions above but ignored them. A config file
+trusted back then could therefore contain `_prepend` / `_append` entries that never ran —
+and the trust hash covers the file's bytes, not how vibe interprets them.
+
+To avoid silently activating them, vibe refuses to load such a file and asks you to review
+it and run `vibe trust` again:
+
+```
+.vibe.toml was trusted under older configuration semantics.
+These fields were accepted but ignored back then and now take effect: hooks.post_start_append
+Review the file, then re-approve it with: vibe trust
+```
+
+This affects only files that actually use one of the newly effective positions. Every other
+config keeps working without any action.
+
 ## Worktree Path Override
 
 You can override the worktree path script in `.vibe.local.toml`:

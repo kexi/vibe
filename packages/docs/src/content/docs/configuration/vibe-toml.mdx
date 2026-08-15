@@ -65,6 +65,13 @@ files_append = [".env.local"]
 See [.vibe.local.toml](/configuration/local-config/) for how these fields interact across
 the two files.
 
+:::caution[Upgrading]
+Older versions accepted these fields here but ignored them. If your `.vibe.toml` was
+trusted back then and uses them, vibe asks you to review the file and run `vibe trust`
+once before it takes effect — see
+[one-time re-trust](/configuration/local-config/#upgrading-one-time-re-trust).
+:::
+
 ### Directories <Badge text="v0.4.0+" />
 
 Copy entire directories recursively:

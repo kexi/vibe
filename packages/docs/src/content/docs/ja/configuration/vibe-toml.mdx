@@ -61,6 +61,10 @@ files_append = [".env.local"]
 
 2つのファイル間でこれらのフィールドがどう作用するかは[.vibe.local.toml](/ja/configuration/local-config/)を参照してください。
 
+:::caution[アップグレード時]
+以前のバージョンはこれらのフィールドをここで受け付けつつ無視していました。当時に信頼登録した`.vibe.toml`がこれらを使っている場合、vibeは有効化する前に内容の確認と`vibe trust`の再実行を求めます。詳細は[アップグレード時の再信頼登録](/ja/configuration/local-config/)を参照してください。
+:::
+
 ### ディレクトリ <Badge text="v0.4.0+" />
 
 ディレクトリ全体を再帰的にコピー：

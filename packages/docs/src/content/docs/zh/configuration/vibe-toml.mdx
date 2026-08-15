@@ -61,6 +61,10 @@ files_append = [".env.local"]
 
 关于这些字段在两个文件之间如何相互作用，请参阅 [.vibe.local.toml](/zh/configuration/local-config/)。
 
+:::caution[升级]
+旧版本会在这里接受这些字段但将其忽略。如果你的 `.vibe.toml` 是在当时被信任的并且使用了这些字段，vibe 会先要求你检查文件并运行一次 `vibe trust`，之后才会生效——参见[一次性重新信任](/zh/configuration/local-config/)。
+:::
+
 ### 目录 <Badge text="v0.4.0+" />
 
 递归复制整个目录：

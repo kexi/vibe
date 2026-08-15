@@ -263,6 +263,7 @@ mod tests {
             relative_path: ".vibe.toml".into(),
             hashes: vec![content_hash],
             skip_hash_check: None,
+            config_semantics_rev: None,
         });
         save_user_settings(&io, &settings, V).unwrap();
 
@@ -358,6 +359,7 @@ mod tests {
                 relative_path: ".vibe.toml".into(),
                 hashes: hashes.iter().map(|s| s.to_string()).collect(),
                 skip_hash_check: entry_skip,
+                config_semantics_rev: None,
             });
         }
         save_user_settings(&io, &settings, V).unwrap();
@@ -567,6 +569,7 @@ mod tests {
             relative_path: ".vibe.toml".into(),
             hashes: vec!["whatever".into()],
             skip_hash_check: None,
+            config_semantics_rev: None,
         });
         save_user_settings(&io, &settings, V).unwrap();
 

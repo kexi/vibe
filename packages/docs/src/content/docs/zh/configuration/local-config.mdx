@@ -84,6 +84,20 @@ files_append = [".env.local"]
 `files = []` 是禁用列表的惯用写法，但同一来源中的扩展字段依然生效：`files = []` 与 `files_append = ["x"]` 同时存在时，结果是 `["x"]` 而不是 `[]`。如果希望得到空结果，请一并删除 `_append` 行。
 :::
 
+### 升级：一次性重新信任
+
+旧版本会解析上述位置的这些字段，但会忽略它们。因此，当时被信任的配置文件中可能残留着从未执行过的 `_prepend` / `_append` 条目——而信任哈希只覆盖文件的字节内容，并不包含 vibe 如何解释这些内容。
+
+为了避免悄然启用它们，vibe 会拒绝加载这类文件，并要求你先检查文件内容，然后重新运行 `vibe trust`：
+
+```
+.vibe.toml was trusted under older configuration semantics.
+These fields were accepted but ignored back then and now take effect: hooks.post_start_append
+Review the file, then re-approve it with: vibe trust
+```
+
+这只影响真正使用了新生效位置的文件。其他配置照常工作，无需任何操作。
+
 ## Worktree 路径覆盖
 
 你可以在 `.vibe.local.toml` 中覆盖 worktree 路径脚本：
