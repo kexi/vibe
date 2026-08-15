@@ -29,13 +29,15 @@ files = [".env.local", ".secrets"]
 
 ## Configuration Merging
 
-When both `.vibe.toml` and `.vibe.local.toml` exist, they are merged according to these rules:
+Array fields are resolved within each file first, and the result is then merged across
+files. When both `.vibe.toml` and `.vibe.local.toml` exist, `.vibe.local.toml` is merged
+over the shared file according to these rules:
 
-| Method            | Syntax                       | Description                        |
-| ----------------- | ---------------------------- | ---------------------------------- |
-| Complete override | `field_name = [...]`         | Replaces the shared value entirely |
-| Prepend items     | `field_name_prepend = [...]` | Adds items before shared values    |
-| Append items      | `field_name_append = [...]`  | Adds items after shared values     |
+| Method            | Syntax                       | Description                                                                                     |
+| ----------------- | ---------------------------- | ----------------------------------------------------------------------------------------------- |
+| Complete override | `field_name = [...]`         | Replaces the shared value entirely (any `_prepend` / `_append` in the same file still wraps it) |
+| Prepend items     | `field_name_prepend = [...]` | Adds items before shared values                                                                 |
+| Append items      | `field_name_append = [...]`  | Adds items after shared values                                                                  |
 
 ### Merging Example
 

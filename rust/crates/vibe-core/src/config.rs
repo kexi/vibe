@@ -477,7 +477,61 @@ mod tests {
         assert_eq!(normalize_config(&cfg), cfg);
     }
 
+    #[test]
+    fn normalize_is_idempotent() {
+        // Load-bearing: the two-file path normalizes the base and then re-runs the
+        // same array algebra inside merge_configs, so normalization must be a
+        // fixed point for that composition to be well defined.
+        let cfg = VibeConfig {
+            copy: Some(CopyConfig {
+                files: Some(v(&[".env"])),
+                files_prepend: Some(v(&["p"])),
+                files_append: Some(v(&["a"])),
+                dirs_append: Some(v(&["node_modules"])),
+                concurrency: Some(8),
+                ..Default::default()
+            }),
+            hooks: Some(HooksConfig {
+                post_start: Some(v(&["npm install"])),
+                post_start_append: Some(v(&["npm run dev"])),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let once = normalize_config(&cfg);
+        assert_eq!(normalize_config(&once), once);
+    }
+
     // --- merge_configs ---
+
+    #[test]
+    fn local_override_and_local_append_combine_over_the_base() {
+        // A local file that sets BOTH the field and its `_append`: the override
+        // replaces the base's effective array, then the local's own extensions
+        // wrap that override (they are no longer silently dropped).
+        let base = VibeConfig {
+            hooks: Some(HooksConfig {
+                post_start: Some(v(&["base"])),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let local = VibeConfig {
+            hooks: Some(HooksConfig {
+                post_start: Some(v(&["local"])),
+                post_start_append: Some(v(&["extra"])),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            merge_configs(&normalize_config(&base), &local)
+                .hooks
+                .unwrap()
+                .post_start,
+            Some(v(&["local", "extra"]))
+        );
+    }
 
     #[test]
     fn base_own_append_survives_two_file_merge() {

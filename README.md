@@ -556,11 +556,28 @@ files = [".env.local", ".secrets"]
 
 ### Configuration Merging
 
-When both `.vibe.toml` and `.vibe.local.toml` exist:
+Array fields support these forms:
 
 - **Complete override**: Use the field name directly (e.g., `post_start = [...]`)
 - **Prepend items**: Use `_prepend` suffix (e.g., `post_start_prepend = [...]`)
 - **Append items**: Use `_append` suffix (e.g., `post_start_append = [...]`)
+
+`_prepend` / `_append` are not limited to `.vibe.local.toml`. Within a single file
+(including a repository that has only `.vibe.toml`) the effective array is
+`prepend + field + append`:
+
+```toml
+# .vibe.toml only — no .vibe.local.toml
+[copy]
+files = [".env"]
+files_append = [".env.local"]
+
+# Result: [".env", ".env.local"]
+```
+
+Each file is resolved that way first; only then is `.vibe.local.toml` merged over the
+shared file's effective array — a local field replaces it, and a local
+`_prepend` / `_append` wraps it.
 
 **Example:**
 

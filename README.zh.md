@@ -554,11 +554,24 @@ files = [".env.local", ".secrets"]
 
 ### 配置合并
 
-当 `.vibe.toml` 与 `.vibe.local.toml` 同时存在时：
+数组字段支持以下写法：
 
 - **完全覆盖**：直接使用字段名（例如 `post_start = [...]`）
 - **在前面插入**：使用 `_prepend` 后缀（例如 `post_start_prepend = [...]`）
 - **在后面追加**：使用 `_append` 后缀（例如 `post_start_append = [...]`）
+
+`_prepend` / `_append` 并不局限于 `.vibe.local.toml`。在单个文件内（包括只有 `.vibe.toml` 的仓库），实际生效的数组为 `prepend + 字段 + append`：
+
+```toml
+# 仅有 .vibe.toml —— 没有 .vibe.local.toml
+[copy]
+files = [".env"]
+files_append = [".env.local"]
+
+# 结果: [".env", ".env.local"]
+```
+
+每个文件都会先按这种方式解析，然后 `.vibe.local.toml` 才会合并到共享文件的实际数组之上（本地的字段会替换它，本地的 `_prepend` / `_append` 会在其前后添加）。
 
 **示例：**
 
