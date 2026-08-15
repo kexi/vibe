@@ -7,6 +7,13 @@ name: Release
 # — which is the order Immutable Releases requires. A GitHub Release is
 # therefore never a trigger here: the old `on: release` flow attached assets to
 # an already-published release, which Immutable Releases forbids.
+#
+# Re-running a run whose release already published resumes idempotently: the
+# `release` and `update-homebrew` jobs still run, re-verify the published asset
+# set and converge the tap, instead of being skipped green (#598). Use "Re-run
+# failed jobs" — `prepare` refuses a fresh dispatch whose commit differs from
+# the one the published release targets, so a resume can never mix a newer tree
+# with the released binaries.
 on:
   workflow_dispatch:
     inputs:
@@ -76,6 +83,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           TAG="${{ steps.version.outputs.tag }}"
           # `gh release view` falls back to searching drafts, so distinguish
           # none / draft / published via isDraft instead of exit status alone.
@@ -84,13 +92,26 @@ jobs:
             if [ "$IS_DRAFT" = "true" ]; then STATE=draft; else STATE=published; fi
           fi
           if [ "$STATE" = "published" ]; then
-            echo "Release $TAG already published; skipping build (re-run recovery path)."
+            # should_release=false lets the downstream jobs resume against the
+            # published release (#598), and they check out this run's commit.
+            # A fresh dispatch after main moved on would therefore hash the
+            # OLD released binaries into a formula built from a NEWER tree, so
+            # bind the resume to the released commit and fail closed otherwise.
+            TARGET=$(gh release view "$TAG" --json targetCommitish --jq .targetCommitish)
+            if [ "$TARGET" != "$GITHUB_SHA" ]; then
+              echo "::error::Release $TAG targets $TARGET but this run is on $GITHUB_SHA; use \"Re-run failed jobs\" on the original run instead of dispatching a fresh one."
+              exit 1
+            fi
+            echo "Release $TAG already published at $TARGET; skipping build (re-run recovery path)."
             echo "should_release=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # A pre-existing tag would make the published release point at a
           # commit this run did not build; leftover drafts are handled later.
-          if [ "$STATE" = "none" ] && [ -n "$(git ls-remote --tags origin "refs/tags/$TAG")" ]; then
+          # Assignment form: a network failure of ls-remote must fail the step
+          # under `set -e`, not read as "no such tag".
+          EXISTING_TAG=$(git ls-remote --tags origin "refs/tags/$TAG")
+          if [ "$STATE" = "none" ] && [ -n "$EXISTING_TAG" ]; then
             echo "::error::Tag $TAG exists without a published release; delete the tag or bump the version."
             exit 1
           fi
@@ -325,7 +346,23 @@ jobs:
 
   release:
     needs: [prepare, build, build-deb, stage-platform-packages]
+    # Resume semantics (#598): should_release=false means the release is already
+    # published at THIS run's commit (prepare fails every other abnormal state,
+    # including a mismatched commit), so run anyway — the script's re-check
+    # no-ops and the verify step re-asserts the published asset set. Previously
+    # a skipped `build` skipped this job transitively and the run ended green
+    # with the failed step never retried. On a fresh run all three build jobs
+    # must have succeeded; !cancelled() keeps cancellation and a failed prepare
+    # fatal despite the status-function override of the implicit needs gate.
+    if: >-
+      !cancelled() && needs.prepare.result == 'success' &&
+      (needs.prepare.outputs.should_release == 'false' ||
+        (needs.build.result == 'success' &&
+         needs.build-deb.result == 'success' &&
+         needs.stage-platform-packages.result == 'success'))
     runs-on: ubuntu-latest
+    outputs:
+      verified: ${{ steps.verify.outputs.verified }}
 
     steps:
       - name: Harden Runner
@@ -343,7 +380,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: ./.github/actions/setup-toolchain
+      # artifacts/ exists only on a fresh run: a resume (should_release=false)
+      # owns no build artifacts, and the release script exits before touching
+      # them. Any step added to this job must not assume the directory is there.
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: needs.prepare.outputs.should_release == 'true'
         with:
           path: artifacts
           merge-multiple: true
@@ -356,11 +397,14 @@ jobs:
           # checkout's remote happens to say.
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
           NOTES: ${{ inputs.notes }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
+          set -euo pipefail
           # Re-check on re-runs: prepare's verdict may predate a publish that
-          # succeeded in the meantime.
+          # succeeded in the meantime, and on a resume (#598) this is the first
+          # gh call — nothing is created, deleted or uploaded past this point.
           if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null)" = "false" ]; then
             echo "Release $TAG already published; nothing to do."
             exit 0
@@ -369,8 +413,12 @@ jobs:
           # Drop leftover drafts from failed attempts. Several drafts can share
           # one tag_name and `gh release delete` removes only the first match,
           # so delete by id. Drafts hold no tag, so this never burns one.
-          for id in $(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
-              --jq ".[] | select(.draft and .tag_name == \"$TAG\") | .id"); do
+          # Assignment form, not `for id in $(gh ...)`: a word list swallows the
+          # command's exit status even under `set -e`, so a failed listing would
+          # read as "no leftover drafts".
+          DRAFT_IDS=$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+            --jq ".[] | select(.draft and .tag_name == \"$TAG\") | .id")
+          for id in $DRAFT_IDS; do
             gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/${id}"
             echo "Deleted leftover draft release id=${id}"
           done
@@ -384,11 +432,21 @@ jobs:
           # release commit itself. publish-npm.yml regenerates the package
           # metadata locally per-matrix and only pulls the named binary via
           # `gh release download --pattern`, so it is unaffected either way.
-          ASSETS=(artifacts/vibe-*-* artifacts/vibe_*.deb LICENSE THIRD-PARTY-LICENSES.md)
-          if [ "${#ASSETS[@]}" -ne 9 ]; then
-            echo "::error::Expected 9 release assets (5 binaries + 2 .deb + 2 license files), found ${#ASSETS[@]}: ${ASSETS[*]}"
-            exit 1
-          fi
+          #
+          # Exact-name gate (#597): the script verifies every expected file by
+          # name and prints the verified paths, which become the upload list —
+          # so the checked set and the uploaded set cannot diverge. Why not a
+          # glob plus a count: 4 binaries + 3 .debs + 2 licenses also totals 9,
+          # which is how a missing platform binary used to publish. Why the
+          # assignment and not `mapfile < <(...)`: process substitution swallows
+          # the gate's exit status under `set -e`.
+          ASSET_LIST=$(bun run scripts/verify-release-files.ts \
+            --channel stable --version "$VERSION" --artifacts-dir artifacts)
+          mapfile -t ASSETS <<<"$ASSET_LIST"
+          # Belt and braces: an empty ASSET_LIST would make mapfile produce a
+          # one-element array holding "", passing a bare empty argument to
+          # `gh release create`. Unreachable while the gate exits 1 on failure.
+          [ -n "$ASSET_LIST" ]
 
           if [ -n "$NOTES" ]; then
             printf '%s\n' "$NOTES" > notes.md
@@ -410,17 +468,12 @@ jobs:
             # proceed=false path).
             gh release create "$TAG" --draft --target "$GITHUB_SHA" \
               --title "$TAG" "${NOTES_ARGS[@]}" "${ASSETS[@]}"
-            COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
-            if [ "$COUNT" -ne 9 ]; then
-              echo "::error::Draft release has $COUNT assets, expected 9"
-              exit 1
-            fi
-            # Name-level check before the draft is discarded: the count above
-            # would be satisfied by nine assets of any kind.
+            # Set-equality check before the draft is discarded: every expected
+            # name present and usable, and nothing else attached.
             gh release view "$TAG" --json assets \
-              | bun run scripts/verify-release-assets.ts
+              | bun run scripts/verify-release-assets.ts --channel stable --version "$VERSION"
             gh release delete "$TAG" --yes
-            echo "Dry run OK: draft carried all 9 assets and was deleted."
+            echo "Dry run OK: draft carried all ${#ASSETS[@]} expected assets and was deleted."
             exit 0
           fi
 
@@ -436,39 +489,49 @@ jobs:
           gh release create "$TAG" --draft --target "$GITHUB_SHA" \
             --title "$TAG" "${NOTES_ARGS[@]}" "${ASSETS[@]}"
 
-          COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
-          if [ "$COUNT" -ne 9 ]; then
-            echo "::error::Draft release has $COUNT assets, expected 9"
-            exit 1
-          fi
-          # Name-level gate: the count above would be satisfied by nine assets
-          # of any kind, including nine binaries and no license documents.
+          # Set-equality gate: every expected name present and usable, and
+          # nothing else attached — an extra asset can no longer stand in for a
+          # missing binary the way a bare count allowed.
           gh release view "$TAG" --json assets \
-            | bun run scripts/verify-release-assets.ts
+            | bun run scripts/verify-release-assets.ts --channel stable --version "$VERSION"
 
           # Everything verified: burn the tag and go public. --latest is set
           # here rather than at create time because a draft cannot be latest.
           gh release edit "$TAG" --draft=false --latest
-          echo "Published $TAG with $COUNT assets."
+          echo "Published $TAG with ${#ASSETS[@]} assets."
 
       # Post-publish confirmation, distinct from the pre-publish gate inside the
       # step above: that one decides whether to publish at all, this one asserts
       # that undrafting did not change what the release carries. Cheap, and it
       # is the state downstream consumers (Homebrew, publish-npm) actually see.
-      - name: Verify published release carries the license documents
+      # On a resume run (#598) it is the only substantive verification, since
+      # the step above exits early — which is why update-homebrew gates on the
+      # `verified` output rather than on this job merely succeeding.
+      - name: Verify published release carries the full asset set
+        id: verify
         if: inputs.dry_run != true
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
+          set -euo pipefail
           gh release view "$TAG" --json assets \
-            | bun run scripts/verify-release-assets.ts
+            | bun run scripts/verify-release-assets.ts --channel stable --version "$VERSION"
+          echo "verified=true" >> "$GITHUB_OUTPUT"
 
   update-homebrew:
     needs: [prepare, release]
     # dry_run publishes nothing, so there is no release to mirror to the tap.
-    if: inputs.dry_run != true
+    # The explicit needs.release check replaces the implicit gate that
+    # `!cancelled()` overrides, and `verified` makes the post-publish asset
+    # check load-bearing for the tap: on a resume (#598) `release` succeeds via
+    # its early exit, so success alone would not mean anything was verified.
+    if: >-
+      !cancelled() && inputs.dry_run != true &&
+      needs.release.result == 'success' &&
+      needs.release.outputs.verified == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -476,19 +539,38 @@ jobs:
         uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
-      - name: Download artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          path: artifacts
-          merge-multiple: true
+      - name: Download released binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # The tap must hash the bytes users actually download, and on a resume
+          # run (#598) this run holds no build artifacts — the published release
+          # is the canonical source either way. Exact names rather than
+          # `vibe-darwin-*` globs, for the same reason the asset gate names
+          # every file (#597): a future asset must not silently join this set.
+          gh release download "$TAG" --dir artifacts \
+            --pattern vibe-darwin-arm64 --pattern vibe-darwin-x64 \
+            --pattern vibe-linux-arm64 --pattern vibe-linux-x64
 
       - name: Calculate SHA256
         id: sha256
         run: |
-          echo "darwin_arm64=$(sha256sum artifacts/vibe-darwin-arm64 | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
-          echo "darwin_x64=$(sha256sum artifacts/vibe-darwin-x64 | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
-          echo "linux_arm64=$(sha256sum artifacts/vibe-linux-arm64 | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
-          echo "linux_x64=$(sha256sum artifacts/vibe-linux-x64 | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          # Assignment form: inside `echo "$(...)"` a sha256sum failure would be
+          # swallowed and write an empty output under `set -e`.
+          DARWIN_ARM64=$(sha256sum artifacts/vibe-darwin-arm64 | cut -d ' ' -f 1)
+          DARWIN_X64=$(sha256sum artifacts/vibe-darwin-x64 | cut -d ' ' -f 1)
+          LINUX_ARM64=$(sha256sum artifacts/vibe-linux-arm64 | cut -d ' ' -f 1)
+          LINUX_X64=$(sha256sum artifacts/vibe-linux-x64 | cut -d ' ' -f 1)
+          {
+            echo "darwin_arm64=$DARWIN_ARM64"
+            echo "darwin_x64=$DARWIN_X64"
+            echo "linux_arm64=$LINUX_ARM64"
+            echo "linux_x64=$LINUX_X64"
+          } >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -499,6 +581,7 @@ jobs:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
+          set -euo pipefail
           # This job only mirrors stable releases; the beta channel formula
           # (vibe-beta.rb) is owned by beta-release.yml.
           FORMULA_NAME="vibe"

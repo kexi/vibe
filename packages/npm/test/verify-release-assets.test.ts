@@ -15,16 +15,26 @@
  *     the metadata absent altogether — is reported as a problem, since gh
  *     creates the record before the bytes land and always sends size/state, so
  *     "cannot tell" must fail rather than pass a release gate;
- *   - a release carrying extra assets (binaries, .debs) still passes, so the
- *     check does not have to be edited every time the artifact set changes.
+ *   - in the default mode a release carrying extra assets (binaries, .debs)
+ *     still passes, so the check does not have to be edited every time the
+ *     artifact set changes;
+ *   - in --channel mode the published asset-name set must EQUAL the manifest,
+ *     so a missing platform binary can no longer be masked by an unrelated
+ *     extra file the way the old asset-count assertion allowed (#597).
  */
 
 import { describe, it, expect } from "vitest";
+import { expectedReleaseAssets } from "../../../scripts/release-asset-manifest";
 import {
   REQUIRED_ASSETS,
   parseAssets,
   findAssetProblems,
+  findUnexpectedAssets,
+  parseCliOptions,
 } from "../../../scripts/verify-release-assets";
+
+const VERSION = "3.0.0";
+const STABLE_NAMES = expectedReleaseAssets("stable", VERSION).map((a) => a.name);
 
 /** The asset set a healthy stable release publishes. */
 const FULL_RELEASE = [
@@ -187,5 +197,107 @@ describe("findAssetProblems", () => {
       { name: "THIRD-PARTY-LICENSES.md", size: 10, state: "uploaded" },
     ];
     expect(findAssetProblems(assets)).toEqual(["missing required release asset: LICENSE"]);
+  });
+});
+
+describe("findAssetProblems in full-set (--channel) mode", () => {
+  it("accepts the exact stable set", () => {
+    expect(findAssetProblems(FULL_RELEASE, STABLE_NAMES)).toEqual([]);
+  });
+
+  it("accepts the exact beta set of seven", () => {
+    const betaNames = expectedReleaseAssets("beta", "3.0.0-beta.9").map((a) => a.name);
+    const beta = FULL_RELEASE.filter((a) => !a.name.endsWith(".deb"));
+    expect(findAssetProblems(beta, betaNames)).toEqual([]);
+    expect(findUnexpectedAssets(beta, betaNames)).toEqual([]);
+  });
+
+  it("reports the missing binary and the stray that kept the count at nine", () => {
+    // Exactly the #597 scenario: the win32 upload failed, an unrelated file
+    // took its place, and the old `[ "${#ASSETS[@]}" -ne 9 ]` check passed.
+    const assets = FULL_RELEASE.map((a) =>
+      a.name === "vibe-win32-x64" ? { ...a, name: "vibe_3.0.0_i386.deb" } : a,
+    );
+    expect(assets).toHaveLength(9);
+    expect(findAssetProblems(assets, STABLE_NAMES)).toEqual([
+      "missing required release asset: vibe-win32-x64",
+    ]);
+    expect(findUnexpectedAssets(assets, STABLE_NAMES)).toEqual([
+      "unexpected release asset: vibe_3.0.0_i386.deb",
+    ]);
+  });
+
+  it("guards the size of a binary, not just of the license documents", () => {
+    const assets = FULL_RELEASE.map((a) => (a.name === "vibe-darwin-arm64" ? { ...a, size: 0 } : a));
+    expect(findAssetProblems(assets, STABLE_NAMES)).toEqual([
+      "release asset vibe-darwin-arm64 is empty (0 bytes)",
+    ]);
+  });
+
+  it("guards the upload state of a .deb", () => {
+    const assets = FULL_RELEASE.map((a) =>
+      a.name === "vibe_3.0.0_amd64.deb" ? { ...a, state: "starter" } : a,
+    );
+    expect(findAssetProblems(assets, STABLE_NAMES)).toEqual([
+      "release asset vibe_3.0.0_amd64.deb is in state 'starter', expected 'uploaded'",
+    ]);
+  });
+
+  it("rejects a .deb named for a different version", () => {
+    const assets = FULL_RELEASE.map((a) =>
+      a.name === "vibe_3.0.0_arm64.deb" ? { ...a, name: "vibe_2.9.9_arm64.deb" } : a,
+    );
+    expect(findUnexpectedAssets(assets, STABLE_NAMES)).toEqual([
+      "unexpected release asset: vibe_2.9.9_arm64.deb",
+    ]);
+  });
+});
+
+describe("findUnexpectedAssets", () => {
+  it("accepts a release whose assets are exactly the expected set", () => {
+    expect(findUnexpectedAssets(FULL_RELEASE, STABLE_NAMES)).toEqual([]);
+  });
+
+  it("names every asset outside the expected set", () => {
+    const assets = [...FULL_RELEASE, { name: "package.json", size: 10, state: "uploaded" }];
+    expect(findUnexpectedAssets(assets, STABLE_NAMES)).toEqual([
+      "unexpected release asset: package.json",
+    ]);
+  });
+});
+
+describe("parseCliOptions", () => {
+  it("defaults to the license-documents-only mode with no arguments", () => {
+    expect(parseCliOptions([])).toEqual({});
+  });
+
+  it("reads a positional listing file", () => {
+    expect(parseCliOptions(["assets.json"])).toEqual({ file: "assets.json" });
+  });
+
+  it("reads the channel/version pair", () => {
+    expect(parseCliOptions(["--channel", "stable", "--version", "3.1.0"])).toEqual({
+      channel: "stable",
+      version: "3.1.0",
+    });
+  });
+
+  it("rejects --channel without --version", () => {
+    // Accepting it would silently fall back to the weaker license-only gate.
+    expect(() => parseCliOptions(["--channel", "stable"])).toThrowError(/must be given together/);
+  });
+
+  it("rejects --version without --channel", () => {
+    expect(() => parseCliOptions(["--version", "3.1.0"])).toThrowError(/must be given together/);
+  });
+
+  it("rejects an unknown channel", () => {
+    expect(() => parseCliOptions(["--channel", "nightly", "--version", "3.1.0"])).toThrowError(
+      /--channel must be stable or beta/,
+    );
+  });
+
+  it("rejects an unknown flag", () => {
+    expect(() => parseCliOptions(["--strict"])).toThrowError(/Unknown argument: --strict/);
   });
 });
