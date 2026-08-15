@@ -169,7 +169,10 @@ pub fn run_hooks(
 /// Why not print the raw error: the hook command comes verbatim from
 /// `.vibe.toml`, and trust is a hash of the file's content rather than a
 /// judgement of it, so a trusted-but-hostile command string could push ESC/bidi
-/// sequences onto the terminal.
+/// sequences onto the terminal. This hardens the command-string ECHO only —
+/// `run_hooks` still forwards the hook process's own stdout/stderr unsanitized
+/// (TS parity: a hook's output is its own to format), so a hostile hook can
+/// still write escape sequences through that channel.
 pub fn warn_on_hook_failure(io: &impl Io, result: Result<()>) -> Result<bool> {
     match result {
         Ok(()) => Ok(true),

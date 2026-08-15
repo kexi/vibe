@@ -457,6 +457,13 @@ where
     );
     // Re-entry into an existing worktree: a failing hook warns but still cds
     // (issue #601).
+    //
+    // No regression test guards this specific wrap: the same-branch case is
+    // currently unreachable through `start_command` because
+    // `validate_branch_for_worktree` matches before `check_worktree_conflict`
+    // (see `start_tests.rs::same_branch_at_target_is_idempotent_cd`). The
+    // `--reuse`/interactive-reuse sibling below IS covered. If that precedence
+    // ever changes, wire a case here.
     warn_on_hook_failure(
         deps.io,
         run_config_and_hooks(
@@ -642,9 +649,6 @@ where
         deps.tracker.start();
     }
 
-    // Finished even on the error path (mirroring `clean`'s hook helper): a
-    // downgraded hook failure returns a `cd`, and an unfinished tracker would
-    // leave a live progress display in front of it.
     let result =
         run_submodule_configs(deps, config, repo_root, worktree_path, options).and_then(|()| {
             run_config_body(
@@ -658,7 +662,17 @@ where
             )
         });
 
-    if has_ops {
+    // Finished on success and on a downgraded hook failure only: those return a
+    // `cd`, and an unfinished tracker would leave a live progress display in
+    // front of it.
+    //
+    // Why not on every error: `IndicatifTracker::finish` closes each still-open
+    // bar with the SUCCESS glyph and no annotation, so finishing after a fatal
+    // copy/submodule failure would render its pending tasks as completed right
+    // above the `Error:` line. Those bars are deliberately left abandoned until
+    // issue #600 adds a distinct abort glyph.
+    let finish_tracker = has_ops && matches!(result, Ok(()) | Err(VibeError::HookExecution { .. }));
+    if finish_tracker {
         deps.tracker.finish();
     }
 

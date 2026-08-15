@@ -1862,6 +1862,28 @@ fn tracker_finishes_when_a_hook_fails() {
     assert_eq!(started, finished, "unbalanced tracker events: {events:?}");
 }
 
+/// A FATAL error leaves the tracker unfinished, so `IndicatifTracker::finish`
+/// cannot close still-pending bars with the success glyph right above the
+/// `Error:` line (the abort rendering is issue #600's job).
+#[test]
+fn tracker_is_not_finished_when_the_error_is_fatal() {
+    let content =
+        "[submodules]\nconfigs = [\"../foo\"]\n[hooks]\npost_start = [\"boom\"]\n[copy]\nfiles = [\".env\"]\n";
+    let (_fx, _io, _repo_root, _git, fk, result) =
+        start_with_failing_hook(content, "boom", None, &StartFlags::default());
+    result.expect_err("a config error must stay fatal");
+
+    // The worktree-creation session earlier in the run has its own balanced
+    // Started/Finished pair; what must be left OPEN is the config-and-hooks
+    // session, i.e. the LAST event is its unmatched `Started`.
+    let events = fk.tracker.events();
+    assert_eq!(
+        events.last(),
+        Some(&TrackerEvent::Started),
+        "a fatal error must leave the config-and-hooks tracker unfinished: {events:?}"
+    );
+}
+
 #[test]
 fn submodule_configs_run_before_parent_pre_start_with_submodule_roots() {
     let (fx, io, resolver, repo_root) = trusted_repo_with_submodule_config();
