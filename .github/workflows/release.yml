@@ -554,6 +554,13 @@ jobs:
       # current" is the same fact the tap is supposed to mirror. Skipping (not
       # failing) keeps the re-run's purpose — repairing an old release's assets
       # or npm publish — from being blocked by an untouchable tap.
+      #
+      # Why `release list` and not `release view "$TAG" --json isLatest`:
+      # isLatest is a `release list` field only; `release view` does not expose
+      # it and would fail the step on every release, latest included.
+      # --exclude-drafts because an authenticated `release list` returns this
+      # repo's leftover drafts too, and a draft from a newer failed attempt must
+      # not read as "something newer already shipped".
       - name: Confirm this release is still the latest stable
         id: latest
         env:
@@ -562,11 +569,13 @@ jobs:
           TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           set -euo pipefail
-          IS_LATEST=$(gh release view "$TAG" --json isLatest --jq .isLatest)
-          if [ "$IS_LATEST" != "true" ]; then
-            LATEST=$(gh release list --exclude-pre-releases --limit 1 \
-              --json tagName --jq '.[0].tagName')
-            echo "::warning::$TAG is no longer the latest stable release ($LATEST is); leaving the Homebrew tap untouched."
+          # Fetch a window and pick isLatest inside jq: `--limit 1` would take
+          # one release and only THEN filter, so any newer entry at the head
+          # would yield "" and skip the tap on a genuinely-latest release.
+          LATEST=$(gh release list --exclude-drafts --exclude-pre-releases --limit 100 \
+            --json tagName,isLatest --jq '[.[] | select(.isLatest)][0].tagName // ""')
+          if [ "$LATEST" != "$TAG" ]; then
+            echo "::warning::$TAG is no longer the latest stable release (${LATEST:-none} is); leaving the Homebrew tap untouched."
             echo "proceed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi

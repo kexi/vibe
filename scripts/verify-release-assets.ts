@@ -182,7 +182,15 @@ export function parseCliOptions(argv: string[]): CliOptions {
       }
       options.channel = value;
     } else if (arg === "--version") {
-      options.version = argv[++i];
+      const value = argv[++i];
+      // Rejected rather than stored: a trailing `--version` with no value
+      // leaves options.version undefined, which the pair check below then reads
+      // as "neither flag given" and waves through into the license-only mode —
+      // the exact silent downgrade that check exists to prevent.
+      if (value === undefined || value === "") {
+        throw new Error("--version requires a value");
+      }
+      options.version = value;
     } else if (arg.startsWith("-")) {
       throw new Error(`Unknown argument: ${arg}`);
     } else if (options.file === undefined) {

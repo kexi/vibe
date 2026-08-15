@@ -291,6 +291,16 @@ describe("parseCliOptions", () => {
     expect(() => parseCliOptions(["--version", "3.1.0"])).toThrowError(/must be given together/);
   });
 
+  it("rejects a valueless --version instead of degrading to the license-only gate", () => {
+    // A trailing --version leaves version undefined, which the pair check reads
+    // as "neither flag given" — so without an explicit rejection the caller
+    // gets the weak default mode while believing it asked for full-set mode.
+    expect(() => parseCliOptions(["--version"])).toThrowError(/--version requires a value/);
+    expect(() => parseCliOptions(["--channel", "stable", "--version"])).toThrowError(
+      /--version requires a value/,
+    );
+  });
+
   it("rejects an unknown channel", () => {
     expect(() => parseCliOptions(["--channel", "nightly", "--version", "3.1.0"])).toThrowError(
       /--channel must be stable or beta/,

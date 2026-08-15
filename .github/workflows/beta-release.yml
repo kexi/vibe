@@ -353,7 +353,11 @@ jobs:
           # `--limit 1` would fetch one release and only THEN filter, so a
           # single newer stable at the head would report "no beta exists" and
           # wave an old beta through. Fetch a window and filter inside jq.
-          NEWEST=$(gh release list --limit 100 \
+          # --exclude-drafts because an authenticated `release list` returns
+          # drafts too, and this workflow creates its prerelease as a draft
+          # first: a newer run that died before undrafting would otherwise read
+          # as "a newer beta shipped" and skip the tap repair this run is for.
+          NEWEST=$(gh release list --exclude-drafts --limit 100 \
             --json tagName,isPrerelease --jq '[.[] | select(.isPrerelease)][0].tagName // ""')
           if [ "$NEWEST" != "$TAG" ]; then
             echo "::warning::$TAG is no longer the newest beta prerelease (${NEWEST:-none} is); leaving the Homebrew tap untouched."
