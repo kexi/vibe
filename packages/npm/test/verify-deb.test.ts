@@ -6,10 +6,12 @@
  * test of the installed binary, so a package that drops them would otherwise
  * ship silently.
  *
- * The pure parsing/validation is unit-tested here, plus the producer→consumer
- * pipe wiring driven with stand-in processes (a consumer that leaves before it
- * has drained its input must surface as a reported exit code, not a crash or a
- * hang). The `dpkg-deb` invocation that feeds it is exercised by the CI
+ * The pure parsing/validation is unit-tested here, plus the exit-code blame
+ * precedence and the producer→consumer pipe wiring driven with stand-in
+ * processes (a consumer that leaves before it has drained its input must
+ * surface as a reported exit code, not a crash or a hang; a genuine I/O fault
+ * must come back to the caller rather than becoming an uncaughtException).
+ * The `dpkg-deb` invocation that feeds it is exercised by the CI
  * build-deb steps (it needs a real archive, and dpkg-deb does not exist on
  * macOS dev machines).
  */
@@ -26,7 +28,15 @@ import {
   resolveDebPath,
   isBrokenPipeError,
   pipeIgnoringBrokenPipe,
+  describeMemberFailure,
 } from "../../../scripts/verify-deb";
+
+/**
+ * The streaming tests fail by hanging when they regress, and vitest's default
+ * 5s timeout makes that look like general slowness. A tight explicit budget
+ * (they measure ~50ms each) makes a regression fail fast and unambiguously.
+ */
+const STREAM_TEST_TIMEOUT_MS = 2000;
 
 /** A well-formed `dpkg-deb --contents` listing for a correct package. */
 const GOOD_CONTENTS = `drwxr-xr-x root/root         0 2025-01-01 00:00 ./
@@ -229,6 +239,10 @@ describe("pipeIgnoringBrokenPipe", () => {
    * flight after the consumer is gone, which is what raises EPIPE. It tolerates
    * its own broken pipe so the test observes the wiring under test rather than
    * the producer's own crash, mirroring dpkg-deb dying of SIGPIPE.
+   *
+   * Writes honour backpressure (`write()` false → await 'drain') so the child's
+   * memory stays flat and it models dpkg-deb's real streaming behaviour instead
+   * of buffering the whole payload in its own heap.
    */
   function spawnSlowProducer() {
     return spawn(
@@ -236,9 +250,15 @@ describe("pipeIgnoringBrokenPipe", () => {
       [
         "-e",
         "process.stdout.on('error',()=>process.exit(0));" +
-        "const b=Buffer.alloc(1024*1024);" +
-        "for(let i=0;i<64;i++)process.stdout.write(b);" +
-        "process.stdout.end()",
+          "const b=Buffer.alloc(1024*1024);" +
+          "let i=0;" +
+          "(function pump(){" +
+          "  while(i<64){" +
+          "    i++;" +
+          "    if(!process.stdout.write(b)){process.stdout.once('drain',pump);return;}" +
+          "  }" +
+          "  process.stdout.end();" +
+          "})()",
       ],
       { stdio: ["ignore", "pipe", "ignore"] },
     );
@@ -263,7 +283,7 @@ describe("pipeIgnoringBrokenPipe", () => {
     ]);
 
     expect(consumerCode).toBe(2);
-  });
+  }, STREAM_TEST_TIMEOUT_MS);
 
   it("lets both processes finish when the consumer leaves with a success status", async () => {
     // A consumer that has all it needs and exits 0 (tar --fast-read) breaks the
@@ -281,7 +301,7 @@ describe("pipeIgnoringBrokenPipe", () => {
     ]);
 
     expect(consumerCode).toBe(0);
-  });
+  }, STREAM_TEST_TIMEOUT_MS);
 
   it("forwards every byte when the consumer drains its input", async () => {
     const producer = spawn(process.execPath, ["-e", "process.stdout.write('hello')"], {
@@ -291,7 +311,7 @@ describe("pipeIgnoringBrokenPipe", () => {
       stdio: ["pipe", "pipe", "ignore"],
     });
 
-    pipeIgnoringBrokenPipe(producer.stdout, consumer.stdin);
+    const failure = pipeIgnoringBrokenPipe(producer.stdout, consumer.stdin);
 
     const chunks: Buffer[] = [];
     consumer.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -299,17 +319,19 @@ describe("pipeIgnoringBrokenPipe", () => {
 
     expect(code).toBe(0);
     expect(Buffer.concat(chunks).toString("utf-8")).toBe("hello");
-  });
+    expect(failure()).toBeUndefined();
+  }, STREAM_TEST_TIMEOUT_MS);
 
   it("forwards a payload larger than the pipe buffer without truncating it", async () => {
     // Guards the teardown from firing on a healthy stream: destroying the source
     // whenever the sink closes would cut a multi-megabyte member short and the
     // verifier would then read a truncated copyright as a marker mismatch.
     const size = 8 * 1024 * 1024;
-    const producer = spawn(process.execPath, [
-      "-e",
-      `process.stdout.write(Buffer.alloc(${size}, 0x61))`,
-    ], { stdio: ["ignore", "pipe", "ignore"] });
+    const producer = spawn(
+      process.execPath,
+      ["-e", `process.stdout.write(Buffer.alloc(${size}, 0x61))`],
+      { stdio: ["ignore", "pipe", "ignore"] },
+    );
     const consumer = spawn(process.execPath, ["-e", "process.stdin.pipe(process.stdout)"], {
       stdio: ["pipe", "pipe", "ignore"],
     });
@@ -322,5 +344,65 @@ describe("pipeIgnoringBrokenPipe", () => {
 
     expect(code).toBe(0);
     expect(Buffer.concat(chunks)).toHaveLength(size);
+  }, STREAM_TEST_TIMEOUT_MS);
+
+  it("hands a genuine I/O fault back to the caller instead of crashing the process", async () => {
+    // What this guards: a real read fault must reach `main().catch` so it prints
+    // "verify-deb: <message>". Throwing it from the stream's error listener would
+    // make it an uncaughtException and kill the script with a raw stack trace —
+    // the undiagnosable failure the fix exists to remove.
+    const producer = spawn(process.execPath, ["-e", "setTimeout(()=>{}, 10000)"], {
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const consumer = spawn(process.execPath, ["-e", "process.stdin.resume()"], {
+      stdio: ["pipe", "pipe", "ignore"],
+    });
+
+    const failure = pipeIgnoringBrokenPipe(producer.stdout, consumer.stdin);
+    // Not `events.once(producer.stdout, "close")`: that attaches its own error
+    // listener and would reject with the very error under test.
+    const sourceClosed = new Promise<void>((r) => producer.stdout.once("close", () => r()));
+    producer.stdout.destroy(Object.assign(new Error("read failed"), { code: "EIO" }));
+    await sourceClosed;
+
+    expect(failure()?.message).toBe("read failed");
+
+    producer.kill();
+    consumer.kill();
+    await Promise.all([once(producer, "close"), once(consumer, "close")]);
+  }, STREAM_TEST_TIMEOUT_MS);
+
+  it("reports no failure for a broken pipe, which is the expected teardown", async () => {
+    const producer = spawnSlowProducer();
+    const consumer = spawn(process.execPath, ["-e", "process.exit(2)"], {
+      stdio: ["pipe", "pipe", "ignore"],
+    });
+
+    const failure = pipeIgnoringBrokenPipe(producer.stdout, consumer.stdin);
+    await Promise.all([once(producer, "close"), once(consumer, "close")]);
+
+    expect(failure()).toBeUndefined();
+  }, STREAM_TEST_TIMEOUT_MS);
+});
+
+describe("describeMemberFailure", () => {
+  it("blames tar when it exits non-zero, even though dpkg-deb died of SIGPIPE", () => {
+    // The producer's null exit is a consequence of tar leaving, so naming it
+    // would report the wrong process and hide the real "member not found".
+    expect(describeMemberFailure(2, null, "usr/share/doc/vibe/copyright")).toBe(
+      "could not extract usr/share/doc/vibe/copyright from the package (tar exit 2)",
+    );
+  });
+
+  it("blames dpkg-deb when tar succeeded but the producer failed", () => {
+    // A corrupt archive closes the pipe cleanly, which tar reads as end-of-input
+    // and exits 0 for; ignoring the producer would call that an empty member.
+    expect(describeMemberFailure(0, 2, "usr/share/doc/vibe/copyright")).toBe(
+      "dpkg-deb could not read the package (exit 2)",
+    );
+  });
+
+  it("reports nothing when both processes exited cleanly", () => {
+    expect(describeMemberFailure(0, 0, "usr/share/doc/vibe/copyright")).toBeUndefined();
   });
 });
