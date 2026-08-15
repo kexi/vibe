@@ -399,6 +399,12 @@ mod tests {
         /// What `symbolic-ref refs/remotes/origin/HEAD --short` returns, or
         /// `None` → the ref is missing (no remote HEAD configured).
         origin_head: Option<String>,
+        /// What `init.defaultBranch` is set to, if anything.
+        init_default_branch: Option<String>,
+        /// Make the `for-each-ref refs/remotes/origin/HEAD` confirmation probe
+        /// FAIL, standing in for a refs-backend hiccup. It must cost confidence
+        /// in the answer, never a resolution step.
+        fail_origin_head_probe: bool,
         /// Fail any call whose args START WITH this vector (e.g. ["branch","-m"]).
         fail_on: Option<Vec<String>>,
         /// Fail any call whose args EXACTLY equal this vector. Unlike `fail_on`'s
@@ -416,6 +422,8 @@ mod tests {
                 upstream_remote: None,
                 existing_branches: vec![],
                 origin_head: None,
+                init_default_branch: None,
+                fail_origin_head_probe: false,
                 fail_on: None,
                 fail_on_exact: None,
                 calls: RefCell::new(vec![]),
@@ -442,6 +450,17 @@ mod tests {
         /// Make `origin/HEAD` resolve to `branch`, i.e. declare it the default.
         fn with_default_branch(mut self, branch: &str) -> Self {
             self.origin_head = Some(format!("origin/{branch}"));
+            self
+        }
+        /// Declare the default branch through `init.defaultBranch` instead —
+        /// the shape of a repository with no remote.
+        fn with_init_default_branch(mut self, branch: &str) -> Self {
+            self.init_default_branch = Some(branch.to_string());
+            self
+        }
+        /// Break the origin/HEAD confirmation probe.
+        fn with_failing_origin_head_probe(mut self) -> Self {
+            self.fail_origin_head_probe = true;
             self
         }
         fn calls_contain(&self, prefix: &[&str]) -> bool {
@@ -484,6 +503,12 @@ mod tests {
             // The zero-exit probe `resolve_default_branch` uses to confirm whether
             // refs/remotes/origin/HEAD exists: empty output = confirmed absent.
             if args.first() == Some(&"for-each-ref") && args.contains(&"refs/remotes/origin/HEAD") {
+                if self.fail_origin_head_probe {
+                    return Err(VibeError::GitOperation {
+                        command: args.join(" "),
+                        message: "failed: cannot enumerate refs".into(),
+                    });
+                }
                 return Ok(match &self.origin_head {
                     Some(_) => "abc commit\trefs/remotes/origin/HEAD".to_string(),
                     None => String::new(),
@@ -499,12 +524,13 @@ mod tests {
                 };
             }
             if args.contains(&"init.defaultBranch") {
-                // Unconfigured in these tests → `get_default_branch` falls back
-                // to `master`, which no fixture branch is named.
-                return Err(VibeError::GitOperation {
-                    command: args.join(" "),
-                    message: "failed: key missing".into(),
-                });
+                return match &self.init_default_branch {
+                    // `--default ""` makes an unset key a successful, EMPTY
+                    // answer; `get_default_branch` then falls back to `master`,
+                    // which no fixture branch is named.
+                    Some(b) => Ok(b.clone()),
+                    None => Ok(String::new()),
+                };
             }
             if args.contains(&"--get") {
                 // branch.<name>.remote lookup.
@@ -1192,6 +1218,46 @@ mod tests {
     }
 
     // --- default-branch guard (#578) ----------------------------------------
+
+    /// What it guarantees: the default-branch guard still fires when the
+    /// origin/HEAD confirmation probe fails and the default branch is known only
+    /// from `init.defaultBranch`.
+    ///
+    /// This is the regression the probe introduced when it sat at the front of
+    /// the resolution chain: a `for-each-ref` failure short-circuited the whole
+    /// lookup, `get_default_branch` answered `master`, the guard no longer
+    /// recognized `develop` as the default, and the rename went through without
+    /// `--allow-default-branch`. The probe may cost CONFIDENCE in the name; it
+    /// may never cost a resolution step.
+    #[test]
+    fn the_default_branch_guard_survives_a_failing_origin_head_probe() {
+        let (_fx, io) = io_with_home();
+        let git = MockGit::new(&two_worktrees(&MAIN, &FEAT, "develop"), &FEAT)
+            // No remote HEAD; the default branch is known from config alone.
+            .with_init_default_branch("develop")
+            .with_failing_origin_head_probe();
+        let (r, s) = (NoResolver, NoScript);
+        let p = FakeProcessControl::new(&FEAT);
+        let d = deps(&io, &git, &r, &s, &p, &FEAT);
+        let err = rename_command(
+            &d,
+            "renamed",
+            RenameFlags::default(),
+            OutputOptions::default(),
+        )
+        .unwrap_err();
+        assert!(matches!(err, VibeError::AlreadyReported));
+
+        let out = io.stderr_text();
+        assert!(
+            out.contains("'develop' is this repository's default branch"),
+            "the guard must still recognize the default branch: {out}"
+        );
+        assert!(
+            !git.calls_contain(&["branch", "-m"]),
+            "nothing may be renamed"
+        );
+    }
 
     #[test]
     fn renaming_the_default_branch_errors_without_mutating() {
