@@ -27,6 +27,10 @@ struct ListGit {
     statuses: Vec<(String, Vec<u8>)>,
     /// Paths whose status call must FAIL, standing in for a broken worktree.
     failing_status: Vec<String>,
+    /// Message the status call fails with, so a test can inject hostile bytes.
+    status_error: Option<String>,
+    /// Whether the batched `for-each-ref` call itself must fail.
+    failing_ref_lookup: bool,
     /// Answer for `git log -1` on a detached worktree, as `(unix, iso)`.
     detached_log: Option<(i64, String)>,
     default_branch: String,
@@ -57,6 +61,8 @@ impl ListGit {
             refs: Vec::new(),
             statuses: Vec::new(),
             failing_status: Vec::new(),
+            status_error: None,
+            failing_ref_lookup: false,
             detached_log: None,
             default_branch: "main".to_string(),
             calls: RefCell::new(Vec::new()),
@@ -88,6 +94,19 @@ impl ListGit {
 
     fn with_failing_status(mut self, path: &str) -> Self {
         self.failing_status.push(path.to_string());
+        self
+    }
+
+    /// Fail `path`'s status call with a specific message.
+    fn with_status_error(mut self, path: &str, message: &str) -> Self {
+        self.failing_status.push(path.to_string());
+        self.status_error = Some(message.to_string());
+        self
+    }
+
+    /// Make the batched `for-each-ref` call fail outright.
+    fn with_failing_ref_lookup(mut self) -> Self {
+        self.failing_ref_lookup = true;
         self
     }
 
@@ -136,6 +155,12 @@ impl GitRunner for ListGit {
             return Ok(self.porcelain.clone());
         }
         if args.first() == Some(&"for-each-ref") {
+            if self.failing_ref_lookup {
+                return Err(VibeError::GitOperation {
+                    command: args.join(" "),
+                    message: "failed: fatal: bad object".to_string(),
+                });
+            }
             // Only the branches actually asked for, matching git's behaviour of
             // silently omitting a pattern that matches nothing.
             let wanted: Vec<&str> = args[2..].to_vec();
@@ -144,8 +169,11 @@ impl GitRunner for ListGit {
                 if !wanted.contains(&format!("refs/heads/{branch}").as_str()) {
                     continue;
                 }
+                // The FULL refname, as the `%(refname)` format asks for: the
+                // production parser strips `refs/heads/` itself, so a fake
+                // emitting short names would exercise a shape git never sends.
                 out.push_str(&format!(
-                    "{branch}\0{unix}\0{iso}\0{}\n",
+                    "refs/heads/{branch}\0{unix}\0{iso}\0{}\n",
                     upstream.as_deref().unwrap_or("")
                 ));
             }
@@ -176,7 +204,10 @@ impl GitRunner for ListGit {
             if self.failing_status.iter().any(|p| p == path) {
                 return Err(VibeError::GitOperation {
                     command: args.join(" "),
-                    message: "failed: fatal: not a git repository".to_string(),
+                    message: self
+                        .status_error
+                        .clone()
+                        .unwrap_or_else(|| "failed: fatal: not a git repository".to_string()),
                 });
             }
             let payload = self
@@ -924,7 +955,7 @@ fn branch_names_reach_git_as_fully_qualified_refs() {
     let call = git.for_each_ref_call().expect("for-each-ref was invoked");
     assert!(
         call.iter().all(|arg| arg == "for-each-ref"
-            || arg.starts_with("--format=%(refname:short)")
+            || arg.starts_with("--format=%(refname)")
             || arg.starts_with("refs/heads/")),
         "an operand escaped the refs/heads/ qualification: {call:?}"
     );
@@ -972,4 +1003,71 @@ fn a_missing_head_sha_serializes_as_null_not_an_empty_string() {
 
     let parsed: serde_json::Value = serde_json::from_str(&io.stderr_text()).unwrap();
     assert_eq!(parsed[0]["head"], serde_json::Value::Null);
+}
+
+#[test]
+fn a_failed_ref_lookup_leaves_base_unknown_instead_of_guessing() {
+    // What it guarantees: when the batched `for-each-ref` call itself fails,
+    // nothing is known about ANY branch's upstream, so BASE degrades to `-`
+    // rather than falling back to the default branch.
+    //
+    // The fallback is only correct when the call ANSWERED and the branch simply
+    // tracks nothing. Applying it to a call that never answered would make
+    // `list` assert "based on develop" about every row on no evidence — a
+    // stated fact that is wrong, which is worse than an admitted unknown.
+    let io = no_home();
+    let git = ListGit::with(&[("/repo/feat", "feat/x")])
+        .with_ref("feat/x", 60, Some("origin/develop"))
+        .with_default_branch("develop")
+        .with_failing_ref_lookup();
+    run(&io, &git, "/repo/feat", true).unwrap();
+
+    let parsed: serde_json::Value = serde_json::from_str(&io.stderr_text()).unwrap();
+    assert_eq!(parsed[0]["base"], serde_json::Value::Null);
+    // The AGE degrades with it, for the same reason.
+    assert_eq!(parsed[0]["last_commit_at"], serde_json::Value::Null);
+}
+
+#[test]
+fn a_branch_missing_from_a_successful_lookup_still_falls_back() {
+    // The complement of the test above: here the call ANSWERED and simply had
+    // no row for this branch (an unborn branch, or one whose ref vanished), so
+    // "tracks nothing" is a real observation and the default-branch fallback is
+    // the documented behaviour.
+    let io = no_home();
+    let git = ListGit::with(&[("/repo/feat", "feat/unborn")]).with_default_branch("develop");
+    run(&io, &git, "/repo/feat", true).unwrap();
+
+    let parsed: serde_json::Value = serde_json::from_str(&io.stderr_text()).unwrap();
+    assert_eq!(parsed[0]["base"], serde_json::json!("develop"));
+    assert_eq!(parsed[0]["last_commit_at"], serde_json::Value::Null);
+}
+
+#[test]
+fn a_status_failure_warning_is_sanitized_in_full() {
+    // What it guarantees: no terminal control character reaches stderr through
+    // the warning, including via git's own error text.
+    //
+    // git quotes the offending path back in its diagnostic, so sanitizing only
+    // the path this code interpolates would still let the identical escape
+    // through in git's copy of it — the message has to be sanitized as a whole.
+    let io = no_home();
+    let git = ListGit::with(&[("/repo/x", "feat/x")])
+        .with_ref("feat/x", 60, None)
+        .with_status_error(
+            "/repo/x",
+            "failed: fatal: cannot open '/repo/\x1b[2Kspoofed': No such file",
+        );
+    run(&io, &git, "/repo/x", false).unwrap();
+
+    let text = io.stderr_text();
+    assert!(
+        text.contains("Could not read status"),
+        "the warning must still be reported: {text}"
+    );
+    assert!(
+        !text.contains('\x1b'),
+        "an escape from git's error text reached the terminal: {text:?}"
+    );
+    assert!(text.contains('\u{fffd}'));
 }

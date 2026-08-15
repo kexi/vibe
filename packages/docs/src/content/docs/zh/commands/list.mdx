@@ -52,7 +52,9 @@ $ vibe list
 
 这是 git 的默认报告方式（`-unormal`）。`vibe` 刻意不传 `-uall`：`-uall` 会展开所有未跟踪目录，但这会让 git 在列表的每一行都完整遍历未跟踪的目录树 —— 在最不希望付出这种代价的仓库（陈旧的 `node_modules`、庞大的构建产物）中造成无上限的开销，而所优化的只是一个用来表达“这里有变更”的数字。
 
-无法确定取值的单元格会显示为 `-`。即使是 git 无法读取的 worktree（例如已删除检出所遗留的损坏 worktree）也一定会作为一行出现，只有受影响的单元格会降级，并且原因会作为警告报告出来。
+无法确定取值的单元格会显示为 `-`。即使是 git 无法读取的 worktree（例如已删除检出所遗留的损坏 worktree）也一定会作为一行出现，只有受影响的单元格会降级。
+
+读取 worktree 的 **STATUS** 失败时，原因会作为警告输出到 stderr。而 **AGE** 或 **BASE** 解析失败时（例如 `git log` 无法读取分离 HEAD 的 worktree），会静默降级为 `-` —— 这种情况足够常见，为此发出警告只会成为噪音。
 
 ### BASE
 
@@ -77,7 +79,9 @@ AGE 是最新提交的 committer date 至今的时间，采用截断（而非向
 vibe list --json 2>&1 | jq .
 ```
 
-`2>&1` 是必需的。`vibe` 将 JSON 负载写入 **stderr**，因为 stdout 是 shell 的 eval 通道：shell 包装函数执行 `eval "$(command vibe "$@")"`，写到那里的任何内容都会被当作 shell 代码执行。在 `--json` 模式下，负载是 stderr 上唯一的内容 —— 为了让文档保持可解析，连 `--verbose` 诊断信息和警告也会被扣留。
+`2>&1` 是必需的。`vibe` 将 JSON 负载写入 **stderr**，因为 stdout 是 shell 的 eval 通道：shell 包装函数执行 `eval "$(command vibe "$@")"`，写到那里的任何内容都会被当作 shell 代码执行。在 `--json` 模式下，`list` 自身写入 stderr 的只有负载 —— 为了让文档保持可解析，连 `--verbose` 诊断信息和命令自身的警告也会被扣留。
+
+有一个例外不在本命令的控制范围内：关于**全局**标志冲突的警告（`vibe --verbose --quiet list --json` 会输出 `Warning: Both --verbose and --quiet specified.`）在子命令运行之前发出，因此会出现在负载之前。解析输出时请避免同时使用相互冲突的全局标志。
 
 ### 结构
 

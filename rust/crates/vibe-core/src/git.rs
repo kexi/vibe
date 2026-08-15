@@ -505,8 +505,23 @@ pub fn has_uncommitted_changes(runner: &impl GitRunner) -> Result<bool> {
 /// repositories (a stale `node_modules`, a fat build output) where it is least
 /// wanted, to refine a number that only has to convey "there is something
 /// here". The count is documented as counting an untracked directory once.
+///
+/// `--untracked-files=normal` is passed EXPLICITLY rather than relied on as the
+/// default: `status.showUntrackedFiles=no` is a real configuration people set to
+/// speed up `git status` in big repositories, and under it git reports a
+/// worktree holding nothing but new files as completely clean. `list` would then
+/// state "clean" about a tree with uncommitted work in it — the one answer this
+/// column exists to get right. Passing the flag pins the behaviour to what the
+/// docs describe, independent of the user's config.
 pub fn worktree_status_z(runner: &impl GitRunner, path: &str) -> Result<Vec<u8>> {
-    runner.run_raw(&["-C", path, "status", "--porcelain=v1", "-z"])
+    runner.run_raw(&[
+        "-C",
+        path,
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=normal",
+    ])
 }
 
 /// Number of changed entries in a `git status --porcelain=v1 -z` payload.
@@ -588,15 +603,21 @@ pub fn branch_ref_info(
     if branches.is_empty() {
         return Ok(Vec::new());
     }
-    let patterns: Vec<String> = branches.iter().map(|b| format!("refs/heads/{b}")).collect();
+    let patterns: Vec<String> = branches
+        .iter()
+        .map(|b| format!("{BRANCH_REF_PREFIX}{b}"))
+        .collect();
     let mut args: Vec<&str> = vec![
         "for-each-ref",
-        "--format=%(refname:short)%00%(committerdate:unix)%00%(committerdate:iso8601-strict)%00%(upstream:short)",
+        "--format=%(refname)%00%(committerdate:unix)%00%(committerdate:iso8601-strict)%00%(upstream:short)",
     ];
     args.extend(patterns.iter().map(String::as_str));
     let output = runner.run(&args)?;
     Ok(parse_ref_info(&output))
 }
+
+/// The namespace every local branch ref lives under.
+const BRANCH_REF_PREFIX: &str = "refs/heads/";
 
 /// Parse the [`branch_ref_info`] format into `(short name, info)` pairs.
 ///
@@ -605,13 +626,21 @@ pub fn branch_ref_info(
 /// few fields, is skipped: it can only mean git emitted something this parser
 /// does not model, and dropping the row degrades to "age unknown" rather than
 /// failing the whole listing.
+///
+/// The key comes from `%(refname)` with [`BRANCH_REF_PREFIX`] stripped here,
+/// NOT from `%(refname:short)`. git's own shortening is ambiguity-aware: when a
+/// tag shares a branch's name it shortens `refs/heads/release` to `heads/release`
+/// rather than `release`, which would no longer match the branch name the caller
+/// looked up — the row would silently lose its AGE and upstream. Stripping a
+/// fixed prefix off the full refname is exact because the caller only ever asks
+/// for `refs/heads/` patterns.
 pub fn parse_ref_info(output: &str) -> Vec<(String, BranchRefInfo)> {
     output
         .lines()
         .filter(|line| !line.is_empty())
         .filter_map(|line| {
             let mut fields = line.split(REF_FIELD_SEPARATOR);
-            let name = fields.next()?;
+            let name = fields.next()?.strip_prefix(BRANCH_REF_PREFIX)?;
             let unix = fields.next()?.parse::<i64>().ok()?;
             let iso = fields.next()?;
             // An unset upstream renders as an empty field, which is not a ref.
@@ -1637,8 +1666,8 @@ branch refs/heads/main
 
     #[test]
     fn ref_info_parses_the_nul_separated_fields() {
-        let out = "main\x001700000000\x002023-11-14T22:13:20+00:00\x00origin/main\n\
-                   feat/x\x001700000100\x002023-11-14T22:15:00+00:00\x00\n";
+        let out = "refs/heads/main\x001700000000\x002023-11-14T22:13:20+00:00\x00origin/main\n\
+                   refs/heads/feat/x\x001700000100\x002023-11-14T22:15:00+00:00\x00\n";
         assert_eq!(
             parse_ref_info(out),
             vec![
@@ -1668,15 +1697,40 @@ branch refs/heads/main
     fn ref_info_keeps_a_branch_name_containing_a_pipe_in_one_field() {
         // The reason the separator is NUL: any printable delimiter can appear
         // in a branch name and would split the record into bogus fields.
-        let out = "feat|weird\x001700000000\x00iso\x00\n";
+        let out = "refs/heads/feat|weird\x001700000000\x00iso\x00\n";
         assert_eq!(parse_ref_info(out)[0].0, "feat|weird");
+    }
+
+    #[test]
+    fn ref_info_keys_stay_exact_when_a_tag_shares_the_branch_name() {
+        // What it guarantees: a repository holding both `refs/heads/release`
+        // and `refs/tags/release` still yields the key `release`.
+        //
+        // This is why the format asks for `%(refname)` and strips the prefix
+        // here. git's own `%(refname:short)` is ambiguity-aware and shortens
+        // that branch to `heads/release` instead, which would never match the
+        // branch name the caller looked up — the row would silently lose its
+        // AGE and its upstream.
+        let out = "refs/heads/release\x001700000000\x00iso\x00origin/release\n";
+        let parsed = parse_ref_info(out);
+        assert_eq!(parsed[0].0, "release");
+        assert_eq!(parsed[0].1.upstream.as_deref(), Some("origin/release"));
+    }
+
+    #[test]
+    fn ref_info_ignores_a_record_outside_the_branch_namespace() {
+        // Only `refs/heads/` patterns are ever asked for, so anything else is
+        // not a branch this listing can key on.
+        let out = "refs/tags/v1\x001700000000\x00iso\x00\n";
+        assert!(parse_ref_info(out).is_empty());
     }
 
     #[test]
     fn ref_info_skips_a_record_it_cannot_model() {
         // A malformed record degrades to "age unknown" for that branch rather
         // than failing the whole listing.
-        let out = "main\x00not-a-number\x00iso\x00\ngood\x001700000000\x00iso\x00\n";
+        let out = "refs/heads/main\x00not-a-number\x00iso\x00\n\
+                   refs/heads/good\x001700000000\x00iso\x00\n";
         let parsed = parse_ref_info(out);
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].0, "good");
@@ -1705,6 +1759,11 @@ branch refs/heads/main
         branch_ref_info(&git, &["--format=%(objectname)".to_string()]).unwrap();
         let args = git.0.borrow().clone();
         assert_eq!(args[0], "for-each-ref");
+        assert!(
+            args[1].starts_with("--format=%(refname)%00"),
+            "the key must come from the FULL refname, not %(refname:short): {:?}",
+            args[1]
+        );
         assert_eq!(args[2], "refs/heads/--format=%(objectname)");
     }
 
@@ -1737,7 +1796,30 @@ branch refs/heads/main
         worktree_status_z(&git, "/repo/x").unwrap();
         assert_eq!(
             git.recorded_args(),
-            vec!["-C", "/repo/x", "status", "--porcelain=v1", "-z"]
+            vec![
+                "-C",
+                "/repo/x",
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=normal",
+            ]
+        );
+    }
+
+    #[test]
+    fn worktree_status_pins_untracked_reporting_against_user_config() {
+        // What it guarantees: `status.showUntrackedFiles=no` — a real setting
+        // people use to speed up `git status` in large repositories — cannot
+        // make a worktree holding nothing but new files report as clean. The
+        // flag is passed explicitly so the answer does not depend on config.
+        let git = LsFilesGit::new("");
+        worktree_status_z(&git, "/repo/x").unwrap();
+        assert!(
+            git.recorded_args()
+                .contains(&"--untracked-files=normal".to_string()),
+            "the untracked-files mode must be pinned, got: {:?}",
+            git.recorded_args()
         );
     }
 

@@ -286,12 +286,22 @@ fn enrich_entries<G: GitRunner>(
     warnings: &mut DeferredWarnings,
 ) -> Vec<ListEntry> {
     let branches: Vec<String> = worktrees.iter().filter_map(|w| w.branch.clone()).collect();
-    // A failure here is not fatal: it costs the AGE and BASE columns, and an
-    // empty map makes every branch look unknown, which is the correct rendering.
-    let ref_info: HashMap<String, _> = branch_ref_info(git, &branches)
-        .unwrap_or_default()
-        .into_iter()
-        .collect();
+    // A failure here is not fatal — it costs the AGE and BASE columns — but it
+    // is kept DISTINCT from "the call worked and this branch had no upstream".
+    //
+    // Why not `unwrap_or_default()`: an empty map is indistinguishable from
+    // "every branch tracks nothing", which sends every row down the
+    // default-branch fallback below. `list` would then assert that each worktree
+    // is based on `develop` on the strength of a git call that never answered.
+    // A stated fact that happens to be wrong is worse than a `-`, so a failed
+    // call suppresses the fallback entirely and every BASE degrades to unknown.
+    // A per-branch MISS (unborn branch, ref genuinely absent) is a different
+    // thing and still falls back, because there the call did answer.
+    let ref_info: Option<HashMap<String, _>> = branch_ref_info(git, &branches)
+        .ok()
+        .map(|entries| entries.into_iter().collect());
+    let ref_lookup_failed = ref_info.is_none();
+    let ref_info = ref_info.unwrap_or_default();
 
     // Resolved once, lazily: it is only needed when some branch has no upstream,
     // and it is the same answer for every row.
@@ -316,6 +326,9 @@ fn enrich_entries<G: GitRunner>(
             };
 
             let base = match &w.branch {
+                // The ref lookup never answered, so nothing is known about ANY
+                // branch's upstream and the fallback would be a guess.
+                Some(_) if ref_lookup_failed => None,
                 Some(branch) => ref_info
                     .get(branch)
                     .and_then(|i| i.upstream.as_deref())
@@ -347,10 +360,14 @@ fn enrich_entries<G: GitRunner>(
                     (Some(label.to_string()), Some(count))
                 }
                 Err(e) => {
-                    warnings.push(format!(
+                    // Sanitized as a WHOLE, after formatting: `e` is git's own
+                    // stderr text, which quotes back the path that provoked it,
+                    // so sanitizing only the interpolated path would let the
+                    // very same control characters through in git's copy of it.
+                    warnings.push(sanitize_for_display(&format!(
                         "Could not read status of {}: {e}",
-                        sanitize_for_display(&w.path)
-                    ));
+                        w.path
+                    )));
                     (None, None)
                 }
             };
