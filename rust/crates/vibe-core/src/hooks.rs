@@ -111,7 +111,25 @@ pub fn run_hooks(
             }
         }
 
-        let result = runner.run_hook(cmd, cwd, &overlays)?;
+        // Not `?`: a spawn failure (cwd deleted under us, no shell) is itself a
+        // `HookExecution`, which the caller downgrades and then FINISHES the
+        // tracker on — and `IndicatifTracker::finish` stamps every still-open
+        // bar with the success glyph. Propagating without closing the bars would
+        // render this hook, and the ones after it that never ran, as completed.
+        let result = match runner.run_hook(cmd, cwd, &overlays) {
+            Ok(result) => result,
+            Err(error) => {
+                if let Some(info) = tracker {
+                    if let Some(id) = info.task_ids.get(i) {
+                        info.tracker.fail_task(*id, &error.to_string());
+                    }
+                    for id in info.task_ids.iter().skip(i + 1) {
+                        info.tracker.skip_task(*id);
+                    }
+                }
+                return Err(error);
+            }
+        };
 
         // No tracker → forward hook stdout to STDERR (never stdout). With a
         // tracker, suppress stdout to keep the progress display clean.
@@ -518,6 +536,66 @@ mod tests {
         assert!(events.contains(&TrackerEvent::Skip(ids[1])), "{events:?}");
         assert!(events.contains(&TrackerEvent::Skip(ids[2])), "{events:?}");
         // Nothing that never ran may be reported as completed.
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, TrackerEvent::Complete(_))),
+            "{events:?}"
+        );
+    }
+
+    /// A runner that cannot even SPAWN the hook (deleted cwd, missing shell).
+    struct UnspawnableHookRunner;
+
+    impl HookRunner for UnspawnableHookRunner {
+        fn run_hook(&self, cmd: &str, _cwd: &str, _env: &[(&str, &str)]) -> Result<HookOutput> {
+            Err(VibeError::HookExecution {
+                hook_command: cmd.to_string(),
+                message: "No such file or directory".into(),
+            })
+        }
+    }
+
+    /// A hook that could not be spawned closes its own bar as FAILED and the
+    /// later ones as SKIPPED, so the caller's `finish` cannot stamp any of them
+    /// with the success glyph.
+    #[test]
+    fn tracker_closes_the_bars_when_the_hook_cannot_be_spawned() {
+        use crate::progress::TrackerEvent;
+        let io = FakeIo::new();
+        let tracker = RecordingTracker::new();
+        let phase = tracker.add_phase("Pre-start hooks");
+        let ids: Vec<_> = ["first", "second"]
+            .iter()
+            .map(|label| tracker.add_task(phase, label))
+            .collect();
+        let info = HookTrackerInfo {
+            tracker: &tracker,
+            task_ids: &ids,
+        };
+        let env = HookEnv {
+            worktree_path: "/wt",
+            origin_path: "/main",
+        };
+        let err = run_hooks(
+            &io,
+            &UnspawnableHookRunner,
+            &cmds(&["first", "second"]),
+            "/gone",
+            &env,
+            Some(&info),
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, VibeError::HookExecution { .. }));
+        let events = tracker.events();
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, TrackerEvent::Fail(id, _) if *id == ids[0])),
+            "{events:?}"
+        );
+        assert!(events.contains(&TrackerEvent::Skip(ids[1])), "{events:?}");
         assert!(
             !events
                 .iter()

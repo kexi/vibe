@@ -1615,6 +1615,52 @@ fn dry_run_reports_symlinks_without_creating_them() {
     );
 }
 
+/// A hook command cannot drive the terminal through the DISPLAY paths either.
+/// Trust is a hash of the config's bytes, not a judgement of them, so an
+/// ESC/bidi sequence in the command must be neutralized wherever it is echoed —
+/// the dry-run listing as much as the failure summary — while the command the
+/// runner would execute stays byte-for-byte the config's.
+#[test]
+fn dry_run_sanitizes_the_hook_command_it_echoes() {
+    let content = "[hooks]\npre_start = [\"evil\\u001b[2Kcmd\"]\n";
+    let (fx, io, resolver, repo_root) = trusted_config_repo_with_content(content);
+    let _ = &fx;
+    let git = MockGit::new(&repo_root, &main_only());
+    let (s, p, sin) = (NoScript, ScriptPrompt::confirming(true), FakeStdin::none());
+    let fk = Fakes::new();
+    let flags = StartFlags {
+        dry_run: true,
+        ..Default::default()
+    };
+    {
+        let d = StartDeps {
+            io: &io,
+            git: &git,
+            resolver: &resolver,
+            script_runner: &s,
+            prompt: &p,
+            stdin: &sin,
+            hook_runner: &fk.hooks,
+            executor: &fk.exec,
+            symlink_creator: &fk.symlinks,
+            tracker: &fk.tracker,
+            version: V,
+        };
+        start_command(&d, "feat", &flags, OutputOptions::default()).unwrap();
+    }
+
+    let text = io.stderr_text();
+    assert!(
+        text.contains("Would run pre-start hooks:"),
+        "stderr: {text}"
+    );
+    assert!(
+        !text.contains('\x1b'),
+        "ESC must not reach stderr: {text:?}"
+    );
+    assert!(text.contains("evil\u{fffd}[2Kcmd"), "stderr: {text:?}");
+}
+
 #[test]
 fn a_failing_symlink_does_not_abort_start() {
     let (fx, io, resolver, repo_root) =
@@ -1875,6 +1921,54 @@ fn re_running_after_the_gate_clears_provisions_and_cds() {
         "the copy the gated run skipped must run on re-entry"
     );
     assert!(!io.stderr_text().contains("Warning: Hook"));
+}
+
+/// Running `vibe start feat` while ALREADY standing in the `feat` worktree cds
+/// without re-provisioning. `git rev-parse --show-toplevel` reports the linked
+/// worktree, so the origin and the destination are the same directory: the copy
+/// would read and write the same `.env`, and the hooks would guard an entry the
+/// user has already made.
+#[test]
+fn navigating_to_the_worktree_we_are_already_in_does_not_re_provision() {
+    let content =
+        "[hooks]\npre_start = [\"pre\"]\npost_start = [\"post\"]\n[copy]\nfiles = [\".env\"]\n";
+    let (fx, io, resolver, repo_root) = trusted_config_repo_with_content(content);
+    let _ = &fx;
+    // The process cwd IS the `feat` worktree, so git reports it as the root and
+    // lists it as the worktree holding `feat`.
+    let git = MockGit::new(
+        &repo_root,
+        &two_worktrees(&fake_root_str("home/u/other"), &repo_root, "feat"),
+    );
+    let (s, sin) = (NoScript, FakeStdin::none());
+    let fk = Fakes::new();
+    let outcome = {
+        let d = StartDeps {
+            io: &io,
+            git: &git,
+            resolver: &resolver,
+            script_runner: &s,
+            prompt: &ScriptPrompt::confirming(true),
+            stdin: &sin,
+            hook_runner: &fk.hooks,
+            executor: &fk.exec,
+            symlink_creator: &fk.symlinks,
+            tracker: &fk.tracker,
+            version: V,
+        };
+        start_command(&d, "feat", &StartFlags::default(), OutputOptions::default()).unwrap()
+    };
+
+    assert_eq!(outcome, Outcome::cd(&repo_root));
+    assert!(
+        fk.hooks.calls.borrow().is_empty(),
+        "no hook may re-run for a worktree the user is already in: {:?}",
+        fk.hooks.calls.borrow()
+    );
+    assert!(
+        fk.exec.file_copies.lock().unwrap().is_empty(),
+        "a copy here would have the same path as source and destination"
+    );
 }
 
 /// The gate applies to the reuse path too: `--reuse` into an existing worktree

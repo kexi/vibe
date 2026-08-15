@@ -38,7 +38,9 @@ use crate::git::{
 };
 use crate::hooks::{run_hooks, warn_on_hook_failure, HookEnv, HookRunner, HookTrackerInfo};
 use crate::io::Io;
-use crate::output::{error_log, log, success_log, verbose_log, warn_log, OutputOptions};
+use crate::output::{
+    error_log, log, sanitize_for_display, success_log, verbose_log, warn_log, OutputOptions,
+};
 use crate::progress::ProgressTracker;
 use crate::prompt::Prompt;
 use crate::settings::{RepoResolver, VibeSettings};
@@ -388,9 +390,13 @@ where
     };
     deps.tracker.start();
     let phase = deps.tracker.add_phase(phase_label);
+    // Only the progress LABEL is sanitized — `hooks` is passed to `run_hooks`
+    // untouched below, so the command still EXECUTES verbatim. The string is
+    // verbatim `.vibe.toml` content, trusted by content HASH rather than by
+    // judgement, so an ESC or bidi override in it must not reach the terminal.
     let task_ids: Vec<_> = hooks
         .iter()
-        .map(|h| deps.tracker.add_task(phase, h))
+        .map(|h| deps.tracker.add_task(phase, &sanitize_for_display(h)))
         .collect();
     let info = HookTrackerInfo {
         tracker: deps.tracker,

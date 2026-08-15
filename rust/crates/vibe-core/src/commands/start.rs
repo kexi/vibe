@@ -52,7 +52,9 @@ use crate::git_copy::{collect_git_copy_files, resolve_selection, GitCopySelectio
 use crate::glob::expand_copy_patterns;
 use crate::hooks::{run_hooks, warn_on_hook_failure, HookEnv, HookRunner, HookTrackerInfo};
 use crate::io::Io;
-use crate::output::{error_log, log, log_dry_run, verbose_log, warn_log, OutputOptions};
+use crate::output::{
+    error_log, log, log_dry_run, sanitize_for_display, verbose_log, warn_log, OutputOptions,
+};
 use crate::progress::ProgressTracker;
 use crate::prompt::Prompt;
 use crate::settings::RepoResolver;
@@ -510,6 +512,17 @@ where
     P: Prompt,
     Sr: StdinReader,
 {
+    // Already standing in the worktree we would navigate to: `git rev-parse
+    // --show-toplevel` reports the LINKED worktree, so `repo_root == existing`
+    // and re-provisioning would run the copy with source and destination the
+    // same path (`.env` -> `.env`), plus re-run the hooks against a worktree
+    // nothing has changed. Before the gate made this path re-provision, this
+    // case simply cd'd; keep that, because there is no entry to gate — the user
+    // is already inside.
+    if same_worktree(repo_root, existing) {
+        return Ok(Outcome::cd(existing.to_string()));
+    }
+
     let provisioning = run_config_and_hooks(
         deps,
         config,
@@ -1316,6 +1329,23 @@ fn resolve_submodule_roots(
     })
 }
 
+/// Whether two paths name the same worktree directory.
+///
+/// Why the canonicalization is best-effort rather than `?`: this only decides
+/// whether to SKIP redundant work, so a path that cannot be resolved (removed
+/// under us, permission denied) must fall back to the raw string compare and let
+/// the normal provisioning path report the real error, not turn a comparison
+/// into a fatal one of its own.
+fn same_worktree(a: &str, b: &str) -> bool {
+    if a == b {
+        return true;
+    }
+    match (Path::new(a).canonicalize(), Path::new(b).canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
+}
+
 fn canonicalize_existing(path: &Path, label: &str) -> Result<PathBuf> {
     path.canonicalize().map_err(|e| {
         VibeError::Configuration(format!(
@@ -1368,15 +1398,21 @@ where
     if dry_run {
         log_dry_run(deps.io, &format!("Would run {dry_label} hooks:"));
         for hook in hooks {
-            log_dry_run(deps.io, &format!("  - {hook}"));
+            // Sanitized for the same reason the failure summary is: the command
+            // is verbatim `.vibe.toml` content, trusted by content HASH rather
+            // than by judgement, so an ESC or bidi override in it would rewrite
+            // the terminal around the dry-run report.
+            log_dry_run(deps.io, &format!("  - {}", sanitize_for_display(hook)));
         }
         return Ok(());
     }
 
     let phase = deps.tracker.add_phase(phase_label);
+    // Only the progress LABEL is sanitized — `hooks` is passed to `run_hooks`
+    // untouched below, so the command still EXECUTES verbatim.
     let task_ids: Vec<_> = hooks
         .iter()
-        .map(|h| deps.tracker.add_task(phase, h))
+        .map(|h| deps.tracker.add_task(phase, &sanitize_for_display(h)))
         .collect();
     let info = HookTrackerInfo {
         tracker: deps.tracker,
