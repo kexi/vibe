@@ -6,6 +6,7 @@
 //! The single stdout write (the eval'd `cd` contract, with the newline guard)
 //! lives in `main.rs`, not here.
 
+use vibe_core::ansi::is_color_enabled;
 use vibe_core::clock::{RealClock, RealRandom};
 use vibe_core::commands::clean::{clean_command, CleanDeps, CleanFlags};
 use vibe_core::commands::scratch::scratch_command;
@@ -157,7 +158,7 @@ fn pick_tracker<'a>(
 ) -> &'a (dyn ProgressTracker + Sync) {
     let live = io.is_stderr_terminal() && !opts.quiet;
     if live {
-        *indicatif = Some(IndicatifTracker::new());
+        *indicatif = Some(IndicatifTracker::with_color(is_color_enabled(io)));
         indicatif.as_ref().unwrap()
     } else {
         *null = Some(NullTracker);

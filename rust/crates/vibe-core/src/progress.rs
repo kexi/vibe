@@ -4,11 +4,18 @@
 //! class). The TS rendered a live spinner tree; here the seam is a
 //! [`ProgressTracker`] trait so the live UI ([`IndicatifTracker`], stderr only)
 //! is swappable for a [`NullTracker`] (quiet / non-TTY / Claude-hook / unit
-//! tests) and a [`RecordingTracker`] (asserts the event sequence). Live spinner
-//! glyph parity is intentionally NOT tested — only the event protocol is.
+//! tests) and a [`RecordingTracker`] (asserts the event sequence).
+//!
+//! The terminal glyphs are produced by the pure [`render_line`] so the
+//! success / failure / abandoned renderings can be asserted without a tty: the
+//! three outcomes must stay visually distinct (the TS `TreeFormatter` used
+//! `☒` for success and a red `✗` for failure; rendering all three as `☒` made a
+//! failed copy indistinguishable from a successful one).
 //!
 //! SECURITY/contract: the live renderer draws to `ProgressDrawTarget::stderr()`
 //! so stdout stays clean for the eval'd `cd` line.
+
+use crate::ansi::{colorize, DIM, RED};
 
 /// Opaque handle to a phase or task node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,10 +83,56 @@ impl ProgressTracker for NullTracker {
     fn finish(&self) {}
 }
 
+/// How a node's line is rendered once it stops spinning.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskOutcome {
+    /// Ran to completion — `☒`.
+    Completed,
+    /// Errored — a red `✗`, plus the error in parentheses.
+    Failed,
+    /// Still pending when the run ended — a dim `☐`.
+    Abandoned,
+}
+
+impl TaskOutcome {
+    fn glyph(self) -> &'static str {
+        match self {
+            TaskOutcome::Completed => "☒",
+            TaskOutcome::Failed => "✗",
+            TaskOutcome::Abandoned => "☐",
+        }
+    }
+}
+
+/// Render the final line of a progress node.
+///
+/// Pure so glyph regressions are caught by a unit test; the live renderer only
+/// hands the result to `indicatif`. `error` is rendered only for
+/// [`TaskOutcome::Failed`], for which it is always present in practice.
+pub fn render_line(
+    outcome: TaskOutcome,
+    prefix: &str,
+    label: &str,
+    error: Option<&str>,
+    color: bool,
+) -> String {
+    let body = match (outcome, error) {
+        (TaskOutcome::Failed, Some(err)) => format!("{} {label} (failed: {err})", outcome.glyph()),
+        _ => format!("{} {label}", outcome.glyph()),
+    };
+    let painted = match outcome {
+        TaskOutcome::Completed => body,
+        TaskOutcome::Failed => colorize(RED, &body, color),
+        TaskOutcome::Abandoned => colorize(DIM, &body, color),
+    };
+    format!("{prefix}{painted}")
+}
+
 /// Live progress tracker backed by `indicatif`, drawing to STDERR only.
 pub struct IndicatifTracker {
     multi: indicatif::MultiProgress,
     bars: std::sync::Mutex<Vec<BarNode>>,
+    color: bool,
 }
 
 struct BarNode {
@@ -97,12 +150,22 @@ impl Default for IndicatifTracker {
 
 impl IndicatifTracker {
     /// Create a tracker drawing to stderr (keeps stdout clean for the `cd` line).
+    ///
+    /// Colors the failure/abandoned glyphs; the live tracker is only ever built
+    /// for an interactive stderr, but callers that have already resolved
+    /// `NO_COLOR`/`FORCE_COLOR` should use [`IndicatifTracker::with_color`].
     pub fn new() -> Self {
+        Self::with_color(true)
+    }
+
+    /// Same, with the caller's resolved [`crate::ansi::is_color_enabled`] value.
+    pub fn with_color(color: bool) -> Self {
         let multi =
             indicatif::MultiProgress::with_draw_target(indicatif::ProgressDrawTarget::stderr());
         IndicatifTracker {
             multi,
             bars: std::sync::Mutex::new(Vec::new()),
+            color,
         }
     }
 
@@ -147,32 +210,52 @@ impl ProgressTracker for IndicatifTracker {
         });
     }
     fn complete_task(&self, id: NodeId) {
+        let color = self.color;
         self.with_bar(id, |node| {
             node.done = true;
             node.bar.set_prefix("");
-            node.bar
-                .finish_with_message(format!("{}☒ {}", node.prefix, node.label));
+            node.bar.finish_with_message(render_line(
+                TaskOutcome::Completed,
+                &node.prefix,
+                &node.label,
+                None,
+                color,
+            ));
         });
     }
     fn fail_task(&self, id: NodeId, err: &str) {
-        let msg = format!("failed: {err}");
+        let color = self.color;
         self.with_bar(id, |node| {
             node.done = true;
             node.bar.set_prefix("");
-            node.bar
-                .abandon_with_message(format!("{}☒ {} ({msg})", node.prefix, node.label));
+            node.bar.abandon_with_message(render_line(
+                TaskOutcome::Failed,
+                &node.prefix,
+                &node.label,
+                Some(err),
+                color,
+            ));
         });
     }
     fn start(&self) {}
     fn finish(&self) {
+        let color = self.color;
         let mut bars = self.bars.lock().expect("progress mutex poisoned");
         for node in bars.iter_mut() {
             let is_unfinished = !node.done;
             if is_unfinished {
                 node.done = true;
                 node.bar.set_prefix("");
-                node.bar
-                    .finish_with_message(format!("{}☒ {}", node.prefix, node.label));
+                // Why not finish these as completed: a node still pending when
+                // the run ends never succeeded, and painting it `☒` is exactly
+                // the ambiguity this rendering is meant to remove.
+                node.bar.abandon_with_message(render_line(
+                    TaskOutcome::Abandoned,
+                    &node.prefix,
+                    &node.label,
+                    None,
+                    color,
+                ));
             }
         }
     }
@@ -261,6 +344,7 @@ mod recording {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ansi::RESET;
 
     #[test]
     fn null_tracker_is_a_noop() {
@@ -296,6 +380,66 @@ mod tests {
                 TrackerEvent::Complete(task),
                 TrackerEvent::Finished,
             ]
+        );
+    }
+
+    #[test]
+    fn success_failure_and_abandon_render_distinct_glyphs() {
+        let done = render_line(TaskOutcome::Completed, "   ┗ ", "npm install", None, false);
+        let failed = render_line(
+            TaskOutcome::Failed,
+            "   ┗ ",
+            "npm install",
+            Some("Exit code 1"),
+            false,
+        );
+        let abandoned = render_line(TaskOutcome::Abandoned, "   ┗ ", "npm install", None, false);
+
+        assert_eq!(done, "   ┗ ☒ npm install");
+        assert_eq!(failed, "   ┗ ✗ npm install (failed: Exit code 1)");
+        assert_eq!(abandoned, "   ┗ ☐ npm install");
+        assert_ne!(done, failed);
+        assert_ne!(done, abandoned);
+        assert_ne!(failed, abandoned);
+    }
+
+    #[test]
+    fn failure_is_red_and_abandon_is_dim_when_color_is_enabled() {
+        assert_eq!(
+            render_line(TaskOutcome::Failed, "┗ ", "copy", Some("denied"), true),
+            format!("┗ {RED}✗ copy (failed: denied){RESET}")
+        );
+        assert_eq!(
+            render_line(TaskOutcome::Abandoned, "┗ ", "copy", None, true),
+            format!("┗ {DIM}☐ copy{RESET}")
+        );
+    }
+
+    #[test]
+    fn success_is_never_colored() {
+        assert_eq!(
+            render_line(TaskOutcome::Completed, "┗ ", "copy", None, true),
+            "┗ ☒ copy"
+        );
+    }
+
+    #[test]
+    fn color_is_suppressed_when_disabled() {
+        for outcome in [
+            TaskOutcome::Completed,
+            TaskOutcome::Failed,
+            TaskOutcome::Abandoned,
+        ] {
+            let line = render_line(outcome, "┗ ", "copy", Some("boom"), false);
+            assert!(!line.contains('\x1b'), "unexpected escape in {line:?}");
+        }
+    }
+
+    #[test]
+    fn prefix_and_tree_shape_are_preserved() {
+        assert_eq!(
+            render_line(TaskOutcome::Completed, "┗ ", "Pre-start hooks", None, false),
+            "┗ ☒ Pre-start hooks"
         );
     }
 

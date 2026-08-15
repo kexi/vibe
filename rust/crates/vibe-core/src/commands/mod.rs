@@ -179,7 +179,7 @@ impl StartCommand for RealStart<'_> {
         let indicatif;
         let null;
         let tracker: &(dyn ProgressTracker + Sync) = if io.is_stderr_terminal() {
-            indicatif = IndicatifTracker::new();
+            indicatif = IndicatifTracker::with_color(crate::ansi::is_color_enabled(&io));
             &indicatif
         } else {
             null = NullTracker;

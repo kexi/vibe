@@ -316,11 +316,13 @@ they never print one.
 - Template `"{prefix}{spinner} {msg}"`; braille tick strings
   `⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏`, steady tick 80 ms.
 - Prefixes build the tree: phase `"┗ "`, task `"   ┗ "`.
-- Completion rewrites the line to `<prefix>☒ <label>`; failure to
-  `<prefix>☒ <label> (failed: <err>)`.
-- Only the **event protocol** is tested — live glyph parity is intentionally not
-  asserted. Add UI polish without breaking `add_phase`/`add_task`/`start_task`/
-  `complete_task`/`fail_task`/`start`/`finish`.
+- Final lines come from the pure `render_line(TaskOutcome, prefix, label, error, color)`:
+  completion → `<prefix>☒ <label>` (never colored), failure →
+  `<prefix>✗ <label> (failed: <err>)` in RED, and a task still pending at
+  `finish` → `<prefix>☐ <label>` in DIM. The three must stay visually distinct.
+- The event protocol **and** the rendered glyphs are tested (`render_line` unit
+  tests in `progress.rs`). Add UI polish without breaking `add_phase`/`add_task`/
+  `start_task`/`complete_task`/`fail_task`/`start`/`finish`.
 
 ### Status Indicators (`commands/verify.rs`)
 
