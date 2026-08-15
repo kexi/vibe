@@ -216,6 +216,35 @@ describe("parseCliArgs", () => {
     ).toThrowError(/--channel must be stable or beta/);
   });
 
+  it("rejects a valueless --repo-root instead of silently using the CWD", () => {
+    expect(() =>
+      parseCliArgs([
+        "--channel",
+        "stable",
+        "--version",
+        "3.1.0",
+        "--artifacts-dir",
+        "artifacts",
+        "--repo-root",
+      ]),
+    ).toThrowError(/--repo-root requires a value/);
+  });
+
+  it("rejects an empty --repo-root instead of silently using the CWD", () => {
+    expect(() =>
+      parseCliArgs([
+        "--channel",
+        "stable",
+        "--version",
+        "3.1.0",
+        "--artifacts-dir",
+        "artifacts",
+        "--repo-root",
+        "",
+      ]),
+    ).toThrowError(/--repo-root requires a value/);
+  });
+
   it("rejects an unknown flag", () => {
     expect(() =>
       parseCliArgs([

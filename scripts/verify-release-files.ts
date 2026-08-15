@@ -57,7 +57,16 @@ export function parseCliArgs(argv: string[]): CliArgs {
     } else if (arg === "--artifacts-dir") {
       artifactsDir = argv[++i];
     } else if (arg === "--repo-root") {
-      repoRoot = argv[++i];
+      const value = argv[++i];
+      // Rejected rather than stored: a valueless or empty `--repo-root` leaves
+      // repoRoot undefined, which the default below then reads as "the flag was
+      // never given" and silently resolves the license documents against the
+      // process CWD instead of the checkout the caller named — verifying files
+      // other than the ones about to be uploaded.
+      if (value === undefined || value === "") {
+        throw new Error("--repo-root requires a value");
+      }
+      repoRoot = value;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
