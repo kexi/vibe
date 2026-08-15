@@ -357,10 +357,18 @@ jobs:
           # drafts too, and this workflow creates its prerelease as a draft
           # first: a newer run that died before undrafting would otherwise read
           # as "a newer beta shipped" and skip the tap repair this run is for.
+          #
+          # Compare the -beta.N ordinal rather than taking the head of the list:
+          # gh orders by creation time, and a re-run that deletes and recreates
+          # its release gets a fresh timestamp, so an old beta could sort first
+          # and defeat the guard. N is github.run_number, which only increases,
+          # so the numeric maximum is the newest beta whatever the list order.
+          ORDINAL=${TAG##*-beta.}
           NEWEST=$(gh release list --exclude-drafts --limit 100 \
-            --json tagName,isPrerelease --jq '[.[] | select(.isPrerelease)][0].tagName // ""')
-          if [ "$NEWEST" != "$TAG" ]; then
-            echo "::warning::$TAG is no longer the newest beta prerelease (${NEWEST:-none} is); leaving the Homebrew tap untouched."
+            --json tagName,isPrerelease \
+            --jq '[.[] | select(.isPrerelease) | .tagName | capture("-beta\\.(?<n>[0-9]+)$") | .n | tonumber] | max // 0')
+          if [ "$ORDINAL" -lt "$NEWEST" ]; then
+            echo "::warning::$TAG is no longer the newest beta prerelease (beta.$NEWEST is); leaving the Homebrew tap untouched."
             echo "proceed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
