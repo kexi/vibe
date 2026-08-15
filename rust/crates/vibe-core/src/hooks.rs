@@ -10,10 +10,14 @@
 //! STDERR (so it never pollutes the eval'd `cd` on stdout); with a tracker,
 //! stdout is suppressed. A failed hook ALWAYS shows its stderr, then raises a
 //! [`VibeError::HookExecution`] (warning severity, exit 0 per `VibeError`).
+//! Commands must downgrade that error via [`warn_on_hook_failure`] before
+//! returning, so `HookExecution` never escapes a command function — an `Err`
+//! reaching the binary discards the command's `Outcome`, i.e. the very `cd` line
+//! the eval contract exists to deliver (issue #601).
 
-use crate::error::{Result, VibeError};
+use crate::error::{format_error_message, Result, VibeError};
 use crate::io::Io;
-use crate::output::warn_log;
+use crate::output::{sanitize_for_display, warn_log};
 use crate::progress::{NodeId, ProgressTracker};
 
 /// Captured result of one hook command.
@@ -145,6 +149,38 @@ pub fn run_hooks(
     }
 
     Ok(())
+}
+
+/// Downgrade a [`VibeError::HookExecution`] to its declared "warn and continue"
+/// severity: the failure is written to stderr as the same `Warning: Hook "..."
+/// failed: ...` line `format_error_message` produces, then swallowed. Every
+/// other error passes through untouched.
+///
+/// Returns `Ok(true)` when the hooks succeeded and `Ok(false)` when a failure
+/// was downgraded, so a warn-and-ABORT caller (`clean`'s `pre_clean`, which runs
+/// before anything is destroyed) can branch while warn-and-continue callers just
+/// apply `?`.
+///
+/// Why only `HookExecution` and not a catch-all: the same call chain also
+/// carries `FileSystem` copy failures and `Configuration`/`GitOperation`
+/// submodule failures, which leave a half-built worktree behind. Widening this
+/// match would emit a `cd` into it.
+///
+/// Why not print the raw error: the hook command comes verbatim from
+/// `.vibe.toml`, and trust is a hash of the file's content rather than a
+/// judgement of it, so a trusted-but-hostile command string could push ESC/bidi
+/// sequences onto the terminal.
+pub fn warn_on_hook_failure(io: &impl Io, result: Result<()>) -> Result<bool> {
+    match result {
+        Ok(()) => Ok(true),
+        Err(error @ VibeError::HookExecution { .. }) => {
+            if let Some(message) = format_error_message(&error, false) {
+                warn_log(io, &sanitize_for_display(&message));
+            }
+            Ok(false)
+        }
+        Err(other) => Err(other),
+    }
 }
 
 #[cfg(any(test, feature = "test-util"))]
@@ -341,6 +377,64 @@ mod tests {
         assert!(events
             .iter()
             .any(|e| matches!(e, crate::progress::TrackerEvent::Complete(_))));
+    }
+
+    /// A hook failure is downgraded to the same `Warning: Hook ...` line the
+    /// binary used to print, and reported as "did not succeed" so an aborting
+    /// caller can branch.
+    #[test]
+    fn warn_on_hook_failure_downgrades_to_warning_and_returns_false() {
+        let io = FakeIo::new();
+        let err = VibeError::HookExecution {
+            hook_command: "npm ci".into(),
+            message: "exit code 1".into(),
+        };
+        assert!(!warn_on_hook_failure(&io, Err(err)).unwrap());
+        assert!(io
+            .stderr_text()
+            .contains("Warning: Hook \"npm ci\" failed: exit code 1"));
+    }
+
+    /// Success passes through silently.
+    #[test]
+    fn warn_on_hook_failure_passes_ok_through() {
+        let io = FakeIo::new();
+        assert!(warn_on_hook_failure(&io, Ok(())).unwrap());
+        assert_eq!(io.stderr_text(), "");
+    }
+
+    /// Only `HookExecution` is downgraded: every other error stays fatal and is
+    /// not printed here (the binary owns that write).
+    #[test]
+    fn warn_on_hook_failure_passes_other_errors_through() {
+        let io = FakeIo::new();
+        let err =
+            warn_on_hook_failure(&io, Err(VibeError::FileSystem("disk gone".into()))).unwrap_err();
+        assert!(matches!(err, VibeError::FileSystem(_)));
+        assert_eq!(err.exit_code(), 1);
+        assert_eq!(io.stderr_text(), "");
+    }
+
+    /// A hostile-but-trusted hook command cannot drive the terminal: control and
+    /// bidi characters in the warning are replaced before printing.
+    #[test]
+    fn warn_on_hook_failure_sanitizes_the_hook_command() {
+        let io = FakeIo::new();
+        let err = VibeError::HookExecution {
+            hook_command: "evil\x1b[2Kcmd\u{202e}".into(),
+            message: "exit code 1".into(),
+        };
+        warn_on_hook_failure(&io, Err(err)).unwrap();
+        let text = io.stderr_text();
+        assert!(
+            !text.contains('\x1b'),
+            "ESC must not reach stderr: {text:?}"
+        );
+        assert!(
+            !text.contains('\u{202e}'),
+            "bidi override must not reach stderr: {text:?}"
+        );
+        assert!(text.contains("evil\u{fffd}[2Kcmd\u{fffd}"), "{text:?}");
     }
 
     #[test]

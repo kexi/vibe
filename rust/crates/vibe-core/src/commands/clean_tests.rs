@@ -910,6 +910,277 @@ fn pre_clean_runs_in_worktree_post_clean_in_main() {
     assert_eq!(calls[1].1, "/main");
 }
 
+// --- issue #601: a failing hook must not swallow the cd ---
+
+struct TrustResolver {
+    repos: std::collections::HashMap<String, RepoInfo>,
+}
+impl RepoResolver for TrustResolver {
+    fn repo_info(&self, path: &str) -> Option<RepoInfo> {
+        self.repos.get(path).cloned()
+    }
+    fn hash_file(&self, path: &str) -> std::result::Result<String, String> {
+        crate::hash::hash_file(path).map_err(|e| e.to_string())
+    }
+}
+
+/// A worktree directory holding a TRUSTED `.vibe.toml` with `content`.
+/// Returns (fixture, io, resolver, worktree path).
+fn trusted_worktree_config(content: &str) -> (Fixture, FakeIo, TrustResolver, String) {
+    use crate::hash::hash_content;
+    use crate::settings::{AllowEntry, RepoId};
+    use std::collections::HashMap;
+
+    let fx = Fixture::new();
+    let wt = fx.mkdir("wt-feat");
+    let wt_path = wt.to_string_lossy().into_owned();
+    std::fs::write(wt.join(".vibe.toml"), content).unwrap();
+
+    let io = FakeIo::new().with_env("HOME", fx.path().to_str().unwrap());
+    let mut settings = VibeSettings::default_settings();
+    settings.permissions.allow.push(AllowEntry {
+        repo_id: RepoId {
+            remote_url: None,
+            repo_root: Some(wt_path.clone()),
+        },
+        relative_path: ".vibe.toml".into(),
+        hashes: vec![hash_content(content.as_bytes())],
+        skip_hash_check: None,
+    });
+    save_user_settings(&io, &settings, V).unwrap();
+
+    let mut repos = HashMap::new();
+    repos.insert(
+        wt.join(".vibe.toml").to_string_lossy().into_owned(),
+        RepoInfo {
+            remote_url: None,
+            repo_root: wt_path.clone(),
+            relative_path: ".vibe.toml".into(),
+        },
+    );
+    (fx, io, TrustResolver { repos }, wt_path)
+}
+
+/// Drive `clean` over a trusted config with a hook runner failing `fail_suffix`.
+fn clean_with_failing_hook(
+    content: &str,
+    fail_suffix: &str,
+    flags: &CleanFlags,
+) -> (Fixture, FakeIo, String, MockGit, Fakes, Result<Outcome>) {
+    let (fx, io, resolver, wt_path) = trusted_worktree_config(content);
+    let git = MockGit::new(&wt_path, "/main", &two_worktrees("/main", &wt_path, "feat"));
+    let p = ScriptPrompt { confirm: true };
+    let sin = FakeStdin::none();
+    let fk = Fakes {
+        hooks: FakeHookRunner::failing_on(fail_suffix, 3, "hook stderr detail"),
+        ..Fakes::new()
+    };
+    let proc = FakeProcess::new(&wt_path);
+    let result = {
+        let d = CleanDeps {
+            io: &io,
+            git: &git,
+            resolver: &resolver,
+            prompt: &p,
+            process: &proc,
+            stdin: &sin,
+            hook_runner: &fk.hooks,
+            native: &fk.native,
+            spawner: &fk.spawner,
+            tracker: &fk.tracker,
+            clock: &fk.clock,
+            random: &fk.random,
+            cwd: &wt_path,
+            version: V,
+        };
+        clean_command(&d, flags, OutputOptions::default())
+    };
+    (fx, io, wt_path, git, fk, result)
+}
+
+/// A failing `pre_clean` hook aborts before anything is destroyed: no removal,
+/// no cd (the shell stays in the still-existing worktree), exit 0.
+#[test]
+fn failing_pre_clean_hook_aborts_without_removal_and_returns_none() {
+    let content = "[hooks]\npre_clean = [\"boom\"]\npost_clean = [\"echo post\"]\n";
+    let (_fx, io, wt_path, git, fk, result) =
+        clean_with_failing_hook(content, "boom", &CleanFlags::default());
+
+    let outcome = result.expect("a failing hook must not fail the command");
+    assert_eq!(outcome, Outcome::none());
+    assert!(!git.calls_contain(&["-C", "/main", "worktree", "remove"]));
+    assert!(fk.native.trash_calls.borrow().is_empty());
+    assert_eq!(
+        fk.hooks.calls.borrow().len(),
+        1,
+        "post_clean must not run after the abort"
+    );
+    assert!(io
+        .stderr_text()
+        .contains("Warning: Hook \"boom\" failed: exit code 3"));
+    let _ = wt_path;
+}
+
+/// A failing `post_clean` hook only warns: the worktree is already gone, so the
+/// cd to main must still be emitted (issue #601).
+#[test]
+fn failing_post_clean_hook_still_returns_cd_to_main() {
+    let content = "[hooks]\npost_clean = [\"boom\"]\n";
+    let (_fx, io, _wt_path, git, _fk, result) =
+        clean_with_failing_hook(content, "boom", &CleanFlags::default());
+
+    let outcome = result.expect("a failing hook must not fail the command");
+    assert_eq!(outcome, Outcome::cd("/main"));
+    assert!(git.calls_contain(&["-C", "/main", "worktree", "remove"]));
+    let stderr = io.stderr_text();
+    assert!(
+        stderr.contains("Warning: Hook \"boom\" failed: exit code 3"),
+        "stderr: {stderr}"
+    );
+    assert!(stderr.contains("has been removed."), "stderr: {stderr}");
+}
+
+/// Branch deletion is part of the already-succeeded removal, so a failing
+/// `post_clean` hook must not skip it.
+#[test]
+fn failing_post_clean_hook_still_deletes_branch_when_configured() {
+    let content = "[hooks]\npost_clean = [\"boom\"]\n[clean]\ndelete_branch = true\n";
+    let (_fx, _io, _wt_path, git, _fk, result) =
+        clean_with_failing_hook(content, "boom", &CleanFlags::default());
+
+    result.expect("a failing hook must not fail the command");
+    assert!(git.calls_contain(&["-C", "/main", "branch", "-d", "--", "feat"]));
+}
+
+/// Hook mode keeps the same split: a failing `pre_clean` skips the removal.
+#[test]
+fn hook_mode_failing_pre_clean_skips_removal() {
+    let content = "[hooks]\npre_clean = [\"boom\"]\n";
+    let (_fx, io, resolver, wt_path) = trusted_worktree_config(content);
+    let git = MockGit::new("/main", "/main", &two_worktrees("/main", &wt_path, "feat"));
+    let p = ScriptPrompt { confirm: true };
+    let json = serde_json::json!({ "worktree_path": &wt_path }).to_string();
+    let sin = FakeStdin::text(&json);
+    let fk = Fakes {
+        hooks: FakeHookRunner::failing_on("boom", 3, "hook stderr detail"),
+        ..Fakes::new()
+    };
+    let proc = FakeProcess::new("/main");
+    let flags = CleanFlags {
+        worktree_hook: true,
+        ..Default::default()
+    };
+    let outcome = {
+        let d = CleanDeps {
+            io: &io,
+            git: &git,
+            resolver: &resolver,
+            prompt: &p,
+            process: &proc,
+            stdin: &sin,
+            hook_runner: &fk.hooks,
+            native: &fk.native,
+            spawner: &fk.spawner,
+            tracker: &fk.tracker,
+            clock: &fk.clock,
+            random: &fk.random,
+            cwd: "/main",
+            version: V,
+        };
+        clean_command(&d, &flags, OutputOptions::default())
+            .expect("a failing hook must not fail the command")
+    };
+    assert_eq!(outcome, Outcome::none());
+    assert!(!git.calls_contain(&["-C", "/main", "worktree", "remove"]));
+    assert!(io
+        .stderr_text()
+        .contains("Warning: Hook \"boom\" failed: exit code 3"));
+}
+
+/// Hook mode emits no cd either way, but a failing `post_clean` must still not
+/// skip the branch deletion.
+#[test]
+fn hook_mode_failing_post_clean_still_returns_none_and_deletes_branch() {
+    let content = "[hooks]\npost_clean = [\"boom\"]\n[clean]\ndelete_branch = true\n";
+    let (_fx, io, resolver, wt_path) = trusted_worktree_config(content);
+    let git = MockGit::new("/main", "/main", &two_worktrees("/main", &wt_path, "feat"));
+    let p = ScriptPrompt { confirm: true };
+    let json = serde_json::json!({ "worktree_path": &wt_path }).to_string();
+    let sin = FakeStdin::text(&json);
+    let fk = Fakes {
+        hooks: FakeHookRunner::failing_on("boom", 3, "hook stderr detail"),
+        ..Fakes::new()
+    };
+    let proc = FakeProcess::new("/main");
+    let flags = CleanFlags {
+        worktree_hook: true,
+        ..Default::default()
+    };
+    let outcome = {
+        let d = CleanDeps {
+            io: &io,
+            git: &git,
+            resolver: &resolver,
+            prompt: &p,
+            process: &proc,
+            stdin: &sin,
+            hook_runner: &fk.hooks,
+            native: &fk.native,
+            spawner: &fk.spawner,
+            tracker: &fk.tracker,
+            clock: &fk.clock,
+            random: &fk.random,
+            cwd: "/main",
+            version: V,
+        };
+        clean_command(&d, &flags, OutputOptions::default())
+            .expect("a failing hook must not fail the command")
+    };
+    assert_eq!(outcome, Outcome::none());
+    assert!(git.calls_contain(&["-C", "/main", "worktree", "remove"]));
+    assert!(git.calls_contain(&["-C", "/main", "branch", "-d", "--", "feat"]));
+    assert!(io
+        .stderr_text()
+        .contains("Warning: Hook \"boom\" failed: exit code 3"));
+}
+
+/// The downgrade is narrow: a non-hook fatal error from the same run (an
+/// untrusted config) still fails at exit 1 with no cd.
+#[test]
+fn untrusted_config_stays_fatal_after_hook_downgrade() {
+    let content = "[hooks]\npost_clean = [\"boom\"]\n";
+    let (fx, io, mut resolver, wt_path) = trusted_worktree_config(content);
+    let _ = &fx;
+    // Drop the trust entry so `load_vibe_config` refuses the file.
+    resolver.repos.clear();
+    let git = MockGit::new(&wt_path, "/main", &two_worktrees("/main", &wt_path, "feat"));
+    let p = ScriptPrompt { confirm: true };
+    let sin = FakeStdin::none();
+    let fk = Fakes::new();
+    let proc = FakeProcess::new(&wt_path);
+    let err = {
+        let d = CleanDeps {
+            io: &io,
+            git: &git,
+            resolver: &resolver,
+            prompt: &p,
+            process: &proc,
+            stdin: &sin,
+            hook_runner: &fk.hooks,
+            native: &fk.native,
+            spawner: &fk.spawner,
+            tracker: &fk.tracker,
+            clock: &fk.clock,
+            random: &fk.random,
+            cwd: &wt_path,
+            version: V,
+        };
+        clean_command(&d, &CleanFlags::default(), OutputOptions::default()).unwrap_err()
+    };
+    assert_eq!(err.exit_code(), 1);
+    assert!(!git.calls_contain(&["-C", "/main", "worktree", "remove"]));
+}
+
 // --- SECURITY #3: hook-mode containment check ---
 
 #[test]

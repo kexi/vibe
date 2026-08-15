@@ -9,6 +9,12 @@
 //! worktree set (security #3, a divergence from the TS — non-fatal: a path not in
 //! the set is skipped rather than removed).
 //!
+//! A failing hook is non-fatal on both sides, but the reaction differs by
+//! position (issue #601): a `pre_clean` failure ABORTS before anything is
+//! destroyed and emits no `cd` (the worktree the shell sits in still exists),
+//! while a `post_clean` failure only warns — the worktree is already gone, so
+//! the `cd` to main and the branch deletion must still happen.
+//!
 //! One behavioral addition beyond the TS: branch deletion is SOFT-SKIPPED when
 //! the worktree's branch is the repository's default branch (see
 //! `maybe_delete_branch`), unless `--allow-default-branch` is given.
@@ -30,7 +36,7 @@ use crate::git::{
     detect_broken_worktree_link, get_default_branch, get_main_worktree_path, get_repo_root,
     get_worktree_by_path, get_worktree_list, has_uncommitted_changes, is_main_worktree, GitRunner,
 };
-use crate::hooks::{run_hooks, HookEnv, HookRunner, HookTrackerInfo};
+use crate::hooks::{run_hooks, warn_on_hook_failure, HookEnv, HookRunner, HookTrackerInfo};
 use crate::io::Io;
 use crate::output::{error_log, log, success_log, verbose_log, warn_log, OutputOptions};
 use crate::progress::ProgressTracker;
@@ -149,17 +155,26 @@ where
     let config = load_vibe_config(deps.io, deps.resolver, deps.version, &current_worktree_path)?;
 
     // pre_clean hooks (in the worktree).
-    run_lifecycle_hooks(
-        deps,
-        config
-            .as_ref()
-            .and_then(|c| c.hooks.as_ref())
-            .and_then(|h| h.pre_clean.as_deref()),
-        "Pre-clean hooks",
-        &current_worktree_path,
-        &current_worktree_path,
-        &main_path,
+    let pre_clean_ok = warn_on_hook_failure(
+        deps.io,
+        run_lifecycle_hooks(
+            deps,
+            config
+                .as_ref()
+                .and_then(|c| c.hooks.as_ref())
+                .and_then(|h| h.pre_clean.as_deref()),
+            "Pre-clean hooks",
+            &current_worktree_path,
+            &current_worktree_path,
+            &main_path,
+        ),
     )?;
+    if !pre_clean_ok {
+        // Nothing has been removed yet, so no cd: the shell stays in the
+        // still-existing worktree. Why not continue like post_clean does: a
+        // failing safety hook must never be followed by the destructive removal.
+        return Ok(Outcome::none());
+    }
 
     // chdir to main BEFORE removing (fatal on failure).
     if deps.process.chdir(&main_path).is_err() {
@@ -182,8 +197,12 @@ where
         opts,
     )?;
 
-    // post_clean hooks (in main).
-    run_post_clean_hooks(deps, config.as_ref(), &current_worktree_path, &main_path)?;
+    // post_clean hooks (in main). The worktree is already gone, so a failing
+    // hook must not suppress the cd-to-main or the branch deletion (issue #601).
+    warn_on_hook_failure(
+        deps.io,
+        run_post_clean_hooks(deps, config.as_ref(), &current_worktree_path, &main_path),
+    )?;
 
     success_log(
         deps.io,
@@ -582,17 +601,25 @@ where
     let config = load_vibe_config(deps.io, deps.resolver, deps.version, &worktree_path)?;
 
     // pre_clean hooks (in the worktree being removed).
-    run_lifecycle_hooks(
-        deps,
-        config
-            .as_ref()
-            .and_then(|c| c.hooks.as_ref())
-            .and_then(|h| h.pre_clean.as_deref()),
-        "Pre-clean hooks",
-        &worktree_path,
-        &worktree_path,
-        &main_path,
+    let pre_clean_ok = warn_on_hook_failure(
+        deps.io,
+        run_lifecycle_hooks(
+            deps,
+            config
+                .as_ref()
+                .and_then(|c| c.hooks.as_ref())
+                .and_then(|h| h.pre_clean.as_deref()),
+            "Pre-clean hooks",
+            &worktree_path,
+            &worktree_path,
+            &main_path,
+        ),
     )?;
+    if !pre_clean_ok {
+        // Same abort semantics as the normal path: a failing safety hook must
+        // never be followed by the destructive removal.
+        return Ok(Outcome::none());
+    }
 
     let settings = load_user_settings(deps.io, deps.resolver, deps.version)?;
     let use_fast_remove = clean_fast_remove(&settings);
@@ -616,7 +643,12 @@ where
         opts,
     )?;
 
-    run_post_clean_hooks(deps, config.as_ref(), &worktree_path, &main_path)?;
+    // The worktree is already gone, so a failing hook must not skip the branch
+    // deletion below (issue #601).
+    warn_on_hook_failure(
+        deps.io,
+        run_post_clean_hooks(deps, config.as_ref(), &worktree_path, &main_path),
+    )?;
 
     verbose_log(
         deps.io,

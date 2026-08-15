@@ -1657,6 +1657,211 @@ fn a_failing_symlink_does_not_abort_start() {
     );
 }
 
+// --- issue #601: a failing hook must not swallow the cd ---
+
+/// Drive `start` over a trusted config with a hook runner that fails any command
+/// ending in `fail_suffix`, returning everything a case needs to assert.
+fn start_with_failing_hook(
+    content: &str,
+    fail_suffix: &str,
+    worktree_list: Option<&str>,
+    flags: &StartFlags,
+) -> (Fixture, FakeIo, String, MockGit, Fakes, Result<Outcome>) {
+    let (fx, io, resolver, repo_root) = trusted_config_repo_with_content(content);
+    let list = worktree_list
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("worktree {repo_root}\nbranch refs/heads/main\n\n"));
+    let git = MockGit::new(&repo_root, &list);
+    let (s, p, sin) = (NoScript, ScriptPrompt::confirming(true), FakeStdin::none());
+    let fk = Fakes {
+        hooks: FakeHookRunner::failing_on(fail_suffix, 3, "hook stderr detail"),
+        ..Fakes::new()
+    };
+    let result = {
+        let d = StartDeps {
+            io: &io,
+            git: &git,
+            resolver: &resolver,
+            script_runner: &s,
+            prompt: &p,
+            stdin: &sin,
+            hook_runner: &fk.hooks,
+            executor: &fk.exec,
+            symlink_creator: &fk.symlinks,
+            tracker: &fk.tracker,
+            version: V,
+        };
+        start_command(&d, "feat", flags, OutputOptions::default())
+    };
+    (fx, io, repo_root, git, fk, result)
+}
+
+/// A failing `post_start` hook warns but still cds into the worktree that was
+/// just created (issue #601), and the hook's own stderr is still shown.
+#[test]
+fn failing_post_start_hook_warns_and_still_cds() {
+    let content = "[hooks]\npost_start = [\"boom\"]\n";
+    let (_fx, io, repo_root, git, _fk, result) =
+        start_with_failing_hook(content, "boom", None, &StartFlags::default());
+
+    let outcome = result.expect("a failing hook must not fail the command");
+    assert_eq!(outcome, Outcome::cd(format!("{repo_root}-feat")));
+    assert!(git.calls_contain(&["worktree", "add"]));
+    let stderr = io.stderr_text();
+    assert!(
+        stderr.contains("Warning: Hook \"boom\" failed: exit code 3"),
+        "stderr: {stderr}"
+    );
+    assert!(stderr.contains("hook stderr detail"), "stderr: {stderr}");
+}
+
+/// Stop-on-first-failure is unchanged: a failing `pre_start` skips the copy phase
+/// and `post_start`, but the cd is still emitted.
+#[test]
+fn failing_pre_start_hook_skips_copy_and_post_start_but_still_cds() {
+    let content = "[hooks]\npre_start = [\"boom\"]\npost_start = [\"echo post\"]\n[copy]\nfiles = [\".env\"]\n";
+    let (_fx, _io, repo_root, _git, fk, result) =
+        start_with_failing_hook(content, "boom", None, &StartFlags::default());
+
+    let outcome = result.expect("a failing hook must not fail the command");
+    assert_eq!(outcome, Outcome::cd(format!("{repo_root}-feat")));
+    assert_eq!(
+        fk.hooks.calls.borrow().len(),
+        1,
+        "post_start must not run after pre_start failed"
+    );
+    assert!(fk.exec.file_copies.lock().unwrap().is_empty());
+}
+
+/// The interactive "Reuse (use existing)" choice also keeps its cd when a hook
+/// fails — the same worktree-already-exists shape as `--reuse`, reached through
+/// the prompt.
+#[test]
+fn interactive_reuse_with_failing_hook_still_cds() {
+    let content = "[hooks]\npost_start = [\"boom\"]\n";
+    let (fx, io, resolver, repo_root) = trusted_config_repo_with_content(content);
+    let _ = &fx;
+    let wt = format!("{repo_root}-feat");
+    let git = MockGit::new(&repo_root, &two_worktrees(&repo_root, &wt, "other"));
+    // select(1) == Reuse.
+    let (s, p, sin) = (NoScript, ScriptPrompt::selecting(1), FakeStdin::none());
+    let fk = Fakes {
+        hooks: FakeHookRunner::failing_on("boom", 3, "hook stderr detail"),
+        ..Fakes::new()
+    };
+    let outcome = {
+        let d = StartDeps {
+            io: &io,
+            git: &git,
+            resolver: &resolver,
+            script_runner: &s,
+            prompt: &p,
+            stdin: &sin,
+            hook_runner: &fk.hooks,
+            executor: &fk.exec,
+            symlink_creator: &fk.symlinks,
+            tracker: &fk.tracker,
+            version: V,
+        };
+        start_command(&d, "feat", &StartFlags::default(), OutputOptions::default())
+            .expect("a failing hook must not fail the command")
+    };
+    assert_eq!(outcome, Outcome::cd(&wt));
+    assert!(!git.calls_contain(&["worktree", "add"]));
+    assert!(io
+        .stderr_text()
+        .contains("Warning: Hook \"boom\" failed: exit code 3"));
+}
+
+/// `--reuse` into a different-branch worktree still cds when a hook fails.
+#[test]
+fn reuse_with_failing_hook_still_cds() {
+    let content = "[hooks]\npost_start = [\"boom\"]\n";
+    let flags = StartFlags {
+        reuse: true,
+        ..Default::default()
+    };
+    // The target path already holds a DIFFERENT branch, so `--reuse` takes the
+    // reuse path instead of creating.
+    let (fx, io, resolver, repo_root) = trusted_config_repo_with_content(content);
+    let _ = &fx;
+    let list = two_worktrees(&repo_root, &format!("{repo_root}-feat"), "other");
+    let git = MockGit::new(&repo_root, &list);
+    // PanicPrompt: `--reuse` must never prompt.
+    let (s, p, sin) = (NoScript, PanicPrompt, FakeStdin::none());
+    let fk = Fakes {
+        hooks: FakeHookRunner::failing_on("boom", 3, "hook stderr detail"),
+        ..Fakes::new()
+    };
+    let result = {
+        let d = StartDeps {
+            io: &io,
+            git: &git,
+            resolver: &resolver,
+            script_runner: &s,
+            prompt: &p,
+            stdin: &sin,
+            hook_runner: &fk.hooks,
+            executor: &fk.exec,
+            symlink_creator: &fk.symlinks,
+            tracker: &fk.tracker,
+            version: V,
+        };
+        start_command(&d, "feat", &flags, OutputOptions::default())
+    };
+
+    let outcome = result.expect("a failing hook must not fail the command");
+    assert_eq!(outcome, Outcome::cd(format!("{repo_root}-feat")));
+    // Reuse: nothing created or removed.
+    assert!(!git.calls_contain(&["worktree", "add"]));
+    assert!(!git.calls_contain(&["worktree", "remove"]));
+    assert!(io
+        .stderr_text()
+        .contains("Warning: Hook \"boom\" failed: exit code 3"));
+}
+
+/// The downgrade is narrow: a non-hook failure from the same call chain (here an
+/// invalid submodule config path) stays FATAL, so no cd into a half-built
+/// worktree is emitted.
+#[test]
+fn submodule_error_stays_fatal_after_hook_downgrade() {
+    let content = "[submodules]\nconfigs = [\"../foo\"]\n[hooks]\npost_start = [\"boom\"]\n";
+    let (_fx, _io, _repo_root, git, _fk, result) =
+        start_with_failing_hook(content, "boom", None, &StartFlags::default());
+
+    let err = result.expect_err("a config error must stay fatal");
+    assert_eq!(err.exit_code(), 1);
+    assert!(err
+        .to_string()
+        .contains("must be a parent-repo-relative submodule path"));
+    assert_eq!(git.submodule_update_calls(), 0);
+}
+
+/// The progress display is closed even when a hook fails, so the warn-and-cd
+/// path never leaves a live bar behind: every `Started` has a `Finished`.
+#[test]
+fn tracker_finishes_when_a_hook_fails() {
+    let content = "[hooks]\npost_start = [\"boom\"]\n[copy]\nfiles = [\".env\"]\n";
+    let (_fx, _io, _repo_root, _git, fk, result) =
+        start_with_failing_hook(content, "boom", None, &StartFlags::default());
+    result.expect("a failing hook must not fail the command");
+
+    let events = fk.tracker.events();
+    assert!(
+        events.iter().any(|e| matches!(e, TrackerEvent::Fail(_, _))),
+        "the failing hook task must be recorded: {events:?}"
+    );
+    let started = events
+        .iter()
+        .filter(|e| **e == TrackerEvent::Started)
+        .count();
+    let finished = events
+        .iter()
+        .filter(|e| **e == TrackerEvent::Finished)
+        .count();
+    assert_eq!(started, finished, "unbalanced tracker events: {events:?}");
+}
+
 #[test]
 fn submodule_configs_run_before_parent_pre_start_with_submodule_roots() {
     let (fx, io, resolver, repo_root) = trusted_repo_with_submodule_config();

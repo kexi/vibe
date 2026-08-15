@@ -1167,3 +1167,133 @@ fn doctor_without_any_profile_root_exits_one_with_empty_stdout() {
     assert!(stderr.contains("Error:"), "got: {stderr:?}");
     assert!(stderr.contains("HOME"), "got: {stderr:?}");
 }
+
+// --- issue #601: a non-fatal hook failure must not swallow the eval channel ---
+
+/// The direct reproduction of #601: a `post_start` hook that exits non-zero is a
+/// warning, not a failure, so the run exits 0 AND stdout still carries exactly
+/// the `cd` line for the worktree that was really created. Before the fix the
+/// `Err` reached the binary, which printed the warning and dropped the outcome —
+/// exit 0 with an empty eval channel, leaving the user's shell behind.
+#[test]
+fn start_with_failing_post_start_hook_still_writes_cd_and_exits_zero() {
+    if !git_available() {
+        eprintln!("skipping: git unavailable");
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let main_path = setup_main_repo(tmp.path());
+
+    std::fs::write(
+        main_path.join(".vibe.toml"),
+        "[hooks]\npost_start = [\"exit 3\"]\n",
+    )
+    .unwrap();
+    let trust = run_vibe(&main_path, home.path(), &["trust"]);
+    assert!(
+        trust.status.success(),
+        "trust failed: {}",
+        String::from_utf8_lossy(&trust.stderr)
+    );
+
+    let out = run_vibe(&main_path, home.path(), &["start", "feature"]);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "a hook failure is warning severity (exit 0); stderr={stderr:?}"
+    );
+    let expected = main_path.parent().unwrap().join("main-feature");
+    assert_eq!(
+        stdout,
+        format!("cd '{}'\n", expected.display()),
+        "stdout must still be EXACTLY the cd line"
+    );
+    assert!(
+        stderr.contains("Warning: Hook \"exit 3\" failed: exit code 3"),
+        "the warning must still be on stderr: {stderr:?}"
+    );
+    assert!(expected.exists(), "worktree dir should exist: {expected:?}");
+}
+
+/// The clean counterpart: a failing `post_clean` runs after the worktree is
+/// already gone, so stdout must still be exactly the cd-to-main line.
+#[test]
+fn clean_with_failing_post_clean_hook_still_writes_cd_to_main() {
+    if !git_available() {
+        eprintln!("skipping: git unavailable");
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let (main_path, secondary_path) = setup_worktrees(tmp.path(), "feat", "feat");
+
+    std::fs::write(
+        secondary_path.join(".vibe.toml"),
+        "[hooks]\npost_clean = [\"exit 3\"]\n",
+    )
+    .unwrap();
+    let trust = run_vibe(&secondary_path, home.path(), &["trust"]);
+    assert!(
+        trust.status.success(),
+        "trust failed: {}",
+        String::from_utf8_lossy(&trust.stderr)
+    );
+
+    let out = run_vibe(&secondary_path, home.path(), &["clean", "--force"]);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert_eq!(out.status.code(), Some(0), "stderr={stderr:?}");
+    assert_eq!(
+        stdout,
+        format!("cd '{}'\n", main_path.display()),
+        "stdout must still be EXACTLY the cd-to-main line"
+    );
+    assert!(
+        stderr.contains("Warning: Hook \"exit 3\" failed: exit code 3"),
+        "the warning must still be on stderr: {stderr:?}"
+    );
+}
+
+/// The mirror image: a failing `pre_clean` runs BEFORE anything is destroyed, so
+/// the abort is correct — exit 0, empty eval channel, worktree still on disk.
+#[test]
+fn clean_with_failing_pre_clean_hook_keeps_stdout_empty_and_worktree_intact() {
+    if !git_available() {
+        eprintln!("skipping: git unavailable");
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let (_main_path, secondary_path) = setup_worktrees(tmp.path(), "feat", "feat");
+
+    std::fs::write(
+        secondary_path.join(".vibe.toml"),
+        "[hooks]\npre_clean = [\"exit 3\"]\n",
+    )
+    .unwrap();
+    let trust = run_vibe(&secondary_path, home.path(), &["trust"]);
+    assert!(trust.status.success());
+
+    let out = run_vibe(&secondary_path, home.path(), &["clean", "--force"]);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert_eq!(out.status.code(), Some(0), "stderr={stderr:?}");
+    assert!(
+        stdout.is_empty(),
+        "an aborted clean must emit no cd: {stdout:?}"
+    );
+    assert!(
+        stderr.contains("Warning: Hook \"exit 3\" failed: exit code 3"),
+        "the warning must be on stderr: {stderr:?}"
+    );
+    assert!(
+        secondary_path.exists(),
+        "the worktree must survive the aborted clean: {secondary_path:?}"
+    );
+}

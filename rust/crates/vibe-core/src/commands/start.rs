@@ -9,7 +9,11 @@
 //! outputs the worktree PATH to stdout (not a `cd`), with non-fatal post-setup.
 //!
 //! The single stdout write stays in the binary: a normal run returns
-//! `Outcome::cd(path)`; the hook mode returns `Outcome::stdout(path)`.
+//! `Outcome::cd(path)`; the hook mode returns `Outcome::stdout(path)`. A hook
+//! that fails once the worktree exists is non-fatal in NORMAL mode too, not just
+//! in hook mode: it warns and still returns the `cd` (issue #601). Only
+//! `HookExecution` is downgraded — a failed copy or submodule step stays fatal,
+//! so no `cd` into a half-built worktree is ever emitted.
 //!
 //! Seam strategy (architect's hybrid): the small, ubiquitous seams (`Io`,
 //! `GitRunner`, `Prompt`, `RepoResolver`, `ScriptRunner`, `ProcessControl`) are
@@ -28,7 +32,7 @@ use crate::error::{Result, VibeError};
 use crate::git::{get_repo_name, get_repo_root, revision_exists, sanitize_branch_name, GitRunner};
 use crate::git_copy::{collect_git_copy_files, resolve_selection, GitCopySelection};
 use crate::glob::expand_copy_patterns;
-use crate::hooks::{run_hooks, HookEnv, HookRunner, HookTrackerInfo};
+use crate::hooks::{run_hooks, warn_on_hook_failure, HookEnv, HookRunner, HookTrackerInfo};
 use crate::io::Io;
 use crate::output::{error_log, log, log_dry_run, verbose_log, warn_log, OutputOptions};
 use crate::progress::ProgressTracker;
@@ -249,18 +253,23 @@ where
         run_create_worktree_with_progress(deps, branch_name, &create_opts)?;
     }
 
-    run_config_and_hooks(
-        deps,
-        config.as_ref(),
-        &repo_root,
-        &worktree_path,
-        &ConfigAndHooks {
-            skip_hooks: flags.no_hooks,
-            skip_copy: flags.no_copy,
-            copy_untracked: flags.copy_untracked,
-            copy_modified: flags.copy_modified,
-            dry_run: flags.dry_run,
-        },
+    // The worktree now exists, so a failing hook must not suppress the `cd`
+    // (issue #601); non-hook failures still propagate and stay fatal.
+    warn_on_hook_failure(
+        deps.io,
+        run_config_and_hooks(
+            deps,
+            config.as_ref(),
+            &repo_root,
+            &worktree_path,
+            &ConfigAndHooks {
+                skip_hooks: flags.no_hooks,
+                skip_copy: flags.no_copy,
+                copy_untracked: flags.copy_untracked,
+                copy_modified: flags.copy_modified,
+                dry_run: flags.dry_run,
+            },
+        ),
     )?;
 
     if flags.dry_run {
@@ -418,6 +427,9 @@ where
             deps.io,
             "Would run hooks and config, then navigate to worktree",
         );
+        // Why not wrapped in `warn_on_hook_failure`: dry-run never reaches
+        // `run_hooks` (every lifecycle step short-circuits to `log_dry_run`), so
+        // a `HookExecution` cannot occur here.
         run_config_and_hooks(
             deps,
             config,
@@ -443,18 +455,23 @@ where
         &format!("Note: Worktree already exists at '{worktree_path}'"),
         opts,
     );
-    run_config_and_hooks(
-        deps,
-        config,
-        repo_root,
-        worktree_path,
-        &ConfigAndHooks {
-            skip_hooks: flags.no_hooks,
-            skip_copy: flags.no_copy,
-            copy_untracked: flags.copy_untracked,
-            copy_modified: flags.copy_modified,
-            dry_run: false,
-        },
+    // Re-entry into an existing worktree: a failing hook warns but still cds
+    // (issue #601).
+    warn_on_hook_failure(
+        deps.io,
+        run_config_and_hooks(
+            deps,
+            config,
+            repo_root,
+            worktree_path,
+            &ConfigAndHooks {
+                skip_hooks: flags.no_hooks,
+                skip_copy: flags.no_copy,
+                copy_untracked: flags.copy_untracked,
+                copy_modified: flags.copy_modified,
+                dry_run: false,
+            },
+        ),
     )?;
     Ok(Outcome::cd(worktree_path.to_string()))
 }
@@ -544,18 +561,23 @@ where
     P: Prompt,
     Sr: StdinReader,
 {
-    run_config_and_hooks(
-        deps,
-        config,
-        repo_root,
-        worktree_path,
-        &ConfigAndHooks {
-            skip_hooks: flags.no_hooks,
-            skip_copy: flags.no_copy,
-            copy_untracked: flags.copy_untracked,
-            copy_modified: flags.copy_modified,
-            dry_run: false,
-        },
+    // The reused worktree exists, so a failing hook warns but still cds
+    // (issue #601).
+    warn_on_hook_failure(
+        deps.io,
+        run_config_and_hooks(
+            deps,
+            config,
+            repo_root,
+            worktree_path,
+            &ConfigAndHooks {
+                skip_hooks: flags.no_hooks,
+                skip_copy: flags.no_copy,
+                copy_untracked: flags.copy_untracked,
+                copy_modified: flags.copy_modified,
+                dry_run: false,
+            },
+        ),
     )?;
     Ok(ConflictDecision::Done(Outcome::cd(
         worktree_path.to_string(),
@@ -620,23 +642,27 @@ where
         deps.tracker.start();
     }
 
-    run_submodule_configs(deps, config, repo_root, worktree_path, options)?;
-
-    run_config_body(
-        deps,
-        config,
-        repo_root,
-        worktree_path,
-        repo_root,
-        git_selection,
-        options,
-    )?;
+    // Finished even on the error path (mirroring `clean`'s hook helper): a
+    // downgraded hook failure returns a `cd`, and an unfinished tracker would
+    // leave a live progress display in front of it.
+    let result =
+        run_submodule_configs(deps, config, repo_root, worktree_path, options).and_then(|()| {
+            run_config_body(
+                deps,
+                config,
+                repo_root,
+                worktree_path,
+                repo_root,
+                git_selection,
+                options,
+            )
+        });
 
     if has_ops {
         deps.tracker.finish();
     }
 
-    Ok(())
+    result
 }
 
 /// Run hooks/copy for one already-loaded config. Submodule configs use this
