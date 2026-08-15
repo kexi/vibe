@@ -18,11 +18,18 @@
 //! SECURITY/contract: the live renderer draws to `ProgressDrawTarget::stderr()`
 //! so stdout stays clean for the eval'd `cd` line. Node labels and error texts
 //! are attacker-influenced (hook command strings and copy patterns come from
-//! `.vibe.toml`, file names come from the repository), so [`render_line`]
-//! neutralizes both with [`crate::output::sanitize_for_display`] before they
-//! reach the terminal. Why there and not at the call sites: sanitizing in the
-//! one function every rendered line passes through means a new `add_task` /
-//! `fail_task` caller cannot reintroduce the hole by forgetting to.
+//! `.vibe.toml`, file names come from the repository), so both are neutralized
+//! with [`crate::output::sanitize_for_display`] before they reach the terminal.
+//! A label reaches the terminal by *two* routes and each has its own chokepoint:
+//! `IndicatifTracker::push_bar` sanitizes the spinner message (drawn as soon as
+//! the node is added and redrawn on every steady tick, i.e. long before any
+//! outcome is known) and stores that sanitized text, and the pure
+//! [`render_line`] sanitizes the label and the error again when it paints the
+//! closing line. Why both and not one: `render_line` alone never covers the live
+//! message, and `push_bar` alone never covers `fail_task`'s error text or the
+//! `NullTracker`-free direct `render_line` callers. Sanitizing at these two
+//! points rather than at the `add_task` / `fail_task` call sites means a new
+//! caller cannot reintroduce the hole by forgetting to.
 //!
 //! Why the callers in `copy_runner` still sanitize too: the same strings also
 //! go to plain stderr through `warn_log`/`log_dry_run`, which do not render
@@ -138,6 +145,12 @@ impl TaskOutcome<'_> {
 /// of the working tree) into a line that is wrapped in ANSI codes and drawn onto
 /// a live, redrawable display. `prefix` is not sanitized: it is one of this
 /// module's two hard-coded tree strings.
+///
+/// Sanitizing `label` here is deliberately redundant with
+/// [`IndicatifTracker::push_bar`] (which stores an already-sanitized label):
+/// `sanitize_for_display` is idempotent, and keeping it means a direct
+/// `render_line` caller is safe on its own. The `error` has no such upstream
+/// gate — this is its only one.
 pub fn render_line(outcome: TaskOutcome<'_>, prefix: &str, label: &str, color: bool) -> String {
     let glyph = outcome.glyph();
     let label = sanitize_for_display(label);
@@ -201,21 +214,28 @@ impl IndicatifTracker {
         }
     }
 
+    /// Sanitizes the label at the single point where a node enters the tracker,
+    /// so both the live spinner message and the stored label used by every later
+    /// [`render_line`] are already neutralized.
     fn push_bar(&self, label: &str, prefix: &str, kind: NodeKind) -> NodeId {
+        // Why here and not only in `render_line`: `indicatif` draws this message
+        // the moment it is set and redraws it every steady tick for as long as
+        // the task spins, which is long before any outcome line is rendered.
+        let label = sanitize_for_display(label);
         let bar = self.multi.add(indicatif::ProgressBar::new_spinner());
         let style = indicatif::ProgressStyle::with_template("{prefix}{spinner} {msg}")
             .expect("static progress template must be valid")
             .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]);
         bar.set_style(style);
         bar.set_prefix(prefix.to_string());
-        bar.set_message(label.to_string());
+        bar.set_message(label.clone());
         let mut bars = self.bars.lock().expect("progress mutex poisoned");
         let id = NodeId(bars.len());
         bars.push(BarNode {
             bar,
             kind,
             prefix: prefix.to_string(),
-            label: label.to_string(),
+            label,
             done: false,
         });
         id
@@ -642,6 +662,31 @@ mod tests {
                     "label was dropped instead of neutralized: {line:?}"
                 );
             }
+        }
+    }
+
+    /// Guarantees the *live* spinner line is neutralized, not just the closing
+    /// line: `indicatif` draws the message when the node is added and redraws it
+    /// on every steady tick, so a hostile hook name would reach the terminal for
+    /// the whole time the task spins if only `render_line` sanitized.
+    #[test]
+    fn live_spinner_message_and_stored_label_carry_no_control_sequences() {
+        let hostile = "npm install\x1b[2K\x1b[A\u{202e}gnitsurt";
+        let sanitized = "npm install\u{fffd}[2K\u{fffd}[A\u{fffd}gnitsurt";
+
+        let tracker = IndicatifTracker::with_color(false);
+        let phase = tracker.add_phase(hostile);
+        let task = tracker.add_task(phase, hostile);
+        tracker.start_task(task);
+
+        let bars = tracker.bars.lock().unwrap();
+        for node in bars.iter() {
+            assert_eq!(node.label, sanitized, "stored label was not neutralized");
+            assert_eq!(
+                node.bar.message(),
+                sanitized,
+                "live spinner message was not neutralized"
+            );
         }
     }
 
