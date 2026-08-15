@@ -351,25 +351,32 @@ describe("pipeIgnoringBrokenPipe", () => {
     // "verify-deb: <message>". Throwing it from the stream's error listener would
     // make it an uncaughtException and kill the script with a raw stack trace —
     // the undiagnosable failure the fix exists to remove.
+    //
+    // The consumer is a stand-in for tar: it runs until its stdin reaches EOF or
+    // is torn down, and is never killed by the test. `readMember` reads the
+    // recorded failure only after awaiting both `close` events, so a fault that
+    // does not by itself end the consumer is never reported at all — killing it
+    // here would assert the error getter while masking that hang.
     const producer = spawn(process.execPath, ["-e", "setTimeout(()=>{}, 10000)"], {
       stdio: ["ignore", "pipe", "ignore"],
     });
-    const consumer = spawn(process.execPath, ["-e", "process.stdin.resume()"], {
-      stdio: ["pipe", "pipe", "ignore"],
-    });
+    const consumer = spawn(
+      process.execPath,
+      ["-e", "process.stdin.resume(); process.stdin.on('end', () => process.exit(0))"],
+      { stdio: ["pipe", "pipe", "ignore"] },
+    );
 
     const failure = pipeIgnoringBrokenPipe(producer.stdout, consumer.stdin);
-    // Not `events.once(producer.stdout, "close")`: that attaches its own error
-    // listener and would reject with the very error under test.
-    const sourceClosed = new Promise<void>((r) => producer.stdout.once("close", () => r()));
     producer.stdout.destroy(Object.assign(new Error("read failed"), { code: "EIO" }));
-    await sourceClosed;
+
+    // Awaited exactly as `readMember` does: the consumer must come back on its
+    // own for the fault below to ever be surfaced.
+    await once(consumer, "close");
 
     expect(failure()?.message).toBe("read failed");
 
     producer.kill();
-    consumer.kill();
-    await Promise.all([once(producer, "close"), once(consumer, "close")]);
+    await once(producer, "close");
   }, STREAM_TEST_TIMEOUT_MS);
 
   it("reports no failure for a broken pipe, which is the expected teardown", async () => {

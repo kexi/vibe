@@ -179,6 +179,12 @@ export function isBrokenPipeError(err: unknown): boolean {
  * race, and handling only the error path leaves the hang reachable half the
  * time.
  *
+ * Why the sink is torn down when the *source* faults: `pipe()` only forwards
+ * `end` on a clean end-of-stream, so a destroyed source leaves the consumer's
+ * stdin open and tar waits for an EOF that never comes — the caller awaits both
+ * `close` events before reading the recorded error, so the fault would never be
+ * reported at all.
+ *
  * Only broken-pipe errors are swallowed. Anything else is recorded and handed
  * back through the returned getter so the caller can raise it from its own
  * awaited path: throwing from inside a stream `error` listener would surface as
@@ -211,7 +217,13 @@ export function pipeIgnoringBrokenPipe(source: Readable, sink: Writable): () => 
       source.destroy();
     }
   });
-  source.on("error", record);
+  source.on("error", (err: unknown) => {
+    record(err);
+    // Destroyed rather than `end()`ed: the bytes already written are a truncated
+    // member, and letting tar parse them could turn an I/O fault into a
+    // plausible-looking "marker missing" verdict instead of the real error.
+    sink.destroy();
+  });
   source.pipe(sink);
   return () => failure;
 }
