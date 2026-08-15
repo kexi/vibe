@@ -46,7 +46,7 @@ $ vibe list
 
 A `(scratch)` label is appended to worktrees created by [`vibe scratch`](/commands/scratch/).
 
-#### How changes are counted
+### How changes are counted
 
 The number in `M <n>` (and the `dirty_files` field) is the number of entries `git status` reports, which is **not** always the number of changed files. git collapses a wholly untracked **directory** into a single entry, so a new directory containing five files counts as `1`, not `5`. Tracked modifications, staged changes and individually untracked files each count as one entry, and a rename counts once rather than twice.
 

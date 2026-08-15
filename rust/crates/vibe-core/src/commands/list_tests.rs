@@ -416,7 +416,11 @@ fn json_output_is_parseable_and_carries_every_field() {
     let git = ListGit::with(&[("/repo/main", "main"), ("/repo/s", "scratch/20260101")])
         .with_ref("main", 3_600, None)
         .with_ref("scratch/20260101", 120, Some("develop"))
-        .with_status("/repo/s", b"1 M  a.txt\0")
+        // Porcelain v1 shape, which is what `worktree_status_z` requests: the
+        // two leading bytes are the index/worktree status columns. A v2 record
+        // (`1 M  a.txt`) would happen to yield the same count here and so pass
+        // for the wrong reason.
+        .with_status("/repo/s", b"M  a.txt\0")
         .with_default_branch("main");
     let outcome = run(&io, &git, "/repo/main", true).unwrap();
     assert_eq!(outcome, Outcome::none());
