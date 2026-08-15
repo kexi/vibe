@@ -21,12 +21,17 @@ struct ListGit {
     porcelain: String,
     inside: bool,
     /// `branch -> (unix, iso, upstream)` answers for `for-each-ref`.
-    refs: Vec<(String, i64, String, Option<String>)>,
+    /// `(branch, unix, iso, upstream full refname, upstream remote name)`.
+    refs: Vec<(String, i64, String, String, String)>,
     /// `path -> status --porcelain=v1 -z` payload. A path that is absent
     /// answers empty (clean).
     statuses: Vec<(String, Vec<u8>)>,
     /// Paths whose status call must FAIL, standing in for a broken worktree.
     failing_status: Vec<String>,
+    /// Message the status call fails with, so a test can inject hostile bytes.
+    status_error: Option<String>,
+    /// Whether the batched `for-each-ref` call itself must fail.
+    failing_ref_lookup: bool,
     /// Answer for `git log -1` on a detached worktree, as `(unix, iso)`.
     detached_log: Option<(i64, String)>,
     default_branch: String,
@@ -57,10 +62,21 @@ impl ListGit {
             refs: Vec::new(),
             statuses: Vec::new(),
             failing_status: Vec::new(),
+            status_error: None,
+            failing_ref_lookup: false,
             detached_log: None,
             default_branch: "main".to_string(),
             calls: RefCell::new(Vec::new()),
         }
+    }
+
+    /// Rewrite the porcelain so every worktree reports the NULL OID, which is
+    /// what real git emits for a branch that has no commits yet.
+    fn with_unborn_head(mut self, width: usize) -> Self {
+        self.porcelain = self
+            .porcelain
+            .replace("HEAD abc", &format!("HEAD {}", "0".repeat(width)));
+        self
     }
 
     fn empty() -> Self {
@@ -69,14 +85,37 @@ impl ListGit {
         git
     }
 
-    /// Give `branch` a tip committed `age_secs` before [`NOW_SECS`].
-    fn with_ref(mut self, branch: &str, age_secs: i64, upstream: Option<&str>) -> Self {
+    /// Give `branch` a tip committed `age_secs` before [`NOW_SECS`], tracking
+    /// `upstream` on remote `origin` (or nothing when `None`).
+    fn with_ref(self, branch: &str, age_secs: i64, upstream: Option<&str>) -> Self {
+        match upstream {
+            Some(u) => self.with_upstream_ref(
+                branch,
+                age_secs,
+                &format!("refs/remotes/origin/{u}"),
+                "origin",
+            ),
+            None => self.with_upstream_ref(branch, age_secs, "", ""),
+        }
+    }
+
+    /// The general form: the upstream exactly as git reports it, as a full
+    /// refname plus the remote name git resolved for it (`.` for a local
+    /// upstream, empty when the branch tracks nothing).
+    fn with_upstream_ref(
+        mut self,
+        branch: &str,
+        age_secs: i64,
+        upstream_ref: &str,
+        remote_name: &str,
+    ) -> Self {
         let unix = NOW_SECS - age_secs;
         self.refs.push((
             branch.to_string(),
             unix,
             format!("iso-{unix}"),
-            upstream.map(str::to_string),
+            upstream_ref.to_string(),
+            remote_name.to_string(),
         ));
         self
     }
@@ -88,6 +127,19 @@ impl ListGit {
 
     fn with_failing_status(mut self, path: &str) -> Self {
         self.failing_status.push(path.to_string());
+        self
+    }
+
+    /// Fail `path`'s status call with a specific message.
+    fn with_status_error(mut self, path: &str, message: &str) -> Self {
+        self.failing_status.push(path.to_string());
+        self.status_error = Some(message.to_string());
+        self
+    }
+
+    /// Make the batched `for-each-ref` call fail outright.
+    fn with_failing_ref_lookup(mut self) -> Self {
+        self.failing_ref_lookup = true;
         self
     }
 
@@ -136,17 +188,25 @@ impl GitRunner for ListGit {
             return Ok(self.porcelain.clone());
         }
         if args.first() == Some(&"for-each-ref") {
+            if self.failing_ref_lookup {
+                return Err(VibeError::GitOperation {
+                    command: args.join(" "),
+                    message: "failed: fatal: bad object".to_string(),
+                });
+            }
             // Only the branches actually asked for, matching git's behaviour of
             // silently omitting a pattern that matches nothing.
             let wanted: Vec<&str> = args[2..].to_vec();
             let mut out = String::new();
-            for (branch, unix, iso, upstream) in &self.refs {
+            for (branch, unix, iso, upstream, remote_name) in &self.refs {
                 if !wanted.contains(&format!("refs/heads/{branch}").as_str()) {
                     continue;
                 }
+                // The FULL refname, as the `%(refname)` format asks for: the
+                // production parser strips `refs/heads/` itself, so a fake
+                // emitting short names would exercise a shape git never sends.
                 out.push_str(&format!(
-                    "{branch}\0{unix}\0{iso}\0{}\n",
-                    upstream.as_deref().unwrap_or("")
+                    "refs/heads/{branch}\0{unix}\0{iso}\0{upstream}\0{remote_name}\n"
                 ));
             }
             return Ok(out);
@@ -176,7 +236,10 @@ impl GitRunner for ListGit {
             if self.failing_status.iter().any(|p| p == path) {
                 return Err(VibeError::GitOperation {
                     command: args.join(" "),
-                    message: "failed: fatal: not a git repository".to_string(),
+                    message: self
+                        .status_error
+                        .clone()
+                        .unwrap_or_else(|| "failed: fatal: not a git repository".to_string()),
                 });
             }
             let payload = self
@@ -374,7 +437,7 @@ fn json_output_is_parseable_and_carries_every_field() {
     let io = no_home();
     let git = ListGit::with(&[("/repo/main", "main"), ("/repo/s", "scratch/20260101")])
         .with_ref("main", 3_600, None)
-        .with_ref("scratch/20260101", 120, Some("origin/develop"))
+        .with_ref("scratch/20260101", 120, Some("develop"))
         .with_status("/repo/s", b"1 M  a.txt\0")
         .with_default_branch("main");
     let outcome = run(&io, &git, "/repo/main", true).unwrap();
@@ -774,7 +837,7 @@ fn the_age_column_shows_the_relative_commit_time() {
 fn the_base_column_prefers_the_upstream_over_the_default_branch() {
     let io = no_home();
     let git = ListGit::with(&[("/repo/feat", "feat/x")])
-        .with_ref("feat/x", 60, Some("origin/release/2.0"))
+        .with_ref("feat/x", 60, Some("release/2.0"))
         .with_default_branch("main");
     run(&io, &git, "/repo/feat", false).unwrap();
 
@@ -813,11 +876,16 @@ fn an_unborn_branch_reports_an_unknown_age() {
     // it is simply absent from the answer. That must read as "unknown", not as
     // an error or an epoch-zero age.
     let io = no_home();
-    let git = ListGit::with(&[("/repo/new", "feat/unborn")]);
+    // The NULL OID, as real git reports it for an unborn branch — not a
+    // plausible-looking sha, which would let the head assertion below pass for
+    // the wrong reason.
+    let git = ListGit::with(&[("/repo/new", "feat/unborn")]).with_unborn_head(40);
     run(&io, &git, "/repo/new", true).unwrap();
 
     let parsed: serde_json::Value = serde_json::from_str(&io.stderr_text()).unwrap();
     assert_eq!(parsed[0]["last_commit_at"], serde_json::Value::Null);
+    // The row must be internally consistent: no commit date AND no commit sha.
+    assert_eq!(parsed[0]["head"], serde_json::Value::Null);
 
     let io = no_home();
     run(&io, &git, "/repo/new", false).unwrap();
@@ -964,7 +1032,7 @@ fn branch_names_reach_git_as_fully_qualified_refs() {
     let call = git.for_each_ref_call().expect("for-each-ref was invoked");
     assert!(
         call.iter().all(|arg| arg == "for-each-ref"
-            || arg.starts_with("--format=%(refname:short)")
+            || arg.starts_with("--format=%(refname)")
             || arg.starts_with("refs/heads/")),
         "an operand escaped the refs/heads/ qualification: {call:?}"
     );
@@ -986,8 +1054,7 @@ fn a_control_character_in_a_base_is_neutralized() {
     // BASE comes from an upstream ref name, which is as attacker-influenced as
     // the branch name next to it.
     let io = no_home();
-    let git =
-        ListGit::with(&[("/repo/x", "feat/x")]).with_ref("feat/x", 60, Some("origin/spoof\x1b[2K"));
+    let git = ListGit::with(&[("/repo/x", "feat/x")]).with_ref("feat/x", 60, Some("spoof\x1b[2K"));
     run(&io, &git, "/repo/x", false).unwrap();
 
     let text = io.stderr_text();
@@ -1854,4 +1921,142 @@ fn recent_filters_against_the_real_commit_time_end_to_end() {
     let rows = parsed.as_array().expect("payload is an array");
     assert_eq!(rows.len(), 1, "got: {parsed}");
     assert_eq!(rows[0]["path"], "/repo/new");
+}
+
+#[test]
+fn a_failed_ref_lookup_leaves_base_unknown_instead_of_guessing() {
+    // What it guarantees: when the batched `for-each-ref` call itself fails,
+    // nothing is known about ANY branch's upstream, so BASE degrades to `-`
+    // rather than falling back to the default branch.
+    //
+    // The fallback is only correct when the call ANSWERED and the branch simply
+    // tracks nothing. Applying it to a call that never answered would make
+    // `list` assert "based on develop" about every row on no evidence — a
+    // stated fact that is wrong, which is worse than an admitted unknown.
+    let io = no_home();
+    let git = ListGit::with(&[("/repo/feat", "feat/x")])
+        .with_ref("feat/x", 60, Some("develop"))
+        .with_default_branch("develop")
+        .with_failing_ref_lookup();
+    run(&io, &git, "/repo/feat", true).unwrap();
+
+    let parsed: serde_json::Value = serde_json::from_str(&io.stderr_text()).unwrap();
+    assert_eq!(parsed[0]["base"], serde_json::Value::Null);
+    // The AGE degrades with it, for the same reason.
+    assert_eq!(parsed[0]["last_commit_at"], serde_json::Value::Null);
+}
+
+#[test]
+fn a_branch_missing_from_a_successful_lookup_still_falls_back() {
+    // The complement of the test above: here the call ANSWERED and simply had
+    // no row for this branch (an unborn branch, or one whose ref vanished), so
+    // "tracks nothing" is a real observation and the default-branch fallback is
+    // the documented behaviour.
+    let io = no_home();
+    let git = ListGit::with(&[("/repo/feat", "feat/unborn")]).with_default_branch("develop");
+    run(&io, &git, "/repo/feat", true).unwrap();
+
+    let parsed: serde_json::Value = serde_json::from_str(&io.stderr_text()).unwrap();
+    assert_eq!(parsed[0]["base"], serde_json::json!("develop"));
+    assert_eq!(parsed[0]["last_commit_at"], serde_json::Value::Null);
+}
+
+#[test]
+fn a_status_failure_warning_is_sanitized_in_full() {
+    // What it guarantees: no terminal control character reaches stderr through
+    // the warning, including via git's own error text.
+    //
+    // git quotes the offending path back in its diagnostic, so sanitizing only
+    // the path this code interpolates would still let the identical escape
+    // through in git's copy of it — the message has to be sanitized as a whole.
+    let io = no_home();
+    let git = ListGit::with(&[("/repo/x", "feat/x")])
+        .with_ref("feat/x", 60, None)
+        .with_status_error(
+            "/repo/x",
+            "failed: fatal: cannot open '/repo/\x1b[2Kspoofed': No such file",
+        );
+    run(&io, &git, "/repo/x", false).unwrap();
+
+    let text = io.stderr_text();
+    assert!(
+        text.contains("Could not read status"),
+        "the warning must still be reported: {text}"
+    );
+    assert!(
+        !text.contains('\x1b'),
+        "an escape from git's error text reached the terminal: {text:?}"
+    );
+    assert!(text.contains('\u{fffd}'));
+}
+
+#[test]
+fn a_local_upstream_is_shown_as_the_base_without_losing_a_segment() {
+    // What it guarantees, end to end: `git branch --set-upstream-to=release/2.0`
+    // (a LOCAL upstream) makes BASE read `release/2.0`, not `2.0`.
+    //
+    // git's `%(upstream:short)` renders this exactly like a remote-tracking
+    // `remote/branch`, so treating the first segment as a remote silently
+    // rewrote the BASE into a different, real-looking branch name.
+    let io = no_home();
+    let git = ListGit::with(&[("/repo/feat", "feat/x")])
+        .with_upstream_ref("feat/x", 60, "refs/heads/release/2.0", ".")
+        .with_default_branch("develop");
+    run(&io, &git, "/repo/feat", true).unwrap();
+
+    let parsed: serde_json::Value = serde_json::from_str(&io.stderr_text()).unwrap();
+    assert_eq!(parsed[0]["base"], serde_json::json!("release/2.0"));
+}
+
+#[test]
+fn a_remote_whose_name_contains_a_slash_is_stripped_correctly() {
+    // `git remote add foo/bar <url>` is accepted by git, so the remote is not
+    // reliably one path segment. A naive split would report `bar/develop`.
+    let io = no_home();
+    let git = ListGit::with(&[("/repo/feat", "feat/x")])
+        .with_upstream_ref("feat/x", 60, "refs/remotes/foo/bar/develop", "foo/bar")
+        .with_default_branch("main");
+    run(&io, &git, "/repo/feat", true).unwrap();
+
+    let parsed: serde_json::Value = serde_json::from_str(&io.stderr_text()).unwrap();
+    assert_eq!(parsed[0]["base"], serde_json::json!("develop"));
+}
+
+#[test]
+fn an_uninterpretable_upstream_falls_back_rather_than_being_displayed_raw() {
+    // A ref in neither namespace was never interpreted, so it must not reach
+    // the BASE column verbatim; the documented default-branch fallback applies.
+    let io = no_home();
+    let git = ListGit::with(&[("/repo/feat", "feat/x")])
+        .with_upstream_ref("feat/x", 60, "refs/tags/v1", "origin")
+        .with_default_branch("develop");
+    run(&io, &git, "/repo/feat", true).unwrap();
+
+    let parsed: serde_json::Value = serde_json::from_str(&io.stderr_text()).unwrap();
+    assert_eq!(parsed[0]["base"], serde_json::json!("develop"));
+}
+
+#[test]
+fn an_unborn_head_is_null_in_a_sha256_repository_too() {
+    // The OID width follows the repository's hash algorithm, so a
+    // `git init --object-format=sha256` repo spells the NULL OID with 64 zeros.
+    // A length-based check would silently stop working there.
+    let io = no_home();
+    let git = ListGit::with(&[("/repo/new", "feat/unborn")]).with_unborn_head(64);
+    run(&io, &git, "/repo/new", true).unwrap();
+
+    let parsed: serde_json::Value = serde_json::from_str(&io.stderr_text()).unwrap();
+    assert_eq!(parsed[0]["head"], serde_json::Value::Null);
+}
+
+#[test]
+fn a_real_head_sha_is_published_unchanged() {
+    // The positive control for the null-OID filtering: an ordinary sha must
+    // still reach `--json` verbatim, so consumers can `git show` it.
+    let io = no_home();
+    let git = ListGit::with(&[("/repo/main", "main")]).with_ref("main", 60, None);
+    run(&io, &git, "/repo/main", true).unwrap();
+
+    let parsed: serde_json::Value = serde_json::from_str(&io.stderr_text()).unwrap();
+    assert_eq!(parsed[0]["head"], serde_json::json!("abc"));
 }

@@ -55,8 +55,8 @@ use crate::commands::Outcome;
 use crate::error::{Result, VibeError};
 use crate::git::{
     branch_ref_info, count_status_entries_z, detached_head_info, get_default_branch,
-    get_worktree_list, is_inside_worktree, lexical_normalize_path, worktree_status_z, GitRunner,
-    Worktree,
+    get_worktree_list, is_inside_worktree, is_resolved_oid, lexical_normalize_path,
+    worktree_status_z, GitRunner, Worktree,
 };
 use crate::io::Io;
 use crate::mru::{load_mru_data, sort_by_mru};
@@ -113,14 +113,17 @@ pub struct ListEntry {
     /// The branch this one is based on (see the module header), or `None` for
     /// the main worktree and whenever it could not be resolved.
     pub base: Option<String>,
-    /// The commit sha the worktree's HEAD points at, or `None` when the
-    /// porcelain carried no `HEAD` record.
+    /// The commit sha the worktree's HEAD points at, or `None` when there is no
+    /// commit to name: the porcelain carried no `HEAD` record, or the branch is
+    /// unborn (see [`is_resolved_oid`]).
     ///
-    /// `Option` rather than the empty string [`Worktree::head`] uses: every
-    /// other unknown on this struct is `null` in JSON, and a consumer checking
-    /// one field for `null` and another for `""` is being asked to remember an
-    /// inconsistency for no reason. The empty string stays on `Worktree`, where
-    /// it is the parser's "no record seen" and not a published value.
+    /// `Option` rather than the raw porcelain value: every other unknown on this
+    /// struct is `null` in JSON, and a consumer checking one field for `null` and
+    /// another for `""` is being asked to remember an inconsistency for no
+    /// reason. The unborn case is worse than untidy — git spells it as the NULL
+    /// OID, which is shaped exactly like a real sha, so publishing it verbatim
+    /// hands consumers a value `git show` rejects. The published contract is
+    /// "a commit sha, or null".
     pub head: Option<String>,
     /// The tip commit's committer date in ISO 8601, or `None` for an unborn
     /// branch (no commits yet) or an unreadable worktree.
@@ -569,12 +572,22 @@ fn enrich_entries<G: GitRunner>(
     warnings: &mut DeferredWarnings,
 ) -> Vec<ListEntry> {
     let branches: Vec<String> = worktrees.iter().filter_map(|w| w.branch.clone()).collect();
-    // A failure here is not fatal: it costs the AGE and BASE columns, and an
-    // empty map makes every branch look unknown, which is the correct rendering.
-    let ref_info: HashMap<String, _> = branch_ref_info(git, &branches)
-        .unwrap_or_default()
-        .into_iter()
-        .collect();
+    // A failure here is not fatal — it costs the AGE and BASE columns — but it
+    // is kept DISTINCT from "the call worked and this branch had no upstream".
+    //
+    // Why not `unwrap_or_default()`: an empty map is indistinguishable from
+    // "every branch tracks nothing", which sends every row down the
+    // default-branch fallback below. `list` would then assert that each worktree
+    // is based on `develop` on the strength of a git call that never answered.
+    // A stated fact that happens to be wrong is worse than a `-`, so a failed
+    // call suppresses the fallback entirely and every BASE degrades to unknown.
+    // A per-branch MISS (unborn branch, ref genuinely absent) is a different
+    // thing and still falls back, because there the call did answer.
+    let ref_info: Option<HashMap<String, _>> = branch_ref_info(git, &branches)
+        .ok()
+        .map(|entries| entries.into_iter().collect());
+    let ref_lookup_failed = ref_info.is_none();
+    let ref_info = ref_info.unwrap_or_default();
 
     // Resolved once, lazily: it is only needed when some branch has no upstream,
     // and it is the same answer for every row.
@@ -599,10 +612,15 @@ fn enrich_entries<G: GitRunner>(
             };
 
             let base = match &w.branch {
+                // The ref lookup never answered, so nothing is known about ANY
+                // branch's upstream and the fallback would be a guess.
+                Some(_) if ref_lookup_failed => None,
                 Some(branch) => ref_info
                     .get(branch)
-                    .and_then(|i| i.upstream.as_deref())
-                    .map(strip_remote_prefix)
+                    // Already a plain branch name: `branch_ref_info` resolves it
+                    // from the full refname plus git's own remote name, so there
+                    // is no prefix left here to guess at.
+                    .and_then(|i| i.upstream.clone())
                     .or_else(|| {
                         Some(
                             default_branch
@@ -630,10 +648,14 @@ fn enrich_entries<G: GitRunner>(
                     (Some(label.to_string()), Some(count))
                 }
                 Err(e) => {
-                    warnings.push(format!(
+                    // Sanitized as a WHOLE, after formatting: `e` is git's own
+                    // stderr text, which quotes back the path that provoked it,
+                    // so sanitizing only the interpolated path would let the
+                    // very same control characters through in git's copy of it.
+                    warnings.push(sanitize_for_display(&format!(
                         "Could not read status of {}: {e}",
-                        sanitize_for_display(&w.path)
-                    ));
+                        w.path
+                    )));
                     (None, None)
                 }
             };
@@ -649,7 +671,7 @@ fn enrich_entries<G: GitRunner>(
                     .is_some_and(|b| b.starts_with(SCRATCH_PREFIX)),
                 name,
                 base,
-                head: Some(w.head.clone()).filter(|h| !h.is_empty()),
+                head: Some(w.head.clone()).filter(|h| is_resolved_oid(h)),
                 last_commit_at: commit.as_ref().map(|(_, iso)| iso.clone()),
                 status,
                 dirty_files,
@@ -671,41 +693,40 @@ fn detached_name(path: &str) -> String {
         .unwrap_or_else(|| path.to_string())
 }
 
-/// Drop a `<remote>/` prefix from an upstream so BASE names a branch.
-///
-/// The first segment of an `upstream:short` is always the remote name (git
-/// builds it as `<remote>/<branch>`), so splitting on the first `/` is exact
-/// rather than a guess at "origin". A value with no `/` is already a plain
-/// branch name and is returned unchanged.
-fn strip_remote_prefix(upstream: &str) -> String {
-    match upstream.split_once('/') {
-        Some((_remote, branch)) if !branch.is_empty() => branch.to_string(),
-        _ => upstream.to_string(),
-    }
-}
-
 /// Whether a `--base` argument selects a row whose resolved BASE is `base`.
 ///
 /// Accepts the argument EITHER verbatim or with its first path segment removed,
 /// because those two readings cannot be told apart from the argument alone:
 /// `origin/develop` is a remote-qualified ref, while `release/next` is a plain
 /// branch whose name happens to contain a slash, and both are spelled
-/// `<word>/<word>`.
+/// `<word>/<word>`. Stripping unconditionally silently rewrote
+/// `--base release/next` into `--base next` and matched nothing.
 ///
-/// Why not the symmetric `strip_remote_prefix` the BASE column uses: that
-/// function is only sound on an `upstream:short`, where git guarantees the first
-/// segment IS a remote name. A user's argument carries no such guarantee, so
-/// stripping it unconditionally silently rewrote `--base release/next` into
-/// `--base next` and matched nothing. Trying both readings costs one extra
-/// comparison and makes every spelling a user can reasonably type work:
-/// `develop`, `origin/develop`, `release/next` and `origin/release/next`.
+/// Trying both readings costs one extra comparison and makes every spelling a
+/// user can reasonably type work: `develop`, `origin/develop`, `release/next`
+/// and `origin/release/next`.
 ///
 /// The false-positive this admits — `--base origin/develop` also matching a
 /// local branch literally named `origin/develop` — requires a branch named after
 /// a remote, and surfacing an extra row is a far better failure than silently
 /// returning none.
+///
+/// # Scope
+///
+/// This is a HEURISTIC on untrusted user input, and it is the only thing in this
+/// module that guesses at a remote prefix. It is deliberately NOT the mechanism
+/// the BASE column uses: that side resolves an upstream exactly, from the full
+/// refname plus git's own `%(upstream:remotename)`, and needs no guessing. Do
+/// not generalize this helper back onto the upstream path — the two problems
+/// only look alike.
 fn base_matches(base: &str, wanted: &str) -> bool {
-    base == wanted || base == strip_remote_prefix(wanted)
+    // Drop the first `<segment>/` — the position a remote name would occupy.
+    // An argument with no `/`, or nothing after it, has no alternate reading.
+    let without_leading_segment = match wanted.split_once('/') {
+        Some((_maybe_remote, rest)) if !rest.is_empty() => Some(rest),
+        _ => None,
+    };
+    base == wanted || without_leading_segment == Some(base)
 }
 
 /// Number of seconds treated as a month for the AGE column (≈30 days).

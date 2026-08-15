@@ -22,7 +22,8 @@ use std::process::Command;
 /// second resolution could disagree with the listing if a concurrent checkout
 /// lands between the two calls. It is the empty string when the payload carried
 /// no `HEAD` record (hand-written fixtures, and a `bare` entry before it is
-/// dropped).
+/// dropped), and the NULL OID when the worktree's branch has no commits yet —
+/// see [`is_resolved_oid`], which callers publishing the value must consult.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Worktree {
     pub path: String,
@@ -505,8 +506,23 @@ pub fn has_uncommitted_changes(runner: &impl GitRunner) -> Result<bool> {
 /// repositories (a stale `node_modules`, a fat build output) where it is least
 /// wanted, to refine a number that only has to convey "there is something
 /// here". The count is documented as counting an untracked directory once.
+///
+/// `--untracked-files=normal` is passed EXPLICITLY rather than relied on as the
+/// default: `status.showUntrackedFiles=no` is a real configuration people set to
+/// speed up `git status` in big repositories, and under it git reports a
+/// worktree holding nothing but new files as completely clean. `list` would then
+/// state "clean" about a tree with uncommitted work in it — the one answer this
+/// column exists to get right. Passing the flag pins the behaviour to what the
+/// docs describe, independent of the user's config.
 pub fn worktree_status_z(runner: &impl GitRunner, path: &str) -> Result<Vec<u8>> {
-    runner.run_raw(&["-C", path, "status", "--porcelain=v1", "-z"])
+    runner.run_raw(&[
+        "-C",
+        path,
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=normal",
+    ])
 }
 
 /// Number of changed entries in a `git status --porcelain=v1 -z` payload.
@@ -522,6 +538,26 @@ pub fn worktree_status_z(runner: &impl GitRunner, path: &str) -> Result<Vec<u8>>
 /// this crate reads v2 — pinning v1 keeps a single porcelain dialect in the
 /// codebase.
 ///
+/// Whether an object id names an actual object, rather than "nothing yet".
+///
+/// git spells the absence of a commit as the NULL OID — all zeros — not as an
+/// empty field: `git worktree list --porcelain` reports
+/// `HEAD 0000000000000000000000000000000000000000` for a worktree whose branch
+/// has no commits (an unborn HEAD). That value looks exactly like a real sha to
+/// anything that only checks for emptiness, so a consumer handed it would run
+/// `git show <head>` and get `fatal: bad object`.
+///
+/// Tested by "every byte is `0`" rather than against a 40-character literal:
+/// the OID width is the repository's hash algorithm, so a SHA-256 repository
+/// (`git init --object-format=sha256`) emits 64 zeros instead. Matching on
+/// length would silently stop working there.
+///
+/// An empty string is not a resolved OID either, so callers get one predicate
+/// for both "no `HEAD` record" and "unborn HEAD".
+pub fn is_resolved_oid(oid: &str) -> bool {
+    !oid.is_empty() && !oid.bytes().all(|b| b == b'0')
+}
+
 /// Undecodable bytes are counted, not dropped: a file whose name is not valid
 /// UTF-8 is still a change, and the count is only ever displayed as a number.
 pub fn count_status_entries_z(payload: &[u8]) -> usize {
@@ -588,14 +624,65 @@ pub fn branch_ref_info(
     if branches.is_empty() {
         return Ok(Vec::new());
     }
-    let patterns: Vec<String> = branches.iter().map(|b| format!("refs/heads/{b}")).collect();
+    let patterns: Vec<String> = branches
+        .iter()
+        .map(|b| format!("{BRANCH_REF_PREFIX}{b}"))
+        .collect();
     let mut args: Vec<&str> = vec![
         "for-each-ref",
-        "--format=%(refname:short)%00%(committerdate:unix)%00%(committerdate:iso8601-strict)%00%(upstream:short)",
+        "--format=%(refname)%00%(committerdate:unix)%00%(committerdate:iso8601-strict)%00%(upstream)%00%(upstream:remotename)",
     ];
     args.extend(patterns.iter().map(String::as_str));
     let output = runner.run(&args)?;
     Ok(parse_ref_info(&output))
+}
+
+/// The namespace every local branch ref lives under.
+const BRANCH_REF_PREFIX: &str = "refs/heads/";
+
+/// The namespace remote-tracking refs live under.
+const REMOTE_REF_PREFIX: &str = "refs/remotes/";
+
+/// Reduce an upstream's FULL refname to a plain branch name.
+///
+/// `remote_name` is git's own `%(upstream:remotename)` for the same branch: `.`
+/// when the upstream is a local branch, otherwise the configured remote.
+///
+/// Why the full refname and the remote name rather than `%(upstream:short)`:
+/// the short form is genuinely ambiguous and cannot be undone by inspection.
+/// - A LOCAL upstream (`branch.<b>.remote=.`) shortens to `release/2.0`, which
+///   is indistinguishable from remote `release` + branch `2.0`. Treating the
+///   first segment as a remote turns the BASE into `2.0` — a wrong branch name
+///   presented as fact.
+/// - A remote name may itself CONTAIN a slash (`git remote add foo/bar` is
+///   accepted), so even for a genuine remote-tracking upstream the first
+///   segment is not reliably the remote.
+///
+/// Taking the remote name from git removes the guess in both cases. A local
+/// upstream keeps its name whole; a remote-tracking one has exactly its own
+/// remote stripped.
+///
+/// Returns `None` for an empty upstream (the branch tracks nothing) or a
+/// refname outside both namespaces, so the caller degrades to "unknown" rather
+/// than displaying a ref it could not interpret.
+fn upstream_branch_name(upstream: &str, remote_name: &str) -> Option<String> {
+    if upstream.is_empty() {
+        return None;
+    }
+    // A local upstream is an ordinary branch ref; nothing to strip.
+    if let Some(branch) = upstream.strip_prefix(BRANCH_REF_PREFIX) {
+        return Some(branch.to_string());
+    }
+    // A remote-tracking ref is `refs/remotes/<remote>/<branch>`, and only git
+    // knows where `<remote>` ends.
+    let tracking = upstream.strip_prefix(REMOTE_REF_PREFIX)?;
+    let branch = tracking
+        .strip_prefix(remote_name)
+        .and_then(|rest| rest.strip_prefix('/'))?;
+    if branch.is_empty() {
+        return None;
+    }
+    Some(branch.to_string())
 }
 
 /// Parse the [`branch_ref_info`] format into `(short name, info)` pairs.
@@ -605,23 +692,36 @@ pub fn branch_ref_info(
 /// few fields, is skipped: it can only mean git emitted something this parser
 /// does not model, and dropping the row degrades to "age unknown" rather than
 /// failing the whole listing.
+///
+/// The key comes from `%(refname)` with [`BRANCH_REF_PREFIX`] stripped here,
+/// NOT from `%(refname:short)`. git's own shortening is ambiguity-aware: when a
+/// tag shares a branch's name it shortens `refs/heads/release` to `heads/release`
+/// rather than `release`, which would no longer match the branch name the caller
+/// looked up — the row would silently lose its AGE and upstream. Stripping a
+/// fixed prefix off the full refname is exact because the caller only ever asks
+/// for `refs/heads/` patterns.
+///
+/// The upstream is resolved the same way, by [`upstream_branch_name`], from the
+/// full refname plus git's own remote name rather than from `%(upstream:short)`.
 pub fn parse_ref_info(output: &str) -> Vec<(String, BranchRefInfo)> {
     output
         .lines()
         .filter(|line| !line.is_empty())
         .filter_map(|line| {
             let mut fields = line.split(REF_FIELD_SEPARATOR);
-            let name = fields.next()?;
+            let name = fields.next()?.strip_prefix(BRANCH_REF_PREFIX)?;
             let unix = fields.next()?.parse::<i64>().ok()?;
             let iso = fields.next()?;
-            // An unset upstream renders as an empty field, which is not a ref.
-            let upstream = fields.next().filter(|s| !s.is_empty());
+            // Both fields come straight from git; an unset upstream renders
+            // them empty, which `upstream_branch_name` reads as "tracks nothing".
+            let upstream_ref = fields.next().unwrap_or_default();
+            let remote_name = fields.next().unwrap_or_default();
             Some((
                 name.to_string(),
                 BranchRefInfo {
                     committed_at_unix: unix,
                     committed_at_iso: iso.to_string(),
-                    upstream: upstream.map(str::to_string),
+                    upstream: upstream_branch_name(upstream_ref, remote_name),
                 },
             ))
         })
@@ -777,6 +877,13 @@ pub fn get_default_branch(runner: &impl GitRunner) -> String {
 /// Returns `None` for an empty input or a bare `origin/` with nothing after it,
 /// so the caller falls through to the next resolution step instead of adopting
 /// an empty branch name (which would make the guard match every branch).
+///
+/// Scoped to [`get_default_branch`], whose single caller queries the literal
+/// `refs/remotes/origin/HEAD`: the remote is fixed at the call site, so the
+/// prefix is a known constant and not an inference. Do NOT reuse this for an
+/// arbitrary upstream — there the remote name is neither known to be `origin`
+/// nor guaranteed to be a single path segment (`git remote add foo/bar` is
+/// accepted); [`upstream_branch_name`] handles that case with git's own answer.
 fn strip_remote_prefix(short_ref: &str) -> Option<String> {
     let name = short_ref.strip_prefix("origin/").unwrap_or(short_ref);
     if name.is_empty() {
@@ -1637,8 +1744,8 @@ branch refs/heads/main
 
     #[test]
     fn ref_info_parses_the_nul_separated_fields() {
-        let out = "main\x001700000000\x002023-11-14T22:13:20+00:00\x00origin/main\n\
-                   feat/x\x001700000100\x002023-11-14T22:15:00+00:00\x00\n";
+        let out = "refs/heads/main\x001700000000\x002023-11-14T22:13:20+00:00\x00refs/remotes/origin/main\x00origin\n\
+                   refs/heads/feat/x\x001700000100\x002023-11-14T22:15:00+00:00\x00\x00\n";
         assert_eq!(
             parse_ref_info(out),
             vec![
@@ -1647,7 +1754,8 @@ branch refs/heads/main
                     BranchRefInfo {
                         committed_at_unix: 1_700_000_000,
                         committed_at_iso: "2023-11-14T22:13:20+00:00".to_string(),
-                        upstream: Some("origin/main".to_string()),
+                        // Reduced to a plain branch name by the parser.
+                        upstream: Some("main".to_string()),
                     }
                 ),
                 (
@@ -1668,15 +1776,110 @@ branch refs/heads/main
     fn ref_info_keeps_a_branch_name_containing_a_pipe_in_one_field() {
         // The reason the separator is NUL: any printable delimiter can appear
         // in a branch name and would split the record into bogus fields.
-        let out = "feat|weird\x001700000000\x00iso\x00\n";
+        let out = "refs/heads/feat|weird\x001700000000\x00iso\x00\n";
         assert_eq!(parse_ref_info(out)[0].0, "feat|weird");
+    }
+
+    #[test]
+    fn ref_info_keys_stay_exact_when_a_tag_shares_the_branch_name() {
+        // What it guarantees: a repository holding both `refs/heads/release`
+        // and `refs/tags/release` still yields the key `release`.
+        //
+        // This is why the format asks for `%(refname)` and strips the prefix
+        // here. git's own `%(refname:short)` is ambiguity-aware and shortens
+        // that branch to `heads/release` instead, which would never match the
+        // branch name the caller looked up — the row would silently lose its
+        // AGE and its upstream.
+        let out =
+            "refs/heads/release\x001700000000\x00iso\x00refs/remotes/origin/release\x00origin\n";
+        let parsed = parse_ref_info(out);
+        assert_eq!(parsed[0].0, "release");
+        assert_eq!(parsed[0].1.upstream.as_deref(), Some("release"));
+    }
+
+    #[test]
+    fn upstream_from_a_local_branch_keeps_its_whole_name() {
+        // What it guarantees: `branch.<b>.remote=.` (a LOCAL upstream) does not
+        // lose its first path segment. `%(upstream:short)` renders this as
+        // `release/2.0`, which is indistinguishable from remote `release` +
+        // branch `2.0`; stripping there would report the BASE as `2.0` — a
+        // wrong branch name presented as fact.
+        assert_eq!(
+            upstream_branch_name("refs/heads/release/2.0", "."),
+            Some("release/2.0".to_string())
+        );
+    }
+
+    #[test]
+    fn upstream_from_a_remote_strips_exactly_that_remote() {
+        assert_eq!(
+            upstream_branch_name("refs/remotes/origin/develop", "origin"),
+            Some("develop".to_string())
+        );
+        // A branch name containing slashes keeps all of them.
+        assert_eq!(
+            upstream_branch_name("refs/remotes/origin/release/next", "origin"),
+            Some("release/next".to_string())
+        );
+    }
+
+    #[test]
+    fn upstream_handles_a_remote_name_containing_a_slash() {
+        // `git remote add foo/bar <url>` is ACCEPTED, so the remote is not
+        // reliably a single path segment. Taking the name from git rather than
+        // splitting on the first `/` is what makes this exact — a naive split
+        // would report `bar/develop`.
+        assert_eq!(
+            upstream_branch_name("refs/remotes/foo/bar/develop", "foo/bar"),
+            Some("develop".to_string())
+        );
+    }
+
+    #[test]
+    fn upstream_is_none_when_the_branch_tracks_nothing() {
+        assert_eq!(upstream_branch_name("", ""), None);
+    }
+
+    #[test]
+    fn upstream_is_none_for_a_ref_outside_both_namespaces() {
+        // Neither a local branch nor a remote-tracking ref: degrade to unknown
+        // rather than display something that was never interpreted.
+        assert_eq!(upstream_branch_name("refs/tags/v1", "origin"), None);
+        // A remote-tracking ref whose remote name does not actually prefix it
+        // cannot be split safely either.
+        assert_eq!(
+            upstream_branch_name("refs/remotes/other/develop", "origin"),
+            None
+        );
+        // Nothing left after the remote name is not a branch.
+        assert_eq!(upstream_branch_name("refs/remotes/origin/", "origin"), None);
+    }
+
+    #[test]
+    fn ref_info_resolves_a_local_upstream_end_to_end() {
+        // The parser path, not just the helper: a local upstream must survive
+        // the whole record parse intact.
+        let out = "refs/heads/feat/x\x001700000000\x00iso\x00refs/heads/release/2.0\x00.\n";
+        assert_eq!(
+            parse_ref_info(out)[0].1.upstream.as_deref(),
+            Some("release/2.0")
+        );
+    }
+
+    #[test]
+    fn ref_info_ignores_a_record_outside_the_branch_namespace() {
+        // Only `refs/heads/` patterns are ever asked for, so anything else is
+        // not a branch this listing can key on.
+        let out = "refs/tags/v1\x001700000000\x00iso\x00\n";
+        assert!(parse_ref_info(out).is_empty());
     }
 
     #[test]
     fn ref_info_skips_a_record_it_cannot_model() {
         // A malformed record degrades to "age unknown" for that branch rather
         // than failing the whole listing.
-        let out = "main\x00not-a-number\x00iso\x00\ngood\x001700000000\x00iso\x00\n";
+        let out = "refs/heads/main\x00not-a-number\x00iso\x00\n\
+                   refs/heads/good\x001700000000\x00iso\x00\n";
         let parsed = parse_ref_info(out);
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].0, "good");
@@ -1705,6 +1908,11 @@ branch refs/heads/main
         branch_ref_info(&git, &["--format=%(objectname)".to_string()]).unwrap();
         let args = git.0.borrow().clone();
         assert_eq!(args[0], "for-each-ref");
+        assert!(
+            args[1].starts_with("--format=%(refname)%00"),
+            "the key must come from the FULL refname, not %(refname:short): {:?}",
+            args[1]
+        );
         assert_eq!(args[2], "refs/heads/--format=%(objectname)");
     }
 
@@ -1737,8 +1945,52 @@ branch refs/heads/main
         worktree_status_z(&git, "/repo/x").unwrap();
         assert_eq!(
             git.recorded_args(),
-            vec!["-C", "/repo/x", "status", "--porcelain=v1", "-z"]
+            vec![
+                "-C",
+                "/repo/x",
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=normal",
+            ]
         );
+    }
+
+    #[test]
+    fn worktree_status_pins_untracked_reporting_against_user_config() {
+        // What it guarantees: `status.showUntrackedFiles=no` — a real setting
+        // people use to speed up `git status` in large repositories — cannot
+        // make a worktree holding nothing but new files report as clean. The
+        // flag is passed explicitly so the answer does not depend on config.
+        let git = LsFilesGit::new("");
+        worktree_status_z(&git, "/repo/x").unwrap();
+        assert!(
+            git.recorded_args()
+                .contains(&"--untracked-files=normal".to_string()),
+            "the untracked-files mode must be pinned, got: {:?}",
+            git.recorded_args()
+        );
+    }
+
+    #[test]
+    fn null_oid_is_not_a_resolved_object_at_either_hash_width() {
+        // What it guarantees: a worktree whose branch has no commits yet is
+        // recognised as having no HEAD. git reports that as the NULL OID, not
+        // as an empty field, and the width follows the repository's hash
+        // algorithm — 40 zeros for SHA-1, 64 for a `--object-format=sha256`
+        // repository. Both are verified against real `git worktree list`.
+        assert!(!is_resolved_oid(&"0".repeat(40)));
+        assert!(!is_resolved_oid(&"0".repeat(64)));
+        // Empty: no `HEAD` record at all.
+        assert!(!is_resolved_oid(""));
+    }
+
+    #[test]
+    fn a_real_sha_is_a_resolved_object() {
+        assert!(is_resolved_oid("93b07da74523635ff88ed6f5f17ea93a98e81bde"));
+        // A sha that merely BEGINS with zeros is a perfectly ordinary object,
+        // which is why the check is "every byte", not "starts with zero".
+        assert!(is_resolved_oid("0000000000000000000000000000000000000001"));
     }
 
     #[test]

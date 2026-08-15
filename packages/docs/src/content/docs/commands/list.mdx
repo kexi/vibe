@@ -62,7 +62,9 @@ The number in `M <n>` (and the `dirty_files` field) is the number of entries `gi
 
 This is git's default reporting (`-unormal`). `vibe` deliberately does not pass `-uall`, which would expand every untracked directory: it makes git walk untracked trees in full on every row of the listing — unbounded work in exactly the repositories (a stale `node_modules`, a fat build output) where it is least wanted — to refine a number whose job is to convey "there is something here".
 
-Any cell whose value could not be determined renders as `-`. A worktree that git cannot read (for example one left behind by a deleted checkout) still appears as a row; only the affected cells degrade, and the reason is reported as a warning.
+Any cell whose value could not be determined renders as `-`. A worktree that git cannot read (for example one left behind by a deleted checkout) still appears as a row; only the affected cells degrade.
+
+A failure to read a worktree's **STATUS** is reported as a warning on stderr. A failure to resolve **AGE** or **BASE** (for example when `git log` cannot read a detached worktree's HEAD) degrades to `-` silently — it is expected often enough that warning about it would be noise.
 
 ### BASE
 
@@ -202,7 +204,9 @@ When a filter matches nothing, `vibe list` says so explicitly (`No worktrees mat
 vibe list --json 2>&1 | jq .
 ```
 
-The `2>&1` is required. `vibe` writes the JSON payload to **stderr**, because stdout is the shell-eval channel: the shell wrapper runs `eval "$(command vibe "$@")"`, so anything written there would be executed as shell code. In `--json` mode the payload is the only thing on stderr — even `--verbose` diagnostics and warnings are withheld so the document stays parseable.
+The `2>&1` is required. `vibe` writes the JSON payload to **stderr**, because stdout is the shell-eval channel: the shell wrapper runs `eval "$(command vibe "$@")"`, so anything written there would be executed as shell code. In `--json` mode the payload is the only thing `list` itself writes to stderr — even `--verbose` diagnostics and the command's own warnings are withheld so the document stays parseable.
+
+One exception is outside this command's control: a warning about conflicting **global** flags (`vibe --verbose --quiet list --json` prints `Warning: Both --verbose and --quiet specified.`) is emitted before any subcommand runs, and would precede the payload. Avoid combining conflicting global flags when parsing the output.
 
 ### Schema
 
@@ -216,12 +220,14 @@ Each array element is an object with these fields:
 | `scratch`        | boolean        | Whether the branch is an auto-generated `scratch/<timestamp>` worktree      |
 | `name`           | string         | Always present: the branch, or the directory basename for a detached HEAD   |
 | `base`           | string \| null | The BASE column's value; `null` when it does not apply or could not be read |
-| `head`           | string \| null | The commit sha HEAD points at; `null` when git reported none                |
+| `head`           | string \| null | The commit sha HEAD points at; `null` for an unborn branch (no commits yet) |
 | `last_commit_at` | string \| null | The tip's committer date in ISO 8601; `null` for an unborn branch           |
 | `status`         | string \| null | `"clean"` or `"dirty"`; `null` when git could not be asked                  |
 | `dirty_files`    | number \| null | How many entries `git status` reported; `null` whenever `status` is `null`  |
 
 `branch`, `path`, `current` and `scratch` are the fields shipped in v3.1.0 and keep their names, types and position. New fields are only ever appended.
+
+`head` is always either a sha you can pass to `git show` or `null`. A worktree whose branch has no commits yet reports `null` rather than git's all-zero placeholder OID, so the field never carries a sha-shaped value that does not resolve.
 
 The relative AGE string is not published. A consumer wanting "3 days ago" is better served computing it from `last_commit_at`, which is exact.
 

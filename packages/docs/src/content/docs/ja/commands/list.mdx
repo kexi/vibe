@@ -62,7 +62,9 @@ $ vibe list
 
 これはgitの既定の報告方法（`-unormal`）です。`vibe`は意図的に`-uall`を渡しません。`-uall`は全ての未追跡ディレクトリを展開しますが、そのために一覧の各行でgitが未追跡ツリーを完全に走査することになります。これは、まさにそのコストが最も望ましくないリポジトリ（古い`node_modules`、肥大したビルド成果物など）において無制限の処理となるうえ、「何かがある」ことを伝えるだけの数値を精密化するにすぎません。
 
-値を特定できなかったセルは`-`で表示されます。gitが読み取れないWorktree（削除済みチェックアウトが残した壊れたWorktreeなど）も行としては必ず表示され、影響を受けたセルだけが縮退し、その理由が警告として報告されます。
+値を特定できなかったセルは`-`で表示されます。gitが読み取れないWorktree（削除済みチェックアウトが残した壊れたWorktreeなど）も行としては必ず表示され、影響を受けたセルだけが縮退します。
+
+Worktreeの**STATUS**の読み取りに失敗した場合は、その理由がstderrに警告として報告されます。**AGE**や**BASE**の解決に失敗した場合（detachedなWorktreeのHEADを`git log`が読み取れない場合など）は、警告なしで静かに`-`へ縮退します。これは十分に頻繁に起こりうるため、警告するとノイズになるからです。
 
 ### BASE
 
@@ -202,7 +204,9 @@ tipコミットが**無い**Worktree（unbornブランチ、あるいはログ�
 vibe list --json 2>&1 | jq .
 ```
 
-`2>&1`が必要です。`vibe`はJSONペイロードを**stderr**に書き込みます。stdoutはシェルのevalチャンネルだからです。シェルラッパーは`eval "$(command vibe "$@")"`を実行するため、stdoutに書かれたものはシェルコードとして実行されてしまいます。`--json`モードではペイロードがstderr上の唯一の内容となり、ドキュメントがパース可能なままであるよう`--verbose`の診断メッセージや警告も抑止されます。
+`2>&1`が必要です。`vibe`はJSONペイロードを**stderr**に書き込みます。stdoutはシェルのevalチャンネルだからです。シェルラッパーは`eval "$(command vibe "$@")"`を実行するため、stdoutに書かれたものはシェルコードとして実行されてしまいます。`--json`モードでは、`list`自身がstderrに書き込むのはペイロードだけであり、ドキュメントがパース可能なままであるよう`--verbose`の診断メッセージやコマンド自身の警告も抑止されます。
+
+1つだけこのコマンドの制御外の例外があります。**グローバル**フラグの競合に関する警告（`vibe --verbose --quiet list --json`は`Warning: Both --verbose and --quiet specified.`を出力します）はサブコマンドの実行前に出力されるため、ペイロードより先に現れます。出力をパースする場合は競合するグローバルフラグを併用しないでください。
 
 ### スキーマ
 
@@ -216,12 +220,14 @@ vibe list --json 2>&1 | jq .
 | `scratch`        | boolean        | 自動生成された`scratch/<timestamp>`のWorktreeかどうか                 |
 | `name`           | string         | 常に存在する名前。ブランチ名、detached HEADではディレクトリのbasename |
 | `base`           | string \| null | BASE列の値。該当しない場合や読み取れなかった場合は`null`              |
-| `head`           | string \| null | HEADが指すコミットのsha。gitが報告しなかった場合は`null`              |
+| `head`           | string \| null | HEADが指すコミットのsha。unbornブランチ（コミットなし）では`null`     |
 | `last_commit_at` | string \| null | tipのcommitter dateのISO 8601表記。unbornブランチでは`null`           |
 | `status`         | string \| null | `"clean"`または`"dirty"`。gitに問い合わせられなかった場合は`null`     |
 | `dirty_files`    | number \| null | `git status`が報告したエントリ数。`status`が`null`のときは常に`null`  |
 
 `branch`・`path`・`current`・`scratch`はv3.1.0で出荷されたフィールドであり、名前・型・位置が維持されます。新しいフィールドは末尾に追加されるだけです。
+
+`head`は常に`git show`に渡せるshaか`null`のいずれかです。まだコミットが無いブランチのWorktreeでは、gitが出力する全てゼロのプレースホルダOIDではなく`null`を報告するため、このフィールドに解決できないsha形式の値が入ることはありません。
 
 AGEの相対表記は出力されません。「3日前」が欲しい利用側は、厳密な`last_commit_at`から自分で計算するほうが適切です。
 
