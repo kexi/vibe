@@ -65,6 +65,25 @@ post_start = ["my-custom-script.sh"]
 # （共有のpost_startは完全に置き換えられる）
 ```
 
+### 単一ファイル内でのマージ
+
+`_prepend` / `_append` は`.vibe.local.toml`専用ではありません。単一ファイル内でも適用されるため、`.vibe.toml`だけがあり`.vibe.local.toml`が存在しないリポジトリでも利用できます。1つのファイル内での実効値は`prepend + フィールド + append`です：
+
+```toml
+# .vibe.toml のみ — .vibe.local.toml なし
+[copy]
+files = [".env"]
+files_append = [".env.local"]
+
+# 結果: [".env", ".env.local"]
+```
+
+各ファイルはまずこの方法で解決され、その後で`.vibe.local.toml`が共有ファイルの実効配列に対してマージされます（ローカルの`フィールド`は置き換え、ローカルの`フィールド_prepend` / `フィールド_append`は前後に追加）。
+
+:::caution
+`files = []`はリストを無効化するための書き方ですが、同じファイル内の拡張フィールドは引き続き適用されます。`files = []`と`files_append = ["x"]`を併記すると、結果は`[]`ではなく`["x"]`になります。空の結果が欲しい場合は`_append`の行も削除してください。
+:::
+
 ## Worktreeパスの上書き
 
 `.vibe.local.toml`でWorktreeパススクリプトを上書きできます：

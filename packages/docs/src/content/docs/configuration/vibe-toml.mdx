@@ -47,6 +47,24 @@ files = [
 Recursive patterns (`**/*`) may be slower in large repositories. Use specific patterns when possible (e.g., `config/**/*.json` instead of `**/*.json`).
 :::
 
+#### Prepend and Append
+
+`files_prepend` and `files_append` (and the equivalent `_prepend` / `_append` variants of
+`dirs`, `copy.symlink` and every `[hooks]` array) are valid inside `.vibe.toml` itself,
+not only in `.vibe.local.toml`. Within a single file the effective array is
+`prepend + field + append`:
+
+```toml
+[copy]
+files = [".env"]
+files_append = [".env.local"]
+
+# Effective: [".env", ".env.local"]
+```
+
+See [.vibe.local.toml](/configuration/local-config/) for how these fields interact across
+the two files.
+
 ### Directories <Badge text="v0.4.0+" />
 
 Copy entire directories recursively:

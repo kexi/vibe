@@ -65,6 +65,31 @@ post_start = ["my-custom-script.sh"]
 # (shared post_start is completely replaced)
 ```
 
+### Within a Single File
+
+`_prepend` / `_append` are not limited to `.vibe.local.toml`. They also apply inside a
+single file, so a repository with only `.vibe.toml` (and no `.vibe.local.toml`) can use
+them too. Within one file the effective array is `prepend + field + append`:
+
+```toml
+# .vibe.toml only — no .vibe.local.toml
+[copy]
+files = [".env"]
+files_append = [".env.local"]
+
+# Result: [".env", ".env.local"]
+```
+
+Each file is resolved this way first; only then does `.vibe.local.toml` merge over the
+shared file's effective array (a local `field` replaces it, a local
+`field_prepend` / `field_append` wraps it).
+
+:::caution
+`files = []` is the idiom for disabling a list, but the extensions in the same source
+still apply: `files = []` together with `files_append = ["x"]` yields `["x"]`, not `[]`.
+Remove the `_append` line as well if you want an empty result.
+:::
+
 ## Worktree Path Override
 
 You can override the worktree path script in `.vibe.local.toml`:

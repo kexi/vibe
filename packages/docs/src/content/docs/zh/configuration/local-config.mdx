@@ -65,6 +65,25 @@ post_start = ["my-custom-script.sh"]
 # （共享的 post_start 被完全替换）
 ```
 
+### 单个文件内的合并
+
+`_prepend` / `_append` 并不局限于 `.vibe.local.toml`。它们在单个文件内同样生效，因此只有 `.vibe.toml`（没有 `.vibe.local.toml`）的仓库也可以使用。在一个文件内，实际生效的数组为 `prepend + 字段 + append`：
+
+```toml
+# 仅有 .vibe.toml —— 没有 .vibe.local.toml
+[copy]
+files = [".env"]
+files_append = [".env.local"]
+
+# 结果: [".env", ".env.local"]
+```
+
+每个文件都会先按这种方式解析，然后 `.vibe.local.toml` 才会合并到共享文件的实际数组之上（本地的 `字段` 会替换它，本地的 `字段_prepend` / `字段_append` 会在其前后添加）。
+
+:::caution
+`files = []` 是禁用列表的惯用写法，但同一来源中的扩展字段依然生效：`files = []` 与 `files_append = ["x"]` 同时存在时，结果是 `["x"]` 而不是 `[]`。如果希望得到空结果，请一并删除 `_append` 行。
+:::
+
 ## Worktree 路径覆盖
 
 你可以在 `.vibe.local.toml` 中覆盖 worktree 路径脚本：
