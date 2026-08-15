@@ -62,7 +62,11 @@ jobs:
             # should_release=false lets the downstream jobs resume against the
             # published prerelease (#598), and they check out this run's commit.
             # Same tag from a different commit would hash the OLD binaries into
-            # a formula built from a NEWER tree, so fail closed instead.
+            # a formula built from a NEWER tree, so fail closed instead. Belt
+            # and braces here, unlike its stable twin: the beta tag embeds
+            # github.run_number, which only repeats across re-runs of the run
+            # that published it, so the commit already cannot differ. Kept so
+            # the two workflows do not drift apart.
             TARGET=$(gh release view "$TAG" --json targetCommitish --jq .targetCommitish)
             if [ "$TARGET" != "$GITHUB_SHA" ]; then
               echo "::error::Prerelease $TAG targets $TARGET but this run is on $GITHUB_SHA; use \"Re-run failed jobs\" on the original run instead of dispatching a fresh one."
@@ -260,8 +264,13 @@ jobs:
           mapfile -t ASSETS <<<"$ASSET_LIST"
           # Belt and braces: an empty ASSET_LIST would make mapfile produce a
           # one-element array holding "", passing a bare empty argument to
-          # `gh release create`. Unreachable while the gate exits 1 on failure.
-          [ -n "$ASSET_LIST" ]
+          # `gh release create`. Unreachable while the gate exits 1 on failure,
+          # so it must say so if it ever fires — a bare test would exit 1 with
+          # no annotation and no message.
+          if [ -z "$ASSET_LIST" ]; then
+            echo "::error::asset gate produced an empty upload list"
+            exit 1
+          fi
 
           # Create as a DRAFT and undraft only after the assets check out.
           # Why not publish in one call: that is atomic over its uploads but not
@@ -340,6 +349,11 @@ jobs:
           gh release download "$TAG" --dir artifacts \
             --pattern vibe-darwin-arm64 --pattern vibe-darwin-x64 \
             --pattern vibe-linux-arm64 --pattern vibe-linux-x64
+          # `gh release download` exits 0 as long as ANY --pattern matched, so
+          # name the missing file here rather than letting sha256sum fail one
+          # step later with the diagnostic pointing at the wrong place.
+          ls artifacts/vibe-darwin-arm64 artifacts/vibe-darwin-x64 \
+            artifacts/vibe-linux-arm64 artifacts/vibe-linux-x64 >/dev/null
 
       - name: Calculate SHA256
         id: sha256

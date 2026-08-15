@@ -445,8 +445,13 @@ jobs:
           mapfile -t ASSETS <<<"$ASSET_LIST"
           # Belt and braces: an empty ASSET_LIST would make mapfile produce a
           # one-element array holding "", passing a bare empty argument to
-          # `gh release create`. Unreachable while the gate exits 1 on failure.
-          [ -n "$ASSET_LIST" ]
+          # `gh release create`. Unreachable while the gate exits 1 on failure,
+          # so it must say so if it ever fires — a bare test would exit 1 with
+          # no annotation and no message.
+          if [ -z "$ASSET_LIST" ]; then
+            echo "::error::asset gate produced an empty upload list"
+            exit 1
+          fi
 
           if [ -n "$NOTES" ]; then
             printf '%s\n' "$NOTES" > notes.md
@@ -554,6 +559,11 @@ jobs:
           gh release download "$TAG" --dir artifacts \
             --pattern vibe-darwin-arm64 --pattern vibe-darwin-x64 \
             --pattern vibe-linux-arm64 --pattern vibe-linux-x64
+          # `gh release download` exits 0 as long as ANY --pattern matched, so
+          # name the missing file here rather than letting sha256sum fail one
+          # step later with the diagnostic pointing at the wrong place.
+          ls artifacts/vibe-darwin-arm64 artifacts/vibe-darwin-x64 \
+            artifacts/vibe-linux-arm64 artifacts/vibe-linux-x64 >/dev/null
 
       - name: Calculate SHA256
         id: sha256

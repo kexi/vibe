@@ -149,9 +149,12 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // Internal assertion, not a reachable branch: the workflow turns this stdout
-  // into the `gh release create` argument list, so emitting a short list would
-  // publish a release missing assets the gate just claimed to have verified.
+  // Internal assertion, not a reachable branch today: `resolveAssetPaths` is a
+  // total `.map` over `planned`, so the lengths are equal by construction. It
+  // exists to fail closed if that ever stops being true (a filter, a `continue`,
+  // a per-source lookup that can miss), because the workflow turns this stdout
+  // into the `gh release create` argument list — a short list would publish a
+  // release missing assets the gate just claimed to have verified.
   if (entries.length !== planned.length) {
     throw new Error(
       `refusing to emit a partial upload list (${entries.length} of ${planned.length} assets)`,
