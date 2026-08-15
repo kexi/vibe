@@ -313,20 +313,27 @@ they never print one.
 | `NullTracker`       | quiet / non-TTY / Claude-Code hook mode / most unit tests         |
 | `RecordingTracker`  | tests asserting the event sequence (`test-util` feature)          |
 
-- Template `"{prefix}{spinner} {msg}"`; braille tick strings
-  `⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏`, steady tick 80 ms.
+- While a node is open: template `"{prefix}{spinner} {msg}"`, braille tick
+  strings `⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏`, steady tick 80 ms. `⠋` is what the README
+  legend documents for both pending and running — nothing renders `☐`.
+- Once a node closes, `close_bar` swaps it to `closed_style()` (`"{msg}"` with
+  blanked tick strings) *before* setting the message. Keeping the spinner
+  template would stamp `⠏ ` in front of every outcome, because `indicatif`
+  expands `{spinner}` on a finished bar to the last `tick_strings` entry.
 - Prefixes build the tree: phase `"┗ "`, task `"   ┗ "`.
 - Final lines come from the pure `render_line(TaskOutcome, prefix, label, color)`:
   completion → `<prefix>☒ <label>` (never colored), failure →
   `<prefix>✗ <label> (failed: <err>)` in RED (the message rides on
   `TaskOutcome::Failed { error }`), and a node still pending at `finish` →
-  `<prefix>⊘ <label>` in DIM. The three must stay visually distinct, and `⊘` is
-  deliberately not `☐` — the README legend spends `☐` on "queued, will still run".
+  `<prefix>⊘ <label>` in DIM. All three must stay visually distinct from each
+  other and from the `⠋` a still-open node shows.
 - `finish()` closes each open node via the pure `closing_outcomes`: a **task** is
   abandoned, but a **phase** is a header with no `complete_task` caller, so it
   closes as `☒` unless a task under it was still pending.
-- The event protocol **and** the rendered glyphs are tested (`render_line` plus
-  `finish_*` unit tests in `progress.rs`). Add UI polish without breaking
+- The event protocol **and** the rendered glyphs are tested (`render_line`, the
+  `finish_*` tests that drive the real `finish()`, and
+  `closed_nodes_stop_rendering_the_spinner` in `progress.rs`). Add UI polish
+  without breaking
   `add_phase`/`add_task`/`start_task`/`complete_task`/`fail_task`/`start`/`finish`.
 
 ### Status Indicators (`commands/verify.rs`)
