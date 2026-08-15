@@ -1971,6 +1971,81 @@ fn navigating_to_the_worktree_we_are_already_in_does_not_re_provision() {
     );
 }
 
+/// Self-navigation must not depend on the config being TRUSTED either. Routing
+/// the "already used in worktree X" answer through `run_config_and_hooks` also
+/// moved it past `load_vibe_config`, which errors on a modified `.vibe.toml` —
+/// so `vibe start feat` from inside the `feat` worktree, which provisions
+/// nothing and has no entry to gate, would have started failing at exit 1 on a
+/// config it never needed to read. It cds, as it did before the gate.
+#[test]
+fn navigating_to_our_own_worktree_survives_an_untrusted_config() {
+    let content = "[hooks]\npre_start = [\"pre\"]\n[copy]\nfiles = [\".env\"]\n";
+    let (fx, io, resolver, repo_root) = trusted_config_repo_with_content(content);
+    // Rewrite the config AFTER its hash was allow-listed: the content no longer
+    // matches, so `load_vibe_config` would return `Err(Configuration)`.
+    fx.write("repo/.vibe.toml", "[hooks]\npre_start = [\"tampered\"]\n");
+    let git = MockGit::new(
+        &repo_root,
+        &two_worktrees(&fake_root_str("home/u/other"), &repo_root, "feat"),
+    );
+    let (s, sin) = (NoScript, FakeStdin::none());
+    let fk = Fakes::new();
+    let outcome = {
+        let d = StartDeps {
+            io: &io,
+            git: &git,
+            resolver: &resolver,
+            script_runner: &s,
+            prompt: &ScriptPrompt::confirming(true),
+            stdin: &sin,
+            hook_runner: &fk.hooks,
+            executor: &fk.exec,
+            symlink_creator: &fk.symlinks,
+            tracker: &fk.tracker,
+            version: V,
+        };
+        start_command(&d, "feat", &StartFlags::default(), OutputOptions::default()).unwrap()
+    };
+
+    assert_eq!(outcome, Outcome::cd(&repo_root));
+    assert!(fk.hooks.calls.borrow().is_empty());
+}
+
+/// The trust check is only skipped for the SELF case. Navigating into a
+/// DIFFERENT worktree still provisions it, so an untrusted config is fatal
+/// there exactly as it is on every other provisioning path.
+#[test]
+fn navigating_to_another_worktree_still_fails_on_an_untrusted_config() {
+    let content = "[hooks]\npre_start = [\"pre\"]\n";
+    let (fx, io, resolver, repo_root) = trusted_config_repo_with_content(content);
+    fx.write("repo/.vibe.toml", "[hooks]\npre_start = [\"tampered\"]\n");
+    let other = fake_root_str("home/u/other");
+    let git = MockGit::new(&repo_root, &two_worktrees(&repo_root, &other, "feat"));
+    let (s, sin) = (NoScript, FakeStdin::none());
+    let fk = Fakes::new();
+    let err = {
+        let d = StartDeps {
+            io: &io,
+            git: &git,
+            resolver: &resolver,
+            script_runner: &s,
+            prompt: &ScriptPrompt::confirming(true),
+            stdin: &sin,
+            hook_runner: &fk.hooks,
+            executor: &fk.exec,
+            symlink_creator: &fk.symlinks,
+            tracker: &fk.tracker,
+            version: V,
+        };
+        start_command(&d, "feat", &StartFlags::default(), OutputOptions::default()).unwrap_err()
+    };
+
+    assert!(
+        matches!(err, VibeError::Configuration(_)),
+        "expected a fatal Configuration error, got {err:?}"
+    );
+}
+
 /// The gate applies to the reuse path too: `--reuse` into an existing worktree
 /// whose `pre_start` fails emits no cd.
 #[test]

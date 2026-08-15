@@ -217,7 +217,20 @@ where
         };
         match handle_existing_branch_worktree(deps, branch_name, &existing, flags)? {
             ExistingBranchDecision::Done(outcome) => return Ok(outcome),
-            ExistingBranchDecision::Navigate(path) => existing_branch_worktree = Some(path),
+            ExistingBranchDecision::Navigate(path) => {
+                // Standing in the worktree we would navigate to: there is no
+                // entry to provision and nothing to gate, so return before the
+                // config load below. Deferring this to
+                // `navigate_to_existing_branch_worktree` (which repeats the
+                // check for its other callers) would make an untrusted or
+                // modified `.vibe.toml` fail a self-navigation that needs no
+                // config at all — on develop this path returned the cd before
+                // `load_vibe_config` ever ran, and that must stay true.
+                if same_worktree(&repo_root, &path) {
+                    return Ok(Outcome::cd(path));
+                }
+                existing_branch_worktree = Some(path);
+            }
         }
     }
 
@@ -496,6 +509,10 @@ where
 /// `post_start`, which is what makes "fix the cause and re-run `vibe start`"
 /// actually provision the worktree — the same semantics
 /// `handle_same_branch_worktree` and `reuse_existing_worktree` already have.
+///
+/// `existing` is never the caller's own worktree: `start_command` returns the
+/// self-navigation cd before the config load, so this function only ever
+/// provisions a DIFFERENT worktree (see the `same_worktree` guard there).
 fn navigate_to_existing_branch_worktree<I, G, R, S, P, Sr>(
     deps: &StartDeps<I, G, R, S, P, Sr>,
     config: Option<&VibeConfig>,
@@ -512,17 +529,6 @@ where
     P: Prompt,
     Sr: StdinReader,
 {
-    // Already standing in the worktree we would navigate to: `git rev-parse
-    // --show-toplevel` reports the LINKED worktree, so `repo_root == existing`
-    // and re-provisioning would run the copy with source and destination the
-    // same path (`.env` -> `.env`), plus re-run the hooks against a worktree
-    // nothing has changed. Before the gate made this path re-provision, this
-    // case simply cd'd; keep that, because there is no entry to gate — the user
-    // is already inside.
-    if same_worktree(repo_root, existing) {
-        return Ok(Outcome::cd(existing.to_string()));
-    }
-
     let provisioning = run_config_and_hooks(
         deps,
         config,
