@@ -80,10 +80,21 @@ pub fn cache_dir(io: &impl Io) -> Result<PathBuf> {
 /// derived from repository contents and from the output of a user-configured
 /// command, neither of which should become world-readable just because it is
 /// "only" a cache.
+///
+/// An EXISTING directory is re-chmodded rather than accepted as-is. Unlike the
+/// config dir — which only ever exists because vibe made it — this one lives
+/// under a shared, conventional root (`~/.cache`, `$XDG_CACHE_HOME`) that other
+/// tools, a restore from backup, or a permissive `umask` can have created first,
+/// so "it exists" carries no information about its mode. The chmod is
+/// best-effort: on a directory someone else owns it fails, and refusing to list
+/// worktrees over a cache permission would be a worse outcome than the cache
+/// being readable.
 pub fn ensure_cache_subdir(io: &impl Io, subdir: &str) -> Result<PathBuf> {
     let dir = cache_dir(io)?.join(subdir);
 
     if dir.is_dir() {
+        // Best-effort: see above.
+        let _ = set_dir_permissions_0700(&dir);
         return Ok(dir);
     }
 
@@ -225,6 +236,30 @@ mod tests {
         assert_eq!(mode & 0o777, 0o700);
         // Idempotent.
         assert!(ensure_cache_subdir(&io, "summaries").is_ok());
+    }
+
+    /// What it guarantees: a cache directory that already exists with loose
+    /// permissions is tightened, not accepted.
+    ///
+    /// Unlike the config dir, this one lives under a shared conventional root
+    /// (`~/.cache`), so another tool or a permissive umask can have created it
+    /// first — "it exists" says nothing about its mode.
+    #[cfg(unix)]
+    #[test]
+    fn ensure_cache_subdir_tightens_an_existing_world_readable_dir() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let io = crate::io::FakeIo::new().with_env("HOME", tmp.path().to_str().unwrap());
+
+        // Someone else got there first, with a permissive mode.
+        let dir = cache_dir(&io).unwrap().join("summaries");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let returned = ensure_cache_subdir(&io, "summaries").unwrap();
+        assert_eq!(returned, dir);
+        let mode = std::fs::metadata(&dir).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o700, "an existing dir must be tightened");
     }
 
     #[cfg(unix)]

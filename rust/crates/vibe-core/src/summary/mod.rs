@@ -70,7 +70,7 @@ use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::time::Duration;
 
-pub use cache::{command_hash, entry_key, load_cache, save_cache, SummaryCache};
+pub use cache::{command_hash, entry_key, load_cache, save_cache, EntryKeyParts, SummaryCache};
 pub use runner::{RealSummaryRunner, SummaryOutput};
 
 #[cfg(any(test, feature = "test-util"))]

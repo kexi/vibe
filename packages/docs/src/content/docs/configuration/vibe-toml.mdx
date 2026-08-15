@@ -269,9 +269,17 @@ A cached summary is invalidated when:
 
 - the worktree's `HEAD` changes (a new commit, a checkout), **or**
 - the worktree's uncommitted changes change (`git status` reports something different), **or**
+- the worktree's **branch name** changes ([`vibe rename`](/commands/rename/)), **or**
+- the worktree's **base** changes (`git branch --set-upstream-to`), **or**
 - `[summary] command` itself changes — which discards **every** entry, since a summary produced by the old command says nothing about what the new one means.
 
 `timeout_seconds` is not part of the invalidation: it changes how long vibe waits, not what the answer is. Entries for worktrees that no longer exist are pruned on every run, and a corrupt or unreadable cache file simply regenerates.
+
+:::note[Two things the cache deliberately does not detect]
+**Re-editing a file that is already modified.** Invalidation uses `git status`'s _report_, not your files' contents: a tracked file that is already modified is reported as `M path` no matter how many more times you edit it. So a summary can stay put while you keep working in an already-dirty file; committing, or changing which files are dirty, updates it. Hashing the contents instead would mean reading every modified file on every `vibe list`, turning a listing into an I/O-bound operation.
+
+**Summaries that depend on the other worktrees.** Each summary is cached against _its own_ worktree, so a command whose answer is comparative ("the only branch touching the parser") can go stale when a different worktree changes and this one does not. Write commands that describe a worktree on its own terms; if you do want cross-worktree comparison, expect the column to lag.
+:::
 
 ### Example scripts
 

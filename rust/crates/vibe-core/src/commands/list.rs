@@ -68,7 +68,7 @@ use crate::mru::{load_mru_data, sort_by_mru};
 use crate::output::{report_log, sanitize_for_display, verbose_log, warn_log, OutputOptions};
 use crate::settings::RepoResolver;
 use crate::summary::runner::SummaryRunner;
-use crate::summary::{entry_key, resolve_summaries, SummaryRequest, SummaryTarget};
+use crate::summary::{entry_key, resolve_summaries, EntryKeyParts, SummaryRequest, SummaryTarget};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -218,11 +218,77 @@ impl DeferredWarnings {
         self.messages.push(sanitize_for_display(&message));
     }
 
+    /// Absorb everything a [`CapturingIo`] intercepted.
+    fn absorb(&mut self, captured: Vec<String>) {
+        for message in captured {
+            self.push(message);
+        }
+    }
+
     /// Emit everything collected. Called only on the text-mode path.
     fn flush(self, io: &impl Io) {
         for message in self.messages {
             warn_log(io, &message);
         }
+    }
+}
+
+/// An [`Io`] that buffers stderr instead of writing it.
+///
+/// `DeferredWarnings` only defers the diagnostics THIS module writes. Everything
+/// `list` calls into — the trust loader, the settings loader, the summary
+/// orchestrator — takes an `&impl Io` and writes through it the moment it has
+/// something to say, which in `--json` mode lands in front of the payload and
+/// makes the document unparseable. Two such paths were shipped and reachable:
+/// `settings_io`'s "Hash verification is disabled" notice (emitted on every run
+/// of a repo using `skipHashCheck`) and its "Settings validation failed" notice.
+///
+/// Rather than thread a mode flag down through every callee — which makes each
+/// of them responsible for a caller's output contract, and silently rots the
+/// moment a new one is added — the *stream* is swapped for one that records.
+/// Anything written while this is installed is captured and can then be
+/// released, or withheld, by whoever knows the output mode.
+///
+/// Only `writeln_stderr` is intercepted; every other capability forwards to the
+/// real [`Io`], because a captured run must still see the same environment, the
+/// same `$HOME` and the same tty answers as an uncaptured one.
+struct CapturingIo<'a, I: Io> {
+    inner: &'a I,
+    captured: std::cell::RefCell<Vec<String>>,
+}
+
+impl<'a, I: Io> CapturingIo<'a, I> {
+    fn new(inner: &'a I) -> Self {
+        CapturingIo {
+            inner,
+            captured: std::cell::RefCell::new(Vec::new()),
+        }
+    }
+
+    fn into_captured(self) -> Vec<String> {
+        self.captured.into_inner()
+    }
+}
+
+impl<I: Io> Io for CapturingIo<'_, I> {
+    fn writeln_stderr(&self, message: &str) {
+        self.captured.borrow_mut().push(message.to_string());
+    }
+
+    fn read_line(&self) -> Option<String> {
+        self.inner.read_line()
+    }
+
+    fn is_stderr_terminal(&self) -> bool {
+        self.inner.is_stderr_terminal()
+    }
+
+    fn is_stdin_terminal(&self) -> bool {
+        self.inner.is_stdin_terminal()
+    }
+
+    fn env(&self, key: &str) -> Option<String> {
+        self.inner.env(key)
     }
 }
 
@@ -308,6 +374,10 @@ where
 /// rather than being ignored: the whole point of the trust store is that an
 /// unreviewed config never runs, and silently degrading to "no summary" would
 /// hide the fact that the user's configuration is not in effect.
+///
+/// Everything here runs against a [`CapturingIo`], so no callee can write to
+/// stderr while the output mode is still undecided; what they wrote is turned
+/// into deferred warnings on the way out.
 fn attach_summaries<I, G, R, S>(
     deps: &ListDeps<I, G, R, S>,
     entries: &mut [ListEntry],
@@ -327,14 +397,47 @@ where
         return Ok(false);
     };
 
-    let config = load_vibe_config(deps.io, deps.resolver, deps.version, main_path)?;
+    let captured_io = CapturingIo::new(deps.io);
+    let outcome = attach_summaries_captured(deps, &captured_io, entries, main_path, opts);
+    // Absorbed even on the error path: the trust loader can warn AND then the
+    // config can turn out to be untrusted, and dropping the warning because of
+    // the error would lose the more informative of the two.
+    warnings.absorb(captured_io.into_captured());
+    let (has_summary, summary_warnings) = outcome?;
+
+    for message in summary_warnings {
+        warnings.push(message);
+    }
+    Ok(has_summary)
+}
+
+/// The body of [`attach_summaries`], run against a captured stderr.
+///
+/// Split out purely so the capture is released exactly once, on every path
+/// including the `?` ones — an inline version would need the absorb repeated at
+/// each early return, which is the shape that eventually misses one.
+fn attach_summaries_captured<I, G, R, S, C>(
+    deps: &ListDeps<I, G, R, S>,
+    io: &C,
+    entries: &mut [ListEntry],
+    main_path: &str,
+    opts: OutputOptions,
+) -> Result<(bool, Vec<String>)>
+where
+    I: Io,
+    G: GitRunner,
+    R: RepoResolver,
+    S: SummaryRunner,
+    C: Io,
+{
+    let config = load_vibe_config(io, deps.resolver, deps.version, main_path)?;
     let Some(summary_config) = config.as_ref().and_then(|c| c.summary.as_ref()) else {
-        return Ok(false);
+        return Ok((false, Vec::new()));
     };
     // A `[summary]` section with no `command` is a section that configures
     // nothing; there is no column to show.
     let Some(command) = summary_config.command.as_deref().filter(|c| !c.is_empty()) else {
-        return Ok(false);
+        return Ok((false, Vec::new()));
     };
 
     let targets: Vec<SummaryTarget> = entries
@@ -344,7 +447,12 @@ where
             path: e.path.clone(),
             base: e.base.clone(),
             head: e.head.clone(),
-            key: entry_key(e.head.as_deref(), e.status_payload.as_deref()),
+            key: entry_key(&EntryKeyParts {
+                name: &e.name,
+                base: e.base.as_deref(),
+                head: e.head.as_deref(),
+                status_payload: e.status_payload.as_deref(),
+            }),
         })
         .collect();
 
@@ -354,7 +462,7 @@ where
             .unwrap_or(DEFAULT_SUMMARY_TIMEOUT_SECONDS),
     );
     let result = resolve_summaries(
-        deps.io,
+        io,
         deps.summary_runner,
         &SummaryRequest {
             command,
@@ -365,16 +473,13 @@ where
         opts,
     );
 
-    for message in result.warnings {
-        warnings.push(message);
-    }
     for entry in entries.iter_mut() {
         // Every row carries the field once the feature is on, so an unanswered
         // worktree reads as "no summary" rather than "no SUMMARY column".
         entry.summary = Some(result.by_path.get(&entry.path).cloned().unwrap_or_default());
     }
 
-    Ok(true)
+    Ok((true, result.warnings))
 }
 
 /// Build the ordered entry list: the current worktree first, then the rest in

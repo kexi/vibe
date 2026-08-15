@@ -1052,18 +1052,35 @@ struct SummaryFixture {
     resolver: MapResolver,
 }
 
+/// How the fixture's `.vibe.toml` is registered in the trust store.
+#[derive(Clone, Copy, PartialEq)]
+enum Trust {
+    /// Not registered at all.
+    No,
+    /// Registered with the file's real hash.
+    Yes,
+    /// Registered with `skipHashCheck`, the documented escape hatch — which
+    /// makes the trust loader emit a warning on EVERY run.
+    SkipHashCheck,
+}
+
 impl SummaryFixture {
     /// Write `.vibe.toml` with `toml` under a fresh main worktree and trust it.
     fn trusted(toml: &str) -> Self {
-        SummaryFixture::build(toml, true)
+        SummaryFixture::build(toml, Trust::Yes)
     }
 
     /// Same, but the file is NOT registered in the trust store.
     fn untrusted(toml: &str) -> Self {
-        SummaryFixture::build(toml, false)
+        SummaryFixture::build(toml, Trust::No)
     }
 
-    fn build(toml: &str, trust: bool) -> Self {
+    /// Same, but trusted via `skipHashCheck`.
+    fn trusted_with_skip_hash_check(toml: &str) -> Self {
+        SummaryFixture::build(toml, Trust::SkipHashCheck)
+    }
+
+    fn build(toml: &str, trust: Trust) -> Self {
         use crate::hash::hash_content;
         use crate::settings::{AllowEntry, RepoId, VibeSettings};
         use crate::settings_io::save_user_settings;
@@ -1077,15 +1094,23 @@ impl SummaryFixture {
         let file_path = fx.write("repo/.vibe.toml", toml);
 
         let mut settings = VibeSettings::default_settings();
-        if trust {
+        if trust != Trust::No {
+            let skipping = trust == Trust::SkipHashCheck;
             settings.permissions.allow.push(AllowEntry {
                 repo_id: RepoId {
                     remote_url: None,
                     repo_root: Some(main_path.clone()),
                 },
                 relative_path: ".vibe.toml".into(),
-                hashes: vec![hash_content(toml.as_bytes())],
-                skip_hash_check: None,
+                // With the hash check skipped the stored hash is never
+                // consulted, so leaving it empty is what a real
+                // `skipHashCheck` entry looks like.
+                hashes: if skipping {
+                    vec![]
+                } else {
+                    vec![hash_content(toml.as_bytes())]
+                },
+                skip_hash_check: skipping.then_some(true),
             });
         }
         save_user_settings(&io, &settings, V).unwrap();
@@ -1372,4 +1397,138 @@ fn control_characters_in_a_worktree_path_warning_are_neutralized() {
         "escape reached the terminal: {text:?}"
     );
     assert!(text.contains("Could not read status"), "got: {text}");
+}
+
+/// What it guarantees: `--verbose --json` stays parseable even when the summary
+/// path has something to say.
+///
+/// The duplicate-name notice is written with `verbose_log` from inside the
+/// summary orchestrator, which has no idea the caller is in JSON mode. The fix
+/// is structural — the whole summary path runs against a capturing `Io` — so
+/// this pins the OUTCOME rather than the mechanism.
+#[test]
+fn a_verbose_json_run_stays_pure_json_when_summaries_are_skipped() {
+    let fixture = SummaryFixture::trusted(SUMMARY_TOML);
+    // Two detached worktrees under directories with the same basename: the
+    // summary protocol keys answers by name, so both are skipped with a notice.
+    let dup_a = format!("{}-x/dup", fixture.main_path);
+    let dup_b = format!("{}-y/dup", fixture.main_path);
+    let mut git = ListGit::with_optional_branches(&[
+        (fixture.main_path.as_str(), Some("main")),
+        (dup_a.as_str(), None),
+        (dup_b.as_str(), None),
+    ]);
+    git.detached_log = Some((NOW_SECS - 60, "iso".to_string()));
+
+    let runner = FakeSummaryRunner::with_stdout(r#"{"main":"m"}"#);
+    run_with(
+        &fixture.io,
+        &git,
+        &fixture.resolver,
+        &runner,
+        &fixture.main_path,
+        true,
+        OutputOptions::new(true, false),
+    )
+    .unwrap();
+
+    let text = fixture.io.stderr_text();
+    assert!(!text.contains("[verbose]"), "diagnostic leaked: {text}");
+    serde_json::from_str::<serde_json::Value>(&text)
+        .expect("stderr must be pure JSON under --verbose --json");
+}
+
+/// What it guarantees: the same notice IS still shown in text mode — the fix
+/// defers the message, it does not discard it.
+#[test]
+fn the_skipped_summary_notice_still_appears_in_verbose_text_mode() {
+    let fixture = SummaryFixture::trusted(SUMMARY_TOML);
+    let dup_a = format!("{}-x/dup", fixture.main_path);
+    let dup_b = format!("{}-y/dup", fixture.main_path);
+    let mut git = ListGit::with_optional_branches(&[
+        (fixture.main_path.as_str(), Some("main")),
+        (dup_a.as_str(), None),
+        (dup_b.as_str(), None),
+    ]);
+    git.detached_log = Some((NOW_SECS - 60, "iso".to_string()));
+
+    let runner = FakeSummaryRunner::with_stdout(r#"{"main":"m"}"#);
+    run_with(
+        &fixture.io,
+        &git,
+        &fixture.resolver,
+        &runner,
+        &fixture.main_path,
+        false,
+        OutputOptions::new(true, false),
+    )
+    .unwrap();
+
+    assert!(
+        fixture.io.stderr_text().contains("Skipping summary"),
+        "got: {}",
+        fixture.io.stderr_text()
+    );
+}
+
+/// What it guarantees: a warning emitted by the TRUST loader — which knows
+/// nothing about `list`'s output mode — cannot corrupt the JSON payload.
+///
+/// `skipHashCheck` is the documented escape hatch, and `verify_trust_and_read`
+/// warns on every run that uses it. Before the capturing `Io`, that line was
+/// printed straight to stderr in front of the document:
+///
+/// ```text
+/// Warning: Hash verification is disabled for /…/.vibe.toml
+/// [ { "branch": "main", …
+/// ```
+#[test]
+fn a_skip_hash_check_warning_never_corrupts_the_json_payload() {
+    let fixture = SummaryFixture::trusted_with_skip_hash_check(SUMMARY_TOML);
+    let git = fixture.git(&[]);
+    let runner = FakeSummaryRunner::with_stdout(r#"{"main":"m"}"#);
+    fixture.run(&git, &runner, true).unwrap();
+
+    let text = fixture.io.stderr_text();
+    serde_json::from_str::<serde_json::Value>(&text)
+        .expect("stderr must be pure JSON despite the trust-loader warning");
+
+    // Text mode still surfaces it, deferred rather than dropped.
+    let text_fixture = SummaryFixture::trusted_with_skip_hash_check(SUMMARY_TOML);
+    let text_git = text_fixture.git(&[]);
+    let text_runner = FakeSummaryRunner::with_stdout(r#"{"main":"m"}"#);
+    text_fixture.run(&text_git, &text_runner, false).unwrap();
+    assert!(
+        text_fixture
+            .io
+            .stderr_text()
+            .contains("Hash verification is disabled"),
+        "got: {}",
+        text_fixture.io.stderr_text()
+    );
+}
+
+/// What it guarantees: renaming a branch re-asks for its summary.
+///
+/// End-to-end over `list`, not just over `entry_key`: the row's `name` has to
+/// actually reach the key for the invalidation to happen.
+#[test]
+fn renaming_a_branch_makes_the_summary_a_cache_miss() {
+    let fixture = SummaryFixture::trusted(SUMMARY_TOML);
+
+    let first = FakeSummaryRunner::with_stdout(r#"{"main":"before the rename"}"#);
+    fixture.run(&fixture.git(&[]), &first, false).unwrap();
+    assert_eq!(first.calls().len(), 1);
+
+    // Same path, same HEAD, same clean tree — only the branch name differs.
+    let renamed = ListGit::with(&[(fixture.main_path.as_str(), "trunk")]);
+    let second = FakeSummaryRunner::with_stdout(r#"{"trunk":"after the rename"}"#);
+    fixture.run(&renamed, &second, false).unwrap();
+
+    assert_eq!(second.calls().len(), 1, "a rename must re-ask");
+    assert!(
+        fixture.io.stderr_text().contains("after the rename"),
+        "got: {}",
+        fixture.io.stderr_text()
+    );
 }

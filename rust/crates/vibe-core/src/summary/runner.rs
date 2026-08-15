@@ -26,13 +26,22 @@
 //! module deliberately adds NO dependency for a feature whose whole job is to
 //! shell out.
 //!
-//! # Why `wait()` after `kill()`
+//! # Why `wait()` after `kill()`, and why that wait is itself bounded
 //!
 //! `kill()` only delivers the signal; the child stays a zombie until it is
 //! reaped. Skipping the `wait()` would leak a process-table entry per timeout,
 //! which is exactly the situation (a command that hangs every run) where it
 //! would accumulate. An `Err` from `kill()` is ignored: it means the child
 //! already exited between the last poll and the kill, which is not a failure.
+//!
+//! But `wait()` blocks, and SIGKILL is not instantaneous for a process sitting
+//! in an uninterruptible syscall (a hung NFS mount, a wedged device): it stays
+//! unkillable until that syscall returns, and a blocking `wait` would stall with
+//! it — past the deadline, for as long as the kernel takes. The reap therefore
+//! happens on its own thread and the parent waits at most [`REAP_GRACE`]. In the
+//! rare case that is not enough, the entry lives until the vibe process exits
+//! and `init` adopts it; for a CLI that is moments away, and it is strictly
+//! better than an unbounded hang.
 //!
 //! # Why the deadline governs the READS too, not just the child
 //!
@@ -132,6 +141,15 @@ impl<T: SummaryRunner + ?Sized> SummaryRunner for &T {
 /// 30-second default costs about 1200 cheap `waitpid` calls rather than a spin.
 const POLL_INTERVAL: Duration = Duration::from_millis(25);
 
+/// How long the parent waits for a killed child to actually be reaped.
+///
+/// Short and fixed rather than derived from the deadline: by this point the
+/// deadline has ALREADY expired, so any further wait is time the user did not
+/// ask for. A process that has been SIGKILLed is normally reaped in
+/// microseconds; 100 ms covers a loaded machine and stops well short of being
+/// noticeable.
+const REAP_GRACE: Duration = Duration::from_millis(100);
+
 /// Production [`SummaryRunner`]: `/bin/sh -c <cmd>` (unix) / `cmd /c <cmd>`
 /// (Windows), with the payload piped to stdin and a wall-clock deadline.
 pub struct RealSummaryRunner;
@@ -200,9 +218,28 @@ impl SummaryRunner for RealSummaryRunner {
                         // Best-effort: an Err here means the child exited in the
                         // window between the poll and the kill.
                         let _ = child.kill();
-                        // Reap it, or the entry leaks for the lifetime of the
-                        // process.
-                        let _ = child.wait();
+                        // Reap on a thread, bounded like everything else. A
+                        // process that is unkillable for the moment — blocked in
+                        // an uninterruptible syscall on a hung NFS mount or a
+                        // wedged device — does not respond to SIGKILL until that
+                        // syscall returns, and `wait` would block with it,
+                        // reintroducing exactly the unbounded stall the deadline
+                        // exists to prevent.
+                        //
+                        // Why not simply skip the reap: a zombie holds a
+                        // process-table entry. Handing the child to a thread
+                        // keeps the reap happening in the overwhelming majority
+                        // of cases while never making the CALLER wait for it. If
+                        // even the thread cannot reap, the entry lives until the
+                        // vibe process exits — which for a CLI is the next
+                        // moment anyway, and at that point `init` adopts and
+                        // reaps it.
+                        let (reaped, reaped_rx) = std::sync::mpsc::channel();
+                        std::thread::spawn(move || {
+                            let _ = child.wait();
+                            let _ = reaped.send(());
+                        });
+                        let _ = reaped_rx.recv_timeout(REAP_GRACE);
                         timed_out = true;
                         break None;
                     }
