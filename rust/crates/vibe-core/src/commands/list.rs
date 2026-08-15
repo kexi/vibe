@@ -331,8 +331,10 @@ fn enrich_entries<G: GitRunner>(
                 Some(_) if ref_lookup_failed => None,
                 Some(branch) => ref_info
                     .get(branch)
-                    .and_then(|i| i.upstream.as_deref())
-                    .map(strip_remote_prefix)
+                    // Already a plain branch name: `branch_ref_info` resolves it
+                    // from the full refname plus git's own remote name, so there
+                    // is no prefix left here to guess at.
+                    .and_then(|i| i.upstream.clone())
                     .or_else(|| {
                         Some(
                             default_branch
@@ -402,19 +404,6 @@ fn detached_name(path: &str) -> String {
         .file_name()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.to_string())
-}
-
-/// Drop a `<remote>/` prefix from an upstream so BASE names a branch.
-///
-/// The first segment of an `upstream:short` is always the remote name (git
-/// builds it as `<remote>/<branch>`), so splitting on the first `/` is exact
-/// rather than a guess at "origin". A value with no `/` is already a plain
-/// branch name and is returned unchanged.
-fn strip_remote_prefix(upstream: &str) -> String {
-    match upstream.split_once('/') {
-        Some((_remote, branch)) if !branch.is_empty() => branch.to_string(),
-        _ => upstream.to_string(),
-    }
 }
 
 /// Number of seconds treated as a month for the AGE column (≈30 days).

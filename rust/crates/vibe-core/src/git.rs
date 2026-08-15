@@ -609,7 +609,7 @@ pub fn branch_ref_info(
         .collect();
     let mut args: Vec<&str> = vec![
         "for-each-ref",
-        "--format=%(refname)%00%(committerdate:unix)%00%(committerdate:iso8601-strict)%00%(upstream:short)",
+        "--format=%(refname)%00%(committerdate:unix)%00%(committerdate:iso8601-strict)%00%(upstream)%00%(upstream:remotename)",
     ];
     args.extend(patterns.iter().map(String::as_str));
     let output = runner.run(&args)?;
@@ -618,6 +618,51 @@ pub fn branch_ref_info(
 
 /// The namespace every local branch ref lives under.
 const BRANCH_REF_PREFIX: &str = "refs/heads/";
+
+/// The namespace remote-tracking refs live under.
+const REMOTE_REF_PREFIX: &str = "refs/remotes/";
+
+/// Reduce an upstream's FULL refname to a plain branch name.
+///
+/// `remote_name` is git's own `%(upstream:remotename)` for the same branch: `.`
+/// when the upstream is a local branch, otherwise the configured remote.
+///
+/// Why the full refname and the remote name rather than `%(upstream:short)`:
+/// the short form is genuinely ambiguous and cannot be undone by inspection.
+/// - A LOCAL upstream (`branch.<b>.remote=.`) shortens to `release/2.0`, which
+///   is indistinguishable from remote `release` + branch `2.0`. Treating the
+///   first segment as a remote turns the BASE into `2.0` — a wrong branch name
+///   presented as fact.
+/// - A remote name may itself CONTAIN a slash (`git remote add foo/bar` is
+///   accepted), so even for a genuine remote-tracking upstream the first
+///   segment is not reliably the remote.
+///
+/// Taking the remote name from git removes the guess in both cases. A local
+/// upstream keeps its name whole; a remote-tracking one has exactly its own
+/// remote stripped.
+///
+/// Returns `None` for an empty upstream (the branch tracks nothing) or a
+/// refname outside both namespaces, so the caller degrades to "unknown" rather
+/// than displaying a ref it could not interpret.
+fn upstream_branch_name(upstream: &str, remote_name: &str) -> Option<String> {
+    if upstream.is_empty() {
+        return None;
+    }
+    // A local upstream is an ordinary branch ref; nothing to strip.
+    if let Some(branch) = upstream.strip_prefix(BRANCH_REF_PREFIX) {
+        return Some(branch.to_string());
+    }
+    // A remote-tracking ref is `refs/remotes/<remote>/<branch>`, and only git
+    // knows where `<remote>` ends.
+    let tracking = upstream.strip_prefix(REMOTE_REF_PREFIX)?;
+    let branch = tracking
+        .strip_prefix(remote_name)
+        .and_then(|rest| rest.strip_prefix('/'))?;
+    if branch.is_empty() {
+        return None;
+    }
+    Some(branch.to_string())
+}
 
 /// Parse the [`branch_ref_info`] format into `(short name, info)` pairs.
 ///
@@ -634,6 +679,9 @@ const BRANCH_REF_PREFIX: &str = "refs/heads/";
 /// looked up — the row would silently lose its AGE and upstream. Stripping a
 /// fixed prefix off the full refname is exact because the caller only ever asks
 /// for `refs/heads/` patterns.
+///
+/// The upstream is resolved the same way, by [`upstream_branch_name`], from the
+/// full refname plus git's own remote name rather than from `%(upstream:short)`.
 pub fn parse_ref_info(output: &str) -> Vec<(String, BranchRefInfo)> {
     output
         .lines()
@@ -643,14 +691,16 @@ pub fn parse_ref_info(output: &str) -> Vec<(String, BranchRefInfo)> {
             let name = fields.next()?.strip_prefix(BRANCH_REF_PREFIX)?;
             let unix = fields.next()?.parse::<i64>().ok()?;
             let iso = fields.next()?;
-            // An unset upstream renders as an empty field, which is not a ref.
-            let upstream = fields.next().filter(|s| !s.is_empty());
+            // Both fields come straight from git; an unset upstream renders
+            // them empty, which `upstream_branch_name` reads as "tracks nothing".
+            let upstream_ref = fields.next().unwrap_or_default();
+            let remote_name = fields.next().unwrap_or_default();
             Some((
                 name.to_string(),
                 BranchRefInfo {
                     committed_at_unix: unix,
                     committed_at_iso: iso.to_string(),
-                    upstream: upstream.map(str::to_string),
+                    upstream: upstream_branch_name(upstream_ref, remote_name),
                 },
             ))
         })
@@ -806,6 +856,13 @@ pub fn get_default_branch(runner: &impl GitRunner) -> String {
 /// Returns `None` for an empty input or a bare `origin/` with nothing after it,
 /// so the caller falls through to the next resolution step instead of adopting
 /// an empty branch name (which would make the guard match every branch).
+///
+/// Scoped to [`get_default_branch`], whose single caller queries the literal
+/// `refs/remotes/origin/HEAD`: the remote is fixed at the call site, so the
+/// prefix is a known constant and not an inference. Do NOT reuse this for an
+/// arbitrary upstream — there the remote name is neither known to be `origin`
+/// nor guaranteed to be a single path segment (`git remote add foo/bar` is
+/// accepted); [`upstream_branch_name`] handles that case with git's own answer.
 fn strip_remote_prefix(short_ref: &str) -> Option<String> {
     let name = short_ref.strip_prefix("origin/").unwrap_or(short_ref);
     if name.is_empty() {
@@ -1666,8 +1723,8 @@ branch refs/heads/main
 
     #[test]
     fn ref_info_parses_the_nul_separated_fields() {
-        let out = "refs/heads/main\x001700000000\x002023-11-14T22:13:20+00:00\x00origin/main\n\
-                   refs/heads/feat/x\x001700000100\x002023-11-14T22:15:00+00:00\x00\n";
+        let out = "refs/heads/main\x001700000000\x002023-11-14T22:13:20+00:00\x00refs/remotes/origin/main\x00origin\n\
+                   refs/heads/feat/x\x001700000100\x002023-11-14T22:15:00+00:00\x00\x00\n";
         assert_eq!(
             parse_ref_info(out),
             vec![
@@ -1676,7 +1733,8 @@ branch refs/heads/main
                     BranchRefInfo {
                         committed_at_unix: 1_700_000_000,
                         committed_at_iso: "2023-11-14T22:13:20+00:00".to_string(),
-                        upstream: Some("origin/main".to_string()),
+                        // Reduced to a plain branch name by the parser.
+                        upstream: Some("main".to_string()),
                     }
                 ),
                 (
@@ -1711,10 +1769,80 @@ branch refs/heads/main
         // that branch to `heads/release` instead, which would never match the
         // branch name the caller looked up — the row would silently lose its
         // AGE and its upstream.
-        let out = "refs/heads/release\x001700000000\x00iso\x00origin/release\n";
+        let out =
+            "refs/heads/release\x001700000000\x00iso\x00refs/remotes/origin/release\x00origin\n";
         let parsed = parse_ref_info(out);
         assert_eq!(parsed[0].0, "release");
-        assert_eq!(parsed[0].1.upstream.as_deref(), Some("origin/release"));
+        assert_eq!(parsed[0].1.upstream.as_deref(), Some("release"));
+    }
+
+    #[test]
+    fn upstream_from_a_local_branch_keeps_its_whole_name() {
+        // What it guarantees: `branch.<b>.remote=.` (a LOCAL upstream) does not
+        // lose its first path segment. `%(upstream:short)` renders this as
+        // `release/2.0`, which is indistinguishable from remote `release` +
+        // branch `2.0`; stripping there would report the BASE as `2.0` — a
+        // wrong branch name presented as fact.
+        assert_eq!(
+            upstream_branch_name("refs/heads/release/2.0", "."),
+            Some("release/2.0".to_string())
+        );
+    }
+
+    #[test]
+    fn upstream_from_a_remote_strips_exactly_that_remote() {
+        assert_eq!(
+            upstream_branch_name("refs/remotes/origin/develop", "origin"),
+            Some("develop".to_string())
+        );
+        // A branch name containing slashes keeps all of them.
+        assert_eq!(
+            upstream_branch_name("refs/remotes/origin/release/next", "origin"),
+            Some("release/next".to_string())
+        );
+    }
+
+    #[test]
+    fn upstream_handles_a_remote_name_containing_a_slash() {
+        // `git remote add foo/bar <url>` is ACCEPTED, so the remote is not
+        // reliably a single path segment. Taking the name from git rather than
+        // splitting on the first `/` is what makes this exact — a naive split
+        // would report `bar/develop`.
+        assert_eq!(
+            upstream_branch_name("refs/remotes/foo/bar/develop", "foo/bar"),
+            Some("develop".to_string())
+        );
+    }
+
+    #[test]
+    fn upstream_is_none_when_the_branch_tracks_nothing() {
+        assert_eq!(upstream_branch_name("", ""), None);
+    }
+
+    #[test]
+    fn upstream_is_none_for_a_ref_outside_both_namespaces() {
+        // Neither a local branch nor a remote-tracking ref: degrade to unknown
+        // rather than display something that was never interpreted.
+        assert_eq!(upstream_branch_name("refs/tags/v1", "origin"), None);
+        // A remote-tracking ref whose remote name does not actually prefix it
+        // cannot be split safely either.
+        assert_eq!(
+            upstream_branch_name("refs/remotes/other/develop", "origin"),
+            None
+        );
+        // Nothing left after the remote name is not a branch.
+        assert_eq!(upstream_branch_name("refs/remotes/origin/", "origin"), None);
+    }
+
+    #[test]
+    fn ref_info_resolves_a_local_upstream_end_to_end() {
+        // The parser path, not just the helper: a local upstream must survive
+        // the whole record parse intact.
+        let out = "refs/heads/feat/x\x001700000000\x00iso\x00refs/heads/release/2.0\x00.\n";
+        assert_eq!(
+            parse_ref_info(out)[0].1.upstream.as_deref(),
+            Some("release/2.0")
+        );
     }
 
     #[test]
