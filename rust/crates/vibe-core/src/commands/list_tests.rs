@@ -155,7 +155,7 @@ impl ListGit {
 /// `for-each-ref` probe that confirms `refs/remotes/origin/HEAD`).
 fn is_branch_ref_lookup(args: &[String]) -> bool {
     args.first().map(String::as_str) == Some("for-each-ref")
-        && args.iter().any(|a| a.starts_with("--format="))
+        && !args.iter().any(|a| a == "refs/remotes/origin/HEAD")
 }
 
 impl GitRunner for ListGit {
@@ -170,14 +170,15 @@ impl GitRunner for ListGit {
         if args.contains(&"worktree") {
             return Ok(self.porcelain.clone());
         }
-        // The bare probe `resolve_default_branch` uses to confirm whether
-        // refs/remotes/origin/HEAD exists. Empty output = confirmed absent.
-        if args.first() == Some(&"for-each-ref") && !args.iter().any(|a| a.starts_with("--format="))
-        {
+        // The probe `resolve_default_branch` uses to confirm whether
+        // refs/remotes/origin/HEAD exists. Distinguished from the batched branch
+        // lookup by its PATTERN, not by its format: both carry a `--format=`.
+        // Output naming the ref exactly = present; empty = confirmed absent.
+        if args.first() == Some(&"for-each-ref") && args.contains(&"refs/remotes/origin/HEAD") {
             if !self.origin_head_exists {
                 return Ok(String::new());
             }
-            return Ok("abc commit\trefs/remotes/origin/HEAD".to_string());
+            return Ok("refs/remotes/origin/HEAD".to_string());
         }
         if args.first() == Some(&"for-each-ref") {
             if self.fail_for_each_ref {
@@ -1980,5 +1981,87 @@ fn a_repository_with_no_origin_head_still_caches() {
         second.calls().len(),
         0,
         "a stable absence is not a degradation"
+    );
+}
+
+/// What it guarantees: the self-base suppression does not hide a degradation.
+///
+/// When the resolved default branch equals the row's own branch, BASE is set to
+/// `None` ("a branch is not based on itself"). That `None` looks stable, but it
+/// exists only because the GUESS happened to match — so after `origin/HEAD` is
+/// re-pointed at `develop` and `symbolic-ref` momentarily fails, the `main` row
+/// still suppresses to `None` and would hit a cached `base: null` entry
+/// describing the pre-change world.
+///
+/// An earlier version gated the degradation on `base.is_some()`, which threw
+/// the flag away in exactly this case.
+#[test]
+fn a_self_suppressed_base_still_carries_its_degradation() {
+    let fixture = SummaryFixture::trusted(SUMMARY_TOML);
+
+    // The row's branch is `master`, the same name the hardcoded fallback
+    // assumes. Healthy first: origin/HEAD really does say `master`, so BASE is
+    // suppressed to null ("a branch is not based on itself") and the summary is
+    // cached against that null.
+    let healthy = ListGit::with(&[(fixture.main_path.as_str(), "master")])
+        .with_ref("master", 60, None)
+        .with_default_branch("master");
+    let first = FakeSummaryRunner::with_stdout(r#"{"master":"cached while healthy"}"#);
+    fixture.run(&healthy, &first, false).unwrap();
+    assert_eq!(first.calls().len(), 1);
+
+    // origin/HEAD has since been re-pointed elsewhere, but `symbolic-ref` fails
+    // this run, so resolution falls through to the hardcoded `master` with
+    // resolved=false. That guess equals the branch name, so the self-base filter
+    // suppresses BASE to null again — producing a key identical to the cached
+    // one, from a value nothing confirmed.
+    let mut degraded = ListGit::with(&[(fixture.main_path.as_str(), "master")])
+        .with_ref("master", 60, None)
+        .with_default_branch("master");
+    degraded.fail_default_branch = true;
+
+    let second = FakeSummaryRunner::with_stdout(r#"{"master":"asked again"}"#);
+    fixture.run(&degraded, &second, false).unwrap();
+    assert_eq!(
+        second.calls().len(),
+        1,
+        "a suppressed base must not hide that the default branch was guessed"
+    );
+
+    // And nothing was written over the healthy entry.
+    let cache = crate::summary::load_cache(
+        &fixture.io,
+        &fixture.main_path,
+        &crate::summary::command_hash("./summarize.sh"),
+    )
+    .cache;
+    assert_eq!(
+        cache.get_stale(&fixture.main_path),
+        Some("cached while healthy"),
+        "the degraded run must not overwrite the healthy entry"
+    );
+}
+
+/// The complement: a self-suppressed base whose default branch RESOLVED cleanly
+/// is still cacheable, so the ordinary `main` row keeps its cache.
+#[test]
+fn a_healthy_self_suppressed_base_is_still_cacheable() {
+    let fixture = SummaryFixture::trusted(SUMMARY_TOML);
+    let git = || {
+        ListGit::with(&[(fixture.main_path.as_str(), "master")])
+            .with_ref("master", 60, None)
+            .with_default_branch("master")
+    };
+
+    let first = FakeSummaryRunner::with_stdout(r#"{"master":"cached"}"#);
+    fixture.run(&git(), &first, false).unwrap();
+    assert_eq!(first.calls().len(), 1);
+
+    let second = FakeSummaryRunner::with_stdout(r#"{"master":"should not be asked"}"#);
+    fixture.run(&git(), &second, false).unwrap();
+    assert_eq!(
+        second.calls().len(),
+        0,
+        "a resolved default branch keeps the suppressed row cacheable"
     );
 }

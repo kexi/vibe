@@ -510,7 +510,7 @@ mod tests {
                     });
                 }
                 return Ok(match &self.origin_head {
-                    Some(_) => "abc commit\trefs/remotes/origin/HEAD".to_string(),
+                    Some(_) => "refs/remotes/origin/HEAD".to_string(),
                     None => String::new(),
                 });
             }

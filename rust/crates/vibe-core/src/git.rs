@@ -736,6 +736,14 @@ pub fn list_modified_files(runner: &impl GitRunner) -> Result<Vec<GitPathRecord>
     Ok(split_nul(&out))
 }
 
+/// The remote HEAD symref every default-branch lookup starts from.
+///
+/// Named once because it is used three ways — as a `symbolic-ref` operand, as a
+/// `for-each-ref` pattern, and as the exact refname that pattern's output is
+/// compared against — and a typo in the third would silently turn every
+/// confirmation into "unconfirmed".
+const ORIGIN_HEAD_REF: &str = "refs/remotes/origin/HEAD";
+
 /// Last-resort default-branch name when git tells us nothing.
 ///
 /// `master` (not `main`): it is what git itself still falls back to when
@@ -848,7 +856,7 @@ pub fn resolve_default_branch(runner: &impl GitRunner) -> DefaultBranch {
     // Step 1: the authoritative source. Reads the symref's contents even when
     // its target is missing, so a dangling origin/HEAD resolves correctly here
     // and never reaches the enumeration below.
-    if let Ok(out) = runner.run(&["symbolic-ref", "refs/remotes/origin/HEAD", "--short"]) {
+    if let Ok(out) = runner.run(&["symbolic-ref", ORIGIN_HEAD_REF, "--short"]) {
         if let Some(name) = strip_remote_prefix(out.trim()) {
             return resolved(name);
         }
@@ -857,13 +865,23 @@ pub fn resolve_default_branch(runner: &impl GitRunner) -> DefaultBranch {
     // Step 1 gave us nothing. Only NOW does it matter why: an absent ref makes
     // the remaining fallbacks this repository's permanent answer, while a ref we
     // could not read makes them a stand-in for something git would have told us.
-    let origin_head_absent = match runner.run(&["for-each-ref", "refs/remotes/origin/HEAD"]) {
-        // Enumerated nothing: there is no such ref (or its target is missing,
-        // which step 1 would already have resolved).
-        Ok(out) => out.trim().is_empty(),
-        // Cannot even ask, so nothing below can be called confirmed.
-        Err(_) => false,
-    };
+    //
+    // The pattern matches by PREFIX, so a ref named `refs/remotes/origin/HEAD/foo`
+    // is enumerated even when `refs/remotes/origin/HEAD` itself does not exist
+    // (verified against git: creating only the former makes the bare pattern
+    // report a hit). `--format=%(refname)` and an exact comparison make the
+    // answer mean what it is being asked to mean. Getting this wrong is a
+    // performance bug rather than a correctness one — a permanently
+    // "unconfirmed" absence re-runs the summary command every listing — but the
+    // fix costs nothing.
+    let origin_head_absent =
+        match runner.run(&["for-each-ref", "--format=%(refname)", ORIGIN_HEAD_REF]) {
+            // Enumerated nothing named exactly that: there is no such ref (or its
+            // target is missing, which step 1 would already have resolved).
+            Ok(out) => !out.lines().any(|line| line.trim() == ORIGIN_HEAD_REF),
+            // Cannot even ask, so nothing below can be called confirmed.
+            Err(_) => false,
+        };
 
     // Step 2: what a fresh `git init` here would have created. Reached
     // unconditionally — a failed probe must never cost us this answer.
@@ -1670,9 +1688,13 @@ branch refs/heads/main
     const INIT_DEFAULT: &[&str] = &["config", "--default", "", "--get", "init.defaultBranch"];
     /// The zero-exit probe that confirms whether `refs/remotes/origin/HEAD`
     /// exists: empty output means confirmed-absent.
-    const ORIGIN_HEAD_PROBE: &[&str] = &["for-each-ref", "refs/remotes/origin/HEAD"];
-    /// A non-empty probe answer, i.e. the ref is present.
-    const ORIGIN_HEAD_PRESENT: &str = "abc commit\trefs/remotes/origin/HEAD\n";
+    const ORIGIN_HEAD_PROBE: &[&str] = &[
+        "for-each-ref",
+        "--format=%(refname)",
+        "refs/remotes/origin/HEAD",
+    ];
+    /// A probe answer naming the ref exactly, i.e. it is present.
+    const ORIGIN_HEAD_PRESENT: &str = "refs/remotes/origin/HEAD\n";
 
     #[test]
     fn default_branch_comes_from_origin_head_without_the_remote_prefix() {
@@ -1817,6 +1839,55 @@ branch refs/heads/main
             !answer.resolved,
             "an unconfirmed step-1 absence cannot make step 2 repeatable"
         );
+    }
+
+    /// What it guarantees: the probe's pattern is matched EXACTLY, so a ref that
+    /// merely starts with `refs/remotes/origin/HEAD` does not make an absent
+    /// origin/HEAD look present.
+    ///
+    /// `for-each-ref` matches by prefix — verified against git: with only
+    /// `refs/remotes/origin/HEAD/foo` created, the bare pattern reports a hit.
+    /// Reading that as "present" would leave a repository's stable config-based
+    /// BASE permanently unconfirmed, re-running the summary command on every
+    /// listing. A performance bug rather than a correctness one, but a silent one.
+    #[test]
+    fn a_ref_merely_prefixed_by_origin_head_does_not_count_as_present() {
+        let git = ScriptedGit::new(&[
+            // Exactly what git enumerates in that state.
+            (ORIGIN_HEAD_PROBE, "refs/remotes/origin/HEAD/foo\n"),
+            (INIT_DEFAULT, "main\n"),
+        ]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "main");
+        assert!(
+            answer.resolved,
+            "origin/HEAD itself is absent, so the config is the stable answer"
+        );
+    }
+
+    /// The complement: the ref named exactly is still recognized as present.
+    #[test]
+    fn the_exact_origin_head_ref_counts_as_present() {
+        let git = ScriptedGit::new(&[
+            (ORIGIN_HEAD_PROBE, ORIGIN_HEAD_PRESENT),
+            (INIT_DEFAULT, "main\n"),
+        ]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "main");
+        assert!(
+            !answer.resolved,
+            "origin/HEAD exists but could not be read, so nothing below is confirmed"
+        );
+    }
+
+    /// And a mixture: the exact ref alongside a prefixed sibling still counts.
+    #[test]
+    fn the_exact_ref_is_found_among_prefixed_siblings() {
+        let git = ScriptedGit::new(&[(
+            ORIGIN_HEAD_PROBE,
+            "refs/remotes/origin/HEAD/foo\nrefs/remotes/origin/HEAD\n",
+        )]);
+        assert!(!resolve_default_branch(&git).resolved);
     }
 
     /// (a) What it guarantees: a config-sourced name is NOT repeatable while

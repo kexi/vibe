@@ -684,13 +684,19 @@ fn enrich_entries<G: GitRunner>(
             // Two ways this row's base can be a guess rather than a fact: the
             // ref lookup failed wholesale (so every branch's upstream is
             // invisible and all of them take the fallback), or the fallback
-            // itself could not resolve and assumed a hardcoded name.
+            // itself could not resolve and assumed a name.
             //
-            // `base.is_some()` gates the second: when the self-base filter drops
-            // the value, BASE is `None` on every run whatever the default branch
-            // resolved to, so nothing was actually guessed.
-            let base_is_degraded = (ref_lookup_failed && w.branch.is_some())
-                || (base_from_guessed_default && base.is_some());
+            // Deliberately independent of what `base` ENDED UP as. The self-base
+            // filter drops the value when the resolved default equals this
+            // branch, and a `None` produced that way is not the stable `None` it
+            // looks like: it exists only because the guess happened to match, so
+            // a different guess next run yields a different BASE. Gating on
+            // `base.is_some()` here — as an earlier version did — threw the
+            // degradation away in exactly the case that needs it, letting the
+            // `main` row hit a cached `base: null` after `origin/HEAD` had been
+            // re-pointed and `symbolic-ref` momentarily failed.
+            let base_is_degraded =
+                (ref_lookup_failed && w.branch.is_some()) || base_from_guessed_default;
 
             let (status, dirty_files, status_payload) = match worktree_status_z(git, &w.path) {
                 Ok(payload) => {
