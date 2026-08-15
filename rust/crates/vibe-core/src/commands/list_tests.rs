@@ -1166,6 +1166,102 @@ fn base_matches_with_or_without_the_remote_prefix() {
     }
 }
 
+/// What it guarantees: a branch whose NAME contains a slash is matched by
+/// spelling it out in full. This is the regression that unconditional prefix
+/// stripping caused: `--base release/next` was rewritten to `--base next` and
+/// matched nothing, making the flag unusable in any repository that namespaces
+/// its long-lived branches.
+#[test]
+fn base_matches_a_branch_whose_name_contains_a_slash() {
+    let rows = || {
+        vec![
+            entry(
+                "a",
+                Some(NOW_SECS),
+                Some(STATUS_CLEAN),
+                Some(0),
+                Some("release/next"),
+            ),
+            entry(
+                "b",
+                Some(NOW_SECS),
+                Some(STATUS_CLEAN),
+                Some(0),
+                Some("develop"),
+            ),
+        ]
+    };
+    // Verbatim: the argument IS the branch name.
+    assert_eq!(
+        select(
+            rows(),
+            &filter_only(ListFilter {
+                base: Some("release/next".to_string()),
+                ..Default::default()
+            })
+        ),
+        ["a"]
+    );
+    // Remote-qualified: only the remote segment comes off, leaving the slash in
+    // the branch name intact.
+    assert_eq!(
+        select(
+            rows(),
+            &filter_only(ListFilter {
+                base: Some("origin/release/next".to_string()),
+                ..Default::default()
+            })
+        ),
+        ["a"]
+    );
+    // The stripped reading must not become a match on its own: `next` is not a
+    // base any row has.
+    assert!(select(
+        rows(),
+        &filter_only(ListFilter {
+            base: Some("next".to_string()),
+            ..Default::default()
+        })
+    )
+    .is_empty());
+}
+
+/// What it guarantees: the two readings of a `<word>/<word>` argument are tried
+/// independently, so neither spelling shadows the other. `origin/develop` is
+/// ambiguous from the argument alone — a remote-qualified `develop`, or a local
+/// branch literally named `origin/develop` — and both must be findable.
+#[test]
+fn base_tries_both_readings_of_an_ambiguous_argument() {
+    let rows = vec![
+        entry(
+            "qualified",
+            Some(NOW_SECS),
+            Some(STATUS_CLEAN),
+            Some(0),
+            Some("develop"),
+        ),
+        entry(
+            "literal",
+            Some(NOW_SECS),
+            Some(STATUS_CLEAN),
+            Some(0),
+            Some("origin/develop"),
+        ),
+    ];
+    // Surfacing both is the deliberate trade: an extra row is a far better
+    // failure than silently returning none.
+    assert_eq!(
+        select(
+            rows,
+            &filter_only(ListFilter {
+                base: Some("origin/develop".to_string()),
+                ..Default::default()
+            })
+        ),
+        ["qualified", "literal"]
+    );
+}
+
 /// What it guarantees: `--base` is an exact match on the whole branch name, not
 /// a prefix or substring test.
 #[test]
@@ -1476,6 +1572,49 @@ fn rows_without_an_age_stay_last_in_both_sort_directions() {
         ),
         ["old", "new", "unborn"]
     );
+}
+
+/// What it guarantees: an explicit `--sort` is fully deterministic even when
+/// every visible key ties. `name` is NOT unique — two detached worktrees in
+/// sibling directories sharing a basename produce identical names — so without
+/// the path tie-break their relative order fell through to the incoming MRU
+/// order, and `vibe list --sort name` would print the same repository
+/// differently depending on which worktree had been jumped to last.
+#[test]
+fn an_explicit_sort_is_deterministic_when_every_other_key_ties() {
+    // Two detached worktrees, same basename, same commit, same clean status:
+    // the path is the only thing telling them apart.
+    let twin = |path: &str| {
+        let mut e = clean_at("wt", 60);
+        e.branch = None;
+        e.path = path.to_string();
+        e
+    };
+    let a = "/repo/a/wt";
+    let b = "/repo/b/wt";
+
+    for sort in [ListSort::Age, ListSort::Name, ListSort::Status] {
+        let options = ListOptions {
+            sort: Some(sort),
+            ..Default::default()
+        };
+        // Both incoming orders — standing in either worktree, or any MRU
+        // history — must produce the same output.
+        let forward = select_entries(vec![twin(a), twin(b)], &options, NOW_SECS);
+        let backward = select_entries(vec![twin(b), twin(a)], &options, NOW_SECS);
+
+        let paths = |rows: &[ListEntry]| rows.iter().map(|e| e.path.clone()).collect::<Vec<_>>();
+        assert_eq!(
+            paths(&forward),
+            [a, b],
+            "{sort:?} must order the twins by path"
+        );
+        assert_eq!(
+            paths(&forward),
+            paths(&backward),
+            "{sort:?} depends on the incoming MRU order"
+        );
+    }
 }
 
 /// What it guarantees: `--reverse` on its own reverses whatever the final

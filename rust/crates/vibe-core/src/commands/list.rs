@@ -216,9 +216,9 @@ pub enum ListSort {
 pub struct ListFilter {
     pub dirty: bool,
     pub clean: bool,
-    /// Match rows whose resolved BASE equals this branch. Compared after
-    /// stripping a remote prefix from BOTH sides, so `--base origin/develop`
-    /// and `--base develop` select the same rows.
+    /// Match rows whose resolved BASE equals this branch, read either verbatim
+    /// or with a remote prefix removed — see [`base_matches`], which explains
+    /// why the argument cannot simply be stripped.
     pub base: Option<String>,
     /// Keep rows whose tip commit is no older than this.
     pub recent: Option<std::time::Duration>,
@@ -432,15 +432,11 @@ fn matches_filter(entry: &ListEntry, filter: &ListFilter, now_secs: i64) -> bool
     }
 
     if let Some(wanted) = &filter.base {
-        // Both sides are stripped, so the argument may be written either as the
-        // remote-tracking ref the user sees in `git branch -vv` or as the plain
-        // branch name the BASE column prints.
-        let wanted = strip_remote_prefix(wanted);
         // A detached HEAD has no base at all, so it is excluded by any
         // `--base`, never matched by an "unknown means anything" rule.
         match &entry.base {
             Some(base) => {
-                if *base != wanted {
+                if !base_matches(base, wanted) {
                     return false;
                 }
             }
@@ -494,8 +490,12 @@ fn is_recent(now_secs: i64, commit_secs: i64, window: std::time::Duration) -> bo
 /// silently exempting one row from that promise would make the output impossible
 /// to reason about (and would move whichever worktree you happened to be in).
 ///
-/// Every comparator is total and ends in a name tie-break, so the result does
-/// not depend on the incoming MRU order.
+/// Every comparator is total, ending in a name tie-break and then a PATH one, so
+/// the result never depends on the incoming MRU order. Path is the last resort
+/// rather than name because `name` is not unique — two detached worktrees in
+/// sibling directories with the same basename share a name, and without the path
+/// their relative order would still be decided by which one was jumped to more
+/// recently. Path is unique across `git worktree list` by construction.
 pub fn apply_sort(entries: &mut [ListEntry], sort: Option<ListSort>) {
     let Some(sort) = sort else {
         return;
@@ -507,14 +507,18 @@ pub fn apply_sort(entries: &mut [ListEntry], sort: Option<ListSort>) {
             age_rank(a)
                 .cmp(&age_rank(b))
                 .then_with(|| a.name.cmp(&b.name))
+                .then_with(|| a.path.cmp(&b.path))
         }),
-        ListSort::Name => entries.sort_by(|a, b| a.name.cmp(&b.name)),
+        ListSort::Name => {
+            entries.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.path.cmp(&b.path)))
+        }
         // Dirty first, then most-changed first, then by name.
         ListSort::Status => entries.sort_by(|a, b| {
             status_rank(a)
                 .cmp(&status_rank(b))
                 .then_with(|| b.dirty_files.unwrap_or(0).cmp(&a.dirty_files.unwrap_or(0)))
                 .then_with(|| a.name.cmp(&b.name))
+                .then_with(|| a.path.cmp(&b.path))
         }),
     }
 }
@@ -678,6 +682,30 @@ fn strip_remote_prefix(upstream: &str) -> String {
         Some((_remote, branch)) if !branch.is_empty() => branch.to_string(),
         _ => upstream.to_string(),
     }
+}
+
+/// Whether a `--base` argument selects a row whose resolved BASE is `base`.
+///
+/// Accepts the argument EITHER verbatim or with its first path segment removed,
+/// because those two readings cannot be told apart from the argument alone:
+/// `origin/develop` is a remote-qualified ref, while `release/next` is a plain
+/// branch whose name happens to contain a slash, and both are spelled
+/// `<word>/<word>`.
+///
+/// Why not the symmetric `strip_remote_prefix` the BASE column uses: that
+/// function is only sound on an `upstream:short`, where git guarantees the first
+/// segment IS a remote name. A user's argument carries no such guarantee, so
+/// stripping it unconditionally silently rewrote `--base release/next` into
+/// `--base next` and matched nothing. Trying both readings costs one extra
+/// comparison and makes every spelling a user can reasonably type work:
+/// `develop`, `origin/develop`, `release/next` and `origin/release/next`.
+///
+/// The false-positive this admits — `--base origin/develop` also matching a
+/// local branch literally named `origin/develop` — requires a branch named after
+/// a remote, and surfacing an extra row is a far better failure than silently
+/// returning none.
+fn base_matches(base: &str, wanted: &str) -> bool {
+    base == wanted || base == strip_remote_prefix(wanted)
 }
 
 /// Number of seconds treated as a month for the AGE column (≈30 days).

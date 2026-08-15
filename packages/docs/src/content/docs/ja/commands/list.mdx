@@ -124,7 +124,20 @@ vibe list --json --sort age --limit 3 2>&1 | jq .
 
 状態を読み取れなかったWorktree（STATUS `-`）は`--dirty`からも`--clean`からも**除外**されます。したがってこの2つのフラグは一覧を分割しません。gitが答えられなかったWorktreeはどちらの答えにも属さず、どちらかに含めることは根拠のない推測になるためです。フィルタ無しの一覧には`-`付きで表示され、警告も出ます。
 
-`--base`は解決済みの[BASE](#base)列と比較しますが、その際**両側**からリモート接頭辞を除去します。したがって`--base develop`と`--base origin/develop`は同じ行を選択します。比較は前方一致ではなく完全一致であり、`--base develop`は`develop-2`にはマッチしません。ベースを持たないWorktree（メインWorktreeやdetached HEAD）が`--base`にマッチすることはありません。
+`--base`は解決済みの[BASE](#base)列と比較します。比較は前方一致ではなく完全一致であり、`--base develop`は`develop-2`にはマッチしません。ベースを持たないWorktree（メインWorktreeやdetached HEAD）が`--base`にマッチすることはありません。
+
+引数は**そのままの形、またはリモート名を1つ取り除いた形**のどちらでも受け付けます。したがって、ユーザーが自然に入力しうる書き方はいずれも機能します。
+
+| 引数                  | マッチするベース                      |
+| --------------------- | ------------------------------------- |
+| `develop`             | `develop`                             |
+| `origin/develop`      | `origin/develop`、`develop`           |
+| `release/next`        | `release/next`                        |
+| `origin/release/next` | `origin/release/next`、`release/next` |
+
+両方の解釈を試すのは、引数だけからは両者を判別できないためです。`origin/develop`はリモート修飾された`develop`ですが、`release/next`はたまたま名前にスラッシュを含む単なるブランチであり、どちらも`<語>/<語>`という綴りです。除去した解釈だけを試すと`--base release/next`が`--base next`に化けてしまい、何にもマッチしなくなります。
+
+両方を受け付ける代償として、ローカルに文字どおり`origin/develop`という名前のブランチがある場合、`--base origin/develop`はそれにもマッチします。黙って0件を返すよりは、余分な行が出るほうがましだという意図的な取捨選択です。
 
 ### 期間の書式
 
@@ -170,6 +183,8 @@ tipコミットが**無い**Worktree（unbornブランチ、あるいはログ�
 `--sort`を指定すると、現在のWorktreeを先頭に置く規則を含め、既定の並び順が**完全に置き換わります**。`--sort age`は最も新しい行が先頭に来ることを約束するものであり、1行だけ例外にすると、たまたま自分がいるWorktreeが動いてしまうためです。
 
 `--sort name`では、detached HEADのWorktreeもディレクトリのbasename（`--json`が`name`として出力するのと同じ値）で参加します。
+
+いずれのソートも最終的なタイブレークとしてWorktreeの**パス**を用いるため、出力は完全に決定的です。兄弟ディレクトリにある2つのdetached Worktreeはbasenameが一致しうるので、これが無いと両者の順序は「どちらに最近jumpしたか」に依存してしまいます。
 
 経過時間が**不明**な行は`--sort age`で常に末尾に置かれ、`--reverse`を付けても末尾のままです。「最も古いWorktree」は経過時間を持つWorktreeについての問いなので、`--sort age --reverse --limit 5`は問いの対象外の行に枠を使わず、実際の答えを5件返します。
 

@@ -124,7 +124,20 @@ vibe list --json --sort age --limit 3 2>&1 | jq .
 
 状态无法读取的 worktree（STATUS 为 `-`）会同时被 `--dirty` 和 `--clean` **排除**。因此这两个标志并不会把列表一分为二：git 无法给出答案的 worktree 不属于其中任何一边，把它归入任意一边都只是一种没有依据的猜测。不带过滤条件的列表仍会显示该行（值为 `-`）并给出警告。
 
-`--base` 与解析出的 [BASE](#base) 列比较，但比较前会从**两侧**都去掉远程前缀，因此 `--base develop` 与 `--base origin/develop` 选出的是同一批行。比较是完全匹配而非前缀匹配：`--base develop` 不会匹配 `develop-2`。没有基础分支的 worktree（主 worktree 或 detached HEAD）永远不会被 `--base` 匹配到。
+`--base` 与解析出的 [BASE](#base) 列比较。比较是完全匹配而非前缀匹配：`--base develop` 不会匹配 `develop-2`。没有基础分支的 worktree（主 worktree 或 detached HEAD）永远不会被 `--base` 匹配到。
+
+参数既可以**原样书写，也可以去掉开头的一个远程名**，因此你可能自然写出的各种形式都能用：
+
+| 参数                  | 匹配的基础分支                        |
+| --------------------- | ------------------------------------- |
+| `develop`             | `develop`                             |
+| `origin/develop`      | `origin/develop`、`develop`           |
+| `release/next`        | `release/next`                        |
+| `origin/release/next` | `origin/release/next`、`release/next` |
+
+之所以两种解读都要尝试，是因为仅凭参数本身无法区分它们：`origin/develop` 是带远程限定的 `develop`，而 `release/next` 只是一个名字里恰好含有斜杠的普通分支，两者的写法都是 `<词>/<词>`。若只尝试去掉前缀的那种解读，`--base release/next` 就会变成 `--base next`，从而什么都匹配不到。
+
+同时接受两种解读的代价是：如果本地确实存在一个名字就叫 `origin/develop` 的分支，`--base origin/develop` 也会匹配到它。多出一行，总好过悄无声息地返回零结果——这是有意的取舍。
 
 ### 时长格式
 
@@ -170,6 +183,8 @@ AGE 列会显示 `mo`（月）和 `y`（年），但 `--recent`/`--stale` **不*
 指定 `--sort` 会**完全取代**默认顺序，包括"当前 worktree 优先"这一规则：`--sort age` 承诺最新的行排在最前，若为某一行破例，会导致你恰好所在的那个 worktree 被挪动位置。
 
 在 `--sort name` 下，detached HEAD 的 worktree 会以其目录 basename（与 `--json` 输出的 `name` 相同的值）参与排序。
+
+所有排序最终都以 worktree 的**路径**作为最后一级比较，因此输出是完全确定的：位于同级目录下的两个 detached worktree 可能拥有相同的 basename，若没有这一级比较，它们的先后顺序就会取决于你最近 jump 过哪一个。
 
 时间**未知**的行在 `--sort age` 下始终排在最后，加上 `--reverse` 也仍在最后："最旧的 worktree"是一个关于具有时间信息的 worktree 的问题，因此 `--sort age --reverse --limit 5` 会返回 5 个真正的答案，而不会把名额浪费在这个问题不适用的行上。
 

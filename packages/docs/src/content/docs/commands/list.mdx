@@ -124,7 +124,20 @@ Filters combine with **AND**: each flag narrows the result, so adding one never 
 
 A worktree whose status could **not** be read (STATUS `-`) is excluded by `--dirty` _and_ by `--clean`. The two flags therefore do not partition the listing: a worktree git could not answer for belongs to neither answer, and presenting it as one or the other would be a confident guess. The unfiltered listing still shows it, with `-`, and warns.
 
-`--base` compares against the resolved [BASE](#base) column, after stripping a remote prefix from **both** sides — so `--base develop` and `--base origin/develop` select the same rows. The match is exact, not a prefix: `--base develop` does not match `develop-2`. A worktree with no base (the main worktree, or a detached HEAD) is never matched by `--base`.
+`--base` compares against the resolved [BASE](#base) column. The match is exact, not a prefix: `--base develop` does not match `develop-2`. A worktree with no base (the main worktree, or a detached HEAD) is never matched by `--base`.
+
+The argument is accepted **either verbatim or with a leading remote name removed**, so every spelling you might reasonably type works:
+
+| Argument              | Matches a base of                     |
+| --------------------- | ------------------------------------- |
+| `develop`             | `develop`                             |
+| `origin/develop`      | `origin/develop`, `develop`           |
+| `release/next`        | `release/next`                        |
+| `origin/release/next` | `origin/release/next`, `release/next` |
+
+Both readings are tried because they cannot be told apart from the argument alone: `origin/develop` is a remote-qualified `develop`, but `release/next` is a plain branch whose name happens to contain a slash, and both are spelled `<word>/<word>`. Trying only the stripped reading would turn `--base release/next` into `--base next` and match nothing.
+
+The cost of accepting both is that `--base origin/develop` also matches a local branch literally named `origin/develop`, if you have one. Surfacing an extra row is the deliberate trade against silently returning none.
 
 ### Durations
 
@@ -170,6 +183,8 @@ A worktree with **no** tip commit (an unborn branch, or one whose log could not 
 Passing `--sort` **replaces the default order entirely**, including the current-worktree-first rule: `--sort age` promises the newest row first, and exempting one row from that would move whichever worktree you happen to be standing in.
 
 Under `--sort name`, a detached-HEAD worktree takes part using its directory basename (the same value `--json` publishes as `name`).
+
+Every sort ends in a final tie-break on the worktree **path**, so the output is fully deterministic: two detached worktrees in sibling directories can share a basename, and without it their order would depend on which one you jumped to more recently.
 
 Rows with an **unknown age** always sort last under `--sort age`, and stay last under `--reverse` too: "the oldest worktrees" is a question about worktrees that have an age, so `--sort age --reverse --limit 5` returns five actual answers rather than spending slots on rows the question does not apply to.
 
