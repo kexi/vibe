@@ -15,10 +15,19 @@ use std::process::Command;
 /// `branch` is `None` for a detached-HEAD worktree: git emits a bare `detached`
 /// line instead of `branch refs/heads/…` for those, and they are real worktrees
 /// a user can be standing in, so they must be representable rather than dropped.
+///
+/// `head` is the commit sha the porcelain already carries on its `HEAD <sha>`
+/// record. It is kept rather than re-resolved per worktree with `rev-parse`
+/// because the enumeration that produced this entry already paid for it, and a
+/// second resolution could disagree with the listing if a concurrent checkout
+/// lands between the two calls. It is the empty string when the payload carried
+/// no `HEAD` record (hand-written fixtures, and a `bare` entry before it is
+/// dropped).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Worktree {
     pub path: String,
     pub branch: Option<String>,
+    pub head: String,
 }
 
 /// Repository information extracted from a file path.
@@ -233,10 +242,15 @@ pub fn parse_worktree_list(output: &str) -> Vec<Worktree> {
             current = Some(Worktree {
                 path: rest.to_string(),
                 branch: None,
+                head: String::new(),
             });
         } else if let Some(rest) = line.strip_prefix("branch refs/heads/") {
             if let Some(wt) = current.as_mut() {
                 wt.branch = Some(rest.to_string());
+            }
+        } else if let Some(rest) = line.strip_prefix("HEAD ") {
+            if let Some(wt) = current.as_mut() {
+                wt.head = rest.to_string();
             }
         } else if line.trim() == "bare" {
             is_bare = true;
@@ -467,6 +481,170 @@ pub fn is_main_worktree(runner: &impl GitRunner) -> Result<bool> {
 pub fn has_uncommitted_changes(runner: &impl GitRunner) -> Result<bool> {
     let output = runner.run(&["status", "--porcelain"])?;
     Ok(!output.trim().is_empty())
+}
+
+/// Raw `git -C <path> status --porcelain=v1 -z` payload for one worktree.
+///
+/// Separate from [`has_uncommitted_changes`], which answers a yes/no question
+/// about the *current* directory: this one names the worktree explicitly (`list`
+/// reports on trees the process is not standing in) and needs the record payload
+/// rather than a boolean so [`count_status_entries_z`] can report a count.
+///
+/// `--porcelain=v1` is pinned rather than the bare `--porcelain`: the bare form
+/// means "the default version", which git documents as subject to change, and a
+/// silent switch to v2 would change the record shape under the parser.
+///
+/// `-z` for the same reason the worktree listing uses it — a changed file's path
+/// may contain a newline, and without `-z` git also quotes non-ASCII paths per
+/// `core.quotePath`, which would corrupt the record boundaries.
+///
+/// Why not `-uall`: git's default (`-unormal`) collapses a WHOLLY untracked
+/// directory into a single record, so a new directory holding five files counts
+/// as one entry. `-uall` would expand it, but it makes git walk every untracked
+/// tree in full on EVERY row of the listing — unbounded work in exactly the
+/// repositories (a stale `node_modules`, a fat build output) where it is least
+/// wanted, to refine a number that only has to convey "there is something
+/// here". The count is documented as counting an untracked directory once.
+pub fn worktree_status_z(runner: &impl GitRunner, path: &str) -> Result<Vec<u8>> {
+    runner.run_raw(&["-C", path, "status", "--porcelain=v1", "-z"])
+}
+
+/// Number of changed entries in a `git status --porcelain=v1 -z` payload.
+///
+/// The `-z` form is NOT one record per change: a rename or copy (`R`/`C` in
+/// either status column) emits the new path and the original path as TWO
+/// NUL-terminated records, with no in-band marker on the second one. Counting
+/// records would therefore double-count every rename, so the second record is
+/// consumed here as part of its entry.
+///
+/// Why not `-z` with `--porcelain=v2`: v2 puts both paths of a rename in one
+/// record, but it also restructures every other line type, and nothing else in
+/// this crate reads v2 — pinning v1 keeps a single porcelain dialect in the
+/// codebase.
+///
+/// Undecodable bytes are counted, not dropped: a file whose name is not valid
+/// UTF-8 is still a change, and the count is only ever displayed as a number.
+pub fn count_status_entries_z(payload: &[u8]) -> usize {
+    // `-z` terminates (not separates) every record, so the trailing empty slice
+    // after the final NUL is dropped rather than counted as an entry.
+    let mut records = payload.split(|b| *b == 0).filter(|r| !r.is_empty());
+    let mut count = 0;
+    while let Some(record) = records.next() {
+        count += 1;
+        if is_rename_or_copy_record(record) {
+            // The original path follows as its own record; it belongs to the
+            // entry just counted.
+            records.next();
+        }
+    }
+    count
+}
+
+/// Whether a porcelain-v1 status record announces a rename or copy, and so is
+/// followed by a second record holding the original path.
+///
+/// The first two bytes are the index/worktree status columns; `R`/`C` in either
+/// one means git emitted the `XY <new>\0<orig>\0` pair.
+fn is_rename_or_copy_record(record: &[u8]) -> bool {
+    record.iter().take(2).any(|b| *b == b'R' || *b == b'C')
+}
+
+/// Per-branch facts read in one `git for-each-ref`: commit time and upstream.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BranchRefInfo {
+    /// Epoch seconds of the branch tip's committer date.
+    pub committed_at_unix: i64,
+    /// The tip's committer date in ISO 8601 (`iso8601-strict`).
+    pub committed_at_iso: String,
+    /// The configured upstream in short form (e.g. `origin/develop`), or `None`
+    /// when the branch tracks nothing.
+    pub upstream: Option<String>,
+}
+
+/// NUL used as the field separator inside a `for-each-ref` record.
+///
+/// `%00` rather than a printable delimiter because every field except the
+/// timestamps is attacker-influenced: a branch named `a|b` or an upstream
+/// containing a tab would split into bogus fields under any delimiter that can
+/// appear in a ref name, and NUL is the one byte git forbids in one.
+const REF_FIELD_SEPARATOR: char = '\0';
+
+/// Read commit time and upstream for the given branches in ONE git call.
+///
+/// Branches are passed as fully-qualified `refs/heads/<name>` patterns. That is
+/// what makes the call injection-proof: a branch named `--format=…` would be a
+/// flag if passed bare, but `refs/heads/--format=…` is unambiguously a pattern
+/// operand, so no `--` separator or name validation is needed.
+///
+/// A branch with no commits (an unborn HEAD, e.g. right after `git worktree add
+/// -b` on an empty repository) has no ref to enumerate and is simply absent from
+/// the result. Callers must treat a missing key as "unknown", not as an error.
+///
+/// Returns entries keyed by short branch name, in git's emitted order.
+pub fn branch_ref_info(
+    runner: &impl GitRunner,
+    branches: &[String],
+) -> Result<Vec<(String, BranchRefInfo)>> {
+    if branches.is_empty() {
+        return Ok(Vec::new());
+    }
+    let patterns: Vec<String> = branches.iter().map(|b| format!("refs/heads/{b}")).collect();
+    let mut args: Vec<&str> = vec![
+        "for-each-ref",
+        "--format=%(refname:short)%00%(committerdate:unix)%00%(committerdate:iso8601-strict)%00%(upstream:short)",
+    ];
+    args.extend(patterns.iter().map(String::as_str));
+    let output = runner.run(&args)?;
+    Ok(parse_ref_info(&output))
+}
+
+/// Parse the [`branch_ref_info`] format into `(short name, info)` pairs.
+///
+/// Records are newline-separated (git's `for-each-ref` terminator) and fields
+/// are NUL-separated. A record whose timestamp does not parse, or which has too
+/// few fields, is skipped: it can only mean git emitted something this parser
+/// does not model, and dropping the row degrades to "age unknown" rather than
+/// failing the whole listing.
+pub fn parse_ref_info(output: &str) -> Vec<(String, BranchRefInfo)> {
+    output
+        .lines()
+        .filter(|line| !line.is_empty())
+        .filter_map(|line| {
+            let mut fields = line.split(REF_FIELD_SEPARATOR);
+            let name = fields.next()?;
+            let unix = fields.next()?.parse::<i64>().ok()?;
+            let iso = fields.next()?;
+            // An unset upstream renders as an empty field, which is not a ref.
+            let upstream = fields.next().filter(|s| !s.is_empty());
+            Some((
+                name.to_string(),
+                BranchRefInfo {
+                    committed_at_unix: unix,
+                    committed_at_iso: iso.to_string(),
+                    upstream: upstream.map(str::to_string),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Commit time of a detached worktree's HEAD (`git -C <path> log -1`).
+///
+/// A detached HEAD has no branch, so [`branch_ref_info`] cannot see it; this is
+/// the per-worktree fallback. It is `log -1` on the worktree rather than
+/// `for-each-ref` on the sha because `for-each-ref` enumerates refs, and a
+/// detached HEAD is by definition not one.
+///
+/// Returns `None` on any failure (broken worktree, unborn HEAD), so a single
+/// unreadable worktree degrades to "age unknown" instead of failing the listing.
+pub fn detached_head_info(runner: &impl GitRunner, path: &str) -> Option<(i64, String)> {
+    let out = runner
+        .run(&["-C", path, "log", "-1", "--format=%ct%x00%cI"])
+        .ok()?;
+    let mut fields = out.trim().split(REF_FIELD_SEPARATOR);
+    let unix = fields.next()?.parse::<i64>().ok()?;
+    let iso = fields.next()?;
+    Some((unix, iso.to_string()))
 }
 
 /// True if `refs/heads/<branch>` exists locally.
@@ -755,6 +933,7 @@ mod tests {
             vec![Worktree {
                 path: "/repo/main".into(),
                 branch: Some("main".into()),
+                head: String::new(),
             }]
         );
     }
@@ -770,10 +949,12 @@ mod tests {
                 Worktree {
                     path: "/repo/main".into(),
                     branch: Some("main".into()),
+                    head: "aaaa".into(),
                 },
                 Worktree {
                     path: "/repo/feat".into(),
                     branch: Some("feature".into()),
+                    head: "bbbb".into(),
                 },
             ]
         );
@@ -874,6 +1055,7 @@ mod tests {
             vec![Worktree {
                 path: "/repo/main".into(),
                 branch: Some("main".into()),
+                head: String::new(),
             }]
         );
         assert_eq!(git.calls().len(), 2);
@@ -1086,10 +1268,12 @@ detached
                 Worktree {
                     path: "/repo/main".into(),
                     branch: Some("main".into()),
+                    head: "aaaa".into(),
                 },
                 Worktree {
                     path: "/repo/detached".into(),
                     branch: None,
+                    head: "bbbb".into(),
                 },
             ],
             "detached entry must be reported with no branch"
@@ -1105,6 +1289,7 @@ detached
             vec![Worktree {
                 path: "/repo/detached".into(),
                 branch: None,
+                head: "bbbb".into(),
             }]
         );
     }
@@ -1123,6 +1308,7 @@ branch refs/heads/feat
             vec![Worktree {
                 path: "/repo/my worktree dir".into(),
                 branch: Some("feat".into()),
+                head: "cccc".into(),
             }]
         );
     }
@@ -1140,10 +1326,12 @@ branch refs/heads/feat
                 Worktree {
                     path: "/repo/main".into(),
                     branch: Some("main".into()),
+                    head: "aaaa".into(),
                 },
                 Worktree {
                     path: "/repo/detached".into(),
                     branch: None,
+                    head: "bbbb".into(),
                 },
             ]
         );
@@ -1160,6 +1348,7 @@ branch refs/heads/feat
             vec![Worktree {
                 path: "/repo/we\nird".into(),
                 branch: Some("feat".into()),
+                head: "aaaa".into(),
             }],
             "a newline in the path must not act as a record separator"
         );
@@ -1183,6 +1372,7 @@ branch refs/heads/main
             vec![Worktree {
                 path: "/repo/wt".into(),
                 branch: Some("main".into()),
+                head: "dddd".into(),
             }]
         );
     }
@@ -1201,11 +1391,13 @@ branch refs/heads/main
             vec![
                 Worktree {
                     path: "/a".into(),
-                    branch: Some("main".into())
+                    branch: Some("main".into()),
+                    head: String::new(),
                 },
                 Worktree {
                     path: "/b".into(),
-                    branch: Some("feat".into())
+                    branch: Some("feat".into()),
+                    head: String::new(),
                 },
             ]
         );
@@ -1384,6 +1576,183 @@ branch refs/heads/main
         // A bare `origin/` and a blank config value must not become the answer.
         let git = ScriptedGit::new(&[(SYMREF, "origin/"), (INIT_DEFAULT, "   ")]);
         assert_eq!(get_default_branch(&git), "master");
+    }
+
+    // --- status / ref parsing ----------------------------------------------
+
+    #[test]
+    fn status_count_treats_a_rename_as_one_entry() {
+        // `-z` emits a rename as TWO records (`R  <new>\0<orig>\0`) with no
+        // marker on the second, so counting records would double-count it.
+        let payload = b"R  new.txt\0old.txt\0 M other.txt\0";
+        assert_eq!(count_status_entries_z(payload), 2);
+    }
+
+    #[test]
+    fn status_count_treats_a_copy_as_one_entry() {
+        let payload = b"C  copy.txt\0src.txt\0";
+        assert_eq!(count_status_entries_z(payload), 1);
+    }
+
+    #[test]
+    fn status_count_sees_a_rename_marked_in_the_worktree_column() {
+        // The `R` can be in either status column; only `RM`/`R ` are common but
+        // ` R` is emitted for a worktree-side rename.
+        let payload = b" R new.txt\0old.txt\0";
+        assert_eq!(count_status_entries_z(payload), 1);
+    }
+
+    #[test]
+    fn status_count_keeps_a_newline_inside_a_path_in_one_record() {
+        // The reason `-z` is used at all: without it this path would be quoted
+        // or split, and the count would be wrong.
+        let payload = b" M we\nird.txt\0?? other.txt\0";
+        assert_eq!(count_status_entries_z(payload), 2);
+    }
+
+    #[test]
+    fn status_count_of_an_empty_payload_is_zero() {
+        assert_eq!(count_status_entries_z(b""), 0);
+        // A payload of nothing but the trailing terminator is still zero.
+        assert_eq!(count_status_entries_z(b"\0"), 0);
+    }
+
+    #[test]
+    fn status_count_treats_a_wholly_untracked_directory_as_one_entry() {
+        // What it guarantees: the count reflects git's DEFAULT (`-unormal`)
+        // reporting, where a wholly untracked directory arrives as a single
+        // `?? dir/` record no matter how many files are inside it. This is the
+        // documented meaning of the number, and the reason `-uall` is not used.
+        let payload = b"?? newdir/\0 M tracked.txt\0";
+        assert_eq!(count_status_entries_z(payload), 2);
+    }
+
+    #[test]
+    fn status_count_does_not_mistake_an_r_in_a_filename_for_a_rename() {
+        // Only the two STATUS columns are inspected; a path starting with `R`
+        // is at offset 3 and must not consume the next record.
+        let payload = b" M Readme.md\0?? Rust.toml\0";
+        assert_eq!(count_status_entries_z(payload), 2);
+    }
+
+    #[test]
+    fn ref_info_parses_the_nul_separated_fields() {
+        let out = "main\x001700000000\x002023-11-14T22:13:20+00:00\x00origin/main\n\
+                   feat/x\x001700000100\x002023-11-14T22:15:00+00:00\x00\n";
+        assert_eq!(
+            parse_ref_info(out),
+            vec![
+                (
+                    "main".to_string(),
+                    BranchRefInfo {
+                        committed_at_unix: 1_700_000_000,
+                        committed_at_iso: "2023-11-14T22:13:20+00:00".to_string(),
+                        upstream: Some("origin/main".to_string()),
+                    }
+                ),
+                (
+                    "feat/x".to_string(),
+                    BranchRefInfo {
+                        committed_at_unix: 1_700_000_100,
+                        committed_at_iso: "2023-11-14T22:15:00+00:00".to_string(),
+                        // An unset upstream renders as an empty field, which is
+                        // NOT the ref named "".
+                        upstream: None,
+                    }
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn ref_info_keeps_a_branch_name_containing_a_pipe_in_one_field() {
+        // The reason the separator is NUL: any printable delimiter can appear
+        // in a branch name and would split the record into bogus fields.
+        let out = "feat|weird\x001700000000\x00iso\x00\n";
+        assert_eq!(parse_ref_info(out)[0].0, "feat|weird");
+    }
+
+    #[test]
+    fn ref_info_skips_a_record_it_cannot_model() {
+        // A malformed record degrades to "age unknown" for that branch rather
+        // than failing the whole listing.
+        let out = "main\x00not-a-number\x00iso\x00\ngood\x001700000000\x00iso\x00\n";
+        let parsed = parse_ref_info(out);
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].0, "good");
+    }
+
+    #[test]
+    fn ref_info_of_no_branches_asks_git_nothing() {
+        // `for-each-ref` with no patterns enumerates EVERY ref, so the call must
+        // be skipped rather than issued with an empty operand list.
+        let git = ScriptedGit::new(&[]);
+        assert_eq!(branch_ref_info(&git, &[]).unwrap(), Vec::new());
+    }
+
+    #[test]
+    fn ref_info_fully_qualifies_every_branch_operand() {
+        // What it guarantees: a branch named like a flag arrives as a pattern,
+        // not as an option git would parse.
+        struct Recorder(std::cell::RefCell<Vec<String>>);
+        impl GitRunner for Recorder {
+            fn run(&self, args: &[&str]) -> Result<String> {
+                *self.0.borrow_mut() = args.iter().map(|a| a.to_string()).collect();
+                Ok(String::new())
+            }
+        }
+        let git = Recorder(std::cell::RefCell::new(Vec::new()));
+        branch_ref_info(&git, &["--format=%(objectname)".to_string()]).unwrap();
+        let args = git.0.borrow().clone();
+        assert_eq!(args[0], "for-each-ref");
+        assert_eq!(args[2], "refs/heads/--format=%(objectname)");
+    }
+
+    #[test]
+    fn detached_head_info_parses_the_log_output() {
+        let git = ScriptedGit::new(&[(
+            &["-C", "/repo/det", "log", "-1", "--format=%ct%x00%cI"],
+            "1700000000\u{0}2023-11-14T22:13:20+00:00",
+        )]);
+        assert_eq!(
+            detached_head_info(&git, "/repo/det"),
+            Some((1_700_000_000, "2023-11-14T22:13:20+00:00".to_string()))
+        );
+    }
+
+    #[test]
+    fn detached_head_info_is_none_when_git_fails() {
+        // An unborn HEAD or a broken worktree must degrade to "unknown", not
+        // propagate an error that would kill the listing.
+        let git = ScriptedGit::new(&[]);
+        assert_eq!(detached_head_info(&git, "/repo/det"), None);
+    }
+
+    #[test]
+    fn worktree_status_asks_for_the_pinned_porcelain_version() {
+        // `--porcelain` alone means "the default version", which git documents
+        // as subject to change; a silent switch to v2 would change the record
+        // shape under `count_status_entries_z`.
+        let git = LsFilesGit::new("");
+        worktree_status_z(&git, "/repo/x").unwrap();
+        assert_eq!(
+            git.recorded_args(),
+            vec!["-C", "/repo/x", "status", "--porcelain=v1", "-z"]
+        );
+    }
+
+    #[test]
+    fn parse_worktree_list_keeps_the_head_sha() {
+        // The sha is already in the porcelain; keeping it avoids a second
+        // resolution that could disagree with the listing.
+        let out = "worktree /repo/main\nHEAD abc123\nbranch refs/heads/main\n\n";
+        assert_eq!(parse_worktree_list(out)[0].head, "abc123");
+    }
+
+    #[test]
+    fn parse_worktree_list_leaves_head_empty_when_absent() {
+        let out = "worktree /repo/main\nbranch refs/heads/main\n\n";
+        assert_eq!(parse_worktree_list(out)[0].head, "");
     }
 
     #[test]

@@ -1,0 +1,133 @@
+---
+title: vibe list
+description: List every worktree of the current repository with base, age and status
+sidebar:
+  order: 4
+---
+
+The `list` command shows every worktree of the current repository in one aligned table, together with the branch it is based on, how long ago its tip was committed, and whether it has uncommitted changes.
+
+## Usage
+
+```bash
+vibe list [options]
+```
+
+## Options
+
+| Option            | Description                      |
+| ----------------- | -------------------------------- |
+| `--json`          | Emit the listing as a JSON array |
+| `-V`, `--verbose` | Show detailed output             |
+| `-q`, `--quiet`   | Suppress non-essential output    |
+
+`--quiet` does **not** silence the listing itself: the table is the command's product, so `vibe list --quiet` would otherwise exit 0 having printed nothing. Only the surrounding diagnostics are suppressed.
+
+## Example
+
+```
+$ vibe list
+* feat/login    develop  2h    M 3    /path/to/repo-feat-login
+  fix/crash     develop  3d    clean  /path/to/repo-fix-crash
+  (detached)    -        1w    clean  /path/to/repo-detached
+  scratch/2026… develop  12m   clean  /path/to/scratch-20260101 (scratch)
+```
+
+## Columns
+
+| Column   | Meaning                                                                            |
+| -------- | ---------------------------------------------------------------------------------- |
+| (marker) | `*` marks the worktree you are currently standing in                               |
+| BRANCH   | The checked-out branch, or `(detached)` for a detached-HEAD worktree               |
+| BASE     | The branch this one is based on — see [BASE](#base) below                          |
+| AGE      | How long ago the tip commit was made (`now`, `12m`, `2h`, `3d`, `1w`, `5mo`, `2y`) |
+| STATUS   | `clean`, or `M <n>` — see [How changes are counted](#how-changes-are-counted)      |
+| PATH     | The worktree directory                                                             |
+
+A `(scratch)` label is appended to worktrees created by [`vibe scratch`](/commands/scratch/).
+
+#### How changes are counted
+
+The number in `M <n>` (and the `dirty_files` field) is the number of entries `git status` reports, which is **not** always the number of changed files. git collapses a wholly untracked **directory** into a single entry, so a new directory containing five files counts as `1`, not `5`. Tracked modifications, staged changes and individually untracked files each count as one entry, and a rename counts once rather than twice.
+
+This is git's default reporting (`-unormal`). `vibe` deliberately does not pass `-uall`, which would expand every untracked directory: it makes git walk untracked trees in full on every row of the listing — unbounded work in exactly the repositories (a stale `node_modules`, a fat build output) where it is least wanted — to refine a number whose job is to convey "there is something here".
+
+Any cell whose value could not be determined renders as `-`. A worktree that git cannot read (for example one left behind by a deleted checkout) still appears as a row; only the affected cells degrade, and the reason is reported as a warning.
+
+### BASE
+
+BASE is resolved as:
+
+1. The branch's configured **upstream**, with the remote prefix stripped (`origin/develop` → `develop`).
+2. Otherwise the repository's **default branch** (from `refs/remotes/origin/HEAD`, then `init.defaultBranch`).
+
+A branch is never shown as based on itself, so the main worktree — and any branch whose upstream is its own remote tracking ref — shows `-`. A detached HEAD also shows `-`: it is not based on a branch in any sense that can be stated truthfully.
+
+`vibe list` deliberately does **not** run `git merge-base` per worktree. That would cost one git invocation per row, and its answer is a _commit_, not a branch — mapping that commit back to a branch name is ambiguous whenever several branches share the merge point, which is the common case right after branching. An upstream is a fact you configured, and the default branch is the documented fallback, so both are explainable.
+
+### AGE
+
+AGE is the elapsed time since the tip commit's committer date, truncated (never rounded up) so it never claims more time than has actually passed. The `mo` and `y` units are display-only approximations (30 and 365 days); `--json` publishes the exact timestamp in `last_commit_at` instead.
+
+A branch with no commits yet (an unborn branch) has no tip to date, so its AGE reads `-` and its `last_commit_at` is `null`.
+
+## JSON output
+
+```bash
+vibe list --json 2>&1 | jq .
+```
+
+The `2>&1` is required. `vibe` writes the JSON payload to **stderr**, because stdout is the shell-eval channel: the shell wrapper runs `eval "$(command vibe "$@")"`, so anything written there would be executed as shell code. In `--json` mode the payload is the only thing on stderr — even `--verbose` diagnostics and warnings are withheld so the document stays parseable.
+
+### Schema
+
+Each array element is an object with these fields:
+
+| Field            | Type           | Description                                                                 |
+| ---------------- | -------------- | --------------------------------------------------------------------------- |
+| `branch`         | string \| null | The checked-out branch; `null` for a detached HEAD                          |
+| `path`           | string         | Absolute path to the worktree                                               |
+| `current`        | boolean        | Whether this is the worktree the command was invoked from                   |
+| `scratch`        | boolean        | Whether the branch is an auto-generated `scratch/<timestamp>` worktree      |
+| `name`           | string         | Always present: the branch, or the directory basename for a detached HEAD   |
+| `base`           | string \| null | The BASE column's value; `null` when it does not apply or could not be read |
+| `head`           | string \| null | The commit sha HEAD points at; `null` when git reported none                |
+| `last_commit_at` | string \| null | The tip's committer date in ISO 8601; `null` for an unborn branch           |
+| `status`         | string \| null | `"clean"` or `"dirty"`; `null` when git could not be asked                  |
+| `dirty_files`    | number \| null | How many entries `git status` reported; `null` whenever `status` is `null`  |
+
+`branch`, `path`, `current` and `scratch` are the fields shipped in v3.1.0 and keep their names, types and position. New fields are only ever appended.
+
+The relative AGE string is not published. A consumer wanting "3 days ago" is better served computing it from `last_commit_at`, which is exact.
+
+### Examples
+
+```bash
+# Every dirty worktree
+vibe list --json 2>&1 | jq -r '.[] | select(.status == "dirty") | .path'
+
+# Branch and base, as a table
+vibe list --json 2>&1 | jq -r '.[] | "\(.name)\t\(.base // "-")"'
+
+# The worktree you are standing in
+vibe list --json 2>&1 | jq -r '.[] | select(.current) | .path'
+```
+
+## Ordering
+
+Rows are ordered: the current worktree first, then the remaining worktrees most-recently-jumped-to first (the same MRU order [`vibe jump`](/commands/jump/) uses for its selection prompt), then any never-visited worktree in git's own order.
+
+A missing or corrupt MRU store degrades to git's order; it never fails the listing.
+
+## Exit Codes
+
+| Code | Condition                   |
+| ---- | --------------------------- |
+| `0`  | The listing was produced    |
+| `1`  | Not inside a git repository |
+
+## Related
+
+- [jump](/commands/jump/) - Navigate to one of the listed worktrees
+- [start](/commands/start/) - Create a new worktree
+- [clean](/commands/clean/) - Remove the current worktree

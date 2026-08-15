@@ -9,15 +9,50 @@
 //! Enumeration reuses [`get_worktree_list`] (the same source `jump` matches
 //! against) and the MRU store `jump` maintains, so the two commands can never
 //! disagree about which worktrees exist or which one was used last.
+//!
+//! # BASE
+//!
+//! The BASE column answers "what is this branch based on", and is resolved as
+//! the branch's configured upstream with the remote prefix stripped, falling
+//! back to [`get_default_branch`] when the branch tracks nothing. The main
+//! worktree (the one already on the default branch) shows `-`.
+//!
+//! Why not a per-branch `git merge-base`: it costs one git invocation per
+//! worktree on top of the status calls, and its answer is a COMMIT, not a
+//! branch — mapping that commit back to a branch name is ambiguous whenever
+//! several branches share the merge point (the common case right after
+//! branching), so the column would sometimes name the wrong parent with no way
+//! for the reader to tell. An upstream is a fact the user configured, and the
+//! default branch is the documented fallback, so both are explainable.
+//!
+//! # Divergences from the original request (#408)
+//!
+//! The default order stays "current first, then MRU, then git order" rather
+//! than the age ordering #408 proposed: `list` and `jump` are meant to present
+//! the same world, and `jump`'s selection prompt is MRU-ordered. Age ordering
+//! is available as an opt-in sort instead.
+//!
+//! # Injection surface
+//!
+//! Branch names reach git as *operands*, never as bare arguments that could be
+//! read as flags: [`branch_ref_info`] fully qualifies each one to
+//! `refs/heads/<name>`, so a branch called `--format=…` arrives as the pattern
+//! `refs/heads/--format=…`. That is a structural guarantee, not a validation
+//! step that a later edit could forget to apply.
 
 use crate::commands::jump::SCRATCH_PREFIX;
 use crate::commands::Outcome;
 use crate::error::{Result, VibeError};
-use crate::git::{get_worktree_list, is_inside_worktree, lexical_normalize_path, GitRunner};
+use crate::git::{
+    branch_ref_info, count_status_entries_z, detached_head_info, get_default_branch,
+    get_worktree_list, is_inside_worktree, lexical_normalize_path, worktree_status_z, GitRunner,
+    Worktree,
+};
 use crate::io::Io;
 use crate::mru::{load_mru_data, sort_by_mru};
-use crate::output::{report_log, sanitize_for_display, verbose_log, OutputOptions};
+use crate::output::{report_log, sanitize_for_display, verbose_log, warn_log, OutputOptions};
 use serde::Serialize;
+use std::collections::HashMap;
 use unicode_width::UnicodeWidthStr;
 
 /// Marker printed in the first column for the worktree the user is standing in.
@@ -31,8 +66,25 @@ const SCRATCH_LABEL: &str = "(scratch)";
 /// has no branch to name.
 const DETACHED_LABEL: &str = "(detached)";
 
+/// Rendered in any column whose value could not be determined.
+///
+/// One placeholder for every unknown rather than a per-column wording: the rows
+/// are read as a table, and "unknown" is the same fact whether it is the base,
+/// the age, or the status that could not be read.
+const UNKNOWN_CELL: &str = "-";
+
+/// STATUS value for a worktree with no uncommitted changes.
+const STATUS_CLEAN: &str = "clean";
+
+/// STATUS value for a worktree carrying uncommitted changes.
+const STATUS_DIRTY: &str = "dirty";
+
 /// One rendered row of the listing. `Serialize` drives `--json`, so the field
 /// names are the stable public schema of that output.
+///
+/// New fields are appended, never inserted: `serde` serializes a struct in
+/// declaration order, so reordering would change the byte output for consumers
+/// that diff it. The first four fields are the v3.1.0 schema and are frozen.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ListEntry {
     /// `None` for a detached-HEAD worktree (JSON emits `null`).
@@ -42,6 +94,42 @@ pub struct ListEntry {
     pub current: bool,
     /// Whether the branch is an auto-generated `scratch/<timestamp>` worktree.
     pub scratch: bool,
+    /// A name that is always present: the branch, or for a detached HEAD the
+    /// basename of the worktree directory.
+    ///
+    /// Why not just `branch`: a detached worktree has none, and every consumer
+    /// that wants to label a row would have to re-derive the same fallback.
+    pub name: String,
+    /// The branch this one is based on (see the module header), or `None` for
+    /// the main worktree and whenever it could not be resolved.
+    pub base: Option<String>,
+    /// The commit sha the worktree's HEAD points at, or `None` when the
+    /// porcelain carried no `HEAD` record.
+    ///
+    /// `Option` rather than the empty string [`Worktree::head`] uses: every
+    /// other unknown on this struct is `null` in JSON, and a consumer checking
+    /// one field for `null` and another for `""` is being asked to remember an
+    /// inconsistency for no reason. The empty string stays on `Worktree`, where
+    /// it is the parser's "no record seen" and not a published value.
+    pub head: Option<String>,
+    /// The tip commit's committer date in ISO 8601, or `None` for an unborn
+    /// branch (no commits yet) or an unreadable worktree.
+    pub last_commit_at: Option<String>,
+    /// `"clean"`, `"dirty"`, or `None` when git could not be asked.
+    pub status: Option<String>,
+    /// How many entries `git status` reported, or `None` when the status is
+    /// unknown — kept in lockstep with `status` so a `0` never has to be read
+    /// as "clean or unknown, cannot tell".
+    pub dirty_files: Option<usize>,
+    /// The relative age rendered in the AGE column (`3d`, `2w`, …).
+    ///
+    /// Not serialized: `--json` publishes `last_commit_at`, the exact timestamp,
+    /// and a consumer computing its own "3 days ago" from an absolute instant is
+    /// strictly better served than by our truncated approximation. Carrying it
+    /// here anyway keeps the age formatted ONCE, at the point that has the epoch
+    /// seconds, instead of making the renderer re-parse an ISO string.
+    #[serde(skip)]
+    pub age: Option<String>,
 }
 
 /// Inputs `list` pulls from the binary.
@@ -54,6 +142,33 @@ where
     pub git: &'a G,
     /// The directory the command was invoked from, used to mark the current row.
     pub cwd: &'a str,
+    /// Current wall-clock in epoch milliseconds, for the AGE column.
+    pub now_ms: i64,
+}
+
+/// Warnings held back until the output mode is known.
+///
+/// In `--json` mode the payload is the ONLY thing on stderr (the same stream the
+/// diagnostics use), so a warning written as it happens would prepend non-JSON
+/// bytes to the document. Collecting instead of writing makes that structural: a
+/// warning added anywhere in the enrichment path cannot corrupt the payload,
+/// because the only flush point knows whether text mode is in effect.
+#[derive(Debug, Default)]
+struct DeferredWarnings {
+    messages: Vec<String>,
+}
+
+impl DeferredWarnings {
+    fn push(&mut self, message: String) {
+        self.messages.push(message);
+    }
+
+    /// Emit everything collected. Called only on the text-mode path.
+    fn flush(self, io: &impl Io) {
+        for message in self.messages {
+            warn_log(io, &message);
+        }
+    }
 }
 
 /// Run `vibe list [--json]`.
@@ -70,7 +185,8 @@ where
         ));
     }
 
-    let entries = collect_entries(deps)?;
+    let mut warnings = DeferredWarnings::default();
+    let entries = collect_entries(deps, &mut warnings)?;
 
     if json {
         let text = serde_json::to_string_pretty(&entries).map_err(|e| {
@@ -86,6 +202,8 @@ where
         report_log(deps.io, &text);
         return Ok(Outcome::none());
     }
+
+    warnings.flush(deps.io);
 
     verbose_log(
         deps.io,
@@ -108,7 +226,10 @@ where
 /// Build the ordered entry list: the current worktree first, then the rest in
 /// MRU order (most recently jumped-to first), then never-visited worktrees in
 /// git's own emitted order.
-fn collect_entries<I, G>(deps: &ListDeps<I, G>) -> Result<Vec<ListEntry>>
+fn collect_entries<I, G>(
+    deps: &ListDeps<I, G>,
+    warnings: &mut DeferredWarnings,
+) -> Result<Vec<ListEntry>>
 where
     I: Io,
     G: GitRunner,
@@ -129,23 +250,196 @@ where
         .filter(|base| is_within(&cwd, base))
         .max_by_key(|base| base.len());
 
-    let mut entries: Vec<ListEntry> = sorted
-        .into_iter()
-        .map(|w| ListEntry {
-            current: current_path.as_deref() == Some(lexical_normalize_path(&w.path).as_str()),
-            scratch: w
-                .branch
-                .as_deref()
-                .is_some_and(|b| b.starts_with(SCRATCH_PREFIX)),
-            branch: w.branch,
-            path: w.path,
-        })
-        .collect();
+    let mut entries = enrich_entries(deps.git, &sorted, deps.now_ms, warnings);
+    for entry in &mut entries {
+        entry.current =
+            current_path.as_deref() == Some(lexical_normalize_path(&entry.path).as_str());
+    }
 
     // Current worktree first; the MRU order established above is preserved for
     // everything else because `sort_by_key` is stable.
     entries.sort_by_key(|e| !e.current);
     Ok(entries)
+}
+
+/// Turn parsed worktrees into rows, filling BASE / AGE / STATUS from git.
+///
+/// The git budget is deliberately bounded at roughly `N + 4`: one
+/// [`branch_ref_info`] call covers every branch's commit time AND upstream,
+/// [`get_default_branch`] is resolved at most once (it costs up to two git
+/// calls), and only the per-worktree status has to be asked `N` times because
+/// git has no batch form for it. A naive implementation resolving each column
+/// per row would be `4N`.
+///
+/// Runs sequentially rather than in parallel: the [`GitRunner`] seam is `&G`
+/// with no `Sync` bound (the test doubles record calls through a `RefCell`), so
+/// threading it would force a seam change on every existing fake for a win that
+/// only matters at worktree counts nobody has.
+///
+/// Every git failure here degrades a CELL, never the listing: a broken worktree
+/// left behind by a deleted checkout is exactly the situation a user runs `list`
+/// to discover, so it must still appear as a row.
+fn enrich_entries<G: GitRunner>(
+    git: &G,
+    worktrees: &[Worktree],
+    now_ms: i64,
+    warnings: &mut DeferredWarnings,
+) -> Vec<ListEntry> {
+    let branches: Vec<String> = worktrees.iter().filter_map(|w| w.branch.clone()).collect();
+    // A failure here is not fatal: it costs the AGE and BASE columns, and an
+    // empty map makes every branch look unknown, which is the correct rendering.
+    let ref_info: HashMap<String, _> = branch_ref_info(git, &branches)
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+
+    // Resolved once, lazily: it is only needed when some branch has no upstream,
+    // and it is the same answer for every row.
+    let mut default_branch: Option<String> = None;
+    let now_secs = now_ms / 1_000;
+
+    worktrees
+        .iter()
+        .map(|w| {
+            let name = match &w.branch {
+                Some(branch) => branch.clone(),
+                None => detached_name(&w.path),
+            };
+
+            // The commit facts: from the batched ref lookup for a branch, and
+            // per-worktree for a detached HEAD (which owns no ref to enumerate).
+            let commit = match &w.branch {
+                Some(branch) => ref_info
+                    .get(branch)
+                    .map(|i| (i.committed_at_unix, i.committed_at_iso.clone())),
+                None => detached_head_info(git, &w.path),
+            };
+
+            let base = match &w.branch {
+                Some(branch) => ref_info
+                    .get(branch)
+                    .and_then(|i| i.upstream.as_deref())
+                    .map(strip_remote_prefix)
+                    .or_else(|| {
+                        Some(
+                            default_branch
+                                .get_or_insert_with(|| get_default_branch(git))
+                                .clone(),
+                        )
+                    })
+                    // A branch is not based on itself; the main worktree would
+                    // otherwise read "develop ← develop".
+                    .filter(|base| base != branch),
+                // A detached HEAD is not based on a branch in any sense we can
+                // state truthfully, so BASE stays unknown rather than guessing
+                // the default branch.
+                None => None,
+            };
+
+            let (status, dirty_files) = match worktree_status_z(git, &w.path) {
+                Ok(payload) => {
+                    let count = count_status_entries_z(&payload);
+                    let label = if count == 0 {
+                        STATUS_CLEAN
+                    } else {
+                        STATUS_DIRTY
+                    };
+                    (Some(label.to_string()), Some(count))
+                }
+                Err(e) => {
+                    warnings.push(format!(
+                        "Could not read status of {}: {e}",
+                        sanitize_for_display(&w.path)
+                    ));
+                    (None, None)
+                }
+            };
+
+            ListEntry {
+                branch: w.branch.clone(),
+                path: w.path.clone(),
+                // Overwritten by the caller, which alone knows the cwd.
+                current: false,
+                scratch: w
+                    .branch
+                    .as_deref()
+                    .is_some_and(|b| b.starts_with(SCRATCH_PREFIX)),
+                name,
+                base,
+                head: Some(w.head.clone()).filter(|h| !h.is_empty()),
+                last_commit_at: commit.as_ref().map(|(_, iso)| iso.clone()),
+                status,
+                dirty_files,
+                age: commit.map(|(unix, _)| format_age(now_secs, unix)),
+            }
+        })
+        .collect()
+}
+
+/// Label for a detached worktree: the basename of its directory.
+///
+/// Falls back to the whole path when there is no final component (a root path),
+/// so the field is never empty.
+fn detached_name(path: &str) -> String {
+    std::path::Path::new(path)
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.to_string())
+}
+
+/// Drop a `<remote>/` prefix from an upstream so BASE names a branch.
+///
+/// The first segment of an `upstream:short` is always the remote name (git
+/// builds it as `<remote>/<branch>`), so splitting on the first `/` is exact
+/// rather than a guess at "origin". A value with no `/` is already a plain
+/// branch name and is returned unchanged.
+fn strip_remote_prefix(upstream: &str) -> String {
+    match upstream.split_once('/') {
+        Some((_remote, branch)) if !branch.is_empty() => branch.to_string(),
+        _ => upstream.to_string(),
+    }
+}
+
+/// Number of seconds treated as a month for the AGE column (≈30 days).
+const SECONDS_PER_MONTH: i64 = 30 * 86_400;
+
+/// Number of seconds treated as a year for the AGE column (≈365 days).
+const SECONDS_PER_YEAR: i64 = 365 * 86_400;
+
+/// Render an elapsed time as a compact relative age (`3d`, `2w`, `5mo`).
+///
+/// Truncating (not rounding) so the value never claims more elapsed time than
+/// has actually passed: a commit 47 hours old reads `1d`, never `2d`.
+///
+/// A commit dated in the FUTURE — which clock skew between a checkout host and
+/// this machine produces routinely — reads `now` rather than a negative or
+/// wrapped value.
+///
+/// The month and year units are display-only approximations. They exist because
+/// `73w` is unreadable, and they are deliberately NOT accepted by any duration
+/// input: a filter written against an approximate month would silently disagree
+/// with the calendar.
+pub fn format_age(now_secs: i64, commit_secs: i64) -> String {
+    let elapsed = now_secs.saturating_sub(commit_secs);
+    if elapsed < 60 {
+        return "now".to_string();
+    }
+    if elapsed < 3_600 {
+        return format!("{}m", elapsed / 60);
+    }
+    if elapsed < 86_400 {
+        return format!("{}h", elapsed / 3_600);
+    }
+    if elapsed < 7 * 86_400 {
+        return format!("{}d", elapsed / 86_400);
+    }
+    if elapsed < SECONDS_PER_MONTH {
+        return format!("{}w", elapsed / (7 * 86_400));
+    }
+    if elapsed < SECONDS_PER_YEAR {
+        return format!("{}mo", elapsed / SECONDS_PER_MONTH);
+    }
+    format!("{}y", elapsed / SECONDS_PER_YEAR)
 }
 
 /// Whether `cwd` is the worktree at the already-normalized `base`, or inside it.
@@ -175,31 +469,58 @@ fn is_within(cwd: &str, base: &str) -> bool {
 
 /// Render the aligned plain-text table (one `String` per line).
 ///
-/// Column width is computed from the *sanitized* branch text so a branch name
+/// Every cell is *sanitized* before its width is measured, so a branch name
 /// carrying control characters cannot skew the alignment of the other rows, and
-/// in terminal *display* cells rather than codepoints: a CJK or emoji branch
-/// name occupies two cells per character, so padding by `chars().count()` would
-/// leave the path column ragged.
+/// widths are counted in terminal *display* cells rather than codepoints: a CJK
+/// or emoji branch name occupies two cells per character, so padding by
+/// `chars().count()` would leave the following columns ragged.
+///
+/// No header row is printed. The columns are self-describing (`3d`, `clean`,
+/// `M 2`), the rows are frequently piped into `grep`, and a header would be the
+/// one line that never matches what the user is looking for.
 fn render_table(entries: &[ListEntry]) -> Vec<String> {
-    let branches: Vec<String> = entries
+    let cells: Vec<[String; 4]> = entries
         .iter()
-        .map(|e| match &e.branch {
-            Some(b) => sanitize_for_display(b),
-            None => DETACHED_LABEL.to_string(),
+        .map(|e| {
+            [
+                match &e.branch {
+                    Some(b) => sanitize_for_display(b),
+                    None => DETACHED_LABEL.to_string(),
+                },
+                e.base
+                    .as_deref()
+                    .map(sanitize_for_display)
+                    .unwrap_or_else(|| UNKNOWN_CELL.to_string()),
+                e.age.clone().unwrap_or_else(|| UNKNOWN_CELL.to_string()),
+                status_cell(e),
+            ]
         })
         .collect();
-    let width = branches.iter().map(|b| b.width()).max().unwrap_or(0);
+
+    // One max per column, over the sanitized text that will actually be printed.
+    let widths: [usize; 4] = std::array::from_fn(|col| {
+        cells
+            .iter()
+            .map(|row| row[col].width())
+            .max()
+            .unwrap_or_default()
+    });
 
     entries
         .iter()
-        .zip(&branches)
-        .map(|(entry, branch)| {
+        .zip(&cells)
+        .map(|(entry, row)| {
             let marker = if entry.current { CURRENT_MARKER } else { " " };
-            // `saturating_sub` because `width` is the max over this same set, so
-            // the difference can never actually go negative.
-            let pad = " ".repeat(width.saturating_sub(branch.width()));
-            let path = sanitize_for_display(&entry.path);
-            let mut line = format!("{marker} {branch}{pad}  {path}");
+            let mut line = String::from(marker);
+            for (col, cell) in row.iter().enumerate() {
+                line.push(' ');
+                line.push_str(cell);
+                // `saturating_sub` because each width is the max over this same
+                // set, so the difference can never actually go negative.
+                line.push_str(&" ".repeat(widths[col].saturating_sub(cell.width())));
+                line.push(' ');
+            }
+            line.push_str(&sanitize_for_display(&entry.path));
             if entry.scratch {
                 line.push(' ');
                 line.push_str(SCRATCH_LABEL);
@@ -209,444 +530,18 @@ fn render_table(entries: &[ListEntry]) -> Vec<String> {
         .collect()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::io::FakeIo;
-
-    /// Git returning a fixed worktree-list porcelain and reporting "inside repo".
-    struct ListGit {
-        porcelain: String,
-        inside: bool,
-    }
-    impl ListGit {
-        fn with(entries: &[(&str, &str)]) -> Self {
-            let owned: Vec<(&str, Option<&str>)> =
-                entries.iter().map(|(p, b)| (*p, Some(*b))).collect();
-            ListGit::with_optional_branches(&owned)
-        }
-
-        /// Same, but `None` renders the detached-HEAD porcelain shape (a bare
-        /// `detached` line and no `branch` line), exactly as real git emits it.
-        fn with_optional_branches(entries: &[(&str, Option<&str>)]) -> Self {
-            let mut porcelain = String::new();
-            for (path, branch) in entries {
-                porcelain.push_str(&format!("worktree {path}\nHEAD abc\n"));
-                match branch {
-                    Some(b) => porcelain.push_str(&format!("branch refs/heads/{b}\n\n")),
-                    None => porcelain.push_str("detached\n\n"),
-                }
-            }
-            ListGit {
-                porcelain,
-                inside: true,
-            }
-        }
-    }
-    impl GitRunner for ListGit {
-        fn run(&self, args: &[&str]) -> Result<String> {
-            if args.contains(&"--is-inside-work-tree") {
-                return Ok(if self.inside { "true" } else { "false" }.to_string());
-            }
-            if args.contains(&"worktree") {
-                return Ok(self.porcelain.clone());
-            }
-            Ok(String::new())
-        }
-    }
-
-    fn run(io: &FakeIo, git: &ListGit, cwd: &str, json: bool) -> Result<Outcome> {
-        let deps = ListDeps { io, git, cwd };
-        list_command(&deps, json, OutputOptions::default())
-    }
-
-    fn no_home() -> FakeIo {
-        FakeIo::new().with_env("HOME", "/nonexistent-home")
-    }
-
-    #[test]
-    fn errors_when_not_inside_a_repository() {
-        let io = no_home();
-        let git = ListGit {
-            porcelain: String::new(),
-            inside: false,
-        };
-        let err = run(&io, &git, "/tmp", false).unwrap_err();
-        assert_eq!(err.exit_code(), 1);
-        assert!(err.to_string().contains("Not inside a git repository."));
-    }
-
-    #[test]
-    fn lists_every_worktree_with_branch_and_path() {
-        let io = no_home();
-        let git = ListGit::with(&[("/repo/main", "main"), ("/repo/feat", "feat/login")]);
-        let outcome = run(&io, &git, "/repo/main", false).unwrap();
-        // The listing is the product; no `cd` is ever emitted.
-        assert_eq!(outcome, Outcome::none());
-
-        let text = io.stderr_text();
-        assert!(text.contains("main"));
-        assert!(text.contains("/repo/main"));
-        assert!(text.contains("feat/login"));
-        assert!(text.contains("/repo/feat"));
-    }
-
-    #[test]
-    fn marks_only_the_current_worktree() {
-        let io = no_home();
-        let git = ListGit::with(&[("/repo/main", "main"), ("/repo/feat", "feat/login")]);
-        run(&io, &git, "/repo/feat", false).unwrap();
-
-        let lines: Vec<String> = io.stderr.borrow().clone();
-        let marked: Vec<&String> = lines.iter().filter(|l| l.starts_with('*')).collect();
-        assert_eq!(marked.len(), 1, "exactly one row is marked: {lines:?}");
-        assert!(marked[0].contains("feat/login"));
-    }
-
-    #[test]
-    fn marks_the_current_worktree_from_a_nested_directory() {
-        // The user is deep inside the worktree, not at its root.
-        let io = no_home();
-        let git = ListGit::with(&[("/repo/main", "main"), ("/repo/feat", "feat/login")]);
-        run(&io, &git, "/repo/feat/src/deep", false).unwrap();
-
-        let lines: Vec<String> = io.stderr.borrow().clone();
-        let marked: Vec<&String> = lines.iter().filter(|l| l.starts_with('*')).collect();
-        assert_eq!(marked.len(), 1);
-        assert!(marked[0].contains("feat/login"));
-    }
-
-    #[test]
-    fn a_sibling_with_a_shared_prefix_is_not_marked() {
-        // `/repo/feat-2` must not be read as being inside `/repo/feat`.
-        let io = no_home();
-        let git = ListGit::with(&[("/repo/feat", "feat"), ("/repo/feat-2", "feat-2")]);
-        run(&io, &git, "/repo/feat-2", false).unwrap();
-
-        let lines: Vec<String> = io.stderr.borrow().clone();
-        let marked: Vec<&String> = lines.iter().filter(|l| l.starts_with('*')).collect();
-        assert_eq!(marked.len(), 1);
-        assert!(marked[0].contains("feat-2"));
-    }
-
-    #[test]
-    fn nothing_is_marked_when_cwd_is_outside_every_worktree() {
-        let io = no_home();
-        let git = ListGit::with(&[("/repo/main", "main")]);
-        run(&io, &git, "/somewhere/else", false).unwrap();
-        assert!(!io.stderr_text().contains('*'));
-    }
-
-    #[test]
-    fn scratch_worktrees_are_labelled() {
-        let io = no_home();
-        let git = ListGit::with(&[("/repo/main", "main"), ("/repo/s", "scratch/20260101")]);
-        run(&io, &git, "/repo/main", false).unwrap();
-
-        let lines: Vec<String> = io.stderr.borrow().clone();
-        let scratch_line = lines
-            .iter()
-            .find(|l| l.contains("scratch/20260101"))
-            .expect("scratch row present");
-        assert!(scratch_line.contains(SCRATCH_LABEL));
-        let main_line = lines
-            .iter()
-            .find(|l| l.contains(" main "))
-            .expect("main row present");
-        assert!(!main_line.contains(SCRATCH_LABEL));
-    }
-
-    #[test]
-    fn columns_are_aligned_so_paths_start_at_one_offset() {
-        let io = no_home();
-        let git = ListGit::with(&[
-            ("/repo/main", "main"),
-            ("/repo/long", "feature/a-very-long-branch-name"),
-        ]);
-        run(&io, &git, "/repo/main", false).unwrap();
-
-        let lines: Vec<String> = io.stderr.borrow().clone();
-        let offsets: Vec<usize> = lines
-            .iter()
-            .map(|l| l.find("/repo/").expect("every row shows a path"))
-            .collect();
-        assert!(
-            offsets.windows(2).all(|w| w[0] == w[1]),
-            "paths not aligned: {lines:?}"
-        );
-    }
-
-    #[test]
-    fn the_current_worktree_is_listed_first() {
-        let io = no_home();
-        let git = ListGit::with(&[("/repo/main", "main"), ("/repo/feat", "feat/login")]);
-        run(&io, &git, "/repo/feat", false).unwrap();
-
-        let lines: Vec<String> = io.stderr.borrow().clone();
-        assert!(lines[0].contains("feat/login"), "got: {lines:?}");
-    }
-
-    #[test]
-    fn remaining_worktrees_follow_mru_order() {
-        // main is current (first); of the other two, the most recently jumped-to
-        // one must come next even though git lists it last.
-        let fx = vibe_test_support::Fixture::new();
-        let io = FakeIo::new().with_env("HOME", fx.path().to_str().unwrap());
-        crate::mru::record_mru_entry(&io, "feat/a", "/repo/a", 100).unwrap();
-        crate::mru::record_mru_entry(&io, "feat/b", "/repo/b", 200).unwrap();
-
-        let git = ListGit::with(&[
-            ("/repo/main", "main"),
-            ("/repo/a", "feat/a"),
-            ("/repo/b", "feat/b"),
-        ]);
-        run(&io, &git, "/repo/main", false).unwrap();
-
-        let lines: Vec<String> = io.stderr.borrow().clone();
-        assert!(lines[0].contains("main"), "got: {lines:?}");
-        assert!(lines[1].contains("feat/b"), "got: {lines:?}");
-        assert!(lines[2].contains("feat/a"), "got: {lines:?}");
-    }
-
-    #[test]
-    fn json_output_is_parseable_and_carries_every_field() {
-        let io = no_home();
-        let git = ListGit::with(&[("/repo/main", "main"), ("/repo/s", "scratch/20260101")]);
-        let outcome = run(&io, &git, "/repo/main", true).unwrap();
-        assert_eq!(outcome, Outcome::none());
-
-        // Parsed as generic JSON (not back into `ListEntry`): the assertion is
-        // about the wire schema consumers depend on, not about a round-trip
-        // through our own derive.
-        let parsed: serde_json::Value = serde_json::from_str(&io.stderr_text()).unwrap();
-        assert_eq!(
-            parsed,
-            serde_json::json!([
-                {
-                    "branch": "main",
-                    "path": "/repo/main",
-                    "current": true,
-                    "scratch": false,
-                },
-                {
-                    "branch": "scratch/20260101",
-                    "path": "/repo/s",
-                    "current": false,
-                    "scratch": true,
-                },
-            ])
-        );
-    }
-
-    #[test]
-    fn json_output_omits_the_human_table() {
-        let io = no_home();
-        let git = ListGit::with(&[("/repo/main", "main")]);
-        run(&io, &git, "/repo/main", true).unwrap();
-        // A `*` marker would mean the table leaked into the machine-readable form.
-        assert!(!io.stderr_text().contains('*'));
-    }
-
-    #[test]
-    fn empty_repository_listing_says_so() {
-        let io = no_home();
-        let git = ListGit {
-            porcelain: String::new(),
-            inside: true,
-        };
-        run(&io, &git, "/repo", false).unwrap();
-        assert!(io.stderr_text().contains("No worktrees found."));
-    }
-
-    #[test]
-    fn empty_json_listing_is_an_empty_array() {
-        let io = no_home();
-        let git = ListGit {
-            porcelain: String::new(),
-            inside: true,
-        };
-        run(&io, &git, "/repo", true).unwrap();
-        assert_eq!(io.stderr_text(), "[]");
-    }
-
-    #[test]
-    fn quiet_does_not_silence_the_listing() {
-        // The listing IS the command's product; `--quiet` must not make
-        // `vibe list` exit 0 having printed nothing.
-        let io = no_home();
-        let git = ListGit::with(&[("/repo/main", "main")]);
-        let deps = ListDeps {
-            io: &io,
-            git: &git,
-            cwd: "/repo/main",
-        };
-        list_command(&deps, false, OutputOptions::new(false, true)).unwrap();
-        assert!(io.stderr_text().contains("/repo/main"));
-    }
-
-    #[test]
-    fn terminal_control_characters_in_a_branch_are_neutralized() {
-        let io = no_home();
-        let git = ListGit::with(&[("/repo/x", "feat/\x1b[2Kspoof")]);
-        run(&io, &git, "/repo/x", false).unwrap();
-        let text = io.stderr_text();
-        assert!(
-            !text.contains('\x1b'),
-            "escape reached the terminal: {text}"
-        );
-        assert!(text.contains('\u{fffd}'));
-    }
-
-    #[test]
-    fn a_corrupt_mru_store_degrades_to_git_order() {
-        let fx = vibe_test_support::Fixture::new();
-        let _ = fx.write(".config/vibe/mru.json", "{not an array");
-        let io = FakeIo::new().with_env("HOME", fx.path().to_str().unwrap());
-        let git = ListGit::with(&[("/repo/a", "feat/a"), ("/repo/b", "feat/b")]);
-        run(&io, &git, "/somewhere/else", false).unwrap();
-
-        let lines: Vec<String> = io.stderr.borrow().clone();
-        assert!(lines[0].contains("feat/a"), "got: {lines:?}");
-        assert!(lines[1].contains("feat/b"), "got: {lines:?}");
-    }
-
-    #[test]
-    fn is_within_helper() {
-        assert!(is_within("/repo/feat", "/repo/feat"));
-        assert!(is_within("/repo/feat/src", "/repo/feat"));
-        assert!(!is_within("/repo/feat-2", "/repo/feat"));
-        assert!(!is_within("/repo", "/repo/feat"));
-    }
-
-    #[test]
-    fn detached_worktrees_are_listed_not_dropped() {
-        // git emits no `branch` line for a detached HEAD; the worktree still
-        // exists and must appear in the listing.
-        let io = no_home();
-        let git =
-            ListGit::with_optional_branches(&[("/repo/main", Some("main")), ("/repo/det", None)]);
-        run(&io, &git, "/repo/main", false).unwrap();
-
-        let lines: Vec<String> = io.stderr.borrow().clone();
-        assert_eq!(lines.len(), 2, "detached row missing: {lines:?}");
-        let det = lines
-            .iter()
-            .find(|l| l.contains("/repo/det"))
-            .expect("detached row present");
-        assert!(det.contains(DETACHED_LABEL), "got: {det}");
-    }
-
-    #[test]
-    fn a_detached_worktree_is_marked_current_and_serializes_as_null() {
-        let io = no_home();
-        let git =
-            ListGit::with_optional_branches(&[("/repo/main", Some("main")), ("/repo/det", None)]);
-        run(&io, &git, "/repo/det", true).unwrap();
-
-        let parsed: serde_json::Value = serde_json::from_str(&io.stderr_text()).unwrap();
-        assert_eq!(
-            parsed,
-            serde_json::json!([
-                {
-                    "branch": null,
-                    "path": "/repo/det",
-                    "current": true,
-                    "scratch": false,
-                },
-                {
-                    "branch": "main",
-                    "path": "/repo/main",
-                    "current": false,
-                    "scratch": false,
-                },
-            ])
-        );
-    }
-
-    #[test]
-    fn a_nested_worktree_marks_only_the_innermost_row() {
-        // `git worktree add <wt>/inner` is accepted by git, so `/repo/feat` and
-        // `/repo/feat/inner` can both contain the cwd. Only the innermost is
-        // the worktree the user is standing in.
-        let io = no_home();
-        let git = ListGit::with(&[
-            ("/repo/main", "main"),
-            ("/repo/feat", "feat"),
-            ("/repo/feat/inner", "inner"),
-        ]);
-        run(&io, &git, "/repo/feat/inner/src", false).unwrap();
-
-        let lines: Vec<String> = io.stderr.borrow().clone();
-        let marked: Vec<&String> = lines.iter().filter(|l| l.starts_with('*')).collect();
-        assert_eq!(marked.len(), 1, "exactly one row is marked: {lines:?}");
-        assert!(marked[0].contains("/repo/feat/inner"), "got: {marked:?}");
-    }
-
-    #[test]
-    fn a_nested_worktree_outside_the_inner_tree_marks_the_outer_row() {
-        // The complement: standing in the outer worktree but NOT inside the
-        // nested one still marks the outer row (and only it).
-        let io = no_home();
-        let git = ListGit::with(&[("/repo/feat", "feat"), ("/repo/feat/inner", "inner")]);
-        run(&io, &git, "/repo/feat/src", false).unwrap();
-
-        let lines: Vec<String> = io.stderr.borrow().clone();
-        let marked: Vec<&String> = lines.iter().filter(|l| l.starts_with('*')).collect();
-        assert_eq!(marked.len(), 1, "exactly one row is marked: {lines:?}");
-        assert!(!marked[0].contains("inner"), "got: {marked:?}");
-    }
-
-    #[test]
-    fn verbose_does_not_prepend_a_diagnostic_to_the_json_payload() {
-        // `--json` writes to the same stderr stream as the diagnostics, so a
-        // `[verbose]` line would make the payload unparseable.
-        let io = no_home();
-        let git = ListGit::with(&[("/repo/main", "main")]);
-        let deps = ListDeps {
-            io: &io,
-            git: &git,
-            cwd: "/repo/main",
-        };
-        list_command(&deps, true, OutputOptions::new(true, false)).unwrap();
-
-        let text = io.stderr_text();
-        assert!(!text.contains("[verbose]"), "diagnostic leaked: {text}");
-        // The whole stream parses as JSON, byte for byte.
-        serde_json::from_str::<serde_json::Value>(&text).expect("stderr must be pure JSON");
-    }
-
-    #[test]
-    fn verbose_still_reports_the_count_in_text_mode() {
-        let io = no_home();
-        let git = ListGit::with(&[("/repo/main", "main")]);
-        let deps = ListDeps {
-            io: &io,
-            git: &git,
-            cwd: "/repo/main",
-        };
-        list_command(&deps, false, OutputOptions::new(true, false)).unwrap();
-        assert!(io.stderr_text().contains("[verbose] Found 1 worktree(s)"));
-    }
-
-    #[test]
-    fn wide_branch_names_align_by_display_width_not_codepoints() {
-        // Each CJK character occupies two terminal cells. Padding by codepoint
-        // count would leave the path column ragged.
-        let io = no_home();
-        let git = ListGit::with(&[("/repo/a", "機能/ログイン"), ("/repo/b", "main")]);
-        run(&io, &git, "/repo/a", false).unwrap();
-
-        let lines: Vec<String> = io.stderr.borrow().clone();
-        let widths: Vec<usize> = lines
-            .iter()
-            .map(|l| {
-                let idx = l.find("/repo/").expect("every row shows a path");
-                l[..idx].width()
-            })
-            .collect();
-        assert!(
-            widths.windows(2).all(|w| w[0] == w[1]),
-            "paths not aligned by display width: {lines:?} -> {widths:?}"
-        );
+/// The STATUS cell: `clean`, `M <n>` for a dirty tree, or the unknown marker.
+///
+/// `M <n>` rather than `dirty`: the count is the actionable part (one stray file
+/// versus forty is a different decision), and it fits the same column.
+fn status_cell(entry: &ListEntry) -> String {
+    match (entry.status.as_deref(), entry.dirty_files) {
+        (Some(STATUS_DIRTY), Some(count)) => format!("M {count}"),
+        (Some(STATUS_CLEAN), _) => STATUS_CLEAN.to_string(),
+        _ => UNKNOWN_CELL.to_string(),
     }
 }
+
+#[cfg(test)]
+#[path = "list_tests.rs"]
+mod tests;

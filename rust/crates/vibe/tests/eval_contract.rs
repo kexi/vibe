@@ -1010,6 +1010,78 @@ fn list_writes_the_table_to_stderr_leaving_stdout_empty() {
         stderr.contains("feature") && stderr.contains(&secondary_path.display().to_string()),
         "listing missing from stderr: {stderr:?}"
     );
+    // The enrichment columns are populated from real `git for-each-ref` /
+    // `git status` output, not fixtures. Asserted by picking the columns OUT of
+    // the row rather than by searching the whole stream: a bare
+    // `stderr.contains("m")` is satisfied by the word "main", so it would pass
+    // even if every AGE cell had degraded to the unknown placeholder.
+    let row = stderr
+        .lines()
+        .find(|l| l.contains("feature"))
+        .unwrap_or_else(|| panic!("no row for the secondary worktree: {stderr:?}"));
+    let cells: Vec<&str> = row.split_whitespace().collect();
+    // `<BRANCH> <BASE> <AGE> <STATUS> <PATH>` — the marker column is blank for a
+    // non-current row and so contributes no token.
+    assert_eq!(cells[0], "feature", "unexpected row shape: {row:?}");
+    // The fixture repo has no remote and no `init.defaultBranch`, so
+    // `get_default_branch` reaches its documented last-resort `master` — even
+    // though `git init -b main` named the branch differently. The assertion is
+    // that BASE resolved to a NAME at all; which name is `get_default_branch`'s
+    // contract, covered by its own unit tests.
+    assert_ne!(cells[1], "-", "BASE did not resolve: {row:?}");
+    assert!(
+        is_age_cell(cells[2]),
+        "AGE did not resolve to a duration: {row:?}"
+    );
+    assert_eq!(cells[3], "clean", "STATUS must resolve: {row:?}");
+}
+
+/// Whether a rendered AGE cell is a real duration (`now`, or digits followed by
+/// one of the unit suffixes) rather than the unknown placeholder.
+///
+/// Hand-written rather than a regex crate: this is the only pattern match in the
+/// integration suite, and `vibe` ships no regex dependency to borrow.
+fn is_age_cell(cell: &str) -> bool {
+    if cell == "now" {
+        return true;
+    }
+    let digits: String = cell.chars().take_while(char::is_ascii_digit).collect();
+    if digits.is_empty() {
+        return false;
+    }
+    matches!(&cell[digits.len()..], "m" | "h" | "d" | "w" | "mo" | "y")
+}
+
+/// The same stdout guarantee for a repository whose worktree carries an unborn
+/// branch and a DIRTY tree: the columns that cannot resolve degrade to `-`, and
+/// none of that degradation may leak onto the eval channel. This is the shape
+/// that previously produced a git error message, which a naive implementation
+/// would print — possibly on stdout.
+#[test]
+fn list_keeps_stdout_empty_for_degraded_columns() {
+    if !git_available() {
+        eprintln!("skipping: git unavailable");
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let (main_path, secondary_path) = setup_worktrees(tmp.path(), "feat", "feature");
+    // A tracked-file change so the STATUS column has something to count.
+    std::fs::write(secondary_path.join("dirty.txt"), "x").unwrap();
+
+    let out = run_vibe(&main_path, home.path(), &["list"]);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert!(out.status.success(), "list failed; stderr={stderr:?}");
+    assert!(
+        stdout.is_empty(),
+        "the listing must never reach the eval channel: {stdout:?}"
+    );
+    assert!(
+        stderr.contains("M 1"),
+        "the untracked file was not counted: {stderr:?}"
+    );
 }
 
 /// The same invariant for `--json`: the payload is machine-readable and belongs
@@ -1055,11 +1127,36 @@ fn list_json_keeps_stdout_empty_and_stderr_pure_json() {
     let entries = payload
         .as_array()
         .unwrap_or_else(|| panic!("payload is not a JSON array: {stderr:?}"));
+    let feature = entries
+        .iter()
+        .find(|e| e.get("branch") == Some(&serde_json::json!("feature")))
+        .unwrap_or_else(|| panic!("payload missing the worktree: {stderr:?}"));
+
+    // Every published key is present against a REAL git, so a field that only
+    // ever resolves in the unit fixtures cannot ship. Values are not pinned
+    // (the sha and the timestamp are whatever this run produced); the schema is.
+    for key in [
+        "branch",
+        "path",
+        "current",
+        "scratch",
+        "name",
+        "base",
+        "head",
+        "last_commit_at",
+        "status",
+        "dirty_files",
+    ] {
+        assert!(
+            feature.get(key).is_some(),
+            "payload missing `{key}`: {stderr:?}"
+        );
+    }
+    assert_eq!(feature["name"], serde_json::json!("feature"));
+    assert_eq!(feature["status"], serde_json::json!("clean"));
     assert!(
-        entries
-            .iter()
-            .any(|e| e.get("branch") == Some(&serde_json::json!("feature"))),
-        "payload missing the worktree: {stderr:?}"
+        feature["head"].as_str().is_some_and(|s| !s.is_empty()),
+        "the HEAD sha must come through from the porcelain: {stderr:?}"
     );
 }
 
