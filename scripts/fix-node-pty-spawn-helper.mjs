@@ -163,19 +163,46 @@ export function findSpawnHelpers(nodePtyDir) {
  * cannot substitute for a missing one. Checking only that SOME helper exists
  * would therefore still let the #618 symptom through.
  *
+ * `canLoad` decides a candidate the way node-pty does: by actually requiring the
+ * addon and falling through on failure, NOT by mere file existence. A stale
+ * `build/Release/pty.node` left over from a different arch or a failed compile
+ * still exists as a file but throws on dlopen, so node-pty skips past it to the
+ * prebuild — and a check based on existence alone would pin the verdict to the
+ * wrong directory, in either direction. Requiring the addon is safe here:
+ * dlopen failures surface as ordinary catchable Errors, verified against both a
+ * corrupt file and a genuine wrong-arch pty.node.
+ *
  * @param {string} nodePtyDir
  * @param {string} platform
  * @param {string} arch
+ * @param {(addonPath: string) => boolean} [canLoad]
  * @returns {string | null}
  */
-export function activeSpawnHelper(nodePtyDir, platform, arch) {
+export function activeSpawnHelper(nodePtyDir, platform, arch, canLoad = isLoadableAddon) {
   const searchOrder = [...BUILD_OUTPUT_DIRS, join(PREBUILDS_DIR, `${platform}-${arch}`)];
   for (const dir of searchOrder) {
-    if (isFile(join(nodePtyDir, dir, ADDON_NAME))) {
+    const addon = join(nodePtyDir, dir, ADDON_NAME);
+    if (isFile(addon) && canLoad(addon)) {
       return join(nodePtyDir, dir, HELPER_NAME);
     }
   }
   return null;
+}
+
+/**
+ * True when `addonPath` is a native addon this process can actually dlopen —
+ * the same test node-pty's loader applies by `require()`ing each candidate.
+ *
+ * @param {string} addonPath
+ * @returns {boolean}
+ */
+function isLoadableAddon(addonPath) {
+  try {
+    createRequire(addonPath)(addonPath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

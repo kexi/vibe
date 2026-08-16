@@ -15,8 +15,10 @@
  *     node-pty's own loader also accepts), is still found — so the loud failure
  *     fires only when NO layout has a helper, never on a healthy tree;
  *   - the pass/fail verdict is taken on the ONE helper node-pty will really
- *     exec — the one beside the `pty.node` its own search order selects — so a
- *     leftover helper for another arch or build config cannot mask a miss;
+ *     exec — the one beside the first `pty.node` that actually dlopens, since
+ *     node-pty require()s each candidate and falls through on failure — so
+ *     neither a leftover helper for another arch nor a stale unloadable
+ *     `build/Release/pty.node` can shift the verdict to the wrong directory;
  *   - "no helper at all" is only fatal on macOS: node-pty's binding.gyp builds
  *     the spawn-helper target under `['OS=="mac"']` only, and `pty.cc` reads
  *     helperPath solely under `#if defined(__APPLE__)`, so a Linux tree with no
@@ -210,10 +212,20 @@ describe("findSpawnHelpers", () => {
 });
 
 describe("activeSpawnHelper", () => {
+  // The fixture pty.node files are empty placeholders, so the real dlopen probe
+  // would reject them all. These stubs stand in for "which addons load": the
+  // default (a genuine require) is exercised separately at the bottom.
+  const loadsAnything = () => true;
+  /** Only the listed addon paths dlopen successfully. */
+  const loadsOnly =
+    (...loadable: string[]) =>
+    (addon: string) =>
+      loadable.includes(addon);
+
   it("picks the helper next to the prebuild for the running platform-arch", () => {
     const dir = installNodePty(".", ["darwin-arm64", "darwin-x64"]);
 
-    expect(activeSpawnHelper(dir, "darwin", "arm64")).toBe(
+    expect(activeSpawnHelper(dir, "darwin", "arm64", loadsAnything)).toBe(
       join(dir, "prebuilds", "darwin-arm64", "spawn-helper"),
     );
   });
@@ -227,7 +239,7 @@ describe("activeSpawnHelper", () => {
     mkdirSync(join(dir, "prebuilds", "darwin-arm64"), { recursive: true });
     writeFileSync(join(dir, "prebuilds", "darwin-arm64", "pty.node"), "");
 
-    const active = activeSpawnHelper(dir, "darwin", "arm64");
+    const active = activeSpawnHelper(dir, "darwin", "arm64", loadsAnything);
     expect(active).toBe(join(dir, "prebuilds", "darwin-arm64", "spawn-helper"));
     expect(findSpawnHelpers(dir)).not.toContain(active);
   });
@@ -236,18 +248,47 @@ describe("activeSpawnHelper", () => {
     const dir = installNodePty(".", ["darwin-arm64"]);
     const built = addBuiltHelper(dir);
 
-    expect(activeSpawnHelper(dir, "darwin", "arm64")).toBe(built);
+    expect(activeSpawnHelper(dir, "darwin", "arm64", loadsAnything)).toBe(built);
   });
 
   it("falls back to build/Debug when only a Debug build exists", () => {
     const dir = installNodePty(".", []);
     const debug = addBuiltHelper(dir, 0o755, "Debug");
 
-    expect(activeSpawnHelper(dir, "darwin", "arm64")).toBe(debug);
+    expect(activeSpawnHelper(dir, "darwin", "arm64", loadsAnything)).toBe(debug);
   });
 
   it("returns null when no pty.node exists for this platform-arch at all", () => {
     const dir = installNodePty(".", ["darwin-x64"]);
+
+    expect(activeSpawnHelper(dir, "darwin", "arm64", loadsAnything)).toBeNull();
+  });
+
+  it("skips a stale build/Release addon that cannot dlopen, as node-pty does", () => {
+    // node-pty's loadNativeModule() require()s each candidate and falls through
+    // on failure. A leftover wrong-arch or half-written build/Release/pty.node
+    // still EXISTS, so an existence-only check would pin the verdict to
+    // build/Release — while node-pty actually runs the prebuild's helper.
+    const dir = installNodePty(".", ["darwin-arm64"]);
+    addBuiltHelper(dir);
+    const prebuiltAddon = join(dir, "prebuilds", "darwin-arm64", "pty.node");
+
+    expect(activeSpawnHelper(dir, "darwin", "arm64", loadsOnly(prebuiltAddon))).toBe(
+      join(dir, "prebuilds", "darwin-arm64", "spawn-helper"),
+    );
+  });
+
+  it("returns null when every candidate addon exists but none can load", () => {
+    const dir = installNodePty(".", ["darwin-arm64"]);
+    addBuiltHelper(dir);
+
+    expect(activeSpawnHelper(dir, "darwin", "arm64", loadsOnly())).toBeNull();
+  });
+
+  it("rejects a placeholder pty.node with the real dlopen probe", () => {
+    // Guards the default argument: the fixture addons are not real Mach-O, so
+    // a genuine require() must fail on them (and must not crash the process).
+    const dir = installNodePty(".", ["darwin-arm64"]);
 
     expect(activeSpawnHelper(dir, "darwin", "arm64")).toBeNull();
   });
