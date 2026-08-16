@@ -33,6 +33,11 @@
 //! Only `HookExecution` is downgraded — a failed copy or submodule step stays
 //! fatal, so no `cd` into a half-built worktree is ever emitted.
 //!
+//! Hook mode has no shell to strand, so the gate cannot express itself as a
+//! withheld `cd` there. It keeps emitting the path on stdout and exiting 0, and
+//! reports the gated state on stderr as [`HOOK_MODE_GATED_SIGNAL`] instead
+//! (issue #615).
+//!
 //! Seam strategy (architect's hybrid): the small, ubiquitous seams (`Io`,
 //! `GitRunner`, `Prompt`, `RepoResolver`, `ScriptRunner`, `ProcessControl`) are
 //! generic type params; the heavier copy/hook/progress/native seams are `&dyn`
@@ -159,6 +164,20 @@ impl Provisioning {
         self == Provisioning::Provisioned
     }
 }
+
+/// The stable, machine-readable stderr line `--claude-code-worktree-hook` emits
+/// when a `pre_start` gate fired (issue #615).
+///
+/// Hook mode keeps its contract — the worktree path on stdout, exit 0 — because
+/// a non-zero exit would make Claude Code treat an existing worktree as a failed
+/// creation, which has the worse recovery story. The generic
+/// `Warning: Hook "..." failed: ...` line already printed by
+/// `warn_on_hook_failure` names the command, so it changes with the user's
+/// config and is not something an agent can key on; this line is fixed and is
+/// therefore the signal. It is emitted verbatim through the `Io` rather than via
+/// [`warn_log`] on purpose: `warn_log` wraps the text in ANSI yellow when color
+/// is enabled, which would break a byte-exact match.
+pub const HOOK_MODE_GATED_SIGNAL: &str = "vibe: pre_start hook failed; worktree is not provisioned";
 
 /// Run `vibe start <branch_name>`.
 #[allow(clippy::too_many_arguments)]
@@ -1540,7 +1559,21 @@ where
     let conflict = check_worktree_conflict(deps.git, &worktree_path, &branch_name)?;
 
     if conflict.conflict_type == ConflictType::SameBranch {
-        let _ = run_config_and_hooks(
+        // Same non-fatal contract as the creation path below, including the
+        // gated signal, so the two provisioning sites cannot drift. An `Err` is
+        // swallowed (only the path matters to the caller); `warn_on_hook_failure`
+        // has already reported the cause.
+        //
+        // NOTE: this is *not* the re-entry path. A worktree already on
+        // `branch_name` is found by `find_worktree_by_branch` first, so
+        // `validation.is_valid` is false and the early return above hands the
+        // path back without loading the config or running any hook — hence
+        // without a gated signal either. Both lookups parse the same
+        // `git worktree list`, so reaching `SameBranch` here would require a
+        // worktree at this path on this branch that the branch lookup missed;
+        // the arm is kept in sync deliberately rather than relied upon. The
+        // re-entry gap itself predates this change and is tracked separately.
+        if let Ok(provisioning) = run_config_and_hooks(
             deps,
             config.as_ref(),
             &repo_root,
@@ -1553,7 +1586,11 @@ where
                 dry_run: flags.dry_run,
                 opts,
             },
-        );
+        ) {
+            if !provisioning.allows_cd() {
+                deps.io.writeln_stderr(HOOK_MODE_GATED_SIGNAL);
+            }
+        }
         if flags.dry_run {
             return Ok(Outcome::none());
         }
@@ -1600,10 +1637,12 @@ where
     // Post-setup is NON-FATAL in hook mode (warn but still output the path),
     // including a FATAL copy/submodule error — Claude Code has no shell to leave
     // in the wrong place, so the path is always emitted. A `Provisioning::Gated`
-    // verdict is likewise ignored: the `pre_start` gate only decides whether a
-    // `cd` is safe, which this mode never emits (the hook failure itself has
-    // already been warned about by `warn_on_hook_failure`).
-    if let Err(e) = run_config_and_hooks(
+    // verdict does not change that either: the gate decides whether a `cd` is
+    // safe, and this mode never emits one. What it does change is that the
+    // worktree handed over is unprovisioned, so the caller is told so through
+    // the fixed [`HOOK_MODE_GATED_SIGNAL`] line (issue #615) — exactly once,
+    // since only `pre_start` can gate and the sequence runs once per invocation.
+    match run_config_and_hooks(
         deps,
         config.as_ref(),
         &repo_root,
@@ -1617,7 +1656,12 @@ where
             opts,
         },
     ) {
-        warn_log(deps.io, &format!("Warning: Post-setup failed: {e}"));
+        Ok(provisioning) => {
+            if !provisioning.allows_cd() {
+                deps.io.writeln_stderr(HOOK_MODE_GATED_SIGNAL);
+            }
+        }
+        Err(e) => warn_log(deps.io, &format!("Warning: Post-setup failed: {e}")),
     }
 
     if flags.dry_run {
