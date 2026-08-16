@@ -1,4 +1,5 @@
 import { execFileSync } from "child_process";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 import { afterEach, describe, expect, test } from "vitest";
 import { getVibePath, VibeCommandRunner } from "./helpers/pty.js";
@@ -30,6 +31,76 @@ function toLines(output: string): string[] {
     .split(/\r?\n/)
     .map((line) => line.trimEnd())
     .filter((line) => line.length > 0);
+}
+
+/**
+ * Write a `[summary]` helper into the repository and return the command line
+ * that runs it.
+ *
+ * The helper answers for every worktree it is asked about and appends one line
+ * to `<repoPath>/summary-runs.log` per run. That log is what makes the cache
+ * observable: a cache hit is only visible as the ABSENCE of a run.
+ *
+ * Written as a `.js` FILE driven by node rather than a shell script using `jq`
+ * (not guaranteed on the CI runners) or a `node -e` one-liner (whose quoting
+ * has to survive both a TOML string and `/bin/sh`, which is exactly the kind of
+ * escaping bug a test should not be debugging).
+ */
+function summaryCommand(repoPath: string, homePath: string): string {
+  const scriptPath = join(repoPath, "summary-helper.cjs");
+  // Outside the worktree: the log is appended to on every run, and the
+  // worktree's `git status` is part of the cache key — a log file inside it
+  // would dirty the tree on each run and defeat the very cache under test.
+  const logPath = join(homePath, "summary-runs.log");
+  writeFileSync(
+    scriptPath,
+    [
+      "const fs = require('fs');",
+      "let d = '';",
+      "process.stdin.on('data', (c) => { d += c; });",
+      "process.stdin.on('end', () => {",
+      `  fs.appendFileSync(${JSON.stringify(logPath)}, 'run\\n');`,
+      "  const out = {};",
+      "  for (const w of JSON.parse(d).worktrees) {",
+      "    out[w.name] = 'summary of ' + w.name;",
+      "  }",
+      "  process.stdout.write(JSON.stringify(out));",
+      "});",
+      "",
+    ].join("\n"),
+  );
+  // Both operands quoted for /bin/sh: the temp dir path can contain characters
+  // the shell would otherwise split on.
+  return `"${process.execPath}" "${scriptPath}"`;
+}
+
+/** How many times the summary command has run so far. */
+function summaryRunCount(homePath: string): number {
+  const logPath = join(homePath, "summary-runs.log");
+  if (!existsSync(logPath)) return 0;
+  return readFileSync(logPath, "utf8").split("\n").filter(Boolean).length;
+}
+
+/** Write and trust a `.vibe.toml` carrying the `[summary]` command. */
+async function configureSummary(
+  repoPath: string,
+  homePath: string,
+  toml: string,
+): Promise<void> {
+  writeFileSync(join(repoPath, ".vibe.toml"), toml);
+  const trustRunner = new VibeCommandRunner(getVibePath(), repoPath, homePath);
+  try {
+    await trustRunner.spawn(["trust"]);
+    await trustRunner.waitForExit();
+    assertExitCode(trustRunner.getExitCode(), 0, trustRunner.getOutput());
+  } finally {
+    trustRunner.dispose();
+  }
+}
+
+/** The `.vibe.toml` body configuring `[summary]` with `timeout_seconds`. */
+function summaryToml(repoPath: string, homePath: string, timeoutSeconds = 60): string {
+  return `[summary]\ncommand = ${JSON.stringify(summaryCommand(repoPath, homePath))}\ntimeout_seconds = ${timeoutSeconds}\n`;
 }
 
 describe("list command", () => {
@@ -141,6 +212,105 @@ describe("list command", () => {
       const scratchLine = toLines(output).find((line) => line.includes("scratch/20260101120000"));
       expect(scratchLine).toBeDefined();
       expect(scratchLine).toContain("(scratch)");
+    } finally {
+      runner.dispose();
+    }
+  });
+  test("A configured [summary] command fills the SUMMARY column", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+    addWorktree(repoPath, "feature/alpha", "vibe-e2e-list-summary");
+    await configureSummary(repoPath, homePath, summaryToml(repoPath, homePath));
+
+    const runner = new VibeCommandRunner(getVibePath(), repoPath, homePath);
+    try {
+      await runner.spawn(["list"]);
+      await runner.waitForExit();
+
+      const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
+
+      // Every worktree the command answered for shows its summary.
+      assertOutputContains(output, "summary of main");
+      assertOutputContains(output, "summary of feature/alpha");
+      expect(summaryRunCount(homePath)).toBe(1);
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test("A second list of an unchanged repository does not run the command", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+    await configureSummary(repoPath, homePath, summaryToml(repoPath, homePath));
+
+    const first = new VibeCommandRunner(getVibePath(), repoPath, homePath);
+    try {
+      await first.spawn(["list"]);
+      await first.waitForExit();
+      assertExitCode(first.getExitCode(), 0, first.getOutput());
+    } finally {
+      first.dispose();
+    }
+    expect(summaryRunCount(homePath)).toBe(1);
+
+    const second = new VibeCommandRunner(getVibePath(), repoPath, homePath);
+    try {
+      await second.spawn(["list"]);
+      await second.waitForExit();
+
+      const output = second.getOutput();
+      assertExitCode(second.getExitCode(), 0, output);
+      // Answered entirely from the cache, so the command was never spawned.
+      assertOutputContains(output, "summary of main");
+    } finally {
+      second.dispose();
+    }
+    expect(summaryRunCount(homePath)).toBe(1);
+  });
+
+  test("--json carries the summary field when [summary] is configured", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+    await configureSummary(repoPath, homePath, summaryToml(repoPath, homePath));
+
+    const runner = new VibeCommandRunner(getVibePath(), repoPath, homePath);
+    try {
+      await runner.spawn(["list", "--json"]);
+      await runner.waitForExit();
+
+      const output = runner.getOutput();
+      assertExitCode(runner.getExitCode(), 0, output);
+
+      const jsonMatch = output.replace(/\r/g, "").match(/\[[\s\S]*\]/);
+      expect(jsonMatch).not.toBeNull();
+      const parsed = JSON.parse(jsonMatch![0]) as { branch: string; summary?: string }[];
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0].summary).toBe("summary of main");
+    } finally {
+      runner.dispose();
+    }
+  });
+
+  test("Editing [summary] revokes trust until vibe trust is run again", async () => {
+    const { repoPath, homePath, cleanup: repoCleanup } = await setupTestGitRepo();
+    cleanup = repoCleanup;
+    await configureSummary(repoPath, homePath, summaryToml(repoPath, homePath));
+
+    // Change ONLY the [summary] section; the file's hash no longer matches.
+    writeFileSync(join(repoPath, ".vibe.toml"), summaryToml(repoPath, homePath, 61));
+
+    const runner = new VibeCommandRunner(getVibePath(), repoPath, homePath);
+    try {
+      await runner.spawn(["list"]);
+      await runner.waitForExit();
+
+      const output = runner.getOutput();
+      // The command that would have run is no longer approved, so the listing
+      // fails loudly instead of silently dropping the column.
+      expect(runner.getExitCode()).not.toBe(0);
+      assertOutputContains(output, "vibe trust");
+      expect(summaryRunCount(homePath)).toBe(0);
     } finally {
       runner.dispose();
     }

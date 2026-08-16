@@ -1,0 +1,300 @@
+---
+title: vibe list
+description: 列出当前仓库的所有 worktree，并显示基础分支、时间和状态
+sidebar:
+  order: 4
+---
+
+`list` 命令会在一张对齐的表格中列出当前仓库的所有 worktree，同时显示每个 worktree 基于的分支、最新提交距今多久，以及是否存在未提交的更改。
+
+## 使用方法
+
+```bash
+vibe list [选项]
+```
+
+## 选项
+
+| 选项              | 说明                                      |
+| ----------------- | ----------------------------------------- |
+| `--json`          | 以 JSON 数组形式输出列表                  |
+| `--dirty`         | 只列出有未提交改动的工作树                |
+| `--clean`         | 只列出没有未提交改动的工作树              |
+| `--base <branch>` | 只列出基于 `<branch>` 的工作树            |
+| `--recent <dur>`  | 只列出在 `<dur>` 之内有提交的工作树       |
+| `--stale <dur>`   | 只列出已有 `<dur>` 没有提交的工作树       |
+| `--sort <key>`    | 按 `age`、`name` 或 `status` 排序         |
+| `--reverse`       | 反转最终的显示顺序                        |
+| `--limit <n>`     | 最多显示 `<n>` 个工作树（`<n>` 至少为 1） |
+| `-V`, `--verbose` | 显示详细输出                              |
+| `-q`, `--quiet`   | 抑制非必要输出                            |
+
+`--dirty` 与 `--clean` 不能同时使用，`--recent` 与 `--stale` 也是如此；任一组合都会以 `2` 退出。
+
+`--quiet` **不会**抑制列表本身：表格就是这个命令的产出，否则 `vibe list --quiet` 会在什么都没打印的情况下以 0 退出。被抑制的只有周边的诊断信息。
+
+## 示例
+
+```
+$ vibe list
+* feat/login    develop  2h    M 3    /path/to/repo-feat-login
+  fix/crash     develop  3d    clean  /path/to/repo-fix-crash
+  (detached)    -        1w    clean  /path/to/repo-detached
+  scratch/2026… develop  12m   clean  /path/to/scratch-20260101 (scratch)
+```
+
+## 列说明
+
+| 列       | 含义                                                              |
+| -------- | ----------------------------------------------------------------- |
+| （标记） | `*` 标记你当前所在的 worktree                                     |
+| BRANCH   | 已检出的分支；分离 HEAD 的 worktree 显示为 `(detached)`           |
+| BASE     | 该分支所基于的分支 —— 参见下文的 [BASE](#base)                    |
+| AGE      | 最新提交距今的时间（`now`、`12m`、`2h`、`3d`、`1w`、`5mo`、`2y`） |
+| STATUS   | `clean`，或 `M <n>` —— 参见[变更的计数方式](#变更的计数方式)      |
+| SUMMARY  | 仅在配置了 `[summary]` 时出现 —— 参见下文的 [SUMMARY](#summary)   |
+| PATH     | worktree 所在目录                                                 |
+
+由 [`vibe scratch`](/zh/commands/scratch/) 创建的 worktree 会附加 `(scratch)` 标签。
+
+### 变更的计数方式
+
+`M <n>` 中的数字（以及 `dirty_files` 字段）是 `git status` 报告的条目数，**并不**总是等于发生变更的文件数。git 会把整体未跟踪的**目录**合并为一个条目，因此包含 5 个文件的新目录计为 `1` 而非 `5`。已跟踪文件的修改、已暂存的变更和单独的未跟踪文件各计为一个条目，重命名计为一次而非两次。
+
+这是 git 的默认报告方式（`-unormal`）。`vibe` 刻意不传 `-uall`：`-uall` 会展开所有未跟踪目录，但这会让 git 在列表的每一行都完整遍历未跟踪的目录树 —— 在最不希望付出这种代价的仓库（陈旧的 `node_modules`、庞大的构建产物）中造成无上限的开销，而所优化的只是一个用来表达“这里有变更”的数字。
+
+无法确定取值的单元格会显示为 `-`。即使是 git 无法读取的 worktree（例如已删除检出所遗留的损坏 worktree）也一定会作为一行出现，只有受影响的单元格会降级。
+
+读取 worktree 的 **STATUS** 失败时，原因会作为警告输出到 stderr。而 **AGE** 或 **BASE** 解析失败时（例如 `git log` 无法读取分离 HEAD 的 worktree），会静默降级为 `-` —— 这种情况足够常见，为此发出警告只会成为噪音。
+
+### BASE
+
+BASE 按以下顺序解析：
+
+1. 分支所配置的 **upstream**，去掉远程前缀（`origin/develop` → `develop`）
+2. 否则使用仓库的**默认分支**（来自 `refs/remotes/origin/HEAD`，其次是 `init.defaultBranch`）
+
+分支绝不会显示为基于其自身，因此主 worktree —— 以及 upstream 就是自身远程跟踪引用的分支 —— 会显示 `-`。分离 HEAD 同样显示 `-`：没有任何能够如实陈述的基础分支。
+
+`vibe list` 刻意**不**为每个 worktree 运行 `git merge-base`。那会让每一行多出一次 git 调用，而且它的答案是*提交*而非分支 —— 当多个分支共享合并点时（刚分支出来的常见情况），把该提交映射回分支名是有歧义的。upstream 是用户配置的事实，默认分支是有文档记载的回退方案，二者都可以解释清楚。
+
+### AGE
+
+AGE 是最新提交的 committer date 至今的时间，采用截断（而非向上取整），因此绝不会声称经过了比实际更长的时间。`mo` 和 `y` 单位只用于显示，是近似值（分别为 30 天和 365 天）；`--json` 输出的是精确时间戳 `last_commit_at`。
+
+尚无任何提交的分支（unborn 分支）没有可用的最新提交，因此 AGE 显示 `-`，`last_commit_at` 为 `null`。
+
+### SUMMARY
+
+只有当仓库的 `.vibe.toml` 设置了 `[summary] command` 时，SUMMARY 列才会出现。vibe 会在每次 `vibe list` 时运行该命令一次，通过 stdin 把待处理的 worktree 批次交给它，并显示它打印回来的内容：
+
+```toml
+[summary]
+command = "./examples/summary/last-commit.sh"
+timeout_seconds = 30
+```
+
+```
+$ vibe list
+* feat/login    develop  2h    M 3    添加登录表单              /path/to/repo-feat-login
+  fix/crash     develop  3d    clean  修复启动时的 panic        /path/to/repo-fix-crash
+```
+
+结果会按 worktree 缓存，因此对未发生变化的仓库第二次运行 `vibe list` 时完全不会执行该命令。如果命令失败或超时，`vibe list` 会发出警告并显示此前缓存的摘要，而不是直接失败。
+
+该列是否出现取决于**配置**，而非命令是否成功：命令没有回答的 worktree 会显示空单元格，因此空列不必被理解为"这个功能也许没开启"。
+
+由于命令以你的 shell 和你的权限执行，它受信任机制保护——修改 `[summary] command` 会使 `.vibe.toml` 的哈希失效，在你重新运行 [`vibe trust`](/zh/commands/trust/) 之前 `vibe list` 都会失败。
+
+完整的契约、对命令输出施加的限制以及缓存失效规则，请参见 [`.vibe.toml` → 摘要配置](/zh/configuration/vibe-toml/#摘要配置)。开箱即用的脚本位于 [`examples/summary/`](https://github.com/kexi/vibe/tree/main/examples/summary)。
+
+## 过滤、排序与数量限制
+
+这些标志构成一条顺序固定的流水线：
+
+```
+过滤（AND） → 排序 → 反转 → 数量限制
+```
+
+每一步都作用于已完全解析的行，因此过滤条件与 `--json` 绝不会在某个 worktree 的基础分支、时间或状态上产生分歧；同一组标志在两种输出模式下选出的是同一批 worktree。
+
+### 示例
+
+```bash
+# 本周动过、但还没做完的有哪些？
+vibe list --recent 1w --dirty
+
+# 已经放置一个月没碰的有哪些？
+vibe list --stale 30d
+
+# 最旧的 5 个 worktree
+vibe list --sort age --reverse --limit 5
+
+# 所有从 develop 分出来的，最乱的排在前面
+vibe list --base develop --sort status
+
+# 最近提交的 3 个，以 JSON 输出
+vibe list --json --sort age --limit 3 2>&1 | jq .
+```
+
+### 过滤条件
+
+各过滤条件以 **AND** 组合：每个标志都会收窄结果，因此增加标志绝不会返回更多行。
+
+| 标志              | 保留的对象                             |
+| ----------------- | -------------------------------------- |
+| `--dirty`         | STATUS 为 `dirty` 的 worktree          |
+| `--clean`         | STATUS 为 `clean` 的 worktree          |
+| `--base <branch>` | BASE 与 `<branch>` 完全一致的 worktree |
+| `--recent <dur>`  | tip 提交的经过时间不超过 `<dur>` 的    |
+| `--stale <dur>`   | tip 提交的经过时间超过 `<dur>` 的      |
+
+状态无法读取的 worktree（STATUS 为 `-`）会同时被 `--dirty` 和 `--clean` **排除**。因此这两个标志并不会把列表一分为二：git 无法给出答案的 worktree 不属于其中任何一边，把它归入任意一边都只是一种没有依据的猜测。不带过滤条件的列表仍会显示该行（值为 `-`）并给出警告。
+
+`--base` 与解析出的 [BASE](#base) 列比较。比较是完全匹配而非前缀匹配：`--base develop` 不会匹配 `develop-2`。没有基础分支的 worktree（主 worktree 或 detached HEAD）永远不会被 `--base` 匹配到。
+
+参数既可以**原样书写，也可以去掉开头的一个远程名**，因此你可能自然写出的各种形式都能用：
+
+| 参数                  | 匹配的基础分支                        |
+| --------------------- | ------------------------------------- |
+| `develop`             | `develop`                             |
+| `origin/develop`      | `origin/develop`、`develop`           |
+| `release/next`        | `release/next`                        |
+| `origin/release/next` | `origin/release/next`、`release/next` |
+
+之所以两种解读都要尝试，是因为仅凭参数本身无法区分它们：`origin/develop` 是带远程限定的 `develop`，而 `release/next` 只是一个名字里恰好含有斜杠的普通分支，两者的写法都是 `<词>/<词>`。若只尝试去掉前缀的那种解读，`--base release/next` 就会变成 `--base next`，从而什么都匹配不到。
+
+同时接受两种解读的代价是：如果本地确实存在一个名字就叫 `origin/develop` 的分支，`--base origin/develop` 也会匹配到它。多出一行，总好过悄无声息地返回零结果——这是有意的取舍。
+
+### 时长格式
+
+`--recent` 与 `--stale` 接受由**一个正整数加一个单位**构成的时长：
+
+| 单位 | 含义 |
+| ---- | ---- |
+| `s`  | 秒   |
+| `m`  | 分钟 |
+| `h`  | 小时 |
+| `d`  | 天   |
+| `w`  | 周   |
+
+示例：`90s`、`30m`、`12h`、`2d`、`1w`。
+
+其他写法都会带着说明以 `2` 退出：空值、没有单位的裸数字（`30`）、复合形式（`1h30m`）、小数（`1.5d`）、零（`0d`），以及大到会溢出的值。
+
+:::caution[AGE 列的单位与时长单位是有意不同的]
+AGE 列会显示 `mo`（月）和 `y`（年），但 `--recent`/`--stale` **不**接受它们。这些显示单位是近似值（分别为 30 天和 365 天），用近似的"月"写出的过滤条件会与日历悄悄产生分歧。请改用周或天来书写："大约 6 个月"是 `26w`，"大约 1 年"是 `52w`（或 `365d`）。
+:::
+
+边界是精确的，对任何已知时间的 worktree 而言，这两个条件互为补集：
+
+- `--recent <dur>` 保留 `now − commit ≤ dur` 的行（**含边界**）
+- `--stale <dur>` 保留 `now − commit > dur` 的行（**不含边界**）
+
+因此 `vibe list --recent 1d` 与 `vibe list --stale 1d` 合起来正好覆盖所有已知 tip 提交时间的 worktree，且不重叠。
+
+日期在**未来**的提交（创建该提交的机器与本机存在时钟偏差时很常见）算作 `--recent`，这与 AGE 列已经显示的 `now` 保持一致。
+
+**没有** tip 提交的 worktree（unborn 分支，或日志无法读取的）既不匹配 `--recent` 也不匹配 `--stale`：两者问的都是该行并不具备的提交日期。
+
+### 排序方式
+
+`--sort` 接受以下三个键之一：
+
+| 键       | 顺序                                                 |
+| -------- | ---------------------------------------------------- |
+| `age`    | tip 提交由新到旧；并列时按名称排序                   |
+| `name`   | 按名称的字典序                                       |
+| `status` | dirty 在前，然后按改动条目数由多到少，最后按名称排序 |
+
+指定 `--sort` 会**完全取代**默认顺序，包括"当前 worktree 优先"这一规则：`--sort age` 承诺最新的行排在最前，若为某一行破例，会导致你恰好所在的那个 worktree 被挪动位置。
+
+在 `--sort name` 下，detached HEAD 的 worktree 会以其目录 basename（与 `--json` 输出的 `name` 相同的值）参与排序。
+
+所有排序最终都以 worktree 的**路径**作为最后一级比较，因此输出是完全确定的：位于同级目录下的两个 detached worktree 可能拥有相同的 basename，若没有这一级比较，它们的先后顺序就会取决于你最近 jump 过哪一个。
+
+时间**未知**的行在 `--sort age` 下始终排在最后，加上 `--reverse` 也仍在最后："最旧的 worktree"是一个关于具有时间信息的 worktree 的问题，因此 `--sort age --reverse --limit 5` 会返回 5 个真正的答案，而不会把名额浪费在这个问题不适用的行上。
+
+### `--reverse` 与 `--limit`
+
+`--reverse` 反转的是当时本应成为最终显示顺序的结果，因此它单独使用也有意义（会反转默认的"当前优先 + MRU"顺序），也可以跟在 `--sort` 之后使用。
+
+`--limit <n>` 在排序与反转**之后**截断。正是这个顺序让"最旧的 5 个"可以写成 `--sort age --reverse --limit 5`；若先截断，就只是把最新的 5 个倒着打印，那是另一个集合。`--limit 0` 会被拒绝（以 `2` 退出），因为空列表与"仓库里没有 worktree"无法区分。
+
+当过滤条件没有匹配到任何行时，`vibe list` 会明确说明（`No worktrees matched the given filters.`），而不是报告 `No worktrees found.`——这两种情况需要采取的后续动作不同。在 `--json` 模式下结果就是 `[]`。
+
+## JSON 输出
+
+```bash
+vibe list --json 2>&1 | jq .
+```
+
+`2>&1` 是必需的。`vibe` 将 JSON 负载写入 **stderr**，因为 stdout 是 shell 的 eval 通道：shell 包装函数执行 `eval "$(command vibe "$@")"`，写到那里的任何内容都会被当作 shell 代码执行。在 `--json` 模式下，`list` 自身写入 stderr 的只有负载 —— 为了让文档保持可解析，连 `--verbose` 诊断信息和命令自身的警告也会被扣留。
+
+有一个例外不在本命令的控制范围内：关于**全局**标志冲突的警告（`vibe --verbose --quiet list --json` 会输出 `Warning: Both --verbose and --quiet specified.`）在子命令运行之前发出，因此会出现在负载之前。解析输出时请避免同时使用相互冲突的全局标志。
+
+### 结构
+
+数组中的每个元素都是包含以下字段的对象：
+
+| 字段             | 类型           | 说明                                                           |
+| ---------------- | -------------- | -------------------------------------------------------------- |
+| `branch`         | string \| null | 已检出的分支；分离 HEAD 为 `null`                              |
+| `path`           | string         | worktree 的绝对路径                                            |
+| `current`        | boolean        | 是否为执行该命令时所在的 worktree                              |
+| `scratch`        | boolean        | 分支是否为自动生成的 `scratch/<timestamp>` worktree            |
+| `name`           | string         | 始终存在的名称：分支名，分离 HEAD 时为目录基名                 |
+| `base`           | string \| null | BASE 列的取值；不适用或无法读取时为 `null`                     |
+| `head`           | string \| null | HEAD 指向的提交 sha；unborn 分支（尚无提交）为 `null`          |
+| `last_commit_at` | string \| null | 最新提交 committer date 的 ISO 8601 表示；unborn 分支为 `null` |
+| `status`         | string \| null | `"clean"` 或 `"dirty"`；无法询问 git 时为 `null`               |
+| `dirty_files`    | number \| null | `git status` 报告的条目数；`status` 为 `null` 时始终为 `null`  |
+| `summary`        | string         | **仅**在配置了 `[summary]` 时存在；未回答时为 `""`             |
+
+`branch`、`path`、`current` 和 `scratch` 是 v3.1.0 发布的字段，其名称、类型和位置保持不变。新字段只会追加到末尾。
+
+`head` 始终要么是可以传给 `git show` 的 sha，要么是 `null`。分支尚无提交的 worktree 会报告 `null`，而不是 git 输出的全零占位 OID，因此该字段绝不会出现形似 sha 却无法解析的值。
+
+未配置 `[summary]` 时 `summary` 会被完全省略，因此不使用该功能的仓库输出的文档与该功能存在之前完全一致。
+
+相对时间的 AGE 字符串不会输出。需要"3 天前"这类展示的使用方，从精确的 `last_commit_at` 自行计算会更合适。
+
+### 示例
+
+```bash
+# 所有存在改动的 worktree —— 由过滤条件负责筛选，jq 只做投影
+vibe list --json --dirty 2>&1 | jq -r '.[] | .path'
+
+# 以表格形式列出分支与基础分支
+vibe list --json 2>&1 | jq -r '.[] | "\(.name)\t\(.base // "-")"'
+
+# 你当前所在的 worktree
+vibe list --json 2>&1 | jq -r '.[] | select(.current) | .path'
+
+# 最久没有动过的 3 个 worktree
+vibe list --json --sort age --reverse --limit 3 2>&1 | jq -r '.[] | .name'
+```
+
+[过滤、排序与数量限制的标志](#过滤排序与数量限制)对 `--json` 的作用与对表格完全相同，因此脚本可以把筛选逻辑交给 `vibe`，而不必在 `jq` 里重新实现一遍。没有匹配到任何行的过滤结果就是 `[]`。
+
+## 排序
+
+行的顺序为：当前 worktree 最先，然后是其余 worktree 按最近 jump 过的先后排列（与 [`vibe jump`](/zh/commands/jump/) 选择提示所用的 MRU 顺序一致），最后是从未访问过的 worktree，按 git 自身的顺序排列。
+
+MRU 存储缺失或损坏时会降级为 git 的顺序，绝不会导致列表失败。
+
+这是**默认**顺序。[`--sort`](#排序方式) 会取代它，而 `--reverse` 会反转当时生效的顺序。
+
+## 退出码
+
+| 退出码 | 条件                                                                |
+| ------ | ------------------------------------------------------------------- |
+| `0`    | 成功输出列表（包括过滤条件没有匹配到任何行的情况）                  |
+| `1`    | 不在 git 仓库内                                                     |
+| `2`    | 参数无效：互斥标志同时出现、时长格式错误、`--limit 0`、未知的排序键 |
+
+## 相关
+
+- [jump](/zh/commands/jump/) - 跳转到列表中的某个 worktree
+- [start](/zh/commands/start/) - 创建新的 worktree
+- [clean](/zh/commands/clean/) - 删除当前 worktree
