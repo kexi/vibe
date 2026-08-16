@@ -135,9 +135,11 @@ pub fn copy_resolved_files(
     }
 
     let phase = tracker.add_phase("Copying files");
-    // The progress label goes straight to the terminal too, so it is sanitized
-    // for the same reason as the dry-run list. Only the LABEL is sanitized — the
-    // src/dest paths below are built from the untouched `file`, so a name
+    // Why sanitize here when `progress::render_line` already does: the label is
+    // also what a `RecordingTracker`-style consumer and the warning below print,
+    // and the helper is idempotent, so keeping it makes this call site safe
+    // independently of which renderer is installed. Only the LABEL is sanitized
+    // — the src/dest paths below are built from the untouched `file`, so a name
     // containing a control character is still copied verbatim.
     let task_ids: Vec<_> = files
         .iter()
