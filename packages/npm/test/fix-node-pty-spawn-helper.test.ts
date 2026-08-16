@@ -1,5 +1,5 @@
 /**
- * What these guarantee for `scripts/fix-node-pty-spawn-helper.ts`:
+ * What these guarantee for `scripts/fix-node-pty-spawn-helper.mjs`:
  *
  *   - node-pty is located by node's own resolution from the e2e package, so a
  *     copy HOISTED to the workspace root is found (the exact layout
@@ -11,8 +11,13 @@
  *     while prebuild directories that legitimately have no helper (win32) and a
  *     missing `prebuilds/` are tolerated;
  *   - a from-source build, where node-pty deletes `prebuilds/` and emits
- *     `build/Release/spawn-helper`, is still found — so the loud failure fires
- *     only when NEITHER layout has a helper, never on a healthy tree;
+ *     `build/Release/spawn-helper` (or `build/Debug/spawn-helper`, which
+ *     node-pty's own loader also accepts), is still found — so the loud failure
+ *     fires only when NO layout has a helper, never on a healthy tree;
+ *   - "no helper at all" is only fatal on macOS: node-pty's binding.gyp builds
+ *     the spawn-helper target under `['OS=="mac"']` only, and `pty.cc` reads
+ *     helperPath solely under `#if defined(__APPLE__)`, so a Linux tree with no
+ *     helper is healthy and must not fail `pnpm install`;
  *   - the executable-bit predicate only accepts a mode with all three execute
  *     bits set, which is what makes the chmod idempotent.
  *
@@ -37,8 +42,9 @@ import {
   resolveNodePtyDir,
   findSpawnHelpers,
   isExecutable,
+  helperIsRequired,
   EXECUTABLE_MODE,
-} from "../../../scripts/fix-node-pty-spawn-helper.ts";
+} from "../../../scripts/fix-node-pty-spawn-helper.mjs";
 
 let root: string;
 
@@ -56,11 +62,11 @@ function installNodePty(prefix: string, platforms: string[]): string {
   return dir;
 }
 
-/** Add the `build/Release/spawn-helper` a local node-gyp build leaves behind. */
-function addBuiltHelper(dir: string, mode = 0o755): string {
-  const release = join(dir, "build", "Release");
-  mkdirSync(release, { recursive: true });
-  const helper = join(release, "spawn-helper");
+/** Add the `build/<config>/spawn-helper` a local node-gyp build leaves behind. */
+function addBuiltHelper(dir: string, mode = 0o755, config = "Release"): string {
+  const output = join(dir, "build", config);
+  mkdirSync(output, { recursive: true });
+  const helper = join(output, "spawn-helper");
   writeFileSync(helper, "#!/bin/sh\n");
   chmodSync(helper, mode);
   return helper;
@@ -161,10 +167,46 @@ describe("findSpawnHelpers", () => {
     expect(isExecutable(statSync(built).mode)).toBe(false);
   });
 
-  it("reports an empty list when neither layout has a helper", () => {
+  it("finds a Debug-configuration helper, which node-pty's loader also accepts", () => {
+    // loadNativeModule() searches build/Release, then build/Debug, then
+    // prebuilds/ — so a Debug-only tree is loadable and must not be a miss.
+    const dir = installNodePty(".", []);
+    const debug = addBuiltHelper(dir, 0o755, "Debug");
+
+    expect(findSpawnHelpers(dir)).toEqual([debug]);
+  });
+
+  it("reports an empty list when no layout has a helper", () => {
     const dir = installNodePty(".", []);
 
     expect(findSpawnHelpers(dir)).toEqual([]);
+  });
+
+  it("reports an empty list for the tree a Linux from-source build leaves", () => {
+    // On Linux node-pty ships no prebuilds/linux-*, so it always compiles from
+    // source, and binding.gyp emits pty.node WITHOUT a spawn-helper target.
+    // This exact tree is healthy — see the helperIsRequired suite.
+    const dir = installNodePty(".", []);
+    mkdirSync(join(dir, "build", "Release"), { recursive: true });
+    writeFileSync(join(dir, "build", "Release", "pty.node"), "");
+
+    expect(findSpawnHelpers(dir)).toEqual([]);
+  });
+});
+
+describe("helperIsRequired", () => {
+  it("treats a missing helper as fatal only on macOS", () => {
+    expect(helperIsRequired("darwin")).toBe(true);
+  });
+
+  it("tolerates a missing helper on linux, where node-pty never builds one", () => {
+    // Regression guard: exiting non-zero here would break `pnpm install` on
+    // every Linux dev machine and in Docker, on a perfectly healthy tree.
+    expect(helperIsRequired("linux")).toBe(false);
+  });
+
+  it("tolerates a missing helper on win32, which uses ConPTY/winpty", () => {
+    expect(helperIsRequired("win32")).toBe(false);
   });
 });
 

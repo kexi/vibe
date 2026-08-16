@@ -17,10 +17,6 @@ shell loads automatically on `cd`:
 direnv allow
 ```
 
-Run `pnpm install` from inside the dev shell. Some package install scripts are
-run with `bun`, which the dev shell provides; outside it the install fails with
-`bun: command not found`.
-
 ## Running vibe in Development
 
 vibe is a Rust binary. Run it directly with cargo:
