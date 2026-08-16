@@ -20,10 +20,11 @@ on:
 
 # Same rationale as ci.yml: superseded PR runs are cancelled (a cold-store
 # `nix build` on `macos-latest` is one of the most expensive jobs in the repo),
-# while push runs are left alone so every merged commit keeps its own
-# source-build verdict.
+# while push runs get a per-run key so they are never grouped — and therefore
+# never evicted from the single pending slot a shared group would give them.
+# Every merged commit keeps its own source-build verdict.
 concurrency:
-  group: nix-${{ github.workflow }}-${{ github.ref }}
+  group: nix-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
