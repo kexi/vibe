@@ -1052,13 +1052,24 @@ fn is_age_cell(cell: &str) -> bool {
     matches!(&cell[digits.len()..], "m" | "h" | "d" | "w" | "mo" | "y")
 }
 
-/// The same stdout guarantee for a repository whose worktree carries an unborn
-/// branch and a DIRTY tree: the columns that cannot resolve degrade to `-`, and
-/// none of that degradation may leak onto the eval channel. This is the shape
-/// that previously produced a git error message, which a naive implementation
-/// would print — possibly on stdout.
+/// The same stdout guarantee for a worktree with a DIRTY tree.
+///
+/// Worth its own case because the STATUS column is the one cell whose value is
+/// produced by a second `git` invocation per row: that call's output (and, on a
+/// broken worktree, its error text) is the most likely thing to be echoed by a
+/// naive implementation, and stdout is where an echo would be catastrophic.
+///
+/// The dirty count is asserted as well, so the test cannot pass by producing no
+/// rows at all — an empty stdout proves nothing on its own.
+///
+/// Scope note: the fixture is an ordinary committed repository on a normal
+/// branch, so no column actually degrades here. The degraded-cell rendering
+/// (`-` for an unresolvable BASE/AGE, and the warning path for an unreadable
+/// STATUS) is covered by the unit tests in `list_tests.rs`, which can inject a
+/// failing git; reproducing a broken worktree through the real binary is not
+/// worth the fixture complexity.
 #[test]
-fn list_keeps_stdout_empty_for_degraded_columns() {
+fn list_keeps_stdout_empty_for_a_dirty_worktree() {
     if !git_available() {
         eprintln!("skipping: git unavailable");
         return;
@@ -1066,7 +1077,8 @@ fn list_keeps_stdout_empty_for_degraded_columns() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
     let (main_path, secondary_path) = setup_worktrees(tmp.path(), "feat", "feature");
-    // A tracked-file change so the STATUS column has something to count.
+    // An untracked file, which `--untracked-files=normal` counts as one entry,
+    // so the STATUS column has something to report.
     std::fs::write(secondary_path.join("dirty.txt"), "x").unwrap();
 
     let out = run_vibe(&main_path, home.path(), &["list"]);
@@ -1081,6 +1093,11 @@ fn list_keeps_stdout_empty_for_degraded_columns() {
     assert!(
         stderr.contains("M 1"),
         "the untracked file was not counted: {stderr:?}"
+    );
+    // The count really came from the dirty worktree, not from the main one.
+    assert!(
+        stderr.contains(&secondary_path.display().to_string()),
+        "the dirty worktree is missing from the listing: {stderr:?}"
     );
 }
 
