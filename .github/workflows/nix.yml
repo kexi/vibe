@@ -18,6 +18,14 @@ on:
   pull_request:
     branches: [main, develop]
 
+# Same rationale as ci.yml: superseded PR runs are cancelled (a cold-store
+# `nix build` on `macos-latest` is one of the most expensive jobs in the repo),
+# while push runs are left alone so every merged commit keeps its own
+# source-build verdict.
+concurrency:
+  group: nix-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 

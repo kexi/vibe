@@ -11,10 +11,20 @@ on:
     # point of being able to opt a finished PR into the Windows leg.
     #
     # The cost is a duplicate full run whenever ANY label is added to an open PR
-    # (the filter is per-event, not per-label). There is no `concurrency` group on
-    # this workflow, so those runs do not cancel each other; labels are applied
-    # rarely enough here that this is cheaper than the alternative.
+    # (the filter is per-event, not per-label). The `concurrency` group below
+    # cancels the superseded run, so the duplicate is bounded to whatever the
+    # older run had already spent.
     types: [opened, synchronize, reopened, labeled]
+
+# One run per ref: a new push to a PR makes the older run's verdict irrelevant,
+# so cancelling it frees the runners (notably the `macos-latest` rust-macos job)
+# immediately. Push runs are NOT cancelled — a merge push is the only event that
+# runs the full macOS/arm64/Windows matrix, and every push to develop/main is a
+# distinct commit that must be validated on its own, so cancelling one would
+# leave that commit permanently unverified.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Least privilege: CI only reads the repository. Jobs that need more must
 # request it explicitly at the job level.
