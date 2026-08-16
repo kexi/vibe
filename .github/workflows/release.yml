@@ -82,9 +82,10 @@ jobs:
         id: state
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          TAG="${{ steps.version.outputs.tag }}"
           # `gh release view` falls back to searching drafts, so distinguish
           # none / draft / published via isDraft instead of exit status alone.
           STATE=none
@@ -115,6 +116,27 @@ jobs:
             echo "::error::Tag $TAG exists without a published release; delete the tag or bump the version."
             exit 1
           fi
+
+          # Currency gate (#616). Everything above establishes that this version
+          # was never published; nothing above establishes that it is still the
+          # NEWEST one. A run that built its artifacts but never published can be
+          # re-run at any later date, and from here it would take the ordinary
+          # path: publish, then `gh release edit --draft=false --latest`, which
+          # moves GitHub's latest pointer backwards. #608's tap guard reads
+          # isLatest AFTER that edit, so it would see the stale release as
+          # current and mirror it into the Homebrew tap. Fail closed here, before
+          # anything is built — see the script for why refusing beats publishing
+          # without --latest.
+          #
+          # --exclude-drafts because an authenticated listing includes this
+          # repo's own leftover drafts, and --exclude-pre-releases because a beta
+          # never supersedes a stable. Assignment form so a failed listing fails
+          # the step rather than reading as "no releases exist".
+          RELEASE_LIST=$(gh release list --exclude-drafts --exclude-pre-releases \
+            --limit 100 --json tagName)
+          printf '%s' "$RELEASE_LIST" \
+            | bun run scripts/assert-release-currency.ts --version "$VERSION"
+
           echo "should_release=true" >> "$GITHUB_OUTPUT"
 
   build:
@@ -499,6 +521,16 @@ jobs:
           # missing binary the way a bare count allowed.
           gh release view "$TAG" --json assets \
             | bun run scripts/verify-release-assets.ts --channel stable --version "$VERSION"
+
+          # Re-assert currency immediately before the pointer moves (#616).
+          # `prepare` ran this same gate, but hours of builds sit in between and
+          # nothing has burned a tag yet — so this is the last moment a newer
+          # release can be noticed for free. The draft above holds no tag, so
+          # failing here publishes nothing and the next attempt reclaims it.
+          RELEASE_LIST=$(gh release list --exclude-drafts --exclude-pre-releases \
+            --limit 100 --json tagName)
+          printf '%s' "$RELEASE_LIST" \
+            | bun run scripts/assert-release-currency.ts --version "$VERSION"
 
           # Everything verified: burn the tag and go public. --latest is set
           # here rather than at create time because a draft cannot be latest.

@@ -25,6 +25,9 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # bun, for the currency gate in "Check if release already exists" (#616).
+      - uses: ./.github/actions/setup-toolchain
+
       - name: Determine beta version
         id: version
         run: |
@@ -51,9 +54,9 @@ jobs:
         id: check
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          VERSION="${{ steps.version.outputs.version }}"
           TAG="v${VERSION}"
           # `gh release view` falls back to searching drafts, so only a
           # published release counts as done; a draft leftover from a failed
@@ -75,6 +78,30 @@ jobs:
             echo "Prerelease $TAG already published at $TARGET, skipping build (re-run recovery path)"
             echo "should_release=false" >> "$GITHUB_OUTPUT"
           else
+            # Currency gate (#616), mirroring release.yml. The check above only
+            # establishes that THIS tag was never published; a run that built
+            # its artifacts and died before publishing can be re-run at any
+            # later date, and from here it would publish an old -beta.N as a
+            # fresh prerelease. Its tap guard would then catch it downstream
+            # (ordinal comparison, #608) — but only after the prerelease is
+            # public and its tag burned, leaving an out-of-order beta on the
+            # release page forever. Refuse before anything is built.
+            #
+            # -beta.N ordering comes from the shared comparator, so a base
+            # version bump on develop (3.1.0-beta.9 -> 3.2.0-beta.1) still
+            # orders correctly, which a bare ordinal compare would not.
+            # --exclude-drafts: this workflow creates its prerelease as a draft
+            # first, so a newer run that died mid-flight must not read as a
+            # published newer beta. Prereleases only: a stable 3.1.0 outranks
+            # 3.1.0-beta.N by semver, and develop keeps the base version until
+            # the next bump, so comparing against stables would refuse every
+            # ordinary beta cut made after a release.
+            RELEASE_LIST=$(gh release list --exclude-drafts --limit 100 \
+              --json tagName,isPrerelease \
+              --jq '[.[] | select(.isPrerelease)]')
+            printf '%s' "$RELEASE_LIST" \
+              | bun run scripts/assert-release-currency.ts --version "$VERSION"
+
             echo "should_release=true" >> "$GITHUB_OUTPUT"
           fi
 

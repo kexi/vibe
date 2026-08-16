@@ -666,6 +666,68 @@ fn start_worktree_hook_mode_outputs_path_not_cd() {
     );
 }
 
+/// G-2b: hook mode with a FAILING `pre_start` → the stdout/exit contract is
+/// unchanged (the worktree path, status 0), and the gated state is reported on
+/// STDERR as the fixed signal line, exactly once (issue #615). Proven through the
+/// real binary because the value of this line is that it survives the whole
+/// pipeline byte-for-byte, ANSI-free, on the channel an agent reads.
+#[test]
+fn start_worktree_hook_mode_gated_pre_start_signals_on_stderr() {
+    if !git_available() {
+        eprintln!("skipping: git unavailable");
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let main_path = setup_main_repo(tmp.path());
+
+    // `exit 1` is a failing command under both `/bin/sh -c` and `cmd /c`.
+    std::fs::write(
+        main_path.join(".vibe.toml"),
+        "[hooks]\npre_start = [\"exit 1\"]\npost_start = [\"echo provisioned\"]\n",
+    )
+    .unwrap();
+    let trust = run_vibe(&main_path, home.path(), &["trust"]);
+    assert!(
+        trust.status.success(),
+        "trust failed: {}",
+        String::from_utf8_lossy(&trust.stderr)
+    );
+
+    let out = run_vibe_stdin(
+        &main_path,
+        home.path(),
+        &["start", "--claude-code-worktree-hook"],
+        r#"{"name": "gated"}"#,
+        &[],
+    );
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+
+    assert!(
+        out.status.success(),
+        "a gated hook-mode run must still exit 0; stderr={stderr:?}"
+    );
+    let expected = main_path.parent().unwrap().join("main-gated");
+    assert_eq!(
+        stdout,
+        expected.display().to_string(),
+        "stdout must still be the bare worktree path"
+    );
+    assert!(
+        expected.exists(),
+        "the worktree is still created: {expected:?}"
+    );
+    assert_eq!(
+        stderr
+            .lines()
+            .filter(|l| *l == vibe_core::commands::start::HOOK_MODE_GATED_SIGNAL)
+            .count(),
+        1,
+        "the gated signal must be exactly one bare stderr line: {stderr:?}"
+    );
+}
+
 /// G-3: `vibe clean` from a secondary worktree → STDOUT is EXACTLY `cd '<main>'\n`;
 /// the "Worktree ... removed"/progress text stays on STDERR.
 #[test]
