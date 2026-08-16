@@ -21,7 +21,7 @@
 //! depth, a separate layer).
 
 use super::detector::CapabilityProbe;
-use super::native::NativeClone;
+use super::native::{is_darwin, NativeClone};
 use super::types::{validate_path, CopyError, CopyResult, CopyStrategyKind};
 use std::path::Path;
 use std::process::Command;
@@ -227,7 +227,7 @@ impl<'a, N: NativeClone> RealCopyExecutor<'a, N> {
     }
 
     fn is_macos(&self) -> bool {
-        self.native.get_platform() == "darwin"
+        is_darwin(self.native.get_platform())
     }
 }
 

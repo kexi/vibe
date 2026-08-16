@@ -78,6 +78,26 @@ impl NativeClone for RealNativeClone {
     }
 }
 
+/// Whether `platform` (a [`NativeClone::get_platform`] value) is macOS.
+///
+/// The single decision point for "is this macOS?" in the copy subsystem: both
+/// the `cp -c` vs `cp --reflink=auto` argv choice in `strategies.rs` and the
+/// probe that tests that same argv in `detector.rs` route through it. Why not
+/// `cfg!(target_os = "macos")` at each site: the probe and the strategy must
+/// agree by construction — a probe that tests `cp -c` while the strategy runs
+/// `cp --reflink=auto` would report a capability the strategy cannot use — and
+/// `cfg!` cannot be driven by `FakeNative`, so the divergence would be
+/// untestable.
+pub fn is_darwin(platform: &str) -> bool {
+    platform == "darwin"
+}
+
+/// The host platform as `vibe-native` reports it, for callers with no
+/// [`NativeClone`] instance to ask (e.g. [`super::detector::RealProbe`]).
+pub fn host_platform() -> &'static str {
+    vibe_native::get_platform()
+}
+
 /// Map a `vibe-native` clone error into a [`CopyError`], crucially preserving the
 /// `UnsupportedFileType` distinction so the executor does NOT fall back (finding
 /// #5). `Unsupported` (e.g. Linux directory clone) maps to a plain `Failed` so
@@ -90,6 +110,30 @@ fn map_clone_error(e: vibe_native::CloneError) -> CopyError {
             ))
         }
         other => CopyError::Failed(other.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod platform_tests {
+    use super::*;
+
+    #[test]
+    fn is_darwin_recognises_only_the_darwin_platform_name() {
+        // The macOS predicate is keyed on the exact `get_platform()` vocabulary,
+        // so a rename in vibe-native cannot silently make macOS look like Linux
+        // and flip the Clone strategy to `cp --reflink=auto`.
+        assert!(is_darwin("darwin"));
+        for other in ["linux", "windows", "unsupported", "macos", "Darwin"] {
+            assert!(!is_darwin(other), "{other} must not be treated as macOS");
+        }
+    }
+
+    #[test]
+    fn host_platform_matches_the_native_seam() {
+        // The probe (which has no NativeClone to ask) and RealNativeClone must
+        // report the same platform, or the probe could test a `cp` argv the
+        // strategy never runs.
+        assert_eq!(host_platform(), RealNativeClone.get_platform());
     }
 }
 
