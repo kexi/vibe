@@ -8,44 +8,94 @@
  *     resolving 3.2.0 while the older bytes remain installable by exact version;
  *   - the current version, and any newer one, still claims `latest`, so an
  *     ordinary release publishes exactly as before;
- *   - a package with no `latest` yet (npm view prints nothing) claims `latest`;
+ *   - a package with no `latest` yet (npm view reports E404) claims `latest`;
  *   - anything unorderable on either side fails closed onto the non-default tag
- *     rather than defaulting to `latest`.
+ *     rather than defaulting to `latest`;
+ *   - a `npm view` lookup that failed for any reason OTHER than an absent
+ *     package aborts instead of being read as "no latest yet", which would hand
+ *     `latest` to an older version on a transient registry outage.
  */
 
 import { describe, it, expect } from "vitest";
 import {
   NON_DEFAULT_DIST_TAG,
+  interpretNpmView,
   parseCliArgs,
   resolveDistTag,
 } from "../../../scripts/resolve-npm-dist-tag";
 
 describe("parseCliArgs", () => {
-  it("accepts a version and the registry's latest", () => {
-    expect(parseCliArgs(["--version", "3.2.0", "--registry-latest", "3.1.0"])).toEqual({
-      version: "3.2.0",
-      registryLatest: "3.1.0",
-    });
+  it("accepts a version and the npm view result", () => {
+    expect(
+      parseCliArgs([
+        "--version",
+        "3.2.0",
+        "--npm-view-json",
+        '"3.1.0"',
+        "--npm-view-exit-code",
+        "0",
+      ]),
+    ).toEqual({ version: "3.2.0", npmViewJson: '"3.1.0"', npmViewExitCode: 0 });
   });
 
-  it("accepts an empty --registry-latest, the unpublished-package case", () => {
-    // Distinct from the flag being absent: `npm view` prints nothing for a
-    // package with no dist-tags, and the workflow passes that through verbatim.
-    expect(parseCliArgs(["--version", "3.2.0", "--registry-latest", ""])).toEqual({
-      version: "3.2.0",
-      registryLatest: "",
-    });
+  it("accepts empty --npm-view-json, which npm produces on some failures", () => {
+    // Distinct from the flag being absent: the workflow passes npm's stdout
+    // through verbatim, and that stdout can legitimately be empty.
+    expect(
+      parseCliArgs(["--version", "3.2.0", "--npm-view-json", "", "--npm-view-exit-code", "1"]),
+    ).toEqual({ version: "3.2.0", npmViewJson: "", npmViewExitCode: 1 });
   });
 
-  it("requires both flags", () => {
-    expect(() => parseCliArgs(["--registry-latest", "3.1.0"])).toThrowError(
-      /--version is required/,
+  it("requires every flag", () => {
+    expect(() =>
+      parseCliArgs(["--npm-view-json", '"3.1.0"', "--npm-view-exit-code", "0"]),
+    ).toThrowError(/--version is required/);
+    expect(() =>
+      parseCliArgs(["--version", "3.2.0", "--npm-view-exit-code", "0"]),
+    ).toThrowError(/--npm-view-json is required/);
+    expect(() => parseCliArgs(["--version", "3.2.0", "--npm-view-json", ""])).toThrowError(
+      /--npm-view-exit-code is required/,
     );
-    expect(() => parseCliArgs(["--version", "3.2.0"])).toThrowError(/--registry-latest is required/);
+  });
+
+  it("rejects a non-numeric exit code rather than coercing it", () => {
+    // NaN would compare false against 0 and silently take the failure path.
+    expect(() =>
+      parseCliArgs(["--version", "3.2.0", "--npm-view-json", "", "--npm-view-exit-code", "oops"]),
+    ).toThrowError(/non-negative integer/);
   });
 
   it("rejects an unknown argument", () => {
     expect(() => parseCliArgs(["--tag", "beta"])).toThrowError(/Unknown argument/);
+  });
+});
+
+describe("interpretNpmView", () => {
+  it("reads the dist-tag from a successful lookup", () => {
+    expect(interpretNpmView('"3.1.0"\n', 0)).toBe("3.1.0");
+  });
+
+  it("treats a confirmed E404 as a package with no latest yet", () => {
+    const e404 = JSON.stringify({ error: { code: "E404", summary: "Not Found" } });
+    expect(interpretNpmView(e404, 1)).toBeUndefined();
+  });
+
+  it("refuses to read a registry failure as an absent package (#616 fail-open)", () => {
+    // The regression this guards: ECONNREFUSED and E404 both exit 1, and the
+    // earlier `|| true` form collapsed them into the same empty string — so an
+    // outage would have let an old version claim `latest`.
+    const refused = JSON.stringify({ error: { code: "ECONNREFUSED", summary: "FetchError" } });
+    expect(() => interpretNpmView(refused, 1)).toThrowError(/ECONNREFUSED/);
+  });
+
+  it("refuses a failure that carried no JSON body at all", () => {
+    expect(() => interpretNpmView("", 1)).toThrowError(/cannot tell an unpublished package/);
+    expect(() => interpretNpmView("npm error boom", 1)).toThrowError(/not valid JSON/);
+  });
+
+  it("refuses a success that reported no usable dist-tag", () => {
+    expect(() => interpretNpmView("", 0)).toThrowError(/printed nothing/);
+    expect(() => interpretNpmView("{}", 0)).toThrowError(/did not report a dist-tag string/);
   });
 });
 
@@ -65,7 +115,9 @@ describe("resolveDistTag", () => {
   });
 
   it("claims latest when the package has no dist-tag yet", () => {
-    expect(resolveDistTag("1.0.0", "")).toBe("latest");
+    // `undefined` is what interpretNpmView returns for a confirmed E404 — the
+    // only route to this branch now that a failed lookup throws instead.
+    expect(resolveDistTag("1.0.0", undefined)).toBe("latest");
     expect(resolveDistTag("1.0.0", "  \n")).toBe("latest");
   });
 

@@ -19,6 +19,20 @@ on:
     workflows: ["Release"]
     types: [completed]
 
+# Serialize publishes (#616). The dist-tag gate reads the registry's `latest`
+# in one step and acts on it in the next, so two overlapping runs can both read
+# the same pre-publish `latest` and both decide they may claim it. If the older
+# run then finishes second, it wins — the exact rollback the gate exists to
+# prevent, arrived at through a race rather than a bare `npm publish`. Whether
+# that overlap is reachable depends on how a re-fired `workflow_run` is
+# scheduled, which is not a property this repo controls; one group makes it
+# unreachable by construction. cancel-in-progress: false because a publish that
+# has already pushed some platform packages must finish, not be killed halfway —
+# same reasoning as release.yml and beta-release.yml.
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
+
 permissions:
   contents: read
   id-token: write # Required for npm provenance
@@ -351,6 +365,13 @@ jobs:
       # registry. `npm view <pkg> dist-tags.latest` prints nothing (exit 1) for a
       # package that has none yet, which the resolver reads as "this publish
       # creates latest"; `|| true` keeps that case out of `set -e`.
+      #
+      # --json plus the exit code, not `|| true` over plain stdout: an absent
+      # package and an unreachable registry BOTH exit 1 with empty stdout, so
+      # the plain form would read a transient registry failure as "no latest
+      # yet" and hand this publish `latest` — fail-open, in the one place this
+      # gate exists to be fail-closed. The resolver only accepts a confirmed
+      # E404 as "no latest".
       - name: Resolve dist-tag
         id: dist_tag
         if: steps.guard.outputs.skip != 'true'
@@ -359,11 +380,12 @@ jobs:
           VERSION: ${{ needs.resolve-release.outputs.version }}
         run: |
           set -euo pipefail
-          REGISTRY_LATEST=$(npm view "$PKG" dist-tags.latest 2>/dev/null || true)
+          VIEW_CODE=0
+          VIEW_JSON=$(npm view "$PKG" dist-tags.latest --json 2>/dev/null) || VIEW_CODE=$?
           TAG=$(bun run scripts/resolve-npm-dist-tag.ts \
-            --version "$VERSION" --registry-latest "$REGISTRY_LATEST")
+            --version "$VERSION" --npm-view-json "$VIEW_JSON" --npm-view-exit-code "$VIEW_CODE")
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Publishing $PKG@$VERSION under dist-tag $TAG (registry latest: ${REGISTRY_LATEST:-<none>})"
+          echo "Publishing $PKG@$VERSION under dist-tag $TAG"
 
       - name: Publish @kexi/${{ matrix.package }}
         if: steps.guard.outputs.skip != 'true'
@@ -459,6 +481,8 @@ jobs:
 
       # Dist-tag gate (#616), same reasoning as the platform packages — and the
       # one that actually decides what `npm install @kexi/vibe` resolves to.
+      # See there for why this reads --json and the exit code rather than
+      # collapsing every `npm view` failure into "no latest yet".
       - name: Resolve dist-tag
         id: dist_tag
         if: steps.guard.outputs.skip != 'true'
@@ -466,11 +490,12 @@ jobs:
           VERSION: ${{ needs.resolve-release.outputs.version }}
         run: |
           set -euo pipefail
-          REGISTRY_LATEST=$(npm view "@kexi/vibe" dist-tags.latest 2>/dev/null || true)
+          VIEW_CODE=0
+          VIEW_JSON=$(npm view "@kexi/vibe" dist-tags.latest --json 2>/dev/null) || VIEW_CODE=$?
           TAG=$(bun run scripts/resolve-npm-dist-tag.ts \
-            --version "$VERSION" --registry-latest "$REGISTRY_LATEST")
+            --version "$VERSION" --npm-view-json "$VIEW_JSON" --npm-view-exit-code "$VIEW_CODE")
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Publishing @kexi/vibe@$VERSION under dist-tag $TAG (registry latest: ${REGISTRY_LATEST:-<none>})"
+          echo "Publishing @kexi/vibe@$VERSION under dist-tag $TAG"
 
       - name: Publish @kexi/vibe
         if: steps.guard.outputs.skip != 'true'
