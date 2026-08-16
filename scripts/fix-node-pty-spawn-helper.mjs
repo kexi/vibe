@@ -29,7 +29,9 @@
  *
  * Why this fails loudly (on macOS): a silent miss is exactly how #618 survived —
  * the install looked clean and only the E2E suite, much later, reported an
- * unrelated-looking spawn error.
+ * unrelated-looking spawn error. The failure is judged on the ONE helper
+ * node-pty will really exec (see activeSpawnHelper), because a helper belonging
+ * to another arch or build config is never run and would otherwise mask a miss.
  *
  * Why plain node and not bun, and why `.mjs` and not `.ts`: this runs from
  * `packages/e2e`'s postinstall, i.e. during `pnpm install`, before any dev shell
@@ -64,6 +66,8 @@ const PREBUILDS_DIR = "prebuilds";
  */
 const BUILD_OUTPUT_DIRS = [join("build", "Release"), join("build", "Debug")];
 const HELPER_NAME = "spawn-helper";
+/** The addon node-pty loads; its directory is the one whose helper is used. */
+const ADDON_NAME = "pty.node";
 
 /** rwxr-xr-x — the mode node-pty's own build emits for spawn-helper. */
 export const EXECUTABLE_MODE = 0o755;
@@ -147,6 +151,34 @@ export function findSpawnHelpers(nodePtyDir) {
 }
 
 /**
+ * The `spawn-helper` node-pty will actually execute at runtime, or null if the
+ * addon itself cannot be located.
+ *
+ * node-pty does NOT search for the helper independently: `loadNativeModule()`
+ * picks the first directory (build/Release, then build/Debug, then
+ * `prebuilds/<platform>-<arch>`) that contains a loadable `pty.node`, and
+ * `unixTerminal.js` then derives `helperPath` as `<that same dir>/spawn-helper`.
+ * So a helper sitting in any OTHER directory — a different arch's prebuild, or
+ * a build config that is not the one being loaded — is never executed and
+ * cannot substitute for a missing one. Checking only that SOME helper exists
+ * would therefore still let the #618 symptom through.
+ *
+ * @param {string} nodePtyDir
+ * @param {string} platform
+ * @param {string} arch
+ * @returns {string | null}
+ */
+export function activeSpawnHelper(nodePtyDir, platform, arch) {
+  const searchOrder = [...BUILD_OUTPUT_DIRS, join(PREBUILDS_DIR, `${platform}-${arch}`)];
+  for (const dir of searchOrder) {
+    if (isFile(join(nodePtyDir, dir, ADDON_NAME))) {
+      return join(nodePtyDir, dir, HELPER_NAME);
+    }
+  }
+  return null;
+}
+
+/**
  * True when every execute bit (user/group/other) is already set.
  *
  * @param {number} mode
@@ -182,23 +214,31 @@ function main() {
     return;
   }
 
+  // Repair every helper present, not just the active one: chmodding a helper
+  // for another arch or build config is harmless and keeps the tree correct
+  // across a later arch switch or Release/Debug rebuild.
   const helpers = findSpawnHelpers(nodePtyDir);
-  if (helpers.length === 0) {
-    if (!helperIsRequired(process.platform)) {
-      console.log(
-        `fix-node-pty-spawn-helper: no ${HELPER_NAME} on ${process.platform} ` +
-          `(node-pty only builds one on macOS), nothing to do.`,
+
+  // But only the helper node-pty will actually exec decides pass/fail — see
+  // activeSpawnHelper(). A helper elsewhere in the tree is never run, so
+  // counting those would let the #618 symptom through.
+  if (helperIsRequired(process.platform)) {
+    const active = activeSpawnHelper(nodePtyDir, process.platform, process.arch);
+    if (active === null || !isFile(active)) {
+      console.error(
+        `fix-node-pty-spawn-helper: node-pty resolved to ${nodePtyDir} but the ` +
+          `${HELPER_NAME} it will load on ${process.platform}-${process.arch} ` +
+          `(${active ?? "no " + ADDON_NAME + " found at all"}) is missing. The E2E ` +
+          `suite will fail with "posix_spawnp failed" — check the node-pty layout.`,
       );
-      return;
+      process.exit(1);
     }
-    console.error(
-      `fix-node-pty-spawn-helper: node-pty resolved to ${nodePtyDir} but no ` +
-        `${PREBUILDS_DIR}/*/${HELPER_NAME} and none of ` +
-        `${BUILD_OUTPUT_DIRS.map((d) => `${d}/${HELPER_NAME}`).join(", ")} was ` +
-        `found. The E2E suite will fail with "posix_spawnp failed" — check the ` +
-        `node-pty layout.`,
+  } else if (helpers.length === 0) {
+    console.log(
+      `fix-node-pty-spawn-helper: no ${HELPER_NAME} on ${process.platform} ` +
+        `(node-pty only builds one on macOS), nothing to do.`,
     );
-    process.exit(1);
+    return;
   }
 
   for (const helper of helpers) {

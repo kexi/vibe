@@ -14,6 +14,9 @@
  *     `build/Release/spawn-helper` (or `build/Debug/spawn-helper`, which
  *     node-pty's own loader also accepts), is still found — so the loud failure
  *     fires only when NO layout has a helper, never on a healthy tree;
+ *   - the pass/fail verdict is taken on the ONE helper node-pty will really
+ *     exec — the one beside the `pty.node` its own search order selects — so a
+ *     leftover helper for another arch or build config cannot mask a miss;
  *   - "no helper at all" is only fatal on macOS: node-pty's binding.gyp builds
  *     the spawn-helper target under `['OS=="mac"']` only, and `pty.cc` reads
  *     helperPath solely under `#if defined(__APPLE__)`, so a Linux tree with no
@@ -41,6 +44,7 @@ import { join } from "node:path";
 import {
   resolveNodePtyDir,
   findSpawnHelpers,
+  activeSpawnHelper,
   isExecutable,
   helperIsRequired,
   EXECUTABLE_MODE,
@@ -48,7 +52,13 @@ import {
 
 let root: string;
 
-/** Create a minimal node-pty install at <root>/<prefix>/node_modules/node-pty. */
+/**
+ * Create a minimal node-pty install at <root>/<prefix>/node_modules/node-pty.
+ *
+ * Each prebuild directory gets BOTH `pty.node` and `spawn-helper`, as the real
+ * tarball ships them — node-pty picks the helper by locating `pty.node` first,
+ * so a fixture without the addon would not exercise that lookup.
+ */
 function installNodePty(prefix: string, platforms: string[]): string {
   const dir = join(root, prefix, "node_modules", "node-pty");
   mkdirSync(dir, { recursive: true });
@@ -56,16 +66,21 @@ function installNodePty(prefix: string, platforms: string[]): string {
   for (const platform of platforms) {
     const prebuild = join(dir, "prebuilds", platform);
     mkdirSync(prebuild, { recursive: true });
+    writeFileSync(join(prebuild, "pty.node"), "");
     writeFileSync(join(prebuild, "spawn-helper"), "#!/bin/sh\n");
     chmodSync(join(prebuild, "spawn-helper"), 0o644);
   }
   return dir;
 }
 
-/** Add the `build/<config>/spawn-helper` a local node-gyp build leaves behind. */
+/**
+ * Add the `build/<config>/{pty.node,spawn-helper}` a local node-gyp build
+ * leaves behind. Returns the helper path.
+ */
 function addBuiltHelper(dir: string, mode = 0o755, config = "Release"): string {
   const output = join(dir, "build", config);
   mkdirSync(output, { recursive: true });
+  writeFileSync(join(output, "pty.node"), "");
   const helper = join(output, "spawn-helper");
   writeFileSync(helper, "#!/bin/sh\n");
   chmodSync(helper, mode);
@@ -191,6 +206,50 @@ describe("findSpawnHelpers", () => {
     writeFileSync(join(dir, "build", "Release", "pty.node"), "");
 
     expect(findSpawnHelpers(dir)).toEqual([]);
+  });
+});
+
+describe("activeSpawnHelper", () => {
+  it("picks the helper next to the prebuild for the running platform-arch", () => {
+    const dir = installNodePty(".", ["darwin-arm64", "darwin-x64"]);
+
+    expect(activeSpawnHelper(dir, "darwin", "arm64")).toBe(
+      join(dir, "prebuilds", "darwin-arm64", "spawn-helper"),
+    );
+  });
+
+  it("ignores another arch's helper, which node-pty would never exec", () => {
+    // The gap this closes: darwin-x64 still has a helper, so a mere
+    // "is any helper present?" check passes, yet the arm64 host loads
+    // prebuilds/darwin-arm64/pty.node and execs the helper NEXT TO IT —
+    // which is absent, so E2E still dies with "posix_spawnp failed".
+    const dir = installNodePty(".", ["darwin-x64"]);
+    mkdirSync(join(dir, "prebuilds", "darwin-arm64"), { recursive: true });
+    writeFileSync(join(dir, "prebuilds", "darwin-arm64", "pty.node"), "");
+
+    const active = activeSpawnHelper(dir, "darwin", "arm64");
+    expect(active).toBe(join(dir, "prebuilds", "darwin-arm64", "spawn-helper"));
+    expect(findSpawnHelpers(dir)).not.toContain(active);
+  });
+
+  it("prefers build/Release over prebuilds, matching node-pty's load order", () => {
+    const dir = installNodePty(".", ["darwin-arm64"]);
+    const built = addBuiltHelper(dir);
+
+    expect(activeSpawnHelper(dir, "darwin", "arm64")).toBe(built);
+  });
+
+  it("falls back to build/Debug when only a Debug build exists", () => {
+    const dir = installNodePty(".", []);
+    const debug = addBuiltHelper(dir, 0o755, "Debug");
+
+    expect(activeSpawnHelper(dir, "darwin", "arm64")).toBe(debug);
+  });
+
+  it("returns null when no pty.node exists for this platform-arch at all", () => {
+    const dir = installNodePty(".", ["darwin-x64"]);
+
+    expect(activeSpawnHelper(dir, "darwin", "arm64")).toBeNull();
   });
 });
 
