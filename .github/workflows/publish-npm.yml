@@ -29,9 +29,24 @@ on:
 # unreachable by construction. cancel-in-progress: false because a publish that
 # has already pushed some platform packages must finish, not be killed halfway —
 # same reasoning as release.yml and beta-release.yml.
+#
+# queue: max because the group's default is `queue: single` — at most ONE run
+# may sit pending, and a later arrival EVICTS it. This workflow triggers on
+# `workflow_run: completed`, which includes FAILED Release runs: those skip
+# every job (see resolve-release's conclusion == 'success' gate) but still enter
+# the group as runs, so a failed Release completing while a real publish is
+# running and another is pending would discard the pending one. That loses a
+# legitimate publish outright — a published GitHub Release with no npm version
+# behind it. `max` queues them (up to 100, FIFO) instead of dropping them.
+#
+# Note: `queue` is GitHub Actions syntax added 2026-05-07 and is only valid with
+# cancel-in-progress false/unset. actionlint <=1.7.12 predates it and reports
+# `unexpected key "queue"`; that is a lint lag, not invalid syntax, and
+# actionlint is not part of this repo's CI.
 concurrency:
   group: publish-npm
   cancel-in-progress: false
+  queue: max
 
 permissions:
   contents: read
