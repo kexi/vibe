@@ -47,6 +47,24 @@ files = [
 递归模式（`**/*`）在大型仓库中可能较慢。请尽量使用更具体的模式（例如用 `config/**/*.json` 代替 `**/*.json`）。
 :::
 
+#### 前置追加与后置追加
+
+`files_prepend` 和 `files_append`（以及 `dirs`、`copy.symlink` 和所有 `[hooks]` 数组对应的 `_prepend` / `_append`）不仅可以用在 `.vibe.local.toml` 中，也可以直接用在 `.vibe.toml` 里。在单个文件内，实际生效的数组为 `prepend + 字段 + append`：
+
+```toml
+[copy]
+files = [".env"]
+files_append = [".env.local"]
+
+# 实际生效: [".env", ".env.local"]
+```
+
+关于这些字段在两个文件之间如何相互作用，请参阅 [.vibe.local.toml](/zh/configuration/local-config/)。
+
+:::caution[升级]
+旧版本会在这里接受这些字段但将其忽略。如果你的 `.vibe.toml` 是在当时被信任的并且使用了这些字段，vibe 会先要求你检查文件并运行一次 `vibe trust`，之后才会生效——参见[一次性重新信任](/zh/configuration/local-config/)。
+:::
+
 ### 目录 <Badge text="v0.4.0+" />
 
 递归复制整个目录：

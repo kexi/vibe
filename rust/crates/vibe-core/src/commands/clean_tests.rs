@@ -663,6 +663,8 @@ fn trusted_clean_config(
         relative_path: ".vibe.toml".into(),
         hashes: vec![hash_content(content.as_bytes())],
         skip_hash_check: None,
+        config_semantics_rev: None,
+        config_semantics_revs: None,
     });
     save_user_settings(&io, &settings, V).unwrap();
 
@@ -861,6 +863,8 @@ fn pre_clean_runs_in_worktree_post_clean_in_main() {
         relative_path: ".vibe.toml".into(),
         hashes: vec![hash_content(content.as_bytes())],
         skip_hash_check: None,
+        config_semantics_rev: None,
+        config_semantics_revs: None,
     });
     save_user_settings(&io, &settings, V).unwrap();
 
