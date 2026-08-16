@@ -1,11 +1,16 @@
 #!/usr/bin/env bun
 
 /**
- * Restore the execute bit on node-pty's prebuilt `spawn-helper` binaries.
+ * Restore the execute bit on node-pty's `spawn-helper` binaries.
  *
  * node-pty's npm tarball ships `prebuilds/<platform>/spawn-helper` without the
  * execute bit; on POSIX the addon `posix_spawnp`s that path for every PTY it
  * opens, so without +x the whole E2E harness dies with "posix_spawnp failed".
+ *
+ * Why both layouts are searched: a from-source build (CI's e2e job sets
+ * `npm_config_build_from_source=true`) makes node-pty delete `prebuilds/` and
+ * emit `build/Release/spawn-helper` instead. Looking only under `prebuilds/`
+ * would report that healthy tree as the #618 failure.
  *
  * Why resolution rather than a fixed relative path: the repo sets
  * `node-linker=hoisted` with `public-hoist-pattern[]=*node-pty*`, so node-pty
@@ -33,6 +38,13 @@ import { dirname, join, resolve } from "node:path";
 
 /** Directory under a node-pty install that holds the per-platform prebuilds. */
 const PREBUILDS_DIR = "prebuilds";
+/**
+ * Where node-gyp drops the helper when node-pty is compiled locally. node-pty's
+ * `scripts/prebuild.js` DELETES `prebuilds/` outright when
+ * `npm_config_build_from_source=true` (which is exactly what CI's e2e job does),
+ * so on such a tree this is the only spawn-helper that exists.
+ */
+const BUILD_OUTPUT_DIR = join("build", "Release");
 const HELPER_NAME = "spawn-helper";
 
 /** rwxr-xr-x — the mode node-pty's own build emits for spawn-helper. */
@@ -55,31 +67,49 @@ export function resolveNodePtyDir(from: string): string | null {
   }
 }
 
+/** True when `candidate` exists and is a regular file. */
+function isFile(candidate: string): boolean {
+  try {
+    return statSync(candidate).isFile();
+  } catch {
+    return false;
+  }
+}
+
 /**
- * List the `prebuilds/<platform>/spawn-helper` files present under a node-pty
- * install. Missing `prebuilds/` yields an empty list rather than throwing, so
- * the caller decides whether emptiness is fatal.
+ * List every `spawn-helper` present under a node-pty install: the shipped
+ * `prebuilds/<platform>/spawn-helper` binaries plus the locally compiled
+ * `build/Release/spawn-helper`.
+ *
+ * Both locations are searched because they are mutually exclusive in practice —
+ * a from-source build removes `prebuilds/` (see BUILD_OUTPUT_DIR) — so keying
+ * off only one makes a healthy tree look broken. An empty list is returned
+ * rather than throwing when neither exists, so the caller decides whether
+ * emptiness is fatal.
  */
 export function findSpawnHelpers(nodePtyDir: string): string[] {
+  const helpers: string[] = [];
+
   const prebuilds = join(nodePtyDir, PREBUILDS_DIR);
-  let entries: string[];
+  let entries: string[] = [];
   try {
     entries = readdirSync(prebuilds);
   } catch {
-    return [];
+    // No prebuilds/ at all: a from-source build, handled by the probe below.
   }
-
-  const helpers: string[] = [];
   for (const entry of entries.sort()) {
     const candidate = join(prebuilds, entry, HELPER_NAME);
-    try {
-      if (statSync(candidate).isFile()) {
-        helpers.push(candidate);
-      }
-    } catch {
-      // A prebuilds/ subdirectory without a spawn-helper (e.g. win32) is normal.
+    // A prebuilds/ subdirectory without a spawn-helper (e.g. win32) is normal.
+    if (isFile(candidate)) {
+      helpers.push(candidate);
     }
   }
+
+  const built = join(nodePtyDir, BUILD_OUTPUT_DIR, HELPER_NAME);
+  if (isFile(built)) {
+    helpers.push(built);
+  }
+
   return helpers;
 }
 
@@ -107,9 +137,10 @@ function main(): void {
   const helpers = findSpawnHelpers(nodePtyDir);
   if (helpers.length === 0) {
     console.error(
-      `fix-node-pty-spawn-helper: node-pty resolved to ${nodePtyDir} but no ` +
-        `${PREBUILDS_DIR}/*/${HELPER_NAME} was found. The E2E suite will fail with ` +
-        `"posix_spawnp failed" — check the node-pty layout.`,
+      `fix-node-pty-spawn-helper: node-pty resolved to ${nodePtyDir} but neither ` +
+        `${PREBUILDS_DIR}/*/${HELPER_NAME} nor ${BUILD_OUTPUT_DIR}/${HELPER_NAME} was ` +
+        `found. The E2E suite will fail with "posix_spawnp failed" — check the ` +
+        `node-pty layout.`,
     );
     process.exit(1);
   }

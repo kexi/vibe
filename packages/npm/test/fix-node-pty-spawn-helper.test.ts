@@ -9,8 +9,10 @@
  *     so `--ignore-scripts`/filtered installs stay quiet;
  *   - every `prebuilds/<platform>/spawn-helper` is collected, in stable order,
  *     while prebuild directories that legitimately have no helper (win32) and a
- *     missing `prebuilds/` are tolerated — the latter is reported as an empty
- *     list so the caller can fail loudly instead of exiting 0 on a miss;
+ *     missing `prebuilds/` are tolerated;
+ *   - a from-source build, where node-pty deletes `prebuilds/` and emits
+ *     `build/Release/spawn-helper`, is still found — so the loud failure fires
+ *     only when NEITHER layout has a helper, never on a healthy tree;
  *   - the executable-bit predicate only accepts a mode with all three execute
  *     bits set, which is what makes the chmod idempotent.
  *
@@ -54,6 +56,16 @@ function installNodePty(prefix: string, platforms: string[]): string {
   return dir;
 }
 
+/** Add the `build/Release/spawn-helper` a local node-gyp build leaves behind. */
+function addBuiltHelper(dir: string, mode = 0o755): string {
+  const release = join(dir, "build", "Release");
+  mkdirSync(release, { recursive: true });
+  const helper = join(release, "spawn-helper");
+  writeFileSync(helper, "#!/bin/sh\n");
+  chmodSync(helper, mode);
+  return helper;
+}
+
 beforeEach(() => {
   // realpath: on macOS tmpdir() is /var/... which is a symlink to /private/var,
   // and node's resolver returns the canonical path — so the fixture must too.
@@ -87,6 +99,9 @@ describe("resolveNodePtyDir", () => {
     expect(resolveNodePtyDir(pkg)).toBeNull();
   });
 
+  // NOTE: the only chdir in this package's tests. It mutates global process
+  // state, so this file must stay sequential — do not add describe.concurrent
+  // or test.concurrent here without first removing the chdir.
   it("accepts a relative directory", () => {
     const hoisted = installNodePty(".", ["linux-x64"]);
     const previous = process.cwd();
@@ -119,7 +134,34 @@ describe("findSpawnHelpers", () => {
     ]);
   });
 
-  it("reports an empty list when prebuilds/ is absent instead of throwing", () => {
+  it("finds the from-source helper when prebuilds/ was deleted by the build", () => {
+    // npm_config_build_from_source=true makes node-pty rm -rf prebuilds/ and
+    // compile to build/Release instead; that tree is healthy, not a miss.
+    const dir = installNodePty(".", []);
+    const built = addBuiltHelper(dir);
+
+    expect(findSpawnHelpers(dir)).toEqual([built]);
+  });
+
+  it("collects the from-source helper alongside the prebuilt ones", () => {
+    const dir = installNodePty(".", ["darwin-arm64"]);
+    const built = addBuiltHelper(dir);
+
+    expect(findSpawnHelpers(dir)).toEqual([
+      join(dir, "prebuilds", "darwin-arm64", "spawn-helper"),
+      built,
+    ]);
+  });
+
+  it("returns a non-executable from-source helper so it gets chmodded", () => {
+    const dir = installNodePty(".", []);
+    const built = addBuiltHelper(dir, 0o644);
+
+    expect(findSpawnHelpers(dir)).toEqual([built]);
+    expect(isExecutable(statSync(built).mode)).toBe(false);
+  });
+
+  it("reports an empty list when neither layout has a helper", () => {
     const dir = installNodePty(".", []);
 
     expect(findSpawnHelpers(dir)).toEqual([]);
