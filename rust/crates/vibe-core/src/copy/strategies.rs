@@ -100,17 +100,27 @@ fn standard_copy_directory(src: &str, dest: &str) -> CopyResult<()> {
 ///
 /// Why not a bare `remove_dir_all`: it does not follow a symlink in the FINAL
 /// component, but path resolution still traverses INTERMEDIATE ones. With
-/// concurrent workers on nested `copy.dirs`, a sibling copy can materialise
-/// `dest`'s parent as a symlink in the window after the pre-existence check;
-/// `remove_dir_all` would then walk through it and delete a real directory that
-/// was never ours (e.g. `a/link/subdir` reaching `target/subdir`). Checking
-/// `dest` alone cannot catch that — through such a link the final component IS a
-/// genuine directory — so the parent is checked too.
+/// concurrent workers on nested `copy.dirs`, a sibling copy can materialise one
+/// of `dest`'s ancestors as a symlink in the window after the pre-existence
+/// check; `remove_dir_all` would then walk through it and delete a real
+/// directory that was never ours (e.g. `a/link/subdir`, or `a/link/mid/subdir`
+/// for a link further up, reaching into `target/`). Checking `dest` alone cannot
+/// catch that — through such a link the final component IS a genuine directory.
 ///
-/// Why only the parent and not every ancestor up to the root: on macOS `/var`
-/// and `/tmp` are themselves symlinks, so a walk to the filesystem root would
-/// refuse every cleanup (including in this crate's own tests). The parent is the
-/// component a racing worker in this run could actually have just created.
+/// So the parent is checked as well as `dest` itself.
+///
+/// KNOWN LIMIT: only the immediate parent. A link further up
+/// (`a/link/mid/subdir`, where `a/link` is the link and `mid` an ordinary
+/// directory) is not caught. Closing that needs a boundary to stop the ancestor
+/// walk at — the worktree root — which `copy_directory` is not given; every
+/// self-contained stopping rule fails on macOS, where `/var` and `/tmp` are
+/// themselves symlinks and no ancestor of a temp path is its own canonical form,
+/// so a root-ward walk refuses every cleanup instead. Plumbing that boundary
+/// through the executor is left as follow-up work.
+///
+/// The residual exposure is small: it needs nested `copy.dirs` more than one
+/// level apart, a soft strategy failure, and the link to appear inside the
+/// window after the pre-existence check.
 ///
 /// This narrows rather than eliminates the race (a true fix needs `openat`-style
 /// no-follow descriptors). That is deliberate: when the assumption is already
@@ -290,7 +300,9 @@ fn select_directory_strategy<N: NativeClone, P: CapabilityProbe>(
     }
 
     // macOS: native clonefile first, but only if it supports directory cloning.
-    if platform == "darwin" && native.is_available() && native.supports_directory() {
+    // Through `is_darwin` like every other macOS test in the subsystem, so a
+    // change to the platform vocabulary cannot leave selection and argv disagreeing.
+    if is_darwin(platform) && native.is_available() && native.supports_directory() {
         return CopyStrategyKind::Clonefile;
     }
 
@@ -783,6 +795,43 @@ mod tests {
         assert!(
             target_subdir.join("new-only.txt").exists(),
             "cleanup must not follow an intermediate symlink into an unrelated tree"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn debris_cleanup_still_follows_a_symlink_deeper_in_the_prefix() {
+        // Pins the KNOWN LIMIT documented on `discard_own_debris`, so it is a
+        // recorded gap rather than an assumed guarantee, and so whoever plumbs
+        // the worktree boundary through sees this test flip.
+        //
+        // With dest = a/link/mid/subdir the immediate parent `a/link/mid` is an
+        // ordinary directory, so the parent check passes and `remove_dir_all`
+        // follows `a/link` into the unrelated tree. Only a link that IS the
+        // parent (see the test above) is currently caught.
+        let fx = Fixture::new();
+        let real = fx.mkdir("target/mid/subdir");
+        fx.write("target/mid/subdir/new-only.txt", "branch data");
+        fx.mkdir("a");
+        std::os::unix::fs::symlink(fx.join("target"), fx.join("a").join("link")).unwrap();
+
+        let dest = fx.join("a").join("link").join("mid").join("subdir");
+        assert!(dest.join("new-only.txt").exists());
+        assert!(
+            !std::fs::symlink_metadata(dest.parent().unwrap())
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "precondition: the immediate parent is an ordinary directory"
+        );
+
+        discard_own_debris(dest.to_str().unwrap());
+
+        assert!(
+            !real.join("new-only.txt").exists(),
+            "known limit: a link above the parent is still followed — if this \
+             now passes, the boundary was plumbed through and the guard, its \
+             doc comment, and this test should all be updated"
         );
     }
 
