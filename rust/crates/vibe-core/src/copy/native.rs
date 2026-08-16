@@ -78,6 +78,26 @@ impl NativeClone for RealNativeClone {
     }
 }
 
+/// Whether `platform` (a [`NativeClone::get_platform`] value) is macOS.
+///
+/// The single decision point for "is this macOS?" in the copy subsystem: both
+/// the `cp -c` vs `cp --reflink=auto` argv choice in `strategies.rs` and the
+/// probe that tests that same argv in `detector.rs` route through it. Why not
+/// `cfg!(target_os = "macos")` at each site: the probe and the strategy must
+/// agree by construction — a probe that tests `cp -c` while the strategy runs
+/// `cp --reflink=auto` would report a capability the strategy cannot use — and
+/// `cfg!` cannot be driven by `FakeNative`, so the divergence would be
+/// untestable.
+pub fn is_darwin(platform: &str) -> bool {
+    platform == "darwin"
+}
+
+/// The host platform as `vibe-native` reports it, for callers with no
+/// [`NativeClone`] instance to ask (e.g. [`super::detector::RealProbe`]).
+pub fn host_platform() -> &'static str {
+    vibe_native::get_platform()
+}
+
 /// Map a `vibe-native` clone error into a [`CopyError`], crucially preserving the
 /// `UnsupportedFileType` distinction so the executor does NOT fall back (finding
 /// #5). `Unsupported` (e.g. Linux directory clone) maps to a plain `Failed` so
@@ -90,6 +110,48 @@ fn map_clone_error(e: vibe_native::CloneError) -> CopyError {
             ))
         }
         other => CopyError::Failed(other.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod platform_tests {
+    use super::*;
+
+    #[test]
+    fn is_darwin_recognises_only_the_darwin_platform_name() {
+        // Pins the predicate's vocabulary: only the exact string `darwin` counts,
+        // so near-misses cannot be treated as macOS. This is a statement about
+        // `is_darwin` alone — the binding to the real host is asserted by
+        // `is_darwin_agrees_with_the_host_target_os` below.
+        assert!(is_darwin("darwin"));
+        for other in ["linux", "windows", "unsupported", "macos", "Darwin"] {
+            assert!(!is_darwin(other), "{other} must not be treated as macOS");
+        }
+    }
+
+    #[test]
+    fn host_platform_matches_the_native_seam() {
+        // The probe (which has no NativeClone to ask) and RealNativeClone must
+        // report the same platform, or the probe could test a `cp` argv the
+        // strategy never runs.
+        assert_eq!(host_platform(), RealNativeClone.get_platform());
+    }
+
+    #[test]
+    fn is_darwin_agrees_with_the_host_target_os() {
+        // The test that actually catches a rename in vibe-native. Comparing the
+        // two wrappers against each other cannot: both call
+        // `vibe_native::get_platform()`, so renaming "darwin" to "macos" keeps
+        // them equal while `is_darwin(host_platform())` silently goes false and
+        // the Clone strategy flips to `cp --reflink=auto` on macOS. Anchoring to
+        // `cfg!(target_os)` — a fact the rename cannot move — makes that break
+        // the build's tests instead.
+        assert_eq!(
+            is_darwin(host_platform()),
+            cfg!(target_os = "macos"),
+            "is_darwin(host_platform()) must track the real host OS; \
+             a vibe-native platform-name change has to be mirrored in is_darwin"
+        );
     }
 }
 
@@ -111,6 +173,8 @@ mod fake {
         platform: &'static str,
         /// When set, every `clone_file`/`clone_directory` returns this error.
         forced_error: Option<CopyError>,
+        /// When set, `clone_directory` writes `dest/<name>` before failing.
+        debris: Option<String>,
         pub clone_file_calls: RefCell<Vec<(String, String)>>,
         pub clone_dir_calls: RefCell<Vec<(String, String)>>,
         pub trash_calls: RefCell<Vec<String>>,
@@ -125,6 +189,7 @@ mod fake {
                 trash_available: true,
                 platform: "darwin",
                 forced_error: None,
+                debris: None,
                 clone_file_calls: RefCell::new(vec![]),
                 clone_dir_calls: RefCell::new(vec![]),
                 trash_calls: RefCell::new(vec![]),
@@ -139,6 +204,7 @@ mod fake {
                 trash_available: true,
                 platform: "linux",
                 forced_error: None,
+                debris: None,
                 clone_file_calls: RefCell::new(vec![]),
                 clone_dir_calls: RefCell::new(vec![]),
                 trash_calls: RefCell::new(vec![]),
@@ -155,6 +221,7 @@ mod fake {
                 trash_available: true,
                 platform: "windows",
                 forced_error: None,
+                debris: None,
                 clone_file_calls: RefCell::new(vec![]),
                 clone_dir_calls: RefCell::new(vec![]),
                 trash_calls: RefCell::new(vec![]),
@@ -169,6 +236,7 @@ mod fake {
                 trash_available: false,
                 platform: "unsupported",
                 forced_error: None,
+                debris: None,
                 clone_file_calls: RefCell::new(vec![]),
                 clone_dir_calls: RefCell::new(vec![]),
                 trash_calls: RefCell::new(vec![]),
@@ -187,6 +255,14 @@ mod fake {
         /// Force the clone to fail with a soft (fallback-eligible) error.
         pub fn failing_soft(mut self) -> Self {
             self.forced_error = Some(CopyError::Failed("simulated ENOTSUP".to_string()));
+            self
+        }
+
+        /// Soft-fail, but only after writing `dest/<name>` — the partially
+        /// copied debris a real aborted `cp -r`/`rsync` leaves behind.
+        pub fn failing_soft_leaving_debris(mut self, name: &str) -> Self {
+            self.forced_error = Some(CopyError::Failed("simulated ENOTSUP".to_string()));
+            self.debris = Some(name.to_string());
             self
         }
     }
@@ -208,6 +284,10 @@ mod fake {
                 src.to_string_lossy().into_owned(),
                 dest.to_string_lossy().into_owned(),
             ));
+            if let Some(name) = &self.debris {
+                let _ = std::fs::create_dir_all(dest);
+                let _ = std::fs::write(dest.join(name), b"truncated");
+            }
             if let Some(e) = &self.forced_error {
                 return Err(e.clone());
             }

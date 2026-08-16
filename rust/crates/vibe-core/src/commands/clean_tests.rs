@@ -465,6 +465,48 @@ fn fast_remove_disabled_uses_traditional_remove() {
     assert!(git.calls_contain(&["-C", "/main", "worktree", "remove", "--", &wt_path]));
 }
 
+// --- fast-remove falls back (and says why) when `.git` cannot be read ---
+
+#[test]
+fn unreadable_git_file_falls_back_to_traditional_remove_with_verbose_reason() {
+    // Fast remove must read the worktree's `.git` link file so it can recreate
+    // it after the move; when that read fails it silently degrades to the
+    // traditional path. This guarantees the degradation still removes the
+    // worktree AND that --verbose names the unreadable path, so a slow clean is
+    // diagnosable. `.git` as a directory is the portable unreadable case.
+    let fx = Fixture::new();
+    let wt = fx.mkdir("wt-feat");
+    fx.mkdir("wt-feat/.git");
+    let wt_path = wt.to_string_lossy().into_owned();
+
+    let io = FakeIo::new().with_env("HOME", fx.path().to_str().unwrap());
+    let git = MockGit::new(&wt_path, "/main", &two_worktrees("/main", &wt_path, "feat"));
+    let (r, p, sin, fk) = (
+        NoResolver,
+        ScriptPrompt { confirm: true },
+        FakeStdin::none(),
+        Fakes::new(),
+    );
+    let proc = FakeProcess::new(&wt_path);
+    let d = deps(&io, &git, &r, &p, &proc, &sin, &fk, &wt_path);
+    clean_command(&d, &CleanFlags::default(), OutputOptions::new(true, false)).unwrap();
+
+    // Fast remove was entered but abandoned: nothing was trashed.
+    assert!(fk.native.trash_calls.borrow().is_empty());
+    // The worktree is still removed, via the traditional path.
+    assert!(git.calls_contain(&["-C", "/main", "worktree", "remove", "--", &wt_path]));
+    // And the reason is reported under --verbose, naming the offending path.
+    let stderr = io.stderr_text();
+    assert!(
+        stderr.contains("Fast remove unavailable: cannot read"),
+        "verbose output must explain the fallback, got: {stderr}"
+    );
+    assert!(
+        stderr.contains(&wt.join(".git").display().to_string()),
+        "verbose output must name the unreadable .git path, got: {stderr}"
+    );
+}
+
 // --- delete-branch precedence ---
 
 #[test]

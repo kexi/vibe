@@ -5,6 +5,8 @@
 //! strategy per process). A [`CapabilityProbe`] makes those probes injectable so
 //! strategy-selection tests run without invoking real `cp`/`rsync`.
 
+use super::native::{host_platform, is_darwin};
+
 /// Probes for filesystem/tooling capabilities used to pick a directory strategy.
 pub trait CapabilityProbe {
     /// Whether the FS supports CoW via `cp` (`cp -c` on macOS, `cp --reflink=auto`
@@ -32,7 +34,9 @@ impl CapabilityProbe for RealProbe {
             return false;
         }
 
-        let args: &[&str] = if cfg!(target_os = "macos") {
+        // Same macOS predicate the Clone strategy uses to build its argv, so the
+        // probe can never test a `cp` invocation the strategy would not run.
+        let args: &[&str] = if is_darwin(host_platform()) {
             &["-c"]
         } else {
             &["--reflink=auto"]

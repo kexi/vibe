@@ -21,7 +21,7 @@
 //! depth, a separate layer).
 
 use super::detector::CapabilityProbe;
-use super::native::NativeClone;
+use super::native::{is_darwin, NativeClone};
 use super::types::{validate_path, CopyError, CopyResult, CopyStrategyKind};
 use std::path::Path;
 use std::process::Command;
@@ -91,6 +91,60 @@ fn standard_copy_directory(src: &str, dest: &str) -> CopyResult<()> {
             "Standard directory copy failed: {src} -> {dest}: {e}"
         ))
     })
+}
+
+/// Best-effort removal of debris this process just wrote at `dest`.
+///
+/// Only ever called when `dest` did not exist when the copy started, so anything
+/// there now was produced by the strategy that just failed.
+///
+/// Why not a bare `remove_dir_all`: it does not follow a symlink in the FINAL
+/// component, but path resolution still traverses INTERMEDIATE ones. With
+/// concurrent workers on nested `copy.dirs`, a sibling copy can materialise one
+/// of `dest`'s ancestors as a symlink in the window after the pre-existence
+/// check; `remove_dir_all` would then walk through it and delete a real
+/// directory that was never ours (e.g. `a/link/subdir`, or `a/link/mid/subdir`
+/// for a link further up, reaching into `target/`). Checking `dest` alone cannot
+/// catch that — through such a link the final component IS a genuine directory.
+///
+/// So the parent is checked as well as `dest` itself.
+///
+/// KNOWN LIMIT: only the immediate parent. A link further up
+/// (`a/link/mid/subdir`, where `a/link` is the link and `mid` an ordinary
+/// directory) is not caught. Closing that needs a boundary to stop the ancestor
+/// walk at — the worktree root — which `copy_directory` is not given; every
+/// self-contained stopping rule fails on macOS, where `/var` and `/tmp` are
+/// themselves symlinks and no ancestor of a temp path is its own canonical form,
+/// so a root-ward walk refuses every cleanup instead. Plumbing that boundary
+/// through the executor is left as follow-up work.
+///
+/// The residual exposure is small: it needs nested `copy.dirs` more than one
+/// level apart, a soft strategy failure, and the link to appear inside the
+/// window after the pre-existence check.
+///
+/// This narrows rather than eliminates the race (a true fix needs `openat`-style
+/// no-follow descriptors). That is deliberate: when the assumption is already
+/// void the cleanup simply declines, leaving the fallback to merge exactly as it
+/// did before any cleanup existed — never worse than `develop`.
+fn discard_own_debris(dest: &str) {
+    let path = Path::new(dest);
+    match std::fs::symlink_metadata(path) {
+        // Nothing there (the common case): nothing to discard.
+        Err(_) => return,
+        // A link or a plain file at `dest` is not the debris tree we expected.
+        Ok(meta) if meta.file_type().is_symlink() || !meta.is_dir() => return,
+        Ok(_) => {}
+    }
+    if let Some(parent) = path.parent() {
+        match std::fs::symlink_metadata(parent) {
+            // The component `remove_dir_all` would silently follow elsewhere.
+            Ok(meta) if meta.file_type().is_symlink() => return,
+            // A parent we cannot stat cannot be vouched for either.
+            Err(_) => return,
+            Ok(_) => {}
+        }
+    }
+    let _ = std::fs::remove_dir_all(path);
 }
 
 /// Recursive directory copy. Symlinks are copied as-is (preserve link), matching
@@ -227,7 +281,7 @@ impl<'a, N: NativeClone> RealCopyExecutor<'a, N> {
     }
 
     fn is_macos(&self) -> bool {
-        self.native.get_platform() == "darwin"
+        is_darwin(self.native.get_platform())
     }
 }
 
@@ -246,7 +300,9 @@ fn select_directory_strategy<N: NativeClone, P: CapabilityProbe>(
     }
 
     // macOS: native clonefile first, but only if it supports directory cloning.
-    if platform == "darwin" && native.is_available() && native.supports_directory() {
+    // Through `is_darwin` like every other macOS test in the subsystem, so a
+    // change to the platform vocabulary cannot leave selection and argv disagreeing.
+    if is_darwin(platform) && native.is_available() && native.supports_directory() {
         return CopyStrategyKind::Clonefile;
     }
 
@@ -272,6 +328,13 @@ impl<N: NativeClone> CopyExecutor for RealCopyExecutor<'_, N> {
         validate_path(src)?;
         validate_path(dest)?;
 
+        // Whether `dest` predates this copy decides if the fallback may delete
+        // it: only debris WE produced is ours to remove. Why `symlink_metadata`
+        // and not `Path::exists()`: the latter follows links, so a pre-existing
+        // DANGLING symlink at `dest` reads as absent and the fallback would
+        // delete it as if it were our own debris.
+        let dest_preexisting = std::fs::symlink_metadata(dest).is_ok();
+
         let result = match self.selected {
             CopyStrategyKind::Clonefile => {
                 self.native.clone_directory(Path::new(src), Path::new(dest))
@@ -291,7 +354,27 @@ impl<N: NativeClone> CopyExecutor for RealCopyExecutor<'_, N> {
             Err(e) if self.selected == CopyStrategyKind::Standard => Err(e),
             // Other (soft) failures fall back to Standard, matching the TS
             // `CopyService.copyDirectory` catch.
-            Err(_) => standard_copy_directory(src, dest),
+            Err(root_cause) => {
+                // Discard whatever the failed strategy left behind first. Why
+                // not merge: `standard_copy_directory` copies over an existing
+                // tree, so half-written files from an aborted `cp -r` would
+                // survive as stale content, and the strategies disagree on
+                // shape anyway (`cp -r src dest` nests into `dest/src/` when
+                // dest exists, `rsync -a -- src/ dest` does not). Best-effort:
+                // if the removal fails, the merge is still better than no copy.
+                if !dest_preexisting {
+                    discard_own_debris(dest);
+                }
+                // Fold the root cause in: the fallback's own error would
+                // otherwise be the only thing the caller warns about, hiding
+                // why the faster strategy was abandoned.
+                standard_copy_directory(src, dest).map_err(|fallback_err| {
+                    CopyError::Failed(format!(
+                        "{fallback_err} (after {:?} strategy failed: {root_cause})",
+                        self.selected
+                    ))
+                })
+            }
         }
     }
 
@@ -601,6 +684,194 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(dest.join("inner.txt")).unwrap(),
             "hello"
+        );
+    }
+
+    #[test]
+    fn soft_failure_discards_partial_copy_debris_before_falling_back() {
+        // A failed cp -r / rsync / clonefile can leave a half-written tree at
+        // dest. standard_copy_directory copies OVER an existing tree, so
+        // without cleanup the debris would survive as stale content that never
+        // existed in src. This guarantees the fallback produces src's contents
+        // exactly, with no leftovers.
+        let fx = Fixture::new();
+        let src = fx.mkdir("src");
+        fx.write("src/real.txt", "genuine");
+        let dest = fx.path().join("dest");
+
+        // The clone writes stale.txt into dest, then soft-fails.
+        let native = FakeNative::macos().failing_soft_leaving_debris("stale.txt");
+        let exec = RealCopyExecutor::new(&native, &FakeProbe::none());
+        assert_eq!(exec.directory_strategy(), CopyStrategyKind::Clonefile);
+
+        exec.copy_directory(src.to_str().unwrap(), dest.to_str().unwrap())
+            .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(dest.join("real.txt")).unwrap(),
+            "genuine"
+        );
+        assert!(
+            !dest.join("stale.txt").exists(),
+            "debris from the failed strategy must not survive into the fallback copy"
+        );
+    }
+
+    #[test]
+    fn fallback_preserves_a_destination_that_predates_the_copy() {
+        // Only debris WE produced is ours to delete: a dest that already held
+        // content before copy_directory ran must not be wiped by the fallback.
+        let fx = Fixture::new();
+        let src = fx.mkdir("src");
+        fx.write("src/real.txt", "genuine");
+        fx.write("dest/preexisting.txt", "user data");
+        let dest = fx.join("dest");
+
+        let native = FakeNative::macos().failing_soft();
+        let exec = RealCopyExecutor::new(&native, &FakeProbe::none());
+        exec.copy_directory(src.to_str().unwrap(), dest.to_str().unwrap())
+            .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(dest.join("preexisting.txt")).unwrap(),
+            "user data",
+            "a pre-existing destination must survive the fallback"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dest.join("real.txt")).unwrap(),
+            "genuine"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fallback_preserves_a_preexisting_dangling_symlink_destination() {
+        // A dangling symlink at dest predates the copy, so it is NOT our debris
+        // to delete — even though it resolves to nothing. `Path::exists()`
+        // follows links and would call it absent, letting the cleanup unlink
+        // it; the pre-existence check must therefore not dereference.
+        let fx = Fixture::new();
+        let src = fx.mkdir("src");
+        fx.write("src/real.txt", "genuine");
+        let dest = fx.path().join("dest");
+        std::os::unix::fs::symlink(fx.path().join("no-such-target"), &dest).unwrap();
+
+        let native = FakeNative::macos().failing_soft();
+        let exec = RealCopyExecutor::new(&native, &FakeProbe::none());
+        let _ = exec.copy_directory(src.to_str().unwrap(), dest.to_str().unwrap());
+
+        assert!(
+            std::fs::symlink_metadata(&dest)
+                .map(|m| m.file_type().is_symlink())
+                .unwrap_or(false),
+            "a pre-existing dangling symlink must not be removed as debris"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn debris_cleanup_refuses_a_destination_reached_through_a_symlink() {
+        // `remove_dir_all` does not follow a link in the final component, but
+        // path resolution still traverses INTERMEDIATE ones: given
+        // dest = a/link/subdir with `a/link -> target`, a bare removal deletes
+        // the real `target/subdir`. A concurrent copy of a nested `copy.dirs`
+        // entry can create that link after the pre-existence check, so the
+        // cleanup must decline rather than delete a tree that was never ours.
+        // Note stat-ing dest alone cannot detect this — through the link the
+        // final component is a genuine directory — so the parent is what must
+        // be checked.
+        let fx = Fixture::new();
+        let target_subdir = fx.mkdir("target/subdir");
+        fx.write("target/subdir/new-only.txt", "branch data");
+        fx.mkdir("a");
+        std::os::unix::fs::symlink(fx.join("target"), fx.join("a").join("link")).unwrap();
+
+        let dest = fx.join("a").join("link").join("subdir");
+        // Sanity: dest really does resolve onto the unrelated real directory.
+        assert!(dest.join("new-only.txt").exists());
+
+        discard_own_debris(dest.to_str().unwrap());
+
+        assert!(
+            target_subdir.join("new-only.txt").exists(),
+            "cleanup must not follow an intermediate symlink into an unrelated tree"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn debris_cleanup_still_follows_a_symlink_deeper_in_the_prefix() {
+        // Pins the KNOWN LIMIT documented on `discard_own_debris`, so it is a
+        // recorded gap rather than an assumed guarantee, and so whoever plumbs
+        // the worktree boundary through sees this test flip.
+        //
+        // With dest = a/link/mid/subdir the immediate parent `a/link/mid` is an
+        // ordinary directory, so the parent check passes and `remove_dir_all`
+        // follows `a/link` into the unrelated tree. Only a link that IS the
+        // parent (see the test above) is currently caught.
+        let fx = Fixture::new();
+        let real = fx.mkdir("target/mid/subdir");
+        fx.write("target/mid/subdir/new-only.txt", "branch data");
+        fx.mkdir("a");
+        std::os::unix::fs::symlink(fx.join("target"), fx.join("a").join("link")).unwrap();
+
+        let dest = fx.join("a").join("link").join("mid").join("subdir");
+        assert!(dest.join("new-only.txt").exists());
+        assert!(
+            !std::fs::symlink_metadata(dest.parent().unwrap())
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "precondition: the immediate parent is an ordinary directory"
+        );
+
+        discard_own_debris(dest.to_str().unwrap());
+
+        assert!(
+            !real.join("new-only.txt").exists(),
+            "known limit: a link above the parent is still followed — if this \
+             now passes, the boundary was plumbed through and the guard, its \
+             doc comment, and this test should all be updated"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn debris_cleanup_removes_a_genuine_directory() {
+        // The other half of the guard: when `dest` really is a plain directory,
+        // the debris is still discarded (the guard must not disable cleanup).
+        let fx = Fixture::new();
+        let debris = fx.mkdir("debris");
+        fx.write("debris/stale.txt", "half-written");
+
+        discard_own_debris(debris.to_str().unwrap());
+
+        assert!(!debris.exists(), "real debris must still be removed");
+    }
+
+    #[test]
+    fn fallback_failure_reports_the_original_strategy_error_too() {
+        // When the fallback ALSO fails, the caller's warning is the only place
+        // the failure surfaces; it must name why the fast strategy was
+        // abandoned, not just the fallback's own (often generic) error.
+        let fx = Fixture::new();
+        let missing_src = fx.path().join("does-not-exist");
+        let dest = fx.path().join("dest");
+
+        let native = FakeNative::macos().failing_soft();
+        let exec = RealCopyExecutor::new(&native, &FakeProbe::none());
+        let err = exec
+            .copy_directory(missing_src.to_str().unwrap(), dest.to_str().unwrap())
+            .unwrap_err();
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Standard directory copy failed"),
+            "must report the fallback's failure: {msg}"
+        );
+        assert!(
+            msg.contains("simulated ENOTSUP"),
+            "must also report the root cause: {msg}"
         );
     }
 

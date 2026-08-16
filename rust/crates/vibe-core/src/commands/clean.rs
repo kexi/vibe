@@ -263,7 +263,25 @@ where
 
         // Read the `.git` file content before moving (needed to recreate it).
         let git_file_path = Path::new(worktree_path).join(".git");
-        let git_file_content = std::fs::read_to_string(&git_file_path).ok();
+        let git_file_content = match std::fs::read_to_string(&git_file_path) {
+            Ok(content) => Some(content),
+            Err(e) => {
+                // Not an error: a `.git` directory (not a worktree link file), a
+                // permission problem, or non-UTF-8 content all mean we cannot
+                // recreate the link after the move, so traditional removal is
+                // the correct path. Name the cause so the silently slower run
+                // is diagnosable.
+                verbose_log(
+                    deps.io,
+                    &format!(
+                        "Fast remove unavailable: cannot read {}: {e}; falling back to git worktree remove",
+                        git_file_path.display()
+                    ),
+                    opts,
+                );
+                None
+            }
+        };
 
         if let Some(content) = git_file_content {
             let result = fast_remove_directory(
