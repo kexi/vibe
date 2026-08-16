@@ -10,10 +10,14 @@
 //! STDERR (so it never pollutes the eval'd `cd` on stdout); with a tracker,
 //! stdout is suppressed. A failed hook ALWAYS shows its stderr, then raises a
 //! [`VibeError::HookExecution`] (warning severity, exit 0 per `VibeError`).
+//! Commands must downgrade that error via [`warn_on_hook_failure`] before
+//! returning, so `HookExecution` never escapes a command function — an `Err`
+//! reaching the binary discards the command's `Outcome`, i.e. the very `cd` line
+//! the eval contract exists to deliver (issue #601).
 
-use crate::error::{Result, VibeError};
+use crate::error::{format_error_message, Result, VibeError};
 use crate::io::Io;
-use crate::output::warn_log;
+use crate::output::{sanitize_for_display, warn_log, OutputOptions};
 use crate::progress::{NodeId, ProgressTracker};
 
 /// Captured result of one hook command.
@@ -107,7 +111,31 @@ pub fn run_hooks(
             }
         }
 
-        let result = runner.run_hook(cmd, cwd, &overlays)?;
+        // Not `?`: a spawn failure (cwd deleted under us, no shell) is itself a
+        // `HookExecution`, which the caller downgrades and then FINISHES the
+        // tracker on — and `IndicatifTracker::finish` stamps every still-open
+        // bar with the success glyph. Propagating without closing the bars would
+        // render this hook, and the ones after it that never ran, as completed.
+        let result = match runner.run_hook(cmd, cwd, &overlays) {
+            Ok(result) => result,
+            Err(error) => {
+                if let Some(info) = tracker {
+                    if let Some(id) = info.task_ids.get(i) {
+                        // Sanitized because `HookExecution` renders as `Hook
+                        // "{hook_command}" failed: ...`, i.e. it re-embeds the
+                        // very config-supplied command the task LABEL was
+                        // sanitized for — the same reasoning `copy_runner`
+                        // applies to its per-file error text.
+                        info.tracker
+                            .fail_task(*id, &sanitize_for_display(&error.to_string()));
+                    }
+                    for id in info.task_ids.iter().skip(i + 1) {
+                        info.tracker.skip_task(*id);
+                    }
+                }
+                return Err(error);
+            }
+        };
 
         // No tracker → forward hook stdout to STDERR (never stdout). With a
         // tracker, suppress stdout to keep the progress display clean.
@@ -124,6 +152,15 @@ pub fn run_hooks(
                 if let Some(id) = info.task_ids.get(i) {
                     info.tracker
                         .fail_task(*id, &format!("Exit code {}", result.code));
+                }
+                // The commands after this one never run, so their bars must be
+                // closed as SKIPPED here. Leaving them open is not an option:
+                // the caller finishes the tracker on this non-fatal path, and
+                // `IndicatifTracker::finish` closes every still-open bar with the
+                // success glyph — rendering hooks that never executed exactly
+                // like the ones that did.
+                for id in info.task_ids.iter().skip(i + 1) {
+                    info.tracker.skip_task(*id);
                 }
             }
             // Failed hooks ALWAYS show stderr (regardless of tracker).
@@ -145,6 +182,52 @@ pub fn run_hooks(
     }
 
     Ok(())
+}
+
+/// Downgrade a [`VibeError::HookExecution`] to its declared "warn and continue"
+/// severity: the failure is written to stderr as the same `Warning: Hook "..."
+/// failed: ...` line `format_error_message` produces, then swallowed. Every
+/// other error passes through untouched.
+///
+/// Returns `Ok(true)` when the hooks succeeded and `Ok(false)` when a failure
+/// was downgraded, so a warn-and-ABORT caller can branch while warn-and-continue
+/// callers just apply `?`. Which one a call site is depends on its POSITION in
+/// the lifecycle, not on the command: the `pre_*` hooks (`clean`'s `pre_clean`,
+/// which runs before anything is destroyed, and `start`'s `pre_start`, which
+/// runs before the worktree is provisioned) abort and emit no `cd`, while the
+/// `post_*` hooks run once the operation is complete and only warn.
+///
+/// Why only `HookExecution` and not a catch-all: the same call chain also
+/// carries `FileSystem` copy failures and `Configuration`/`GitOperation`
+/// submodule failures, which leave a half-built worktree behind. Widening this
+/// match would emit a `cd` into it.
+///
+/// Why not print the raw error: the hook command comes verbatim from
+/// `.vibe.toml`, and trust is a hash of the file's content rather than a
+/// judgement of it, so a trusted-but-hostile command string could push ESC/bidi
+/// sequences onto the terminal. This hardens the command-string ECHO only —
+/// `run_hooks` still forwards the hook process's own stdout/stderr unsanitized
+/// (TS parity: a hook's output is its own to format), so a hostile hook can
+/// still write escape sequences through that channel.
+///
+/// Why `opts` and not a bare `warn_log`: this line replaces the one the BINARY
+/// used to print via `report_error(&io, &error, quiet)`, and that path honoured
+/// `--quiet` through `format_error_message(error, quiet)`. Moving the write into
+/// `vibe-core` must not silently promote the summary to unsuppressable — the
+/// gating decision stays where it was, in `format_error_message`. Only the
+/// VERDICT is unconditional: a quiet run is still gated by a failing `pre_*`.
+/// The hook's own stderr, written by `run_hooks`, is unaffected.
+pub fn warn_on_hook_failure(io: &impl Io, result: Result<()>, opts: OutputOptions) -> Result<bool> {
+    match result {
+        Ok(()) => Ok(true),
+        Err(error @ VibeError::HookExecution { .. }) => {
+            if let Some(message) = format_error_message(&error, opts.quiet) {
+                warn_log(io, &sanitize_for_display(&message));
+            }
+            Ok(false)
+        }
+        Err(other) => Err(other),
+    }
 }
 
 #[cfg(any(test, feature = "test-util"))]
@@ -341,6 +424,197 @@ mod tests {
         assert!(events
             .iter()
             .any(|e| matches!(e, crate::progress::TrackerEvent::Complete(_))));
+    }
+
+    /// A hook failure is downgraded to the same `Warning: Hook ...` line the
+    /// binary used to print, and reported as "did not succeed" so an aborting
+    /// caller can branch.
+    #[test]
+    fn warn_on_hook_failure_downgrades_to_warning_and_returns_false() {
+        let io = FakeIo::new();
+        let err = VibeError::HookExecution {
+            hook_command: "npm ci".into(),
+            message: "exit code 1".into(),
+        };
+        assert!(!warn_on_hook_failure(&io, Err(err), OutputOptions::default()).unwrap());
+        assert!(io
+            .stderr_text()
+            .contains("Warning: Hook \"npm ci\" failed: exit code 1"));
+    }
+
+    /// `--quiet` suppresses the summary line exactly as it did when the binary
+    /// printed it, but the verdict is unchanged so a `pre_*` gate still gates.
+    #[test]
+    fn warn_on_hook_failure_is_silent_under_quiet_but_still_reports_failure() {
+        let io = FakeIo::new();
+        let err = VibeError::HookExecution {
+            hook_command: "npm ci".into(),
+            message: "exit code 1".into(),
+        };
+        let succeeded =
+            warn_on_hook_failure(&io, Err(err), OutputOptions::new(false, true)).unwrap();
+        assert!(!succeeded, "quiet must not turn a failure into a success");
+        assert_eq!(io.stderr_text(), "");
+    }
+
+    /// Success passes through silently.
+    #[test]
+    fn warn_on_hook_failure_passes_ok_through() {
+        let io = FakeIo::new();
+        assert!(warn_on_hook_failure(&io, Ok(()), OutputOptions::default()).unwrap());
+        assert_eq!(io.stderr_text(), "");
+    }
+
+    /// Only `HookExecution` is downgraded: every other error stays fatal and is
+    /// not printed here (the binary owns that write).
+    #[test]
+    fn warn_on_hook_failure_passes_other_errors_through() {
+        let io = FakeIo::new();
+        let err = warn_on_hook_failure(
+            &io,
+            Err(VibeError::FileSystem("disk gone".into())),
+            OutputOptions::default(),
+        )
+        .unwrap_err();
+        assert!(matches!(err, VibeError::FileSystem(_)));
+        assert_eq!(err.exit_code(), 1);
+        assert_eq!(io.stderr_text(), "");
+    }
+
+    /// A hostile-but-trusted hook command cannot drive the terminal: control and
+    /// bidi characters in the warning are replaced before printing.
+    #[test]
+    fn warn_on_hook_failure_sanitizes_the_hook_command() {
+        let io = FakeIo::new();
+        let err = VibeError::HookExecution {
+            hook_command: "evil\x1b[2Kcmd\u{202e}".into(),
+            message: "exit code 1".into(),
+        };
+        warn_on_hook_failure(&io, Err(err), OutputOptions::default()).unwrap();
+        let text = io.stderr_text();
+        assert!(
+            !text.contains('\x1b'),
+            "ESC must not reach stderr: {text:?}"
+        );
+        assert!(
+            !text.contains('\u{202e}'),
+            "bidi override must not reach stderr: {text:?}"
+        );
+        assert!(text.contains("evil\u{fffd}[2Kcmd\u{fffd}"), "{text:?}");
+    }
+
+    /// The commands after the failing one never execute, so their bars are
+    /// closed as SKIPPED rather than left open for `finish` to stamp with the
+    /// success glyph.
+    #[test]
+    fn tracker_skips_the_commands_after_a_failure() {
+        use crate::progress::TrackerEvent;
+        let io = FakeIo::new();
+        let runner = FakeHookRunner::failing_on("first", 3, "");
+        let tracker = RecordingTracker::new();
+        let phase = tracker.add_phase("Pre-start hooks");
+        let ids: Vec<_> = ["first", "second", "third"]
+            .iter()
+            .map(|label| tracker.add_task(phase, label))
+            .collect();
+        let info = HookTrackerInfo {
+            tracker: &tracker,
+            task_ids: &ids,
+        };
+        let env = HookEnv {
+            worktree_path: "/wt",
+            origin_path: "/main",
+        };
+        let _ = run_hooks(
+            &io,
+            &runner,
+            &cmds(&["first", "second", "third"]),
+            "/d",
+            &env,
+            Some(&info),
+        );
+
+        let events = tracker.events();
+        assert!(
+            events.contains(&TrackerEvent::Fail(ids[0], "Exit code 3".into())),
+            "{events:?}"
+        );
+        assert!(events.contains(&TrackerEvent::Skip(ids[1])), "{events:?}");
+        assert!(events.contains(&TrackerEvent::Skip(ids[2])), "{events:?}");
+        // Nothing that never ran may be reported as completed.
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, TrackerEvent::Complete(_))),
+            "{events:?}"
+        );
+    }
+
+    /// A runner that cannot even SPAWN the hook (deleted cwd, missing shell).
+    struct UnspawnableHookRunner;
+
+    impl HookRunner for UnspawnableHookRunner {
+        fn run_hook(&self, cmd: &str, _cwd: &str, _env: &[(&str, &str)]) -> Result<HookOutput> {
+            Err(VibeError::HookExecution {
+                hook_command: cmd.to_string(),
+                message: "No such file or directory".into(),
+            })
+        }
+    }
+
+    /// A hook that could not be spawned closes its own bar as FAILED and the
+    /// later ones as SKIPPED, so the caller's `finish` cannot stamp any of them
+    /// with the success glyph — and the failure text it renders is sanitized,
+    /// because `HookExecution` re-embeds the config-supplied command.
+    #[test]
+    fn tracker_closes_the_bars_when_the_hook_cannot_be_spawned() {
+        use crate::progress::TrackerEvent;
+        let io = FakeIo::new();
+        let tracker = RecordingTracker::new();
+        let phase = tracker.add_phase("Pre-start hooks");
+        let ids: Vec<_> = ["first", "second"]
+            .iter()
+            .map(|label| tracker.add_task(phase, label))
+            .collect();
+        let info = HookTrackerInfo {
+            tracker: &tracker,
+            task_ids: &ids,
+        };
+        let env = HookEnv {
+            worktree_path: "/wt",
+            origin_path: "/main",
+        };
+        let err = run_hooks(
+            &io,
+            &UnspawnableHookRunner,
+            &cmds(&["evil\x1b[2Kfirst", "second"]),
+            "/gone",
+            &env,
+            Some(&info),
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, VibeError::HookExecution { .. }));
+        let events = tracker.events();
+        let failure = events
+            .iter()
+            .find_map(|e| match e {
+                TrackerEvent::Fail(id, msg) if *id == ids[0] => Some(msg.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{events:?}"));
+        assert!(
+            !failure.contains('\x1b'),
+            "ESC must not reach the progress display: {failure:?}"
+        );
+        assert!(failure.contains("evil\u{fffd}[2Kfirst"), "{failure:?}");
+        assert!(events.contains(&TrackerEvent::Skip(ids[1])), "{events:?}");
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, TrackerEvent::Complete(_))),
+            "{events:?}"
+        );
     }
 
     #[test]

@@ -6,9 +6,41 @@
 //! validation (1-32) is applied after deserialization. The trust-gated *loader*
 //! lives with the settings/trust code; this module is pure (types + merge) so it
 //! is unit-testable without filesystem or trust state.
+//!
+//! Divergence from the TS merge logic (issue #599): a file's own
+//! `*_prepend`/`*_append` fields are effective in EVERY load path, not just for
+//! `.vibe.local.toml` in a repo that happens to have both config files. The TS
+//! `mergeArrayField` returned an explicit override outright, so extensions given
+//! alongside it were silently dropped; here they wrap whichever of
+//! override/base survives. [`normalize_config`] applies that within-file rule to
+//! a single file so the single-file and two-file loaders share one
+//! implementation of the array algebra.
+//!
+//! Because that divergence turns previously-inert fields into executable
+//! configuration, `CONFIG_SEMANTICS_REV` versions the interpretation itself
+//! and the loader refuses to run a config that relies on the new positions
+//! under a trust grant issued before the change.
 
 use crate::error::{Result, VibeError};
 use serde::{Deserialize, Serialize};
+
+/// Revision of the `.vibe.toml` INTERPRETATION rules.
+///
+/// Bumped whenever a change makes previously-parsed-but-ignored config
+/// positions take effect. Trust entries record the revision they were granted
+/// under (see `AllowEntry::config_semantics_rev`); an entry without one is
+/// revision 0, i.e. trust granted before issue #599 made `*_prepend`/`*_append`
+/// effective in every load path.
+///
+/// Why not rely on the content hash alone: the SHA-256 trust hash covers the
+/// file's BYTES, not how vibe interprets them. Upgrading the binary would
+/// otherwise silently activate hook entries the user trusted while they were
+/// inert, with no re-trust prompt.
+///
+/// Crate-internal: the revision is an implementation detail of the trust guard,
+/// not part of the library surface, and keeping it so means the guard's
+/// consumers can be enumerated.
+pub(crate) const CONFIG_SEMANTICS_REV: u32 = 1;
 
 /// Parsed `.vibe.toml` config. Every section is optional.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -24,6 +56,8 @@ pub struct VibeConfig {
     pub clean: Option<CleanConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub submodules: Option<SubmodulesConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<SummaryConfig>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -113,11 +147,65 @@ pub struct SubmodulesConfig {
     pub configs: Option<Vec<String>>,
 }
 
-/// Parse a `VibeConfig` from TOML text, validating it like the Zod schema.
+/// `[summary]`: the external command that produces the SUMMARY column of
+/// `vibe list`.
+///
+/// Both fields are scalars and both are optional, so the section merges by
+/// simple override (`.vibe.local.toml` wins per FIELD, not per section) — the
+/// same shape `[worktree] path_script` already uses. There is deliberately no
+/// array form: the command is one shell line, and a `_prepend`/`_append` pair
+/// on a shell string would concatenate text, not compose behaviour.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SummaryConfig {
+    /// Shell command run once per `vibe list`, receiving the batch of
+    /// cache-missing worktrees as JSON on stdin.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    /// How long the command may run before it is killed, in seconds
+    /// (1-3600, validated in [`parse_vibe_config`]). The default of
+    /// [`DEFAULT_SUMMARY_TIMEOUT_SECONDS`] is applied at the use site rather
+    /// than here, so an absent value stays distinguishable from an explicit one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_seconds: Option<u64>,
+}
+
+/// A config exactly as it was written on disk, before [`normalize_config`]
+/// folds each `*_prepend`/`*_append` slot into its base field.
+///
+/// Exists so the semantics-revision guard cannot be handed an already-normalized
+/// config: the detectors it relies on
+/// (`config_loader::newly_effective_fields`) inspect the very slots
+/// normalization empties, so a normalized input would report "no newly-effective
+/// fields" and fail OPEN. Only [`parse_vibe_config`] mints one, so the raw
+/// provenance the guard depends on is expressed in the type rather than in prose.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RawConfig(VibeConfig);
+
+impl RawConfig {
+    /// Borrow the un-normalized config.
+    ///
+    /// Needed by the cross-file merge, which must see the local file's extension
+    /// slots UNFOLDED so they wrap the base's effective arrays instead of
+    /// overriding them. Not a general escape hatch: the guard's detectors take
+    /// `&RawConfig` precisely so they can never be reached this way.
+    pub(crate) fn as_config(&self) -> &VibeConfig {
+        &self.0
+    }
+
+    /// Resolve this file's own `*_prepend`/`*_append` fields, consuming the
+    /// raw-ness: the result is a plain [`VibeConfig`] and no longer admissible
+    /// to the guard.
+    pub(crate) fn normalize(&self) -> VibeConfig {
+        normalize_config(&self.0)
+    }
+}
+
+/// Parse a [`RawConfig`] from TOML text, validating it like the Zod schema.
 ///
 /// `file_path` is woven into the error message exactly as the TS
 /// `parseVibeConfig` does (`Invalid configuration in <path>: ...`).
-pub fn parse_vibe_config(toml_text: &str, file_path: &str) -> Result<VibeConfig> {
+pub fn parse_vibe_config(toml_text: &str, file_path: &str) -> Result<RawConfig> {
     let config: VibeConfig = toml::from_str(toml_text).map_err(|e| {
         VibeError::Configuration(format!("Invalid configuration in {file_path}:\n  - {e}"))
     })?;
@@ -131,37 +219,54 @@ pub fn parse_vibe_config(toml_text: &str, file_path: &str) -> Result<VibeConfig>
         }
     }
 
-    Ok(config)
+    // `[summary] timeout_seconds` range check. Zero is rejected because a
+    // zero-second deadline can only ever kill the command before it produces
+    // anything, and the upper bound keeps a typo (`timeout_seconds = 36000`)
+    // from turning `vibe list` into a ten-hour hang.
+    if let Some(t) = config.summary.as_ref().and_then(|s| s.timeout_seconds) {
+        if !(1..=MAX_SUMMARY_TIMEOUT_SECONDS).contains(&t) {
+            return Err(VibeError::Configuration(format!(
+                "Invalid configuration in {file_path}:\n  - summary.timeout_seconds: must be between 1 and {MAX_SUMMARY_TIMEOUT_SECONDS}"
+            )));
+        }
+    }
+
+    Ok(RawConfig(config))
 }
 
-/// Merge a base array with override/prepend/append, matching `mergeArrayField`.
+/// Longest `[summary] timeout_seconds` accepted (one hour).
+pub const MAX_SUMMARY_TIMEOUT_SECONDS: u64 = 3600;
+
+/// Deadline applied when `[summary]` sets no `timeout_seconds`.
+pub const DEFAULT_SUMMARY_TIMEOUT_SECONDS: u64 = 30;
+
+/// Merge a base array with override/prepend/append.
 ///
-/// Precedence: an explicit `override` wins outright. Otherwise prepend/append
-/// wrap the base; with no base, prepend+append concatenate (only if either is
-/// present), else `None`.
+/// Precedence: an explicit `override` REPLACES the base, then the same source's
+/// prepend/append wrap whichever of override/base survives — the result is
+/// `prepend ++ (override | base) ++ append`. With neither override nor base
+/// present, prepend+append concatenate (only if either is present), else `None`;
+/// an empty override array with no extensions still yields `Some(vec![])`.
+///
+/// Why not keep the TS `mergeArrayField` precedence (return the override
+/// outright): it silently dropped prepend/append supplied alongside an override,
+/// which is the bug class of issue #599 — a schema-accepted field with no
+/// effect. This port intentionally diverges so every accepted field is honored.
 pub fn merge_array_field(
     base: Option<&[String]>,
     override_: Option<&[String]>,
     prepend: Option<&[String]>,
     append: Option<&[String]>,
 ) -> Option<Vec<String>> {
-    if let Some(over) = override_ {
-        return Some(over.to_vec());
-    }
+    let effective_base = override_.or(base);
 
-    let Some(base) = base else {
-        if prepend.is_some() || append.is_some() {
-            let mut out = Vec::new();
-            out.extend(prepend.unwrap_or_default().iter().cloned());
-            out.extend(append.unwrap_or_default().iter().cloned());
-            return Some(out);
-        }
+    if effective_base.is_none() && prepend.is_none() && append.is_none() {
         return None;
-    };
+    }
 
     let mut out = Vec::new();
     out.extend(prepend.unwrap_or_default().iter().cloned());
-    out.extend(base.iter().cloned());
+    out.extend(effective_base.unwrap_or_default().iter().cloned());
     out.extend(append.unwrap_or_default().iter().cloned());
     Some(out)
 }
@@ -284,7 +389,141 @@ pub fn merge_configs(base: &VibeConfig, local: &VibeConfig) -> VibeConfig {
         merged.submodules = Some(SubmodulesConfig { configs });
     }
 
+    // summary: present if either side has it; each scalar merged independently
+    // so a local file overriding only `timeout_seconds` keeps the shared
+    // `command` (overriding the section wholesale would silently disable the
+    // SUMMARY column instead).
+    if base.summary.is_some() || local.summary.is_some() {
+        let command = local
+            .summary
+            .as_ref()
+            .and_then(|s| s.command.clone())
+            .or_else(|| base.summary.as_ref().and_then(|s| s.command.clone()));
+        let timeout_seconds = local
+            .summary
+            .as_ref()
+            .and_then(|s| s.timeout_seconds)
+            .or_else(|| base.summary.as_ref().and_then(|s| s.timeout_seconds));
+        merged.summary = Some(SummaryConfig {
+            command,
+            timeout_seconds,
+        });
+    }
+
     merged
+}
+
+/// Resolve a single file's own `*_prepend`/`*_append` fields into effective
+/// arrays (`prepend ++ field ++ append` per field).
+///
+/// Implemented as a merge over the empty config so single-file and two-file
+/// loading share ONE implementation of the array semantics (issue #599).
+pub fn normalize_config(config: &VibeConfig) -> VibeConfig {
+    merge_configs(&VibeConfig::default(), config)
+}
+
+/// Every `(field, prepend, append)` triplet of a raw (un-normalized) config,
+/// as `(dotted name, field set?, prepend set?, append set?)`.
+///
+/// Drives the semantics-revision guard in the loader: it must reason about the
+/// raw slots, which [`normalize_config`] folds away.
+fn extension_triplets(config: &VibeConfig) -> Vec<(&'static str, bool, bool, bool)> {
+    let mut out = Vec::new();
+    macro_rules! triplet {
+        ($name:literal, $section:expr, $field:ident, $prepend:ident, $append:ident) => {{
+            let s = $section.as_ref();
+            out.push((
+                $name,
+                s.is_some_and(|x| x.$field.is_some()),
+                s.is_some_and(|x| x.$prepend.is_some()),
+                s.is_some_and(|x| x.$append.is_some()),
+            ));
+        }};
+    }
+    triplet!(
+        "copy.files",
+        config.copy,
+        files,
+        files_prepend,
+        files_append
+    );
+    triplet!("copy.dirs", config.copy, dirs, dirs_prepend, dirs_append);
+    triplet!(
+        "copy.symlink",
+        config.copy,
+        symlink,
+        symlink_prepend,
+        symlink_append
+    );
+    triplet!(
+        "hooks.pre_start",
+        config.hooks,
+        pre_start,
+        pre_start_prepend,
+        pre_start_append
+    );
+    triplet!(
+        "hooks.post_start",
+        config.hooks,
+        post_start,
+        post_start_prepend,
+        post_start_append
+    );
+    triplet!(
+        "hooks.pre_clean",
+        config.hooks,
+        pre_clean,
+        pre_clean_prepend,
+        pre_clean_append
+    );
+    triplet!(
+        "hooks.post_clean",
+        config.hooks,
+        post_clean,
+        post_clean_prepend,
+        post_clean_append
+    );
+    out
+}
+
+/// Dotted names of the `*_prepend`/`*_append` fields set in a raw config.
+///
+/// Takes [`RawConfig`], not `&VibeConfig`: on a normalized config every slot is
+/// already folded to `None` and this would answer "none in use" — a fail-OPEN
+/// verdict from a security guard.
+pub(crate) fn extension_fields_in_use(config: &RawConfig) -> Vec<String> {
+    let mut names = Vec::new();
+    for (name, _, prepend, append) in extension_triplets(&config.0) {
+        if prepend {
+            names.push(format!("{name}_prepend"));
+        }
+        if append {
+            names.push(format!("{name}_append"));
+        }
+    }
+    names
+}
+
+/// Dotted names of the `*_prepend`/`*_append` fields a raw config sets ALONGSIDE
+/// their own base field (the position the TS `mergeArrayField` dropped even when
+/// both config files were present).
+///
+/// Takes [`RawConfig`] for the same fail-open reason as
+/// [`extension_fields_in_use`].
+pub(crate) fn extension_fields_beside_own_field(config: &RawConfig) -> Vec<String> {
+    let mut names = Vec::new();
+    for (name, field, prepend, append) in extension_triplets(&config.0) {
+        if !field {
+            continue;
+        }
+        if prepend {
+            names.push(format!("{name}_prepend"));
+        }
+        if append {
+            names.push(format!("{name}_append"));
+        }
+    }
+    names
 }
 
 /// Helper: project an `Option<Section>` to an inner `Option<Vec<String>>` slice.
@@ -306,9 +545,15 @@ mod tests {
     // --- merge_array_field ---
 
     #[test]
-    fn override_takes_precedence() {
+    fn override_replaces_base_then_own_prepend_append_wrap() {
         let r = merge_array_field(Some(&v(&["a"])), Some(&v(&["b"])), Some(&v(&["p"])), None);
-        assert_eq!(r, Some(v(&["b"])));
+        assert_eq!(r, Some(v(&["p", "b"])));
+    }
+
+    #[test]
+    fn override_with_append_combines() {
+        let r = merge_array_field(None, Some(&v(&["b"])), None, Some(&v(&["x"])));
+        assert_eq!(r, Some(v(&["b", "x"])));
     }
 
     #[test]
@@ -363,7 +608,207 @@ mod tests {
         );
     }
 
+    #[test]
+    fn empty_override_with_append_yields_append() {
+        // `files = []` disables the base list, but an append in the SAME source
+        // still contributes: the disable idiom does not swallow extensions.
+        assert_eq!(
+            merge_array_field(Some(&v(&["a"])), Some(&[]), None, Some(&v(&["x"]))),
+            Some(v(&["x"]))
+        );
+    }
+
+    // --- normalize_config ---
+
+    #[test]
+    fn normalize_resolves_same_file_prepend_and_append() {
+        let cfg = VibeConfig {
+            copy: Some(CopyConfig {
+                files: Some(v(&[".env"])),
+                files_prepend: Some(v(&["p"])),
+                files_append: Some(v(&[".env.local"])),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let copy = normalize_config(&cfg).copy.unwrap();
+        assert_eq!(copy.files, Some(v(&["p", ".env", ".env.local"])));
+        // The extension slots are consumed by normalization.
+        assert_eq!(copy.files_prepend, None);
+        assert_eq!(copy.files_append, None);
+    }
+
+    #[test]
+    fn normalize_append_only_becomes_the_field() {
+        let cfg = VibeConfig {
+            copy: Some(CopyConfig {
+                files_append: Some(v(&[".env.local"])),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            normalize_config(&cfg).copy.unwrap().files,
+            Some(v(&[".env.local"]))
+        );
+    }
+
+    #[test]
+    fn normalize_resolves_hooks_triplets() {
+        let cfg = VibeConfig {
+            hooks: Some(HooksConfig {
+                post_start: Some(v(&["npm install"])),
+                post_start_prepend: Some(v(&["echo pre"])),
+                post_start_append: Some(v(&["npm run dev"])),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let hooks = normalize_config(&cfg).hooks.unwrap();
+        assert_eq!(
+            hooks.post_start,
+            Some(v(&["echo pre", "npm install", "npm run dev"]))
+        );
+        assert_eq!(hooks.post_start_prepend, None);
+        assert_eq!(hooks.post_start_append, None);
+    }
+
+    #[test]
+    fn normalize_is_identity_for_plain_config() {
+        let cfg = VibeConfig {
+            copy: Some(CopyConfig {
+                files: Some(v(&[".env"])),
+                concurrency: Some(8),
+                untracked: Some(true),
+                ..Default::default()
+            }),
+            hooks: Some(HooksConfig {
+                pre_start: Some(v(&["echo hi"])),
+                ..Default::default()
+            }),
+            worktree: Some(WorktreeConfig {
+                path_script: Some("p.sh".into()),
+            }),
+            clean: Some(CleanConfig {
+                delete_branch: Some(true),
+            }),
+            submodules: Some(SubmodulesConfig {
+                configs: Some(v(&["libs/foo"])),
+            }),
+            summary: Some(SummaryConfig {
+                command: Some("s.sh".into()),
+                timeout_seconds: Some(12),
+            }),
+        };
+        assert_eq!(normalize_config(&cfg), cfg);
+    }
+
+    #[test]
+    fn normalize_is_idempotent() {
+        // Load-bearing: the two-file path normalizes the base and then re-runs the
+        // same array algebra inside merge_configs, so normalization must be a
+        // fixed point for that composition to be well defined.
+        let cfg = VibeConfig {
+            copy: Some(CopyConfig {
+                files: Some(v(&[".env"])),
+                files_prepend: Some(v(&["p"])),
+                files_append: Some(v(&["a"])),
+                dirs_append: Some(v(&["node_modules"])),
+                concurrency: Some(8),
+                ..Default::default()
+            }),
+            hooks: Some(HooksConfig {
+                post_start: Some(v(&["npm install"])),
+                post_start_append: Some(v(&["npm run dev"])),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let once = normalize_config(&cfg);
+        assert_eq!(normalize_config(&once), once);
+    }
+
     // --- merge_configs ---
+
+    #[test]
+    fn local_override_and_local_append_combine_over_the_base() {
+        // A local file that sets BOTH the field and its `_append`: the override
+        // replaces the base's effective array, then the local's own extensions
+        // wrap that override (they are no longer silently dropped).
+        let base = VibeConfig {
+            hooks: Some(HooksConfig {
+                post_start: Some(v(&["base"])),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let local = VibeConfig {
+            hooks: Some(HooksConfig {
+                post_start: Some(v(&["local"])),
+                post_start_append: Some(v(&["extra"])),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            merge_configs(&normalize_config(&base), &local)
+                .hooks
+                .unwrap()
+                .post_start,
+            Some(v(&["local", "extra"]))
+        );
+    }
+
+    #[test]
+    fn base_own_append_survives_two_file_merge() {
+        let base = VibeConfig {
+            copy: Some(CopyConfig {
+                files: Some(v(&[".env"])),
+                files_append: Some(v(&[".base-app"])),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let local = VibeConfig {
+            copy: Some(CopyConfig {
+                files_prepend: Some(v(&["l-pre"])),
+                files_append: Some(v(&["l-app"])),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let merged = merge_configs(&normalize_config(&base), &local);
+        assert_eq!(
+            merged.copy.unwrap().files,
+            Some(v(&["l-pre", ".env", ".base-app", "l-app"]))
+        );
+    }
+
+    #[test]
+    fn local_override_replaces_base_effective_array() {
+        let base = VibeConfig {
+            copy: Some(CopyConfig {
+                files: Some(v(&[".env"])),
+                files_append: Some(v(&[".base-app"])),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let local = VibeConfig {
+            copy: Some(CopyConfig {
+                files: Some(v(&["only"])),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            merge_configs(&normalize_config(&base), &local)
+                .copy
+                .unwrap()
+                .files,
+            Some(v(&["only"]))
+        );
+    }
 
     #[test]
     fn copy_files_merging_with_append() {
@@ -409,13 +854,13 @@ mod tests {
 
     #[test]
     fn untracked_and_modified_parse_and_default_to_absent() {
-        let cfg = parse_vibe_config("[copy]\nuntracked = true\nmodified = false\n", "/p").unwrap();
+        let cfg = parse_fields("[copy]\nuntracked = true\nmodified = false\n", "/p");
         let copy = cfg.copy.unwrap();
         assert_eq!(copy.untracked, Some(true));
         assert_eq!(copy.modified, Some(false));
 
         // Omitting them leaves them unset (the use site reads that as "off").
-        let bare = parse_vibe_config("[copy]\nfiles = []\n", "/p").unwrap();
+        let bare = parse_fields("[copy]\nfiles = []\n", "/p");
         let bare_copy = bare.copy.unwrap();
         assert_eq!(bare_copy.untracked, None);
         assert_eq!(bare_copy.modified, None);
@@ -666,12 +1111,15 @@ mod tests {
 
     // --- parse_vibe_config ---
 
+    /// Parse and unwrap the [`RawConfig`] for tests that assert on parsed
+    /// FIELDS rather than on the raw-ness the newtype protects.
+    fn parse_fields(toml_text: &str, path: &str) -> VibeConfig {
+        parse_vibe_config(toml_text, path).unwrap().0
+    }
+
     #[test]
     fn parses_empty_config() {
-        assert_eq!(
-            parse_vibe_config("", "/p/.vibe.toml").unwrap(),
-            VibeConfig::default()
-        );
+        assert_eq!(parse_fields("", "/p/.vibe.toml"), VibeConfig::default());
     }
 
     #[test]
@@ -694,7 +1142,7 @@ delete_branch = true
 [submodules]
 configs = ["libs/foo"]
 "#;
-        let cfg = parse_vibe_config(toml, "/p/.vibe.toml").unwrap();
+        let cfg = parse_fields(toml, "/p/.vibe.toml");
         assert_eq!(cfg.copy.as_ref().unwrap().concurrency, Some(8));
         assert_eq!(cfg.clean.as_ref().unwrap().delete_branch, Some(true));
         assert_eq!(
@@ -709,11 +1157,10 @@ configs = ["libs/foo"]
 
     #[test]
     fn parses_copy_symlink() {
-        let cfg = parse_vibe_config(
+        let cfg = parse_fields(
             "[copy]\ndirs = [\"node_modules\"]\nsymlink = [\".cache\", \".turbo\"]\n",
             "/p/.vibe.toml",
-        )
-        .unwrap();
+        );
         assert_eq!(
             cfg.copy.unwrap().symlink,
             Some(vec![".cache".into(), ".turbo".into()])
@@ -722,8 +1169,7 @@ configs = ["libs/foo"]
 
     #[test]
     fn parses_submodules_configs() {
-        let cfg =
-            parse_vibe_config("[submodules]\nconfigs = [\"libs/foo\"]\n", "/p/.vibe.toml").unwrap();
+        let cfg = parse_fields("[submodules]\nconfigs = [\"libs/foo\"]\n", "/p/.vibe.toml");
         assert_eq!(
             cfg.submodules.unwrap().configs,
             Some(vec!["libs/foo".into()])
@@ -764,23 +1210,186 @@ configs = ["libs/foo"]
         assert!(err.to_string().contains("copy.concurrency"));
     }
 
+    // --- [summary] ---
+
+    #[test]
+    fn parses_summary_section() {
+        let cfg = parse_fields(
+            "[summary]\ncommand = \"./s.sh\"\ntimeout_seconds = 12\n",
+            "/p/.vibe.toml",
+        );
+        let summary = cfg.summary.unwrap();
+        assert_eq!(summary.command.as_deref(), Some("./s.sh"));
+        assert_eq!(summary.timeout_seconds, Some(12));
+    }
+
+    #[test]
+    fn summary_timeout_is_optional_so_the_use_site_can_default_it() {
+        let cfg = parse_fields("[summary]\ncommand = \"./s.sh\"\n", "/p");
+        assert_eq!(cfg.summary.unwrap().timeout_seconds, None);
+    }
+
+    #[test]
+    fn rejects_unknown_summary_field() {
+        let err = parse_vibe_config("[summary]\nbogus = 1\n", "/path/.vibe.toml").unwrap_err();
+        assert!(err.to_string().contains("/path/.vibe.toml"));
+    }
+
+    #[test]
+    fn rejects_summary_timeout_outside_the_allowed_range() {
+        // Zero can only kill the command before it answers; the upper bound
+        // stops a typo from turning `vibe list` into an hours-long hang.
+        for bad in ["0", "3601"] {
+            let err = parse_vibe_config(&format!("[summary]\ntimeout_seconds = {bad}\n"), "/p")
+                .unwrap_err();
+            let msg = err.to_string();
+            assert!(msg.contains("summary.timeout_seconds"), "msg: {msg}");
+        }
+    }
+
+    #[test]
+    fn accepts_summary_timeout_bounds() {
+        for good in [1, MAX_SUMMARY_TIMEOUT_SECONDS] {
+            let cfg = parse_fields(&format!("[summary]\ntimeout_seconds = {good}\n"), "/p");
+            assert_eq!(cfg.summary.unwrap().timeout_seconds, Some(good));
+        }
+    }
+
+    #[test]
+    fn summary_scalars_merge_independently() {
+        // A local file overriding only the timeout must keep the shared command:
+        // a whole-section override would silently disable the SUMMARY column.
+        let base = VibeConfig {
+            summary: Some(SummaryConfig {
+                command: Some("base.sh".into()),
+                timeout_seconds: Some(10),
+            }),
+            ..Default::default()
+        };
+        let local = VibeConfig {
+            summary: Some(SummaryConfig {
+                command: None,
+                timeout_seconds: Some(60),
+            }),
+            ..Default::default()
+        };
+        let merged = merge_configs(&base, &local).summary.unwrap();
+        assert_eq!(merged.command.as_deref(), Some("base.sh"));
+        assert_eq!(merged.timeout_seconds, Some(60));
+    }
+
+    #[test]
+    fn summary_local_command_wins_and_base_survives_an_unrelated_local() {
+        let base = VibeConfig {
+            summary: Some(SummaryConfig {
+                command: Some("base.sh".into()),
+                timeout_seconds: None,
+            }),
+            ..Default::default()
+        };
+        let local = VibeConfig {
+            summary: Some(SummaryConfig {
+                command: Some("local.sh".into()),
+                timeout_seconds: None,
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            merge_configs(&base, &local).summary.unwrap().command,
+            Some("local.sh".into())
+        );
+
+        let unrelated = VibeConfig {
+            copy: Some(CopyConfig {
+                files: Some(vec!["x".into()]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            merge_configs(&base, &unrelated).summary.unwrap().command,
+            Some("base.sh".into())
+        );
+    }
+
+    #[test]
+    fn summary_absent_when_neither_side_has_it() {
+        assert!(
+            merge_configs(&VibeConfig::default(), &VibeConfig::default())
+                .summary
+                .is_none()
+        );
+    }
+
     #[test]
     fn accepts_concurrency_bounds() {
         assert_eq!(
-            parse_vibe_config("[copy]\nconcurrency = 1\n", "/p")
-                .unwrap()
+            parse_fields("[copy]\nconcurrency = 1\n", "/p")
                 .copy
                 .unwrap()
                 .concurrency,
             Some(1)
         );
         assert_eq!(
-            parse_vibe_config("[copy]\nconcurrency = 32\n", "/p")
-                .unwrap()
+            parse_fields("[copy]\nconcurrency = 32\n", "/p")
                 .copy
                 .unwrap()
                 .concurrency,
             Some(32)
+        );
+    }
+
+    // --- extension-field detection (semantics-revision guard input) ---
+
+    fn parse(toml_text: &str) -> RawConfig {
+        parse_vibe_config(toml_text, "/p").unwrap()
+    }
+
+    #[test]
+    fn reports_no_extension_fields_for_plain_config() {
+        let cfg = parse("[copy]\nfiles = [\".env\"]\n[hooks]\npost_start = [\"a\"]\n");
+        assert!(extension_fields_in_use(&cfg).is_empty());
+        assert!(extension_fields_beside_own_field(&cfg).is_empty());
+    }
+
+    #[test]
+    fn reports_every_extension_field_in_use_by_dotted_name() {
+        let cfg = parse(concat!(
+            "[copy]\n",
+            "files_append = [\"a\"]\n",
+            "dirs_prepend = [\"b\"]\n",
+            "symlink_append = [\"c\"]\n",
+            "[hooks]\n",
+            "pre_start_prepend = [\"d\"]\n",
+            "post_start_append = [\"e\"]\n",
+            "pre_clean_append = [\"f\"]\n",
+            "post_clean_prepend = [\"g\"]\n",
+        ));
+        let mut names = extension_fields_in_use(&cfg);
+        names.sort();
+        assert_eq!(
+            names,
+            vec![
+                "copy.dirs_prepend",
+                "copy.files_append",
+                "copy.symlink_append",
+                "hooks.post_clean_prepend",
+                "hooks.post_start_append",
+                "hooks.pre_clean_append",
+                "hooks.pre_start_prepend",
+            ]
+        );
+    }
+
+    #[test]
+    fn reports_only_extensions_sharing_their_own_base_field() {
+        // `files` + `files_append` collide (the TS dropped the append);
+        // `dirs_append` alone does not.
+        let cfg =
+            parse("[copy]\nfiles = [\".env\"]\nfiles_append = [\"x\"]\ndirs_append = [\"y\"]\n");
+        assert_eq!(
+            extension_fields_beside_own_field(&cfg),
+            vec!["copy.files_append"]
         );
     }
 }

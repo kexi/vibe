@@ -1,0 +1,300 @@
+---
+title: vibe list
+description: 現在のリポジトリの全Worktreeをbase・age・statusとともに一覧表示する
+sidebar:
+  order: 4
+---
+
+`list`コマンドは、現在のリポジトリの全Worktreeを整列された1つのテーブルで表示します。各Worktreeのベースとなるブランチ、tipコミットからの経過時間、未コミットの変更の有無も同時に確認できます。
+
+## 使い方
+
+```bash
+vibe list [オプション]
+```
+
+## オプション
+
+| オプション        | 説明                                          |
+| ----------------- | --------------------------------------------- |
+| `--json`          | 一覧をJSON配列として出力する                  |
+| `--dirty`         | 未コミットの変更があるWorktreeのみ            |
+| `--clean`         | 未コミットの変更が無いWorktreeのみ            |
+| `--base <branch>` | `<branch>`をベースとするWorktreeのみ          |
+| `--recent <dur>`  | `<dur>`以内にコミットされたWorktreeのみ       |
+| `--stale <dur>`   | `<dur>`の間コミットされていないWorktreeのみ   |
+| `--sort <key>`    | `age`・`name`・`status`のいずれかで並べ替える |
+| `--reverse`       | 最終的な表示順を反転する                      |
+| `--limit <n>`     | 最大`<n>`件のみ表示する（`<n>`は1以上）       |
+| `-V`, `--verbose` | 詳細な出力を表示する                          |
+| `-q`, `--quiet`   | 必須ではない出力を抑制する                    |
+
+`--dirty`と`--clean`は同時に指定できません。`--recent`と`--stale`も同様で、いずれの組み合わせも終了コード`2`になります。
+
+`--quiet`は一覧そのものは抑制**しません**。テーブルこそがこのコマンドの成果物であり、抑制してしまうと`vibe list --quiet`が何も出力せずに終了コード0で終わってしまうためです。抑制されるのは周辺の診断メッセージのみです。
+
+## 例
+
+```
+$ vibe list
+* feat/login    develop  2h    M 3    /path/to/repo-feat-login
+  fix/crash     develop  3d    clean  /path/to/repo-fix-crash
+  (detached)    -        1w    clean  /path/to/repo-detached
+  scratch/2026… develop  12m   clean  /path/to/scratch-20260101 (scratch)
+```
+
+## 列の意味
+
+| 列         | 意味                                                                     |
+| ---------- | ------------------------------------------------------------------------ |
+| (マーカー) | `*`は現在自分がいるWorktreeを示す                                        |
+| BRANCH     | チェックアウト中のブランチ。detached HEADのWorktreeは`(detached)`        |
+| BASE       | このブランチのベースとなるブランチ — 後述の[BASE](#base)を参照           |
+| AGE        | tipコミットからの経過時間（`now`、`12m`、`2h`、`3d`、`1w`、`5mo`、`2y`） |
+| STATUS     | `clean`、または`M <n>` — [変更の数え方](#変更の数え方)を参照             |
+| SUMMARY    | `[summary]`が設定されている場合のみ — 後述の[SUMMARY](#summary)を参照    |
+| PATH       | Worktreeのディレクトリ                                                   |
+
+[`vibe scratch`](/ja/commands/scratch/)で作成されたWorktreeには`(scratch)`ラベルが付きます。
+
+### 変更の数え方
+
+`M <n>`の数値（および`dirty_files`フィールド）は`git status`が報告したエントリ数であり、変更されたファイル数とは**限りません**。gitは全体が未追跡の**ディレクトリ**を1エントリにまとめるため、5ファイルを含む新規ディレクトリは`5`ではなく`1`と数えられます。追跡ファイルの変更、ステージ済みの変更、個別の未追跡ファイルはそれぞれ1エントリとして数えられ、リネームは2回ではなく1回として数えられます。
+
+これはgitの既定の報告方法（`-unormal`）です。`vibe`は意図的に`-uall`を渡しません。`-uall`は全ての未追跡ディレクトリを展開しますが、そのために一覧の各行でgitが未追跡ツリーを完全に走査することになります。これは、まさにそのコストが最も望ましくないリポジトリ（古い`node_modules`、肥大したビルド成果物など）において無制限の処理となるうえ、「何かがある」ことを伝えるだけの数値を精密化するにすぎません。
+
+値を特定できなかったセルは`-`で表示されます。gitが読み取れないWorktree（削除済みチェックアウトが残した壊れたWorktreeなど）も行としては必ず表示され、影響を受けたセルだけが縮退します。
+
+Worktreeの**STATUS**の読み取りに失敗した場合は、その理由がstderrに警告として報告されます。**AGE**や**BASE**の解決に失敗した場合（detachedなWorktreeのHEADを`git log`が読み取れない場合など）は、警告なしで静かに`-`へ縮退します。これは十分に頻繁に起こりうるため、警告するとノイズになるからです。
+
+### BASE
+
+BASEは次の順で解決されます。
+
+1. ブランチに設定された**upstream**からリモート接頭辞を除いたもの（`origin/develop` → `develop`）
+2. それが無ければリポジトリの**デフォルトブランチ**（`refs/remotes/origin/HEAD`、次に`init.defaultBranch`）
+
+ブランチが自分自身をベースとして表示されることはありません。したがってメインWorktree、およびupstreamが自分自身のリモート追跡refであるブランチは`-`になります。detached HEADも`-`です。ベースとなるブランチを正確に述べる方法が存在しないためです。
+
+`vibe list`はWorktreeごとの`git merge-base`を意図的に実行**しません**。1行につき1回のgit呼び出しが増えるうえ、その答えはブランチではなく*コミット*です。そのコミットからブランチ名への逆引きは、複数のブランチがマージ地点を共有する場合（分岐直後の一般的なケース）に曖昧になります。upstreamはユーザーが設定した事実であり、デフォルトブランチは文書化されたフォールバックなので、どちらも説明可能です。
+
+### AGE
+
+AGEはtipコミットのcommitter dateからの経過時間で、切り捨て（切り上げなし）されるため、実際に経過した時間より長く表示されることはありません。`mo`と`y`の単位は表示専用の近似値です（それぞれ30日と365日）。`--json`では代わりに`last_commit_at`として厳密なタイムスタンプが出力されます。
+
+まだコミットが無いブランチ（unbornブランチ）にはtipが無いため、AGEは`-`、`last_commit_at`は`null`になります。
+
+### SUMMARY
+
+SUMMARY列は、リポジトリの`.vibe.toml`に`[summary] command`が設定されている場合のみ表示されます。vibeは`vibe list`ごとにそのコマンドを1回実行し、対象Worktreeのバッチをstdinで渡して、返ってきた内容を表示します。
+
+```toml
+[summary]
+command = "./examples/summary/last-commit.sh"
+timeout_seconds = 30
+```
+
+```
+$ vibe list
+* feat/login    develop  2h    M 3    ログインフォームを追加      /path/to/repo-feat-login
+  fix/crash     develop  3d    clean  起動時のpanicを修正         /path/to/repo-fix-crash
+```
+
+結果はWorktreeごとにキャッシュされるため、変更のないリポジトリで2回目の`vibe list`を実行してもコマンドは一切実行されません。コマンドが失敗またはタイムアウトした場合、`vibe list`は警告を出したうえで、失敗させる代わりに以前キャッシュされたサマリーを表示します。
+
+この列の有無は**設定**に従い、コマンドの成否には従いません。コマンドが回答しなかったWorktreeは空欄になるため、空の列を「機能がオフなのかもしれない」と読む必要はありません。
+
+コマンドは自分のシェルと権限で実行されるため、トラスト機構の対象となります。`[summary] command`を編集すると`.vibe.toml`のハッシュが無効になり、[`vibe trust`](/ja/commands/trust/)を再実行するまで`vibe list`は失敗します。
+
+契約仕様の全体、コマンド出力に課される制限、キャッシュの無効化条件については[`.vibe.toml` → サマリー設定](/ja/configuration/vibe-toml/#サマリー設定)を参照してください。すぐ使えるスクリプトは[`examples/summary/`](https://github.com/kexi/vibe/tree/main/examples/summary)にあります。
+
+## フィルタ・ソート・件数制限
+
+これらのフラグは、決まった順序のパイプラインとして適用されます。
+
+```
+フィルタ（AND） → ソート → 反転 → 件数制限
+```
+
+各段階は完全に解決済みの行に対して動作するため、フィルタと`--json`がWorktreeのベース・経過時間・状態について食い違うことはありません。同じフラグは、どちらの出力モードでも同じWorktreeを選択します。
+
+### 例
+
+```bash
+# 今週触って、やりかけのままのものは？
+vibe list --recent 1w --dirty
+
+# 1か月放置されているものは？
+vibe list --stale 30d
+
+# 最も古い5件
+vibe list --sort age --reverse --limit 5
+
+# developから分岐したもの全てを、散らかっている順に
+vibe list --base develop --sort status
+
+# 直近3件をJSONで
+vibe list --json --sort age --limit 3 2>&1 | jq .
+```
+
+### フィルタ
+
+フィルタは**AND**で結合されます。各フラグは結果を絞り込むため、フラグを増やして行数が増えることはありません。
+
+| フラグ            | 残す対象                                       |
+| ----------------- | ---------------------------------------------- |
+| `--dirty`         | STATUSが`dirty`のWorktree                      |
+| `--clean`         | STATUSが`clean`のWorktree                      |
+| `--base <branch>` | BASEが`<branch>`と完全に一致するWorktree       |
+| `--recent <dur>`  | tipコミットの経過時間が`<dur>`以下のWorktree   |
+| `--stale <dur>`   | tipコミットの経過時間が`<dur>`を超えるWorktree |
+
+状態を読み取れなかったWorktree（STATUS `-`）は`--dirty`からも`--clean`からも**除外**されます。したがってこの2つのフラグは一覧を分割しません。gitが答えられなかったWorktreeはどちらの答えにも属さず、どちらかに含めることは根拠のない推測になるためです。フィルタ無しの一覧には`-`付きで表示され、警告も出ます。
+
+`--base`は解決済みの[BASE](#base)列と比較します。比較は前方一致ではなく完全一致であり、`--base develop`は`develop-2`にはマッチしません。ベースを持たないWorktree（メインWorktreeやdetached HEAD）が`--base`にマッチすることはありません。
+
+引数は**そのままの形、またはリモート名を1つ取り除いた形**のどちらでも受け付けます。したがって、ユーザーが自然に入力しうる書き方はいずれも機能します。
+
+| 引数                  | マッチするベース                      |
+| --------------------- | ------------------------------------- |
+| `develop`             | `develop`                             |
+| `origin/develop`      | `origin/develop`、`develop`           |
+| `release/next`        | `release/next`                        |
+| `origin/release/next` | `origin/release/next`、`release/next` |
+
+両方の解釈を試すのは、引数だけからは両者を判別できないためです。`origin/develop`はリモート修飾された`develop`ですが、`release/next`はたまたま名前にスラッシュを含む単なるブランチであり、どちらも`<語>/<語>`という綴りです。除去した解釈だけを試すと`--base release/next`が`--base next`に化けてしまい、何にもマッチしなくなります。
+
+両方を受け付ける代償として、ローカルに文字どおり`origin/develop`という名前のブランチがある場合、`--base origin/develop`はそれにもマッチします。黙って0件を返すよりは、余分な行が出るほうがましだという意図的な取捨選択です。
+
+### 期間の書式
+
+`--recent`と`--stale`は、**正の整数1つと単位1つ**からなる期間を受け取ります。
+
+| 単位 | 意味 |
+| ---- | ---- |
+| `s`  | 秒   |
+| `m`  | 分   |
+| `h`  | 時間 |
+| `d`  | 日   |
+| `w`  | 週   |
+
+例: `90s`、`30m`、`12h`、`2d`、`1w`。
+
+これ以外は説明付きで終了コード`2`になります。空の値、単位の無い数値（`30`）、複合形式（`1h30m`）、小数（`1.5d`）、ゼロ（`0d`）、オーバーフローするほど大きな値がこれにあたります。
+
+:::caution[AGE列の単位と期間の単位は意図的に異なります]
+AGE列は`mo`（月）と`y`（年）を表示しますが、`--recent`/`--stale`はこれらを受け付け**ません**。これらの表示単位は近似値（それぞれ30日と365日）であり、近似的な「月」で書かれたフィルタは暦と静かに食い違ってしまうためです。代わりに週または日で書いてください。「およそ6か月」は`26w`、「およそ1年」は`52w`（または`365d`）です。
+:::
+
+境界は厳密で、経過時間が判明している全Worktreeについてこの2つは互いの補集合になります。
+
+- `--recent <dur>`は`now − commit ≤ dur`の行を残します（**以下**）
+- `--stale <dur>`は`now − commit > dur`の行を残します（**超過**）
+
+したがって`vibe list --recent 1d`と`vibe list --stale 1d`は、tipコミット日時が判明している全Worktreeを重複なく分け合います。
+
+**未来**の日時を持つコミット（コミットを作成したマシンとこのマシンの時刻のずれで日常的に起こります）は`--recent`扱いになります。これはAGE列がすでに`now`と表示していることと一致します。
+
+tipコミットが**無い**Worktree（unbornブランチ、あるいはログを読み取れなかったもの）は`--recent`にも`--stale`にも**マッチしません**。どちらもその行が持たないコミット日時についての問いだからです。
+
+### ソート
+
+`--sort`は次の3つのキーのいずれかを取ります。
+
+| キー     | 並び順                                                  |
+| -------- | ------------------------------------------------------- |
+| `age`    | tipコミットが新しい順。同着は名前順                     |
+| `name`   | 名前の辞書順                                            |
+| `status` | dirtyを先頭に、次に変更エントリ数が多い順、最後に名前順 |
+
+`--sort`を指定すると、現在のWorktreeを先頭に置く規則を含め、既定の並び順が**完全に置き換わります**。`--sort age`は最も新しい行が先頭に来ることを約束するものであり、1行だけ例外にすると、たまたま自分がいるWorktreeが動いてしまうためです。
+
+`--sort name`では、detached HEADのWorktreeもディレクトリのbasename（`--json`が`name`として出力するのと同じ値）で参加します。
+
+いずれのソートも最終的なタイブレークとしてWorktreeの**パス**を用いるため、出力は完全に決定的です。兄弟ディレクトリにある2つのdetached Worktreeはbasenameが一致しうるので、これが無いと両者の順序は「どちらに最近jumpしたか」に依存してしまいます。
+
+経過時間が**不明**な行は`--sort age`で常に末尾に置かれ、`--reverse`を付けても末尾のままです。「最も古いWorktree」は経過時間を持つWorktreeについての問いなので、`--sort age --reverse --limit 5`は問いの対象外の行に枠を使わず、実際の答えを5件返します。
+
+### `--reverse`と`--limit`
+
+`--reverse`は、その時点で最終的な表示順になるはずだったものを反転します。したがって単独でも意味を持ち（既定の「現在のWorktree優先＋MRU」順を反転します）、`--sort`の後にも使えます。
+
+`--limit <n>`はソートと反転の**後**に切り詰めます。この順序こそが「最も古い5件」を`--sort age --reverse --limit 5`で書けるようにしています。先に切り詰めると、最も新しい5件を逆順に表示するだけになり、別の集合になってしまいます。`--limit 0`は（終了コード`2`で）拒否されます。何も表示しない一覧は、Worktreeが1つも無いリポジトリと区別がつかないためです。
+
+フィルタが何にもマッチしなかった場合、`vibe list`は`No worktrees found.`ではなく`No worktrees matched the given filters.`と明示します。この2つは次に取るべき行動が異なるためです。`--json`モードでは単に`[]`になります。
+
+## JSON出力
+
+```bash
+vibe list --json 2>&1 | jq .
+```
+
+`2>&1`が必要です。`vibe`はJSONペイロードを**stderr**に書き込みます。stdoutはシェルのevalチャンネルだからです。シェルラッパーは`eval "$(command vibe "$@")"`を実行するため、stdoutに書かれたものはシェルコードとして実行されてしまいます。`--json`モードでは、`list`自身がstderrに書き込むのはペイロードだけであり、ドキュメントがパース可能なままであるよう`--verbose`の診断メッセージやコマンド自身の警告も抑止されます。
+
+1つだけこのコマンドの制御外の例外があります。**グローバル**フラグの競合に関する警告（`vibe --verbose --quiet list --json`は`Warning: Both --verbose and --quiet specified.`を出力します）はサブコマンドの実行前に出力されるため、ペイロードより先に現れます。出力をパースする場合は競合するグローバルフラグを併用しないでください。
+
+### スキーマ
+
+配列の各要素は次のフィールドを持つオブジェクトです。
+
+| フィールド       | 型             | 説明                                                                  |
+| ---------------- | -------------- | --------------------------------------------------------------------- |
+| `branch`         | string \| null | チェックアウト中のブランチ。detached HEADでは`null`                   |
+| `path`           | string         | Worktreeの絶対パス                                                    |
+| `current`        | boolean        | コマンドを実行したWorktreeかどうか                                    |
+| `scratch`        | boolean        | 自動生成された`scratch/<timestamp>`のWorktreeかどうか                 |
+| `name`           | string         | 常に存在する名前。ブランチ名、detached HEADではディレクトリのbasename |
+| `base`           | string \| null | BASE列の値。該当しない場合や読み取れなかった場合は`null`              |
+| `head`           | string \| null | HEADが指すコミットのsha。unbornブランチ（コミットなし）では`null`     |
+| `last_commit_at` | string \| null | tipのcommitter dateのISO 8601表記。unbornブランチでは`null`           |
+| `status`         | string \| null | `"clean"`または`"dirty"`。gitに問い合わせられなかった場合は`null`     |
+| `dirty_files`    | number \| null | `git status`が報告したエントリ数。`status`が`null`のときは常に`null`  |
+| `summary`        | string         | `[summary]`が設定されている場合の**み**存在。未回答の場合は`""`       |
+
+`branch`・`path`・`current`・`scratch`はv3.1.0で出荷されたフィールドであり、名前・型・位置が維持されます。新しいフィールドは末尾に追加されるだけです。
+
+`head`は常に`git show`に渡せるshaか`null`のいずれかです。まだコミットが無いブランチのWorktreeでは、gitが出力する全てゼロのプレースホルダOIDではなく`null`を報告するため、このフィールドに解決できないsha形式の値が入ることはありません。
+
+`summary`は`[summary]`が未設定の場合には完全に省略されるため、この機能を使っていないリポジトリでは、機能が存在しなかった頃とまったく同じドキュメントが出力されます。
+
+AGEの相対表記は出力されません。「3日前」が欲しい利用側は、厳密な`last_commit_at`から自分で計算するほうが適切です。
+
+### 例
+
+```bash
+# 変更のある全Worktree — 選択はフィルタが行い、jqは射影のみ
+vibe list --json --dirty 2>&1 | jq -r '.[] | .path'
+
+# ブランチとベースをテーブルで
+vibe list --json 2>&1 | jq -r '.[] | "\(.name)\t\(.base // "-")"'
+
+# 現在自分がいるWorktree
+vibe list --json 2>&1 | jq -r '.[] | select(.current) | .path'
+
+# 最も長く触っていないWorktree 3件
+vibe list --json --sort age --reverse --limit 3 2>&1 | jq -r '.[] | .name'
+```
+
+[フィルタ・ソート・件数制限のフラグ](#フィルタソート件数制限)はテーブルと全く同じように`--json`にも適用されます。したがってスクリプト側は`jq`で選択ロジックを再実装せず、`vibe`に押し込めます。何にもマッチしなかったフィルタ結果は`[]`になります。
+
+## 並び順
+
+行の並びは、まず現在のWorktree、次に残りのWorktreeを最近jumpした順（[`vibe jump`](/ja/commands/jump/)の選択プロンプトと同じMRU順）、最後に一度も訪れていないWorktreeをgit自身の順序で並べます。
+
+MRUストアが存在しない、あるいは壊れている場合はgitの順序に縮退します。一覧が失敗することはありません。
+
+これは**既定**の並び順です。[`--sort`](#ソート)がこれを置き換え、`--reverse`はその時点で有効な順序を反転します。
+
+## 終了コード
+
+| コード | 条件                                                                            |
+| ------ | ------------------------------------------------------------------------------- |
+| `0`    | 一覧を出力した（フィルタが何にもマッチしなかった場合を含む）                    |
+| `1`    | gitリポジトリ内ではない                                                         |
+| `2`    | 引数が不正: 排他フラグの同時指定、期間の書式誤り、`--limit 0`、未知のソートキー |
+
+## 関連
+
+- [jump](/ja/commands/jump/) - 一覧のWorktreeへ移動する
+- [start](/ja/commands/start/) - 新しいWorktreeを作成する
+- [clean](/ja/commands/clean/) - 現在のWorktreeを削除する
