@@ -20,6 +20,7 @@ import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { once } from "node:events";
 import { resolve, relative, isAbsolute } from "node:path";
+import type { Readable, Writable } from "node:stream";
 
 const execFileAsync = promisify(execFile);
 
@@ -145,6 +146,115 @@ export function resolveDebPath(arg: string, cwd: string): string {
 }
 
 /**
+ * True for the stream errors raised when the consumer of a pipe goes away: the
+ * write itself fails with EPIPE, or the stream has already been torn down
+ * (`ERR_STREAM_DESTROYED` / `ERR_STREAM_WRITE_AFTER_END`) by the time the next
+ * chunk is pushed.
+ */
+export function isBrokenPipeError(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException | undefined)?.code;
+  return (
+    code === "EPIPE" || code === "ERR_STREAM_DESTROYED" || code === "ERR_STREAM_WRITE_AFTER_END"
+  );
+}
+
+/**
+ * Stream one process's stdout into another's stdin, surviving the consumer
+ * exiting before it has read everything.
+ *
+ * Why not a bare `source.pipe(sink)`: when the consumer leaves early (tar exits
+ * non-zero while dpkg-deb is still streaming tens of megabytes), the write to
+ * its stdin emits EPIPE with no listener attached and Node aborts the whole
+ * verifier with a raw stack trace, hiding the verification error the exit codes
+ * already describe.
+ *
+ * Why the source is torn down instead of being left alone: `pipe()` unhooks
+ * itself as soon as the sink goes away, so nothing drains the producer any more
+ * and it blocks forever on a full pipe — the crash would merely become a hang.
+ * Closing the read end makes the producer see the broken pipe and exit, which is
+ * what lets both `close` events arrive and the exit codes be reported.
+ *
+ * Why `close` is watched as well as `error`: whether the departing consumer is
+ * observed as an EPIPE on the next write or as a silently closed stdin is a
+ * race, and handling only the error path leaves the hang reachable half the
+ * time.
+ *
+ * Why the sink is torn down when the *source* faults: `pipe()` only forwards
+ * `end` on a clean end-of-stream, so a destroyed source leaves the consumer's
+ * stdin open and tar waits for an EOF that never comes — the caller awaits both
+ * `close` events before reading the recorded error, so the fault would never be
+ * reported at all.
+ *
+ * Only broken-pipe errors are swallowed. Anything else is recorded and handed
+ * back through the returned getter so the caller can raise it from its own
+ * awaited path: throwing from inside a stream `error` listener would surface as
+ * an uncaughtException that `main().catch` never sees, which is the raw-stack-
+ * trace failure this whole function exists to remove.
+ *
+ * @returns a getter for the first non-broken-pipe error seen on either stream,
+ *   to be checked once both processes have closed.
+ */
+export function pipeIgnoringBrokenPipe(source: Readable, sink: Writable): () => Error | undefined {
+  let failure: Error | undefined;
+  const record = (err: unknown) => {
+    const isRealFault = !isBrokenPipeError(err) && failure === undefined;
+    if (isRealFault) {
+      failure = err instanceof Error ? err : new Error(String(err));
+    }
+  };
+  sink.on("error", (err: unknown) => {
+    record(err);
+    // Torn down even for a real fault: with the sink gone nothing drains the
+    // producer, so leaving it alone would replace the error with a hang.
+    source.destroy();
+  });
+  sink.on("close", () => {
+    // `writableFinished` says the sink consumed everything it was given, which
+    // `source.readableEnded` alone cannot: the latter is a fact about the
+    // producer, so a sink closing while data is still buffered would truncate.
+    const drainedCleanly = source.readableEnded && sink.writableFinished;
+    if (!drainedCleanly) {
+      source.destroy();
+    }
+  });
+  source.on("error", (err: unknown) => {
+    record(err);
+    // Destroyed rather than `end()`ed: the bytes already written are a truncated
+    // member, and letting tar parse them could turn an I/O fault into a
+    // plausible-looking "marker missing" verdict instead of the real error.
+    sink.destroy();
+  });
+  source.pipe(sink);
+  return () => failure;
+}
+
+/**
+ * Decide which process to blame once both have closed, or `undefined` when the
+ * extraction succeeded. Pure so the precedence is testable without spawning.
+ *
+ * Why tar is reported first: when it leaves early, dpkg-deb is killed by SIGPIPE
+ * (exit null) purely as a consequence, and blaming the producer for that would
+ * name the wrong process and hide the real "tar exit N" reason.
+ *
+ * Why the producer's status is checked at all: dpkg-deb failing on a corrupt
+ * archive still closes the pipe, which tar reports as a clean end-of-input, so
+ * ignoring it would turn an unreadable package into an empty extraction.
+ */
+export function describeMemberFailure(
+  tarCode: number | null,
+  dpkgCode: number | null,
+  member: string,
+): string | undefined {
+  if (tarCode !== 0) {
+    return `could not extract ${member} from the package (tar exit ${tarCode})`;
+  }
+  if (dpkgCode !== 0) {
+    return `dpkg-deb could not read the package (exit ${dpkgCode})`;
+  }
+  return undefined;
+}
+
+/**
  * Read one member's text out of the .deb without unpacking it to disk.
  *
  * Why not `sh -c 'dpkg-deb --fsys-tarfile ... | tar -xO ...'`: that would put a
@@ -158,7 +268,7 @@ async function readMember(debPath: string, member: string): Promise<string> {
   const tar = spawn("tar", ["-xO", `./${member}`], {
     stdio: ["pipe", "pipe", "inherit"],
   });
-  dpkg.stdout.pipe(tar.stdin);
+  const pipeFailure = pipeIgnoringBrokenPipe(dpkg.stdout, tar.stdin);
 
   const chunks: Buffer[] = [];
   tar.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -168,19 +278,24 @@ async function readMember(debPath: string, member: string): Promise<string> {
     once(tar, "close").then(([code]) => code as number | null),
   ]);
 
-  // The producer's status is checked too: dpkg-deb failing on a corrupt archive
-  // still closes the pipe, which tar reports as a clean end-of-input, so
-  // ignoring it would turn an unreadable package into an empty extraction.
-  if (dpkgCode !== 0) {
-    throw new Error(`dpkg-deb could not read the package (exit ${dpkgCode})`);
+  // Raised here rather than from the stream listener that saw it: an error
+  // thrown inside a listener becomes an uncaughtException and escapes
+  // `main().catch`, printing a raw stack trace instead of "verify-deb: ...".
+  const streamFailure = pipeFailure();
+  if (streamFailure) {
+    throw new Error(`failed while streaming the package: ${streamFailure.message}`);
   }
-  if (tarCode !== 0) {
-    throw new Error(`could not extract ${member} from the package (tar exit ${tarCode})`);
+
+  const failure = describeMemberFailure(tarCode, dpkgCode, member);
+  if (failure) {
+    throw new Error(failure);
   }
 
   const content = Buffer.concat(chunks).toString("utf-8");
-  // tar exits 0 when asked for a member that does not match anything, so an
-  // empty result is the only signal distinguishing "absent" from "empty file".
+  // A member that is present but empty extracts to no bytes with a clean exit,
+  // which is indistinguishable from a silent extraction failure; an absent
+  // member is already caught above (measured: GNU tar 1.35 exits 2 and bsdtar
+  // exits 1 for a member that does not match anything).
   if (content === "") {
     throw new Error(`extracted ${member} from the package but it was empty`);
   }
