@@ -37,6 +37,7 @@ pub mod settings;
 pub mod settings_io;
 pub mod shell;
 pub mod stdin;
+pub mod summary;
 pub mod timestamp;
 pub mod upgrade_meta;
 pub mod worktree_ops;

@@ -14,8 +14,8 @@
 //!
 //! The BASE column answers "what is this branch based on", and is resolved as
 //! the branch's configured upstream with the remote prefix stripped, falling
-//! back to [`get_default_branch`] when the branch tracks nothing. The main
-//! worktree (the one already on the default branch) shows `-`.
+//! back to the repository's default branch when the branch tracks nothing. The
+//! main worktree (the one already on the default branch) shows `-`.
 //!
 //! Why not a per-branch `git merge-base`: it costs one git invocation per
 //! worktree on top of the status calls, and its answer is a COMMIT, not a
@@ -24,6 +24,19 @@
 //! branching), so the column would sometimes name the wrong parent with no way
 //! for the reader to tell. An upstream is a fact the user configured, and the
 //! default branch is the documented fallback, so both are explainable.
+//!
+//! # SUMMARY
+//!
+//! The SUMMARY column exists only when the repository's `.vibe.toml` configures
+//! `[summary] command`; see [`crate::summary`] for the batch protocol, the
+//! cache, and the bounds applied to the command's output. Its presence follows
+//! the CONFIG rather than the command's success, so an empty cell never has to
+//! be read as "maybe the feature is off".
+//!
+//! The config is loaded from the MAIN worktree so the column does not change
+//! shape depending on which checkout the user is standing in, and it goes
+//! through the ordinary trust gate — an untrusted `.vibe.toml` fails the command
+//! rather than silently running nothing.
 //!
 //! # Divergences from the original request (#408)
 //!
@@ -52,17 +65,23 @@
 
 use crate::commands::jump::SCRATCH_PREFIX;
 use crate::commands::Outcome;
+use crate::config::DEFAULT_SUMMARY_TIMEOUT_SECONDS;
+use crate::config_loader::load_vibe_config;
 use crate::error::{Result, VibeError};
 use crate::git::{
-    branch_ref_info, count_status_entries_z, detached_head_info, get_default_branch,
-    get_worktree_list, is_inside_worktree, is_resolved_oid, lexical_normalize_path,
+    branch_ref_info, count_status_entries_z, detached_head_info, get_worktree_list,
+    is_inside_worktree, is_resolved_oid, lexical_normalize_path, resolve_default_branch,
     worktree_status_z, GitRunner, Worktree,
 };
 use crate::io::Io;
 use crate::mru::{load_mru_data, sort_by_mru};
 use crate::output::{report_log, sanitize_for_display, verbose_log, warn_log, OutputOptions};
+use crate::settings::RepoResolver;
+use crate::summary::runner::SummaryRunner;
+use crate::summary::{entry_key, resolve_summaries, EntryKeyParts, SummaryRequest, SummaryTarget};
 use serde::Serialize;
 use std::collections::HashMap;
+use std::time::Duration;
 use unicode_width::UnicodeWidthStr;
 
 /// Marker printed in the first column for the worktree the user is standing in.
@@ -152,20 +171,62 @@ pub struct ListEntry {
     /// string that git, not we, formatted.
     #[serde(skip)]
     pub commit_secs: Option<i64>,
+    /// The `[summary]` command's answer for this worktree.
+    ///
+    /// `skip_serializing_if`: a repository with no `[summary]` configured must
+    /// produce exactly the JSON it produced before this field existed, so a
+    /// consumer diffing the document sees no change from a feature it does not
+    /// use. When `[summary]` IS configured every row carries the field, empty
+    /// string included: the presence of the key then means "the feature is on",
+    /// and a consumer never has to distinguish "no summary" from "no feature".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    /// The raw `git status -z` bytes this row's STATUS was counted from, kept
+    /// only to key the summary cache.
+    ///
+    /// Carried on the row rather than re-fetched: the status call already
+    /// happened for the STATUS column, and asking git a second time would both
+    /// double the per-worktree cost and open a window where the two answers
+    /// disagree.
+    #[serde(skip)]
+    pub status_payload: Option<Vec<u8>>,
+    /// Whether this row's [`base`](Self::base) is a GUESS made after the batched
+    /// ref lookup failed outright.
+    ///
+    /// A failed `git for-each-ref` yields an empty map, which is
+    /// indistinguishable from "no branch has an upstream" — so every branch row
+    /// takes the default-branch fallback. That fallback frequently reproduces
+    /// the base a row USED to have, which makes the summary cache key match an
+    /// entry describing a different upstream, and the stale summary is shown
+    /// with nothing to hint that anything degraded.
+    ///
+    /// Recorded per row rather than returned as an error because the listing
+    /// must still be produced: this is the flag that lets the cache decline to
+    /// trust the row without the column disappearing.
+    #[serde(skip)]
+    pub base_is_degraded: bool,
 }
 
 /// Inputs `list` pulls from the binary.
-pub struct ListDeps<'a, I, G>
+pub struct ListDeps<'a, I, G, R, S>
 where
     I: Io,
     G: GitRunner,
+    R: RepoResolver,
+    S: SummaryRunner,
 {
     pub io: &'a I,
     pub git: &'a G,
+    /// Resolves repo identity for the trust check on `.vibe.toml`.
+    pub resolver: &'a R,
+    /// Runs the `[summary]` command, when one is configured.
+    pub summary_runner: &'a S,
     /// The directory the command was invoked from, used to mark the current row.
     pub cwd: &'a str,
     /// Current wall-clock in epoch milliseconds, for the AGE column.
     pub now_ms: i64,
+    /// This build's version string, for the settings/trust store.
+    pub version: &'a str,
 }
 
 /// Warnings held back until the output mode is known.
@@ -175,6 +236,13 @@ where
 /// bytes to the document. Collecting instead of writing makes that structural: a
 /// warning added anywhere in the enrichment path cannot corrupt the payload,
 /// because the only flush point knows whether text mode is in effect.
+///
+/// Every message is also SANITIZED on the way in. Warning text is assembled from
+/// exactly the sources the table's cells are — git's error strings, worktree
+/// paths, and the summary command's stderr — so a warning is as capable of
+/// carrying a terminal escape as any cell, but nothing about the phrase
+/// "warning" makes a caller think to escape it. Doing it here rather than at
+/// each `push` site means a warning added later is safe by construction.
 #[derive(Debug, Default)]
 struct DeferredWarnings {
     messages: Vec<String>,
@@ -182,7 +250,16 @@ struct DeferredWarnings {
 
 impl DeferredWarnings {
     fn push(&mut self, message: String) {
-        self.messages.push(message);
+        // Sanitize on ENTRY, not at flush: the stored form is then the only
+        // form, so any future reader of `messages` gets the safe one too.
+        self.messages.push(sanitize_for_display(&message));
+    }
+
+    /// Absorb everything a [`CapturingIo`] intercepted.
+    fn absorb(&mut self, captured: Vec<String>) {
+        for message in captured {
+            self.push(message);
+        }
     }
 
     /// Emit everything collected. Called only on the text-mode path.
@@ -190,6 +267,88 @@ impl DeferredWarnings {
         for message in self.messages {
             warn_log(io, &message);
         }
+    }
+}
+
+/// An [`Io`] that buffers stderr instead of writing it.
+///
+/// `DeferredWarnings` only defers the diagnostics THIS module writes. Everything
+/// `list` calls into — the trust loader, the settings loader, the summary
+/// orchestrator — takes an `&impl Io` and writes through it the moment it has
+/// something to say, which in `--json` mode lands in front of the payload and
+/// makes the document unparseable. Two such paths were shipped and reachable:
+/// `settings_io`'s "Hash verification is disabled" notice (emitted on every run
+/// of a repo using `skipHashCheck`) and its "Settings validation failed" notice.
+///
+/// Rather than thread a mode flag down through every callee — which makes each
+/// of them responsible for a caller's output contract, and silently rots the
+/// moment a new one is added — the *stream* is swapped for one that records.
+/// Anything written while this is installed is captured and can then be
+/// released, or withheld, by whoever knows the output mode.
+///
+/// Only `writeln_stderr` is intercepted; every other capability forwards to the
+/// real [`Io`], because a captured run must still see the same environment, the
+/// same `$HOME` and the same tty answers as an uncaptured one.
+struct CapturingIo<'a, I: Io> {
+    inner: &'a I,
+    captured: std::cell::RefCell<Vec<String>>,
+}
+
+impl<'a, I: Io> CapturingIo<'a, I> {
+    fn new(inner: &'a I) -> Self {
+        CapturingIo {
+            inner,
+            captured: std::cell::RefCell::new(Vec::new()),
+        }
+    }
+
+    fn into_captured(self) -> Vec<String> {
+        self.captured.into_inner()
+    }
+}
+
+impl<I: Io> Io for CapturingIo<'_, I> {
+    fn writeln_stderr(&self, message: &str) {
+        self.captured.borrow_mut().push(message.to_string());
+    }
+
+    fn read_line(&self) -> Option<String> {
+        self.inner.read_line()
+    }
+
+    /// Always `false`, so callees write PLAIN text into the buffer.
+    ///
+    /// This is not a lie about the terminal, it is the truth about this stream:
+    /// nothing written here is going to a terminal, it is going into a `Vec`.
+    /// `is_color_enabled` reads exactly this signal, so a callee that colors its
+    /// own warning (`warn_log` does) would otherwise embed real ANSI escapes in
+    /// the captured string — which `DeferredWarnings::push` then neutralizes to
+    /// `\u{fffd}`, and the flush re-colors, so the user sees a literal
+    /// `<?>[33m` in the middle of their warning.
+    ///
+    /// Capturing the uncolored message and letting the flush color it once is
+    /// the only ordering in which sanitization and coloring do not fight: the
+    /// escapes that end up on the terminal are then only the ones `warn_log`
+    /// adds at the very end, after sanitization has run.
+    fn is_stderr_terminal(&self) -> bool {
+        false
+    }
+
+    fn is_stdin_terminal(&self) -> bool {
+        self.inner.is_stdin_terminal()
+    }
+
+    /// Forwarded EXCEPT for the color-forcing variable, for the reason given on
+    /// [`is_stderr_terminal`](Self::is_stderr_terminal): `FORCE_COLOR` overrides
+    /// the tty check, so leaving it visible would put the escapes back.
+    ///
+    /// `NO_COLOR` is left alone — it can only ever disable color, which is
+    /// already what this stream wants.
+    fn env(&self, key: &str) -> Option<String> {
+        if key == "FORCE_COLOR" {
+            return None;
+        }
+        self.inner.env(key)
     }
 }
 
@@ -241,8 +400,8 @@ pub struct ListOptions {
 }
 
 /// Run `vibe list [--json]` with the given selection.
-pub fn list_command<I, G>(
-    deps: &ListDeps<I, G>,
+pub fn list_command<I, G, R, S>(
+    deps: &ListDeps<I, G, R, S>,
     json: bool,
     options: &ListOptions,
     opts: OutputOptions,
@@ -250,6 +409,8 @@ pub fn list_command<I, G>(
 where
     I: Io,
     G: GitRunner,
+    R: RepoResolver,
+    S: SummaryRunner,
 {
     let inside = is_inside_worktree(deps.git);
     if !inside {
@@ -260,7 +421,27 @@ where
     }
 
     let mut warnings = DeferredWarnings::default();
-    let entries = collect_entries(deps, &mut warnings)?;
+    let (mut entries, main_path) = collect_entries(deps, &mut warnings)?;
+    // Whether the SUMMARY column exists at all. Driven by the CONFIG, not by
+    // whether any summary came back: a column that appeared and disappeared with
+    // the command's success would make an empty cell indistinguishable from an
+    // unconfigured feature.
+    //
+    // Summaries are attached BEFORE the selection, over every worktree rather
+    // than the surviving rows. The batch protocol's contract is "one call for
+    // all cache misses" (#408), and a filter is a display choice: asking only
+    // about the rows that happen to survive `--dirty` would make the cache's
+    // contents depend on the flags of whichever run populated it, so the next
+    // run with different flags would pay for a second call. Filtering after
+    // enrichment costs nothing — the command runs at most once either way — and
+    // keeps the cache flag-independent.
+    let has_summary = attach_summaries(
+        deps,
+        &mut entries,
+        main_path.as_deref(),
+        &mut warnings,
+        opts,
+    )?;
     // Applied to BOTH output modes: `--json` is a rendering choice, not a
     // different query, so a script and a human passing the same flags must be
     // looking at the same set of worktrees.
@@ -304,25 +485,186 @@ where
         return Ok(Outcome::none());
     }
 
-    for line in render_table(&entries) {
+    for line in render_table(&entries, has_summary) {
         report_log(deps.io, &line);
     }
 
     Ok(Outcome::none())
 }
 
-/// Build the ordered entry list: the current worktree first, then the rest in
-/// MRU order (most recently jumped-to first), then never-visited worktrees in
-/// git's own emitted order.
-fn collect_entries<I, G>(
-    deps: &ListDeps<I, G>,
+/// Fill in every row's `summary`, if `[summary]` is configured. Returns whether
+/// the SUMMARY column exists.
+///
+/// The config is read from the MAIN worktree, not from the cwd: `[summary]` is a
+/// repository-wide setting, and reading it per worktree would make the column
+/// appear or disappear depending on which checkout the user happens to be
+/// standing in — and would let a feature branch's uncommitted `.vibe.toml`
+/// silently change what runs.
+///
+/// An untrusted `.vibe.toml` propagates the existing [`load_vibe_config`] error
+/// rather than being ignored: the whole point of the trust store is that an
+/// unreviewed config never runs, and silently degrading to "no summary" would
+/// hide the fact that the user's configuration is not in effect.
+///
+/// Everything here runs against a [`CapturingIo`], so no callee can write to
+/// stderr while the output mode is still undecided; what they wrote is turned
+/// into deferred warnings on the way out.
+fn attach_summaries<I, G, R, S>(
+    deps: &ListDeps<I, G, R, S>,
+    entries: &mut [ListEntry],
+    main_path: Option<&str>,
     warnings: &mut DeferredWarnings,
-) -> Result<Vec<ListEntry>>
+    opts: OutputOptions,
+) -> Result<bool>
 where
     I: Io,
     G: GitRunner,
+    R: RepoResolver,
+    S: SummaryRunner,
+{
+    // No main worktree means an empty listing: there is nothing to summarize,
+    // and nowhere to read a config from.
+    let Some(main_path) = main_path else {
+        return Ok(false);
+    };
+
+    let captured_io = CapturingIo::new(deps.io);
+    let outcome = attach_summaries_captured(deps, &captured_io, entries, main_path, opts);
+    // Absorbed even on the error path: the trust loader can warn AND then the
+    // config can turn out to be untrusted, and dropping the warning because of
+    // the error would lose the more informative of the two.
+    warnings.absorb(captured_io.into_captured());
+
+    let (has_summary, summary_warnings) = match outcome {
+        Ok(pair) => pair,
+        Err(e) => {
+            // Deferral exists to protect the `--json` payload, and there is no
+            // payload on this path: the error propagates to `main`, which prints
+            // it and exits non-zero, so nothing will ever be parsed. Withholding
+            // the collected warnings here would discard them for good, and they
+            // are frequently the reason for the error that follows (the settings
+            // store failed validation, so the trust entry was not found, so the
+            // config reads as untrusted). Flushed BEFORE returning so they
+            // appear above the error, in the order they happened.
+            std::mem::take(&mut warnings.messages)
+                .into_iter()
+                .for_each(|m| warn_log(deps.io, &m));
+            return Err(e);
+        }
+    };
+
+    for message in summary_warnings {
+        warnings.push(message);
+    }
+    Ok(has_summary)
+}
+
+/// The body of [`attach_summaries`], run against a captured stderr.
+///
+/// Split out purely so the capture is released exactly once, on every path
+/// including the `?` ones — an inline version would need the absorb repeated at
+/// each early return, which is the shape that eventually misses one.
+fn attach_summaries_captured<I, G, R, S, C>(
+    deps: &ListDeps<I, G, R, S>,
+    io: &C,
+    entries: &mut [ListEntry],
+    main_path: &str,
+    opts: OutputOptions,
+) -> Result<(bool, Vec<String>)>
+where
+    I: Io,
+    G: GitRunner,
+    R: RepoResolver,
+    S: SummaryRunner,
+    C: Io,
+{
+    let config = load_vibe_config(io, deps.resolver, deps.version, main_path)?;
+    let Some(summary_config) = config.as_ref().and_then(|c| c.summary.as_ref()) else {
+        return Ok((false, Vec::new()));
+    };
+    // A `[summary]` section with no `command` is a section that configures
+    // nothing; there is no column to show.
+    let Some(command) = summary_config.command.as_deref().filter(|c| !c.is_empty()) else {
+        return Ok((false, Vec::new()));
+    };
+
+    let targets: Vec<SummaryTarget> = entries
+        .iter()
+        .map(|e| SummaryTarget {
+            name: e.name.clone(),
+            path: e.path.clone(),
+            base: e.base.clone(),
+            head: e.head.clone(),
+            key: entry_key(&EntryKeyParts {
+                name: &e.name,
+                base: e.base.as_deref(),
+                head: e.head.as_deref(),
+                status_payload: e.status_payload.as_deref(),
+            }),
+            // A row opts out of the cache whenever any KEY MATERIAL was
+            // guessed rather than read:
+            //
+            // - an unreadable status digests identically to a clean tree's, and
+            // - a base invented by the default-branch fallback (after the ref
+            //   lookup failed wholesale) frequently reproduces the row's former
+            //   base.
+            //
+            // Either way the key can collide with an entry describing a
+            // different state, so a degraded run neither trusts the cache nor
+            // writes to it. See `SummaryTarget::cacheable`.
+            cacheable: e.status_payload.is_some() && !e.base_is_degraded,
+        })
+        .collect();
+
+    let timeout = Duration::from_secs(
+        summary_config
+            .timeout_seconds
+            .unwrap_or(DEFAULT_SUMMARY_TIMEOUT_SECONDS),
+    );
+    let result = resolve_summaries(
+        io,
+        deps.summary_runner,
+        &SummaryRequest {
+            command,
+            main_worktree_path: main_path,
+            timeout,
+            targets: &targets,
+        },
+        opts,
+    );
+
+    for entry in entries.iter_mut() {
+        // Every row carries the field once the feature is on, so an unanswered
+        // worktree reads as "no summary" rather than "no SUMMARY column".
+        entry.summary = Some(result.by_path.get(&entry.path).cloned().unwrap_or_default());
+    }
+
+    Ok((true, result.warnings))
+}
+
+/// Build the ordered entry list: the current worktree first, then the rest in
+/// MRU order (most recently jumped-to first), then never-visited worktrees in
+/// git's own emitted order.
+///
+/// Also returns the MAIN worktree's path — git's first emitted entry, before any
+/// reordering. Returned from here rather than re-derived with
+/// `git::get_main_worktree_path` because that helper runs `git worktree list`
+/// all over again, and a second enumeration could disagree with the rows just
+/// built if a worktree were added between the two calls.
+fn collect_entries<I, G, R, S>(
+    deps: &ListDeps<I, G, R, S>,
+    warnings: &mut DeferredWarnings,
+) -> Result<(Vec<ListEntry>, Option<String>)>
+where
+    I: Io,
+    G: GitRunner,
+    R: RepoResolver,
+    S: SummaryRunner,
 {
     let worktrees = get_worktree_list(deps.git)?;
+    // git lists the main worktree first; captured before the MRU reordering
+    // below moves it.
+    let main_path = worktrees.first().map(|w| w.path.clone());
     // MRU is best-effort everywhere else in the codebase; a missing or corrupt
     // store must degrade to git order, never fail the listing.
     let mru = load_mru_data(deps.io);
@@ -347,7 +689,7 @@ where
     // Current worktree first; the MRU order established above is preserved for
     // everything else because `sort_by_key` is stable.
     entries.sort_by_key(|e| !e.current);
-    Ok(entries)
+    Ok((entries, main_path))
 }
 
 impl ListFilter {
@@ -552,7 +894,7 @@ fn status_rank(entry: &ListEntry) -> u8 {
 ///
 /// The git budget is deliberately bounded at roughly `N + 4`: one
 /// [`branch_ref_info`] call covers every branch's commit time AND upstream,
-/// [`get_default_branch`] is resolved at most once (it costs up to two git
+/// the default branch is resolved at most once (it costs up to two git
 /// calls), and only the per-worktree status has to be asked `N` times because
 /// git has no batch form for it. A naive implementation resolving each column
 /// per row would be `4N`.
@@ -583,6 +925,11 @@ fn enrich_entries<G: GitRunner>(
     // call suppresses the fallback entirely and every BASE degrades to unknown.
     // A per-branch MISS (unborn branch, ref genuinely absent) is a different
     // thing and still falls back, because there the call did answer.
+    //
+    // This one fact has TWO consumers: the BASE column degrades to `-` (here),
+    // and the summary cache refuses to key an entry on it (`base_is_degraded`
+    // below). They are deliberately driven from the same flag — a row whose BASE
+    // is a guess must neither be displayed as fact nor cached as one.
     let ref_info: Option<HashMap<String, _>> = branch_ref_info(git, &branches)
         .ok()
         .map(|entries| entries.into_iter().collect());
@@ -591,7 +938,7 @@ fn enrich_entries<G: GitRunner>(
 
     // Resolved once, lazily: it is only needed when some branch has no upstream,
     // and it is the same answer for every row.
-    let mut default_branch: Option<String> = None;
+    let mut default_branch: Option<crate::git::DefaultBranch> = None;
     let now_secs = now_ms / 1_000;
 
     worktrees
@@ -611,6 +958,10 @@ fn enrich_entries<G: GitRunner>(
                 None => detached_head_info(git, &w.path),
             };
 
+            // Tracked per row, because only a row that ACTUALLY took the
+            // default-branch fallback is affected by that answer being a guess:
+            // a branch with an upstream never consults it.
+            let mut base_from_guessed_default = false;
             let base = match &w.branch {
                 // The ref lookup never answered, so nothing is known about ANY
                 // branch's upstream and the fallback would be a guess.
@@ -622,11 +973,10 @@ fn enrich_entries<G: GitRunner>(
                     // is no prefix left here to guess at.
                     .and_then(|i| i.upstream.clone())
                     .or_else(|| {
-                        Some(
-                            default_branch
-                                .get_or_insert_with(|| get_default_branch(git))
-                                .clone(),
-                        )
+                        let resolved =
+                            default_branch.get_or_insert_with(|| resolve_default_branch(git));
+                        base_from_guessed_default = !resolved.resolved;
+                        Some(resolved.name.clone())
                     })
                     // A branch is not based on itself; the main worktree would
                     // otherwise read "develop ← develop".
@@ -637,7 +987,24 @@ fn enrich_entries<G: GitRunner>(
                 None => None,
             };
 
-            let (status, dirty_files) = match worktree_status_z(git, &w.path) {
+            // Two ways this row's base can be a guess rather than a fact: the
+            // ref lookup failed wholesale (so every branch's upstream is
+            // invisible and all of them take the fallback), or the fallback
+            // itself could not resolve and assumed a name.
+            //
+            // Deliberately independent of what `base` ENDED UP as. The self-base
+            // filter drops the value when the resolved default equals this
+            // branch, and a `None` produced that way is not the stable `None` it
+            // looks like: it exists only because the guess happened to match, so
+            // a different guess next run yields a different BASE. Gating on
+            // `base.is_some()` here — as an earlier version did — threw the
+            // degradation away in exactly the case that needs it, letting the
+            // `main` row hit a cached `base: null` after `origin/HEAD` had been
+            // re-pointed and `symbolic-ref` momentarily failed.
+            let base_is_degraded =
+                (ref_lookup_failed && w.branch.is_some()) || base_from_guessed_default;
+
+            let (status, dirty_files, status_payload) = match worktree_status_z(git, &w.path) {
                 Ok(payload) => {
                     let count = count_status_entries_z(&payload);
                     let label = if count == 0 {
@@ -645,18 +1012,16 @@ fn enrich_entries<G: GitRunner>(
                     } else {
                         STATUS_DIRTY
                     };
-                    (Some(label.to_string()), Some(count))
+                    (Some(label.to_string()), Some(count), Some(payload))
                 }
                 Err(e) => {
-                    // Sanitized as a WHOLE, after formatting: `e` is git's own
-                    // stderr text, which quotes back the path that provoked it,
-                    // so sanitizing only the interpolated path would let the
-                    // very same control characters through in git's copy of it.
-                    warnings.push(sanitize_for_display(&format!(
-                        "Could not read status of {}: {e}",
-                        w.path
-                    )));
-                    (None, None)
+                    // Not sanitized here: `DeferredWarnings::push` sanitizes
+                    // every message as a WHOLE, which is what this needs — `e`
+                    // is git's own stderr text and quotes the offending path
+                    // back, so scrubbing only the interpolated path would let
+                    // the identical control characters through in git's copy.
+                    warnings.push(format!("Could not read status of {}: {e}", w.path));
+                    (None, None, None)
                 }
             };
 
@@ -677,6 +1042,13 @@ fn enrich_entries<G: GitRunner>(
                 dirty_files,
                 age: commit.as_ref().map(|(unix, _)| format_age(now_secs, *unix)),
                 commit_secs: commit.map(|(unix, _)| unix),
+                // Filled in later, and only when `[summary]` is configured.
+                summary: None,
+                status_payload,
+                // Only a BRANCH row's base comes from the ref lookup. A detached
+                // HEAD's base is `None` by construction on every run, degraded
+                // or not, so its key is unaffected.
+                base_is_degraded,
             }
         })
         .collect()
@@ -807,11 +1179,11 @@ fn is_within(cwd: &str, base: &str) -> bool {
 /// No header row is printed. The columns are self-describing (`3d`, `clean`,
 /// `M 2`), the rows are frequently piped into `grep`, and a header would be the
 /// one line that never matches what the user is looking for.
-fn render_table(entries: &[ListEntry]) -> Vec<String> {
-    let cells: Vec<[String; 4]> = entries
+fn render_table(entries: &[ListEntry], has_summary: bool) -> Vec<String> {
+    let cells: Vec<Vec<String>> = entries
         .iter()
         .map(|e| {
-            [
+            let mut row = vec![
                 match &e.branch {
                     Some(b) => sanitize_for_display(b),
                     None => DETACHED_LABEL.to_string(),
@@ -822,18 +1194,29 @@ fn render_table(entries: &[ListEntry]) -> Vec<String> {
                     .unwrap_or_else(|| UNKNOWN_CELL.to_string()),
                 e.age.clone().unwrap_or_else(|| UNKNOWN_CELL.to_string()),
                 status_cell(e),
-            ]
+            ];
+            if has_summary {
+                // Sanitized like every other cell: this text came from an
+                // external command, so it is at least as attacker-influenced as
+                // a branch name.
+                row.push(sanitize_for_display(e.summary.as_deref().unwrap_or("")));
+            }
+            row
         })
         .collect();
 
+    let column_count = 4 + usize::from(has_summary);
     // One max per column, over the sanitized text that will actually be printed.
-    let widths: [usize; 4] = std::array::from_fn(|col| {
-        cells
-            .iter()
-            .map(|row| row[col].width())
-            .max()
-            .unwrap_or_default()
-    });
+    let widths: Vec<usize> = (0..column_count)
+        .map(|col| {
+            cells
+                .iter()
+                .filter_map(|row| row.get(col))
+                .map(|cell| cell.width())
+                .max()
+                .unwrap_or_default()
+        })
+        .collect();
 
     entries
         .iter()

@@ -24,6 +24,7 @@ use vibe_core::prompt::RealPrompt;
 use vibe_core::repo_info::RealRepoResolver;
 use vibe_core::shell::EvalDialect;
 use vibe_core::stdin::RealStdinReader;
+use vibe_core::summary::RealSummaryRunner;
 use vibe_core::worktree_path::RealScriptRunner;
 use vibe_core::{commands, Result};
 
@@ -83,11 +84,16 @@ pub fn list(json: bool, options: &ListOptions, opts: OutputOptions) -> Result<Ou
     // normalizes to `"."` and so silently marks *no* worktree as current —
     // a wrong listing presented as a correct one.
     let cwd = RealProcessControl.current_dir()?;
+    let resolver = RealRepoResolver::new(&git);
+    let summary_runner = RealSummaryRunner;
     let deps = commands::list::ListDeps {
         io: &io,
         git: &git,
+        resolver: &resolver,
+        summary_runner: &summary_runner,
         cwd: &cwd,
         now_ms: now_ms(),
+        version: version::VERSION,
     };
     commands::list::list_command(&deps, json, options, opts)
 }

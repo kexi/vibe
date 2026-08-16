@@ -836,6 +836,14 @@ pub fn list_modified_files(runner: &impl GitRunner) -> Result<Vec<GitPathRecord>
     Ok(split_nul(&out))
 }
 
+/// The remote HEAD symref every default-branch lookup starts from.
+///
+/// Named once because it is used three ways — as a `symbolic-ref` operand, as a
+/// `for-each-ref` pattern, and as the exact refname that pattern's output is
+/// compared against — and a typo in the third would silently turn every
+/// confirmation into "unconfirmed".
+const ORIGIN_HEAD_REF: &str = "refs/remotes/origin/HEAD";
+
 /// Last-resort default-branch name when git tells us nothing.
 ///
 /// `master` (not `main`): it is what git itself still falls back to when
@@ -849,27 +857,160 @@ const FALLBACK_DEFAULT_BRANCH: &str = "master";
 /// 1. `git symbolic-ref refs/remotes/origin/HEAD --short` → `origin/<name>`,
 ///    the authoritative answer for a cloned repo.
 /// 2. `git config --get init.defaultBranch` → what a fresh `git init` here would
-///    have created (covers repos with no remote).
+///    have created (covers repos with no remote). Read with `--default ""` so an
+///    unset key is a successful empty answer rather than a non-zero exit.
 /// 3. [`FALLBACK_DEFAULT_BRANCH`].
 ///
 /// Never fails: every git call is best-effort, because this feeds a *guard*, and
 /// a guard that errors out would break `clean`/`rename` in repositories where
 /// git simply has no opinion.
 pub fn get_default_branch(runner: &impl GitRunner) -> String {
-    if let Ok(out) = runner.run(&["symbolic-ref", "refs/remotes/origin/HEAD", "--short"]) {
+    resolve_default_branch(runner).name
+}
+
+/// A default-branch answer, plus whether it is REPEATABLE.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DefaultBranch {
+    pub name: String,
+    /// `true` when the answer will be the same on the next run; `false` when a
+    /// git command FAILED, so the same repository could answer differently a
+    /// moment later.
+    ///
+    /// Note what this is NOT: "git gave us a name". A repository with no remote
+    /// and no `init.defaultBranch` is answered from
+    /// [`FALLBACK_DEFAULT_BRANCH`], and that is still `resolved: true` — the
+    /// absence is a stable property of the repository, so the fallback is
+    /// deterministic and every run produces it. Treating it as unresolved would
+    /// permanently disable anything keyed on the answer for the very common
+    /// case of a purely local repository.
+    ///
+    /// What makes an answer unrepeatable is an ERROR: a probe that failed for a
+    /// reason unrelated to the value being absent (a locked index, a permission
+    /// problem, a corrupt ref store). Then the hardcoded name is standing in for
+    /// something git would normally have told us, and the next run may well
+    /// disagree.
+    pub resolved: bool,
+}
+
+/// [`get_default_branch`] with the resolution outcome attached.
+///
+/// Split out rather than changing the existing signature: `clean`, `rename` and
+/// `start` use this as a guard, where a guessed name is exactly as usable as a
+/// resolved one — only the summary cache needs to tell them apart.
+///
+/// # The value and the confidence are computed separately
+///
+/// The resolution ORDER is [`get_default_branch`]'s, unchanged and unconditional:
+/// `symbolic-ref` → `init.defaultBranch` → [`FALLBACK_DEFAULT_BRANCH`], each
+/// step tried whatever the previous one did. That matters because this name
+/// arms the default-branch guards in `clean` and `rename`: a step that gets
+/// skipped can turn a protected `main` into an unrecognized one and let
+/// `vibe rename` proceed on the branch it was supposed to refuse. No probe may
+/// stand between those steps.
+///
+/// `resolved` is therefore computed ALONGSIDE the value, never in front of it.
+/// It answers a narrower question — "would the next run get this same answer?" —
+/// which only the summary cache asks, and only to decide whether a key derived
+/// from the name is worth storing.
+///
+/// # Confirming an absence
+///
+/// `resolved` must distinguish "git says there is no value" from "git could not
+/// tell us", and the [`GitRunner`] seam makes that impossible to read off an
+/// exit code: every non-zero exit becomes an `Err`, so a missing ref and a
+/// locked ref store look identical. A command that signals absence by exiting
+/// non-zero (`show-ref --verify`, a bare `config --get`) therefore cannot answer
+/// it — one transient fault hitting both that command AND the reader makes a
+/// guessed `master` look confirmed.
+///
+/// The two confirmations used here exit ZERO in a working repository whether or
+/// not the value is set, and report absence as EMPTY OUTPUT:
+///
+/// - `for-each-ref refs/remotes/origin/HEAD` — consulted ONLY when
+///   `symbolic-ref` already failed, to tell "there is no such ref" from "there
+///   is one and it could not be read".
+/// - `config --default "" --get init.defaultBranch` — empty when unset
+///   (`--default` is git 2.18+, well below anything this project builds with).
+///
+/// Why `for-each-ref` cannot be trusted on its own: it enumerates refs that
+/// RESOLVE, so a `refs/remotes/origin/HEAD` whose target is momentarily missing
+/// (mid-fetch, mid-prune) is omitted and looks absent. `symbolic-ref` reads the
+/// symref's own contents regardless of its target, so asking it first both
+/// resolves that case correctly and keeps the enumeration's blind spot off the
+/// value path entirely.
+///
+/// # The one rule for everything below step 1
+///
+/// Every answer that is NOT `symbolic-ref`'s — the configured name and the
+/// hardcoded fallback alike — is only reached because step 1 produced nothing,
+/// so each is repeatable exactly when that nothing was CONFIRMED: the probe
+/// answered, and answered empty. If step 1 merely failed, the next run may read
+/// `origin/HEAD` perfectly well and return something else, which makes anything
+/// keyed on today's answer stale without a single visible change.
+pub fn resolve_default_branch(runner: &impl GitRunner) -> DefaultBranch {
+    let resolved = |name: String| DefaultBranch {
+        name,
+        resolved: true,
+    };
+
+    // Step 1: the authoritative source. Reads the symref's contents even when
+    // its target is missing, so a dangling origin/HEAD resolves correctly here
+    // and never reaches the enumeration below.
+    if let Ok(out) = runner.run(&["symbolic-ref", ORIGIN_HEAD_REF, "--short"]) {
         if let Some(name) = strip_remote_prefix(out.trim()) {
-            return name;
+            return resolved(name);
         }
     }
 
-    if let Ok(out) = runner.run(&["config", "--get", "init.defaultBranch"]) {
+    // Step 1 gave us nothing. Only NOW does it matter why: an absent ref makes
+    // the remaining fallbacks this repository's permanent answer, while a ref we
+    // could not read makes them a stand-in for something git would have told us.
+    //
+    // The pattern matches by PREFIX, so a ref named `refs/remotes/origin/HEAD/foo`
+    // is enumerated even when `refs/remotes/origin/HEAD` itself does not exist
+    // (verified against git: creating only the former makes the bare pattern
+    // report a hit). `--format=%(refname)` and an exact comparison make the
+    // answer mean what it is being asked to mean. Getting this wrong is a
+    // performance bug rather than a correctness one — a permanently
+    // "unconfirmed" absence re-runs the summary command every listing — but the
+    // fix costs nothing.
+    let origin_head_absent =
+        match runner.run(&["for-each-ref", "--format=%(refname)", ORIGIN_HEAD_REF]) {
+            // Enumerated nothing named exactly that: there is no such ref (or its
+            // target is missing, which step 1 would already have resolved).
+            Ok(out) => !out.lines().any(|line| line.trim() == ORIGIN_HEAD_REF),
+            // Cannot even ask, so nothing below can be called confirmed.
+            Err(_) => false,
+        };
+
+    // Step 2: what a fresh `git init` here would have created. Reached
+    // unconditionally — a failed probe must never cost us this answer.
+    let configured = runner.run(&["config", "--default", "", "--get", "init.defaultBranch"]);
+    if let Ok(out) = &configured {
         let trimmed = out.trim();
         if !trimmed.is_empty() {
-            return trimmed.to_string();
+            // The VALUE is this config's, whatever the probe said. Its
+            // REPEATABILITY, though, depends on origin/HEAD really being absent:
+            // this config is only the answer because step 1 produced nothing, so
+            // if step 1 merely FAILED, the next run may read origin/HEAD fine
+            // and return something else entirely. Re-pointing origin/HEAD at
+            // `develop` while `symbolic-ref` is momentarily unavailable would
+            // otherwise report the config's `main` as confirmed, and a cache key
+            // built on the old BASE would hit.
+            return DefaultBranch {
+                name: trimmed.to_string(),
+                resolved: origin_head_absent,
+            };
         }
     }
 
-    FALLBACK_DEFAULT_BRANCH.to_string()
+    // Step 3: the hardcoded fallback. Repeatable only when BOTH earlier sources
+    // confirmed — rather than merely failed to produce — an absence.
+    let config_absent = configured.is_ok();
+    DefaultBranch {
+        name: FALLBACK_DEFAULT_BRANCH.to_string(),
+        resolved: origin_head_absent && config_absent,
+    }
 }
 
 /// Strip the leading `origin/` from a `symbolic-ref --short` answer.
@@ -1651,37 +1792,311 @@ branch refs/heads/main
     }
 
     const SYMREF: &[&str] = &["symbolic-ref", "refs/remotes/origin/HEAD", "--short"];
-    const INIT_DEFAULT: &[&str] = &["config", "--get", "init.defaultBranch"];
+    const INIT_DEFAULT: &[&str] = &["config", "--default", "", "--get", "init.defaultBranch"];
+    /// The zero-exit probe that confirms whether `refs/remotes/origin/HEAD`
+    /// exists: empty output means confirmed-absent.
+    const ORIGIN_HEAD_PROBE: &[&str] = &[
+        "for-each-ref",
+        "--format=%(refname)",
+        "refs/remotes/origin/HEAD",
+    ];
+    /// A probe answer naming the ref exactly, i.e. it is present.
+    const ORIGIN_HEAD_PRESENT: &str = "refs/remotes/origin/HEAD\n";
 
     #[test]
     fn default_branch_comes_from_origin_head_without_the_remote_prefix() {
-        let git = ScriptedGit::new(&[(SYMREF, "origin/develop\n")]);
+        let git = ScriptedGit::new(&[
+            (ORIGIN_HEAD_PROBE, ORIGIN_HEAD_PRESENT),
+            (SYMREF, "origin/develop\n"),
+        ]);
         assert_eq!(get_default_branch(&git), "develop");
     }
 
     #[test]
     fn default_branch_keeps_slashes_inside_the_branch_name() {
         // Only the leading `origin/` is stripped; `release/` is part of the name.
-        let git = ScriptedGit::new(&[(SYMREF, "origin/release/stable")]);
+        let git = ScriptedGit::new(&[
+            (ORIGIN_HEAD_PROBE, ORIGIN_HEAD_PRESENT),
+            (SYMREF, "origin/release/stable"),
+        ]);
         assert_eq!(get_default_branch(&git), "release/stable");
     }
 
     #[test]
     fn default_branch_falls_back_to_init_default_branch_config() {
-        let git = ScriptedGit::new(&[(INIT_DEFAULT, "trunk\n")]);
+        // The probe answers empty (no origin/HEAD), so resolution moves on to
+        // the config — which is where the answer is.
+        let git = ScriptedGit::new(&[(ORIGIN_HEAD_PROBE, ""), (INIT_DEFAULT, "trunk\n")]);
         assert_eq!(get_default_branch(&git), "trunk");
     }
 
     #[test]
     fn default_branch_falls_back_to_master_when_git_knows_nothing() {
-        let git = ScriptedGit::new(&[]);
+        // Both probes answer, both are empty: a confirmed, stable absence.
+        let git = ScriptedGit::new(&[(ORIGIN_HEAD_PROBE, ""), (INIT_DEFAULT, "")]);
         assert_eq!(get_default_branch(&git), "master");
+    }
+
+    /// (a) What it guarantees: a probe that ERRORS is degradation, not absence.
+    ///
+    /// This is the case an exit-code-based probe could not express: one
+    /// transient fault hitting both the probe and the reader made a guessed
+    /// `master` look confirmed. The probe exits zero in a working repository, so
+    /// an `Err` can only mean something went wrong.
+    #[test]
+    fn a_failing_origin_head_probe_is_degraded_not_absent() {
+        // Nothing scripted, so every command errors.
+        let git = ScriptedGit::new(&[]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "master", "the display fallback is unchanged");
+        assert!(
+            !answer.resolved,
+            "an unaskable probe cannot confirm absence"
+        );
+    }
+
+    /// What it guarantees: the precise hole the exit-code probe left open — ONE
+    /// transient fault taking out both the existence probe and the reader.
+    ///
+    /// With an `is_ok()`-style probe, the failure was read as "the ref is
+    /// absent", the config then legitimately answered empty, and the guessed
+    /// `master` was reported as confirmed. Both facts must come from a command
+    /// that SUCCEEDED for the answer to be repeatable.
+    #[test]
+    fn a_fault_hitting_both_the_probe_and_the_reader_is_degraded() {
+        // The probe and `symbolic-ref` both fail (unscripted); the config probe
+        // answers empty, exactly as it would in a healthy local repository.
+        let git = ScriptedGit::new(&[(INIT_DEFAULT, "")]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "master", "the display fallback is unchanged");
+        assert!(
+            !answer.resolved,
+            "a failed probe must never be read as a confirmed absence"
+        );
+    }
+
+    /// What it guarantees: the VALUE `get_default_branch` returns is unaffected
+    /// by the confirmation probe, in every combination of probe outcomes.
+    ///
+    /// This is the invariant the `clean` and `rename` default-branch guards rest
+    /// on. When the probe was moved to the front of the chain, a `for-each-ref`
+    /// failure alone short-circuited resolution: a repository whose default
+    /// branch is `main` via `init.defaultBranch` reported `master`, the guard
+    /// stopped recognizing its own default branch, and `vibe rename` would
+    /// proceed on a branch it exists to refuse.
+    #[test]
+    fn the_resolved_name_never_depends_on_the_confirmation_probe() {
+        // `init.defaultBranch` is the answer; vary only the probe's outcome.
+        for probe in [
+            None,                      // probe errors
+            Some(""),                  // probe says absent
+            Some(ORIGIN_HEAD_PRESENT), // probe says present
+        ] {
+            let mut script: Vec<(&[&str], &str)> = vec![(INIT_DEFAULT, "main\n")];
+            if let Some(answer) = probe {
+                script.push((ORIGIN_HEAD_PROBE, answer));
+            }
+            let git = ScriptedGit::new(&script);
+            assert_eq!(
+                get_default_branch(&git),
+                "main",
+                "the probe outcome must not change the VALUE (probe: {probe:?})"
+            );
+        }
+    }
+
+    /// What it guarantees: `symbolic-ref` still wins outright, and is consulted
+    /// FIRST — so a dangling `refs/remotes/origin/HEAD` resolves correctly.
+    ///
+    /// `for-each-ref` enumerates refs that RESOLVE, so an origin/HEAD whose
+    /// target is momentarily missing (mid-fetch, mid-prune) is omitted and looks
+    /// absent. Asking `symbolic-ref` first — it reads the symref's own contents
+    /// regardless of its target — keeps that blind spot off the value path.
+    #[test]
+    fn a_dangling_origin_head_still_resolves_through_symbolic_ref() {
+        // Exactly what git does in this state, measured: the enumeration is
+        // empty while `symbolic-ref` still reports the target.
+        let git = ScriptedGit::new(&[(SYMREF, "origin/main\n"), (ORIGIN_HEAD_PROBE, "")]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(
+            answer.name, "main",
+            "a dangling symref still names its target"
+        );
+        assert!(
+            answer.resolved,
+            "reading the symref succeeded, so the answer is repeatable"
+        );
+    }
+
+    /// What it guarantees: `init.defaultBranch` is reached even when the
+    /// confirmation probe failed — the probe may cost confidence, never a step.
+    #[test]
+    fn a_failing_probe_does_not_skip_the_config_source() {
+        // symbolic-ref and the probe both error; the config still answers.
+        let git = ScriptedGit::new(&[(INIT_DEFAULT, "trunk\n")]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(
+            answer.name, "trunk",
+            "the config source must still be tried"
+        );
+        // But NOT repeatable: the config is only the answer because step 1
+        // produced nothing, and a failed probe cannot confirm that nothing was
+        // real. See `a_config_name_is_unconfirmed_while_origin_head_may_exist`.
+        assert!(
+            !answer.resolved,
+            "an unconfirmed step-1 absence cannot make step 2 repeatable"
+        );
+    }
+
+    /// What it guarantees: the probe's pattern is matched EXACTLY, so a ref that
+    /// merely starts with `refs/remotes/origin/HEAD` does not make an absent
+    /// origin/HEAD look present.
+    ///
+    /// `for-each-ref` matches by prefix — verified against git: with only
+    /// `refs/remotes/origin/HEAD/foo` created, the bare pattern reports a hit.
+    /// Reading that as "present" would leave a repository's stable config-based
+    /// BASE permanently unconfirmed, re-running the summary command on every
+    /// listing. A performance bug rather than a correctness one, but a silent one.
+    #[test]
+    fn a_ref_merely_prefixed_by_origin_head_does_not_count_as_present() {
+        let git = ScriptedGit::new(&[
+            // Exactly what git enumerates in that state.
+            (ORIGIN_HEAD_PROBE, "refs/remotes/origin/HEAD/foo\n"),
+            (INIT_DEFAULT, "main\n"),
+        ]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "main");
+        assert!(
+            answer.resolved,
+            "origin/HEAD itself is absent, so the config is the stable answer"
+        );
+    }
+
+    /// The complement: the ref named exactly is still recognized as present.
+    #[test]
+    fn the_exact_origin_head_ref_counts_as_present() {
+        let git = ScriptedGit::new(&[
+            (ORIGIN_HEAD_PROBE, ORIGIN_HEAD_PRESENT),
+            (INIT_DEFAULT, "main\n"),
+        ]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "main");
+        assert!(
+            !answer.resolved,
+            "origin/HEAD exists but could not be read, so nothing below is confirmed"
+        );
+    }
+
+    /// And a mixture: the exact ref alongside a prefixed sibling still counts.
+    #[test]
+    fn the_exact_ref_is_found_among_prefixed_siblings() {
+        let git = ScriptedGit::new(&[(
+            ORIGIN_HEAD_PROBE,
+            "refs/remotes/origin/HEAD/foo\nrefs/remotes/origin/HEAD\n",
+        )]);
+        assert!(!resolve_default_branch(&git).resolved);
+    }
+
+    /// (a) What it guarantees: a config-sourced name is NOT repeatable while
+    /// `origin/HEAD` might still exist.
+    ///
+    /// The scenario: `origin/HEAD` is re-pointed at `develop`, then
+    /// `symbolic-ref` momentarily fails. The probe reports the ref is there, so
+    /// the config's `main` is only standing in for a value git would normally
+    /// have given — and treating it as confirmed lets a cache key built on the
+    /// OLD base hit, silently serving a summary for the wrong upstream.
+    #[test]
+    fn a_config_name_is_unconfirmed_while_origin_head_may_exist() {
+        // symbolic-ref unscripted (=> Err); the probe says the ref is present.
+        let git = ScriptedGit::new(&[
+            (ORIGIN_HEAD_PROBE, ORIGIN_HEAD_PRESENT),
+            (INIT_DEFAULT, "main\n"),
+        ]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "main", "the VALUE is still the config's");
+        assert!(
+            !answer.resolved,
+            "origin/HEAD exists but could not be read, so nothing below it is confirmed"
+        );
+    }
+
+    /// (b) What it guarantees: the same holds when the probe itself failed —
+    /// an unaskable probe confirms nothing either.
+    #[test]
+    fn a_config_name_is_unconfirmed_when_the_probe_cannot_answer() {
+        // Only the config is scripted: symbolic-ref AND the probe both error.
+        let git = ScriptedGit::new(&[(INIT_DEFAULT, "main\n")]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "main");
+        assert!(!answer.resolved);
+    }
+
+    /// (c) What it guarantees: a CONFIRMED absence still makes the config's name
+    /// repeatable — the purely local repository keeps its cache.
+    #[test]
+    fn a_config_name_is_confirmed_when_origin_head_is_confirmed_absent() {
+        let git = ScriptedGit::new(&[(ORIGIN_HEAD_PROBE, ""), (INIT_DEFAULT, "main\n")]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "main");
+        assert!(
+            answer.resolved,
+            "a confirmed absence makes the config the repository's stable answer"
+        );
+    }
+
+    /// (b) What it guarantees: both probes answering EMPTY is a confirmed,
+    /// repeatable absence — the purely local repository stays cacheable.
+    #[test]
+    fn a_confirmed_absence_is_resolved() {
+        let git = ScriptedGit::new(&[(ORIGIN_HEAD_PROBE, ""), (INIT_DEFAULT, "")]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "master");
+        assert!(
+            answer.resolved,
+            "a stable absence is repeatable and must stay cacheable"
+        );
+    }
+
+    /// (c) What it guarantees: a failing CONFIG probe is degradation too, even
+    /// though the first probe succeeded.
+    #[test]
+    fn a_failing_config_probe_is_degraded() {
+        // origin/HEAD confirmed absent, but the config probe cannot be read.
+        let git = ScriptedGit::new(&[(ORIGIN_HEAD_PROBE, "")]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "master");
+        assert!(!answer.resolved);
+    }
+
+    /// What it guarantees: an existing `origin/HEAD` that cannot be read through
+    /// is degradation — the exact combination the previous probe got wrong.
+    #[test]
+    fn an_unreadable_existing_origin_head_is_degraded() {
+        // The ref exists, but `symbolic-ref` fails (unscripted).
+        let git = ScriptedGit::new(&[(ORIGIN_HEAD_PROBE, ORIGIN_HEAD_PRESENT)]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "master");
+        assert!(!answer.resolved);
+    }
+
+    /// What it guarantees: a successfully resolved name is repeatable.
+    #[test]
+    fn a_resolved_name_is_repeatable() {
+        let git = ScriptedGit::new(&[
+            (ORIGIN_HEAD_PROBE, ORIGIN_HEAD_PRESENT),
+            (SYMREF, "origin/develop\n"),
+        ]);
+        assert!(resolve_default_branch(&git).resolved);
     }
 
     #[test]
     fn default_branch_ignores_empty_answers_and_keeps_resolving() {
         // A bare `origin/` and a blank config value must not become the answer.
-        let git = ScriptedGit::new(&[(SYMREF, "origin/"), (INIT_DEFAULT, "   ")]);
+        let git = ScriptedGit::new(&[
+            (ORIGIN_HEAD_PROBE, ORIGIN_HEAD_PRESENT),
+            (SYMREF, "origin/"),
+            (INIT_DEFAULT, "   "),
+        ]);
         assert_eq!(get_default_branch(&git), "master");
     }
 

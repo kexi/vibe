@@ -52,6 +52,7 @@ $ vibe list
 | BASE     | 该分支所基于的分支 —— 参见下文的 [BASE](#base)                    |
 | AGE      | 最新提交距今的时间（`now`、`12m`、`2h`、`3d`、`1w`、`5mo`、`2y`） |
 | STATUS   | `clean`，或 `M <n>` —— 参见[变更的计数方式](#变更的计数方式)      |
+| SUMMARY  | 仅在配置了 `[summary]` 时出现 —— 参见下文的 [SUMMARY](#summary)   |
 | PATH     | worktree 所在目录                                                 |
 
 由 [`vibe scratch`](/zh/commands/scratch/) 创建的 worktree 会附加 `(scratch)` 标签。
@@ -82,6 +83,30 @@ BASE 按以下顺序解析：
 AGE 是最新提交的 committer date 至今的时间，采用截断（而非向上取整），因此绝不会声称经过了比实际更长的时间。`mo` 和 `y` 单位只用于显示，是近似值（分别为 30 天和 365 天）；`--json` 输出的是精确时间戳 `last_commit_at`。
 
 尚无任何提交的分支（unborn 分支）没有可用的最新提交，因此 AGE 显示 `-`，`last_commit_at` 为 `null`。
+
+### SUMMARY
+
+只有当仓库的 `.vibe.toml` 设置了 `[summary] command` 时，SUMMARY 列才会出现。vibe 会在每次 `vibe list` 时运行该命令一次，通过 stdin 把待处理的 worktree 批次交给它，并显示它打印回来的内容：
+
+```toml
+[summary]
+command = "./examples/summary/last-commit.sh"
+timeout_seconds = 30
+```
+
+```
+$ vibe list
+* feat/login    develop  2h    M 3    添加登录表单              /path/to/repo-feat-login
+  fix/crash     develop  3d    clean  修复启动时的 panic        /path/to/repo-fix-crash
+```
+
+结果会按 worktree 缓存，因此对未发生变化的仓库第二次运行 `vibe list` 时完全不会执行该命令。如果命令失败或超时，`vibe list` 会发出警告并显示此前缓存的摘要，而不是直接失败。
+
+该列是否出现取决于**配置**，而非命令是否成功：命令没有回答的 worktree 会显示空单元格，因此空列不必被理解为"这个功能也许没开启"。
+
+由于命令以你的 shell 和你的权限执行，它受信任机制保护——修改 `[summary] command` 会使 `.vibe.toml` 的哈希失效，在你重新运行 [`vibe trust`](/zh/commands/trust/) 之前 `vibe list` 都会失败。
+
+完整的契约、对命令输出施加的限制以及缓存失效规则，请参见 [`.vibe.toml` → 摘要配置](/zh/configuration/vibe-toml/#摘要配置)。开箱即用的脚本位于 [`examples/summary/`](https://github.com/kexi/vibe/tree/main/examples/summary)。
 
 ## 过滤、排序与数量限制
 
@@ -224,10 +249,13 @@ vibe list --json 2>&1 | jq .
 | `last_commit_at` | string \| null | 最新提交 committer date 的 ISO 8601 表示；unborn 分支为 `null` |
 | `status`         | string \| null | `"clean"` 或 `"dirty"`；无法询问 git 时为 `null`               |
 | `dirty_files`    | number \| null | `git status` 报告的条目数；`status` 为 `null` 时始终为 `null`  |
+| `summary`        | string         | **仅**在配置了 `[summary]` 时存在；未回答时为 `""`             |
 
 `branch`、`path`、`current` 和 `scratch` 是 v3.1.0 发布的字段，其名称、类型和位置保持不变。新字段只会追加到末尾。
 
 `head` 始终要么是可以传给 `git show` 的 sha，要么是 `null`。分支尚无提交的 worktree 会报告 `null`，而不是 git 输出的全零占位 OID，因此该字段绝不会出现形似 sha 却无法解析的值。
+
+未配置 `[summary]` 时 `summary` 会被完全省略，因此不使用该功能的仓库输出的文档与该功能存在之前完全一致。
 
 相对时间的 AGE 字符串不会输出。需要"3 天前"这类展示的使用方，从精确的 `last_commit_at` 自行计算会更合适。
 
