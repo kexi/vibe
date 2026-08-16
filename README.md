@@ -628,8 +628,17 @@ Example progress display:
      ☒ cargo build --release
   ⠋ Copying files
    ┗ ⠋ .env.local
-     ☐ node_modules/
+     ⠋ node_modules/
 ```
+
+Markers:
+
+| Marker | Meaning                                                     |
+| ------ | ----------------------------------------------------------- |
+| `⠋`    | Pending or running (the spinner animates once it starts)     |
+| `☒`    | Completed successfully                                       |
+| `✗`    | Failed (red); the reason follows as `(failed: …)`            |
+| `⊘`    | Abandoned (dim) — still pending when the run ended           |
 
 **Note**: Progress display auto-disables in non-TTY environments (e.g., CI/CD), and hook output will be shown normally.
 

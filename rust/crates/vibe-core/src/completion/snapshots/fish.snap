@@ -50,6 +50,14 @@ complete -c vibe -n '__fish_seen_subcommand_from scratch' -s n -l dry-run -d 'Sh
 
 # list flags
 complete -c vibe -n '__fish_seen_subcommand_from list' -l json -d 'Output the listing as JSON'
+complete -c vibe -n '__fish_seen_subcommand_from list' -l dirty -d 'Only worktrees with uncommitted changes'
+complete -c vibe -n '__fish_seen_subcommand_from list' -l clean -d 'Only worktrees with no uncommitted changes'
+complete -c vibe -n '__fish_seen_subcommand_from list' -l base -r -d 'Only worktrees based on this branch'
+complete -c vibe -n '__fish_seen_subcommand_from list' -l recent -r -d 'Only worktrees committed to within this duration'
+complete -c vibe -n '__fish_seen_subcommand_from list' -l stale -r -d 'Only worktrees not committed to for this duration'
+complete -c vibe -n '__fish_seen_subcommand_from list' -l sort -r -xa 'age name status' -d 'Sort the listing'
+complete -c vibe -n '__fish_seen_subcommand_from list' -l reverse -d 'Reverse the final display order'
+complete -c vibe -n '__fish_seen_subcommand_from list' -l limit -r -d 'Show at most this many worktrees'
 
 # rename flags
 complete -c vibe -n '__fish_seen_subcommand_from rename' -s n -l dry-run -d 'Show what would be executed'

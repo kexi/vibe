@@ -56,6 +56,8 @@ pub struct VibeConfig {
     pub clean: Option<CleanConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub submodules: Option<SubmodulesConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<SummaryConfig>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -145,6 +147,29 @@ pub struct SubmodulesConfig {
     pub configs: Option<Vec<String>>,
 }
 
+/// `[summary]`: the external command that produces the SUMMARY column of
+/// `vibe list`.
+///
+/// Both fields are scalars and both are optional, so the section merges by
+/// simple override (`.vibe.local.toml` wins per FIELD, not per section) — the
+/// same shape `[worktree] path_script` already uses. There is deliberately no
+/// array form: the command is one shell line, and a `_prepend`/`_append` pair
+/// on a shell string would concatenate text, not compose behaviour.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SummaryConfig {
+    /// Shell command run once per `vibe list`, receiving the batch of
+    /// cache-missing worktrees as JSON on stdin.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    /// How long the command may run before it is killed, in seconds
+    /// (1-3600, validated in [`parse_vibe_config`]). The default of
+    /// [`DEFAULT_SUMMARY_TIMEOUT_SECONDS`] is applied at the use site rather
+    /// than here, so an absent value stays distinguishable from an explicit one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_seconds: Option<u64>,
+}
+
 /// A config exactly as it was written on disk, before [`normalize_config`]
 /// folds each `*_prepend`/`*_append` slot into its base field.
 ///
@@ -194,8 +219,26 @@ pub fn parse_vibe_config(toml_text: &str, file_path: &str) -> Result<RawConfig> 
         }
     }
 
+    // `[summary] timeout_seconds` range check. Zero is rejected because a
+    // zero-second deadline can only ever kill the command before it produces
+    // anything, and the upper bound keeps a typo (`timeout_seconds = 36000`)
+    // from turning `vibe list` into a ten-hour hang.
+    if let Some(t) = config.summary.as_ref().and_then(|s| s.timeout_seconds) {
+        if !(1..=MAX_SUMMARY_TIMEOUT_SECONDS).contains(&t) {
+            return Err(VibeError::Configuration(format!(
+                "Invalid configuration in {file_path}:\n  - summary.timeout_seconds: must be between 1 and {MAX_SUMMARY_TIMEOUT_SECONDS}"
+            )));
+        }
+    }
+
     Ok(RawConfig(config))
 }
+
+/// Longest `[summary] timeout_seconds` accepted (one hour).
+pub const MAX_SUMMARY_TIMEOUT_SECONDS: u64 = 3600;
+
+/// Deadline applied when `[summary]` sets no `timeout_seconds`.
+pub const DEFAULT_SUMMARY_TIMEOUT_SECONDS: u64 = 30;
 
 /// Merge a base array with override/prepend/append.
 ///
@@ -344,6 +387,27 @@ pub fn merge_configs(base: &VibeConfig, local: &VibeConfig) -> VibeConfig {
             .and_then(|s| s.configs.clone())
             .or_else(|| base.submodules.as_ref().and_then(|s| s.configs.clone()));
         merged.submodules = Some(SubmodulesConfig { configs });
+    }
+
+    // summary: present if either side has it; each scalar merged independently
+    // so a local file overriding only `timeout_seconds` keeps the shared
+    // `command` (overriding the section wholesale would silently disable the
+    // SUMMARY column instead).
+    if base.summary.is_some() || local.summary.is_some() {
+        let command = local
+            .summary
+            .as_ref()
+            .and_then(|s| s.command.clone())
+            .or_else(|| base.summary.as_ref().and_then(|s| s.command.clone()));
+        let timeout_seconds = local
+            .summary
+            .as_ref()
+            .and_then(|s| s.timeout_seconds)
+            .or_else(|| base.summary.as_ref().and_then(|s| s.timeout_seconds));
+        merged.summary = Some(SummaryConfig {
+            command,
+            timeout_seconds,
+        });
     }
 
     merged
@@ -630,6 +694,10 @@ mod tests {
             }),
             submodules: Some(SubmodulesConfig {
                 configs: Some(v(&["libs/foo"])),
+            }),
+            summary: Some(SummaryConfig {
+                command: Some("s.sh".into()),
+                timeout_seconds: Some(12),
             }),
         };
         assert_eq!(normalize_config(&cfg), cfg);
@@ -1140,6 +1208,117 @@ configs = ["libs/foo"]
     fn rejects_concurrency_above_maximum() {
         let err = parse_vibe_config("[copy]\nconcurrency = 33\n", "/path/.vibe.toml").unwrap_err();
         assert!(err.to_string().contains("copy.concurrency"));
+    }
+
+    // --- [summary] ---
+
+    #[test]
+    fn parses_summary_section() {
+        let cfg = parse_fields(
+            "[summary]\ncommand = \"./s.sh\"\ntimeout_seconds = 12\n",
+            "/p/.vibe.toml",
+        );
+        let summary = cfg.summary.unwrap();
+        assert_eq!(summary.command.as_deref(), Some("./s.sh"));
+        assert_eq!(summary.timeout_seconds, Some(12));
+    }
+
+    #[test]
+    fn summary_timeout_is_optional_so_the_use_site_can_default_it() {
+        let cfg = parse_fields("[summary]\ncommand = \"./s.sh\"\n", "/p");
+        assert_eq!(cfg.summary.unwrap().timeout_seconds, None);
+    }
+
+    #[test]
+    fn rejects_unknown_summary_field() {
+        let err = parse_vibe_config("[summary]\nbogus = 1\n", "/path/.vibe.toml").unwrap_err();
+        assert!(err.to_string().contains("/path/.vibe.toml"));
+    }
+
+    #[test]
+    fn rejects_summary_timeout_outside_the_allowed_range() {
+        // Zero can only kill the command before it answers; the upper bound
+        // stops a typo from turning `vibe list` into an hours-long hang.
+        for bad in ["0", "3601"] {
+            let err = parse_vibe_config(&format!("[summary]\ntimeout_seconds = {bad}\n"), "/p")
+                .unwrap_err();
+            let msg = err.to_string();
+            assert!(msg.contains("summary.timeout_seconds"), "msg: {msg}");
+        }
+    }
+
+    #[test]
+    fn accepts_summary_timeout_bounds() {
+        for good in [1, MAX_SUMMARY_TIMEOUT_SECONDS] {
+            let cfg = parse_fields(&format!("[summary]\ntimeout_seconds = {good}\n"), "/p");
+            assert_eq!(cfg.summary.unwrap().timeout_seconds, Some(good));
+        }
+    }
+
+    #[test]
+    fn summary_scalars_merge_independently() {
+        // A local file overriding only the timeout must keep the shared command:
+        // a whole-section override would silently disable the SUMMARY column.
+        let base = VibeConfig {
+            summary: Some(SummaryConfig {
+                command: Some("base.sh".into()),
+                timeout_seconds: Some(10),
+            }),
+            ..Default::default()
+        };
+        let local = VibeConfig {
+            summary: Some(SummaryConfig {
+                command: None,
+                timeout_seconds: Some(60),
+            }),
+            ..Default::default()
+        };
+        let merged = merge_configs(&base, &local).summary.unwrap();
+        assert_eq!(merged.command.as_deref(), Some("base.sh"));
+        assert_eq!(merged.timeout_seconds, Some(60));
+    }
+
+    #[test]
+    fn summary_local_command_wins_and_base_survives_an_unrelated_local() {
+        let base = VibeConfig {
+            summary: Some(SummaryConfig {
+                command: Some("base.sh".into()),
+                timeout_seconds: None,
+            }),
+            ..Default::default()
+        };
+        let local = VibeConfig {
+            summary: Some(SummaryConfig {
+                command: Some("local.sh".into()),
+                timeout_seconds: None,
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            merge_configs(&base, &local).summary.unwrap().command,
+            Some("local.sh".into())
+        );
+
+        let unrelated = VibeConfig {
+            copy: Some(CopyConfig {
+                files: Some(vec!["x".into()]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            merge_configs(&base, &unrelated).summary.unwrap().command,
+            Some("base.sh".into())
+        );
+    }
+
+    #[test]
+    fn summary_absent_when_neither_side_has_it() {
+        assert!(
+            merge_configs(&VibeConfig::default(), &VibeConfig::default())
+                .summary
+                .is_none()
+        );
     }
 
     #[test]
