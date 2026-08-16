@@ -600,10 +600,26 @@ The workflow reads the version from `package.json` on main (no version
 argument). It refuses to run off main, on a non-stable version, or when the
 tag already exists without a release. Re-running a failed run is safe: an
 already-published release short-circuits, and npm publish (publish-npm.yml)
-re-fires with its own idempotency guards. To heal a post-publish mirror
-failure (e.g. update-homebrew), use **"Re-run failed jobs"** — a full "Re-run
-all jobs" skips the whole pipeline once the release is published (green run,
-tap unchanged).
+re-fires with its own idempotency guards.
+
+To heal a post-publish mirror failure (e.g. update-homebrew), **re-run the
+original run** — either "Re-run failed jobs" or "Re-run all jobs" works. Once
+the release is published, `prepare` reports `should_release=false`, which now
+resumes instead of skipping: the `release` job's re-check exits before touching
+the release, its verify step re-asserts the full published asset set, and
+`update-homebrew` downloads the published binaries and converges the tap
+(idempotent — it commits only when the formula content actually differs).
+
+Re-run promptly, though: `update-homebrew` skips with a `::warning::` once the
+release is no longer the latest stable, so re-running an old run after a newer
+release shipped will not roll `Formula/vibe.rb` back — but it also will not
+repair that old release's tap entry. Fix the tap by hand in that case.
+
+**Do not dispatch a fresh run to recover.** `prepare` binds a resume to the
+commit the published release targets: if main has moved past that commit, a
+fresh dispatch fails with `::error::Release vX.Y.Z targets <sha> but this run
+is on <sha>` and exits 1, because hashing the old released binaries into a
+formula built from a newer tree would silently corrupt the tap.
 
 ### 7.4 Generate Twitter Post Text
 

@@ -1,28 +1,42 @@
 #!/usr/bin/env bun
 
 /**
- * Assert that a published GitHub Release carries the license documents.
+ * Assert that a published GitHub Release carries the assets it is supposed to.
  *
- * The binaries and .debs are self-describing — a missing one breaks an install
- * loudly — but LICENSE and THIRD-PARTY-LICENSES.md are inert attachments: drop
- * them and every download still works while shipping a statically linked binary
- * with no statement of its terms and none of its crates' required notices. No
- * other check in the release path looks at them, so this is that check, in the
- * same spirit as verify-deb.ts guarding the .deb's copyright members.
+ * Two modes:
  *
- * The asset-count assertion in the workflow is not a substitute: it counts
- * assets without naming them, so uploading two extra binaries would satisfy it
- * while both license files were absent.
+ *   - Default (no flags): only the license documents are required. The binaries
+ *     and .debs are self-describing — a missing one breaks an install loudly —
+ *     but LICENSE and THIRD-PARTY-LICENSES.md are inert attachments: drop them
+ *     and every download still works while shipping a statically linked binary
+ *     with no statement of its terms and none of its crates' required notices.
+ *
+ *   - `--channel <stable|beta> --version <v>`: the release's asset-name set must
+ *     equal the manifest exactly — every expected name present and usable, and
+ *     no unexpected name. This is the #597 gate: it replaced the workflows'
+ *     asset-COUNT assertions, which counted without naming, so a missing
+ *     platform binary could be masked by an unrelated extra file.
  *
  * Usage:
  *   gh release view "$TAG" --json assets | bun run scripts/verify-release-assets.ts
+ *   gh release view "$TAG" --json assets \
+ *     | bun run scripts/verify-release-assets.ts --channel stable --version 3.1.0
  *   bun run scripts/verify-release-assets.ts assets.json
  */
 
 import { readFile } from "node:fs/promises";
+import {
+  expectedReleaseAssets,
+  LICENSE_DOCUMENT_ASSETS,
+  type ReleaseChannel,
+} from "./release-asset-manifest";
 
-/** Assets a release must carry beyond its binaries, by exact name. */
-export const REQUIRED_ASSETS = ["LICENSE", "THIRD-PARTY-LICENSES.md"];
+/**
+ * Assets a release must carry beyond its binaries, by exact name. Re-exported
+ * from the manifest so the default mode and the --channel mode cannot disagree
+ * about what the license documents are called.
+ */
+export const REQUIRED_ASSETS: readonly string[] = LICENSE_DOCUMENT_ASSETS;
 
 /**
  * One entry of `gh release view --json assets`, narrowed to what we check.
@@ -96,7 +110,10 @@ export function parseAssets(raw: string): ReleaseAsset[] {
  * would make the one case where verification cannot be performed the one case
  * that always succeeds — precisely inverted for a release gate.
  */
-export function findAssetProblems(assets: ReleaseAsset[], required = REQUIRED_ASSETS): string[] {
+export function findAssetProblems(
+  assets: ReleaseAsset[],
+  required: readonly string[] = REQUIRED_ASSETS,
+): string[] {
   const byName = new Map(assets.map((asset) => [asset.name, asset]));
   const problems: string[] = [];
 
@@ -123,6 +140,73 @@ export function findAssetProblems(assets: ReleaseAsset[], required = REQUIRED_AS
   return problems;
 }
 
+/**
+ * Report every asset whose name is not in the expected set. Pure; empty = OK.
+ *
+ * The other half of set equality: findAssetProblems alone accepts a release
+ * that carries every expected asset PLUS a stray one, which is how an extra
+ * file could compensate for a missing binary under the old count assertion.
+ * Only meaningful in --channel mode, where the expected set is complete.
+ */
+export function findUnexpectedAssets(
+  assets: ReleaseAsset[],
+  expectedNames: readonly string[],
+): string[] {
+  const expected = new Set(expectedNames);
+  return assets
+    .filter((asset) => !expected.has(asset.name))
+    .map((asset) => `unexpected release asset: ${asset.name}`);
+}
+
+interface CliOptions {
+  file?: string;
+  channel?: ReleaseChannel;
+  version?: string;
+}
+
+/**
+ * Parse the CLI surface: an optional positional listing file, plus the optional
+ * `--channel`/`--version` pair that switches on full-set verification. The pair
+ * must be given together — one without the other would silently fall back to
+ * the license-documents-only mode, i.e. a weaker gate than the caller asked for.
+ */
+export function parseCliOptions(argv: string[]): CliOptions {
+  const options: CliOptions = {};
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--channel") {
+      const value = argv[++i];
+      if (value !== "stable" && value !== "beta") {
+        throw new Error(`--channel must be stable or beta (got: ${value ?? "<none>"})`);
+      }
+      options.channel = value;
+    } else if (arg === "--version") {
+      const value = argv[++i];
+      // Rejected rather than stored: a trailing `--version` with no value
+      // leaves options.version undefined, which the pair check below then reads
+      // as "neither flag given" and waves through into the license-only mode —
+      // the exact silent downgrade that check exists to prevent.
+      if (value === undefined || value === "") {
+        throw new Error("--version requires a value");
+      }
+      options.version = value;
+    } else if (arg.startsWith("-")) {
+      throw new Error(`Unknown argument: ${arg}`);
+    } else if (options.file === undefined) {
+      options.file = arg;
+    } else {
+      throw new Error(`Unexpected extra argument: ${arg}`);
+    }
+  }
+
+  if ((options.channel === undefined) !== (options.version === undefined)) {
+    throw new Error("--channel and --version must be given together");
+  }
+
+  return options;
+}
+
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) {
@@ -132,14 +216,24 @@ async function readStdin(): Promise<string> {
 }
 
 async function main(): Promise<void> {
-  const arg = process.argv[2];
-  const raw = arg ? await readFile(arg, "utf-8") : await readStdin();
+  const options = parseCliOptions(process.argv.slice(2));
+  const raw = options.file ? await readFile(options.file, "utf-8") : await readStdin();
   if (raw.trim() === "") {
     throw new Error("no release asset listing was provided on stdin or as a file argument");
   }
 
+  const fullSet =
+    options.channel !== undefined && options.version !== undefined
+      ? expectedReleaseAssets(options.channel, options.version).map((asset) => asset.name)
+      : undefined;
+  const required = fullSet ?? REQUIRED_ASSETS;
+
   const assets = parseAssets(raw);
-  const problems = findAssetProblems(assets);
+  const problems = findAssetProblems(assets, required);
+  if (fullSet !== undefined) {
+    problems.push(...findUnexpectedAssets(assets, fullSet));
+  }
+
   if (problems.length > 0) {
     for (const problem of problems) {
       console.error(`::error::${problem}`);
@@ -148,6 +242,10 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  if (fullSet !== undefined) {
+    console.log(`OK: release carries all ${fullSet.length} expected assets.`);
+    return;
+  }
   console.log(`OK: release carries ${REQUIRED_ASSETS.join(" and ")} (${assets.length} assets).`);
 }
 
