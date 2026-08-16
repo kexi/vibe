@@ -2180,6 +2180,13 @@ fn a_real_head_sha_is_published_unchanged() {
 struct SummaryFixture {
     fx: vibe_test_support::Fixture,
     main_path: String,
+    /// The `.vibe.toml` path exactly as it was registered in `resolver`.
+    ///
+    /// Kept rather than rebuilt on demand so the lookup key and the path handed
+    /// to the product can never drift apart: `MapResolver` matches on the raw
+    /// string, so any difference in separator style is an unresolvable path and
+    /// therefore a silent "untrusted" verdict.
+    config_path: String,
     io: FakeIo,
     resolver: MapResolver,
 }
@@ -2256,9 +2263,11 @@ impl SummaryFixture {
         }
         save_user_settings(&io, &settings, V).unwrap();
 
+        let config_path = file_path.to_string_lossy().into_owned();
+
         let mut repos = StdHashMap::new();
         repos.insert(
-            file_path.to_string_lossy().into_owned(),
+            config_path.clone(),
             RepoInfo {
                 remote_url: None,
                 repo_root: main_path.clone(),
@@ -2269,18 +2278,16 @@ impl SummaryFixture {
         SummaryFixture {
             fx,
             main_path,
+            config_path,
             io,
             resolver: MapResolver { repos },
         }
     }
 
-    /// The absolute path of the fixture's `.vibe.toml`.
+    /// The absolute path of the fixture's `.vibe.toml`, byte-identical to the
+    /// key it is registered under in the resolver.
     fn config_path(&self) -> String {
-        self.fx
-            .path()
-            .join("repo/.vibe.toml")
-            .to_string_lossy()
-            .into_owned()
+        self.config_path.clone()
     }
 
     /// A git whose main worktree is this fixture's real directory, plus any
@@ -2451,7 +2458,7 @@ fn editing_only_the_summary_section_revokes_trust() {
     let verdict =
         crate::settings_io::verify_trust_and_read(&fixture.io, &fixture.resolver, V, &path)
             .unwrap();
-    assert!(verdict.trusted);
+    assert!(verdict.trusted, "the unedited file starts out trusted");
 
     // Swap in a different command; nothing else about the file changes.
     fixture.fx.write(
