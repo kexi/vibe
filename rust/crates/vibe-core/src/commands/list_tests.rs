@@ -261,7 +261,29 @@ fn run(io: &FakeIo, git: &ListGit, cwd: &str, json: bool) -> Result<Outcome> {
         cwd,
         now_ms: NOW_MS,
     };
-    list_command(&deps, json, OutputOptions::default())
+    list_command(
+        &deps,
+        json,
+        &ListOptions::default(),
+        OutputOptions::default(),
+    )
+}
+
+/// Same, with a selection request — the flag surface's end-to-end path.
+fn run_with(
+    io: &FakeIo,
+    git: &ListGit,
+    cwd: &str,
+    json: bool,
+    options: &ListOptions,
+) -> Result<Outcome> {
+    let deps = ListDeps {
+        io,
+        git,
+        cwd,
+        now_ms: NOW_MS,
+    };
+    list_command(&deps, json, options, OutputOptions::default())
 }
 
 fn no_home() -> FakeIo {
@@ -552,7 +574,13 @@ fn quiet_does_not_silence_the_listing() {
         cwd: "/repo/main",
         now_ms: NOW_MS,
     };
-    list_command(&deps, false, OutputOptions::new(false, true)).unwrap();
+    list_command(
+        &deps,
+        false,
+        &ListOptions::default(),
+        OutputOptions::new(false, true),
+    )
+    .unwrap();
     assert!(io.stderr_text().contains("/repo/main"));
 }
 
@@ -697,7 +725,13 @@ fn verbose_does_not_prepend_a_diagnostic_to_the_json_payload() {
         cwd: "/repo/main",
         now_ms: NOW_MS,
     };
-    list_command(&deps, true, OutputOptions::new(true, false)).unwrap();
+    list_command(
+        &deps,
+        true,
+        &ListOptions::default(),
+        OutputOptions::new(true, false),
+    )
+    .unwrap();
 
     let text = io.stderr_text();
     assert!(!text.contains("[verbose]"), "diagnostic leaked: {text}");
@@ -715,7 +749,13 @@ fn verbose_still_reports_the_count_in_text_mode() {
         cwd: "/repo/main",
         now_ms: NOW_MS,
     };
-    list_command(&deps, false, OutputOptions::new(true, false)).unwrap();
+    list_command(
+        &deps,
+        false,
+        &ListOptions::default(),
+        OutputOptions::new(true, false),
+    )
+    .unwrap();
     assert!(io.stderr_text().contains("[verbose] Found 1 worktree(s)"));
 }
 
@@ -1043,6 +1083,848 @@ fn a_missing_head_sha_serializes_as_null_not_an_empty_string() {
 
     let parsed: serde_json::Value = serde_json::from_str(&io.stderr_text()).unwrap();
     assert_eq!(parsed[0]["head"], serde_json::Value::Null);
+}
+
+// --- selection: filters, sort, reverse, limit ----------------------------
+//
+// Driven through the pure `select_entries` pipeline wherever the assertion is
+// about ordering or membership: there is no git, no clock and no `Io` involved
+// in those rules, and a scripted-git test would only obscure which input
+// produced which row.
+
+/// A row with just the fields the selection pipeline reads.
+fn entry(
+    name: &str,
+    commit_secs: Option<i64>,
+    status: Option<&str>,
+    dirty_files: Option<usize>,
+    base: Option<&str>,
+) -> ListEntry {
+    ListEntry {
+        branch: Some(name.to_string()),
+        path: format!("/repo/{name}"),
+        current: false,
+        scratch: false,
+        name: name.to_string(),
+        base: base.map(str::to_string),
+        head: Some("abc".to_string()),
+        last_commit_at: commit_secs.map(|s| format!("iso-{s}")),
+        status: status.map(str::to_string),
+        dirty_files,
+        age: commit_secs.map(|s| format_age(NOW_SECS, s)),
+        commit_secs,
+    }
+}
+
+/// A clean row committed `age_secs` ago.
+fn clean_at(name: &str, age_secs: i64) -> ListEntry {
+    entry(
+        name,
+        Some(NOW_SECS - age_secs),
+        Some(STATUS_CLEAN),
+        Some(0),
+        None,
+    )
+}
+
+/// A dirty row with `n` changed entries, committed `age_secs` ago.
+fn dirty_at(name: &str, age_secs: i64, n: usize) -> ListEntry {
+    entry(
+        name,
+        Some(NOW_SECS - age_secs),
+        Some(STATUS_DIRTY),
+        Some(n),
+        None,
+    )
+}
+
+fn names(entries: &[ListEntry]) -> Vec<String> {
+    entries.iter().map(|e| e.name.clone()).collect()
+}
+
+fn select(entries: Vec<ListEntry>, options: &ListOptions) -> Vec<String> {
+    names(&select_entries(entries, options, NOW_SECS))
+}
+
+fn filter_only(filter: ListFilter) -> ListOptions {
+    ListOptions {
+        filter,
+        ..Default::default()
+    }
+}
+
+fn dur(secs: u64) -> std::time::Duration {
+    std::time::Duration::from_secs(secs)
+}
+
+/// What it guarantees: `--dirty` keeps only worktrees with uncommitted changes,
+/// and a worktree whose status could not be read is NOT presented as dirty.
+#[test]
+fn dirty_keeps_only_dirty_rows_and_excludes_unknown_status() {
+    let rows = vec![
+        dirty_at("d", 60, 3),
+        clean_at("c", 60),
+        entry("u", Some(NOW_SECS), None, None, None),
+    ];
+    assert_eq!(
+        select(
+            rows,
+            &filter_only(ListFilter {
+                dirty: true,
+                ..Default::default()
+            })
+        ),
+        ["d"]
+    );
+}
+
+/// What it guarantees: the complement of the above. An unknown status is
+/// excluded from `--clean` too, so the two filters do not partition the
+/// listing — a worktree git could not read belongs to neither answer.
+#[test]
+fn clean_keeps_only_clean_rows_and_excludes_unknown_status() {
+    let rows = vec![
+        dirty_at("d", 60, 3),
+        clean_at("c", 60),
+        entry("u", Some(NOW_SECS), None, None, None),
+    ];
+    assert_eq!(
+        select(
+            rows,
+            &filter_only(ListFilter {
+                clean: true,
+                ..Default::default()
+            })
+        ),
+        ["c"]
+    );
+}
+
+/// What it guarantees: `--base` compares against the resolved BASE column, and
+/// accepts the remote-qualified spelling the user sees in `git branch -vv`.
+#[test]
+fn base_matches_with_or_without_the_remote_prefix() {
+    let rows = || {
+        vec![
+            entry(
+                "a",
+                Some(NOW_SECS),
+                Some(STATUS_CLEAN),
+                Some(0),
+                Some("develop"),
+            ),
+            entry(
+                "b",
+                Some(NOW_SECS),
+                Some(STATUS_CLEAN),
+                Some(0),
+                Some("main"),
+            ),
+        ]
+    };
+    for arg in ["develop", "origin/develop", "upstream/develop"] {
+        assert_eq!(
+            select(
+                rows(),
+                &filter_only(ListFilter {
+                    base: Some(arg.to_string()),
+                    ..Default::default()
+                })
+            ),
+            ["a"],
+            "argument {arg}"
+        );
+    }
+}
+
+/// What it guarantees: a branch whose NAME contains a slash is matched by
+/// spelling it out in full. This is the regression that unconditional prefix
+/// stripping caused: `--base release/next` was rewritten to `--base next` and
+/// matched nothing, making the flag unusable in any repository that namespaces
+/// its long-lived branches.
+#[test]
+fn base_matches_a_branch_whose_name_contains_a_slash() {
+    let rows = || {
+        vec![
+            entry(
+                "a",
+                Some(NOW_SECS),
+                Some(STATUS_CLEAN),
+                Some(0),
+                Some("release/next"),
+            ),
+            entry(
+                "b",
+                Some(NOW_SECS),
+                Some(STATUS_CLEAN),
+                Some(0),
+                Some("develop"),
+            ),
+        ]
+    };
+    // Verbatim: the argument IS the branch name.
+    assert_eq!(
+        select(
+            rows(),
+            &filter_only(ListFilter {
+                base: Some("release/next".to_string()),
+                ..Default::default()
+            })
+        ),
+        ["a"]
+    );
+    // Remote-qualified: only the remote segment comes off, leaving the slash in
+    // the branch name intact.
+    assert_eq!(
+        select(
+            rows(),
+            &filter_only(ListFilter {
+                base: Some("origin/release/next".to_string()),
+                ..Default::default()
+            })
+        ),
+        ["a"]
+    );
+    // The stripped reading must not become a match on its own: `next` is not a
+    // base any row has.
+    assert!(select(
+        rows(),
+        &filter_only(ListFilter {
+            base: Some("next".to_string()),
+            ..Default::default()
+        })
+    )
+    .is_empty());
+}
+
+/// What it guarantees: the two readings of a `<word>/<word>` argument are tried
+/// independently, so neither spelling shadows the other. `origin/develop` is
+/// ambiguous from the argument alone — a remote-qualified `develop`, or a local
+/// branch literally named `origin/develop` — and both must be findable.
+#[test]
+fn base_tries_both_readings_of_an_ambiguous_argument() {
+    let rows = vec![
+        entry(
+            "qualified",
+            Some(NOW_SECS),
+            Some(STATUS_CLEAN),
+            Some(0),
+            Some("develop"),
+        ),
+        entry(
+            "literal",
+            Some(NOW_SECS),
+            Some(STATUS_CLEAN),
+            Some(0),
+            Some("origin/develop"),
+        ),
+    ];
+    // Surfacing both is the deliberate trade: an extra row is a far better
+    // failure than silently returning none.
+    assert_eq!(
+        select(
+            rows,
+            &filter_only(ListFilter {
+                base: Some("origin/develop".to_string()),
+                ..Default::default()
+            })
+        ),
+        ["qualified", "literal"]
+    );
+}
+
+/// What it guarantees: `--base` is an exact match on the whole branch name, not
+/// a prefix or substring test.
+#[test]
+fn base_is_an_exact_match_not_a_prefix() {
+    let rows = vec![
+        entry(
+            "a",
+            Some(NOW_SECS),
+            Some(STATUS_CLEAN),
+            Some(0),
+            Some("develop"),
+        ),
+        entry(
+            "b",
+            Some(NOW_SECS),
+            Some(STATUS_CLEAN),
+            Some(0),
+            Some("develop-2"),
+        ),
+    ];
+    assert_eq!(
+        select(
+            rows,
+            &filter_only(ListFilter {
+                base: Some("develop".to_string()),
+                ..Default::default()
+            })
+        ),
+        ["a"]
+    );
+}
+
+/// What it guarantees: a row with no BASE — a detached HEAD, or the main
+/// worktree — is excluded by any `--base`, never matched as a wildcard.
+#[test]
+fn base_excludes_rows_that_have_none() {
+    let rows = vec![
+        entry("det", Some(NOW_SECS), Some(STATUS_CLEAN), Some(0), None),
+        entry(
+            "a",
+            Some(NOW_SECS),
+            Some(STATUS_CLEAN),
+            Some(0),
+            Some("develop"),
+        ),
+    ];
+    assert_eq!(
+        select(
+            rows,
+            &filter_only(ListFilter {
+                base: Some("develop".to_string()),
+                ..Default::default()
+            })
+        ),
+        ["a"]
+    );
+}
+
+/// What it guarantees: `--recent` is inclusive at its boundary
+/// (`now − commit <= dur`) and `--stale` is its exact complement
+/// (`now − commit > dur`), so the same duration partitions every row with a
+/// known age into exactly one of the two.
+#[test]
+fn recent_and_stale_partition_at_the_same_boundary() {
+    let window = 86_400;
+    let rows = || {
+        vec![
+            clean_at("under", window - 1),
+            clean_at("exact", window),
+            clean_at("over", window + 1),
+        ]
+    };
+    assert_eq!(
+        select(
+            rows(),
+            &filter_only(ListFilter {
+                recent: Some(dur(window as u64)),
+                ..Default::default()
+            })
+        ),
+        ["under", "exact"]
+    );
+    assert_eq!(
+        select(
+            rows(),
+            &filter_only(ListFilter {
+                stale: Some(dur(window as u64)),
+                ..Default::default()
+            })
+        ),
+        ["over"]
+    );
+}
+
+/// What it guarantees: a commit dated in the FUTURE (clock skew) counts as
+/// recent, matching the `now` the AGE column already renders for it. The two
+/// must agree or `--recent` would hide a row the table calls brand new.
+#[test]
+fn a_future_commit_counts_as_recent_not_stale() {
+    let rows = || vec![clean_at("skewed", -10_000)];
+    assert_eq!(
+        select(
+            rows(),
+            &filter_only(ListFilter {
+                recent: Some(dur(60)),
+                ..Default::default()
+            })
+        ),
+        ["skewed"]
+    );
+    assert!(select(
+        rows(),
+        &filter_only(ListFilter {
+            stale: Some(dur(60)),
+            ..Default::default()
+        })
+    )
+    .is_empty());
+}
+
+/// What it guarantees: a row with no tip commit matches NEITHER age filter.
+/// Both ask a question about a date this row does not have, and defaulting
+/// either way would invent one.
+#[test]
+fn a_row_without_a_commit_date_matches_neither_age_filter() {
+    let rows = || vec![entry("unborn", None, Some(STATUS_CLEAN), Some(0), None)];
+    for filter in [
+        ListFilter {
+            recent: Some(dur(86_400)),
+            ..Default::default()
+        },
+        ListFilter {
+            stale: Some(dur(86_400)),
+            ..Default::default()
+        },
+    ] {
+        assert!(
+            select(rows(), &filter_only(filter.clone())).is_empty(),
+            "filter {filter:?}"
+        );
+    }
+}
+
+/// What it guarantees: multiple filters compose with AND — each one narrows the
+/// result. `--recent 1w --dirty` is "touched this week and left unfinished",
+/// not "touched this week OR dirty".
+#[test]
+fn filters_compose_with_and_not_or() {
+    let rows = vec![
+        dirty_at("recent-dirty", 3_600, 2),
+        dirty_at("old-dirty", 30 * 86_400, 2),
+        clean_at("recent-clean", 3_600),
+    ];
+    assert_eq!(
+        select(
+            rows,
+            &filter_only(ListFilter {
+                dirty: true,
+                recent: Some(dur(7 * 86_400)),
+                ..Default::default()
+            })
+        ),
+        ["recent-dirty"]
+    );
+}
+
+/// What it guarantees: three filters at once still narrow monotonically, and a
+/// row must satisfy every one of them to survive.
+#[test]
+fn three_filters_at_once_require_all_three() {
+    let mut on_base = dirty_at("match", 3_600, 1);
+    on_base.base = Some("develop".to_string());
+    let mut wrong_base = dirty_at("wrong-base", 3_600, 1);
+    wrong_base.base = Some("main".to_string());
+    let mut too_old = dirty_at("too-old", 30 * 86_400, 1);
+    too_old.base = Some("develop".to_string());
+    let mut is_clean = clean_at("clean", 3_600);
+    is_clean.base = Some("develop".to_string());
+
+    assert_eq!(
+        select(
+            vec![on_base, wrong_base, too_old, is_clean],
+            &filter_only(ListFilter {
+                dirty: true,
+                base: Some("develop".to_string()),
+                recent: Some(dur(7 * 86_400)),
+                ..Default::default()
+            })
+        ),
+        ["match"]
+    );
+}
+
+/// What it guarantees: with no filters requested, every row survives in its
+/// incoming order.
+#[test]
+fn no_filter_keeps_every_row_in_order() {
+    let rows = vec![clean_at("a", 60), dirty_at("b", 60, 1), clean_at("c", 60)];
+    assert_eq!(select(rows, &ListOptions::default()), ["a", "b", "c"]);
+}
+
+/// What it guarantees: `--sort age` orders newest first, and ties break by name
+/// so the result never depends on the incoming MRU order.
+#[test]
+fn sort_age_puts_the_newest_first_and_breaks_ties_by_name() {
+    let rows = vec![
+        clean_at("old", 30 * 86_400),
+        clean_at("zeta", 3_600),
+        clean_at("alpha", 3_600),
+        clean_at("newest", 60),
+    ];
+    assert_eq!(
+        select(
+            rows,
+            &ListOptions {
+                sort: Some(ListSort::Age),
+                ..Default::default()
+            }
+        ),
+        ["newest", "alpha", "zeta", "old"]
+    );
+}
+
+/// What it guarantees: `--sort name` is a plain lexicographic order on the
+/// always-present `name`, so a detached worktree (named by its directory
+/// basename) takes part rather than being dropped or pinned.
+#[test]
+fn sort_name_is_lexicographic_and_includes_detached_rows() {
+    let mut detached = clean_at("det-dir", 60);
+    detached.branch = None;
+    let rows = vec![clean_at("zeta", 60), detached, clean_at("alpha", 60)];
+    assert_eq!(
+        select(
+            rows,
+            &ListOptions {
+                sort: Some(ListSort::Name),
+                ..Default::default()
+            }
+        ),
+        ["alpha", "det-dir", "zeta"]
+    );
+}
+
+/// What it guarantees: `--sort status` is dirty-first, then most-changed-first,
+/// then by name — and unknown status sorts after clean, so the rows git could
+/// answer for come first.
+#[test]
+fn sort_status_ranks_dirty_then_by_change_count_then_by_name() {
+    let rows = vec![
+        clean_at("clean-b", 60),
+        entry("unknown", Some(NOW_SECS), None, None, None),
+        dirty_at("dirty-small", 60, 1),
+        clean_at("clean-a", 60),
+        dirty_at("dirty-big", 60, 9),
+        dirty_at("dirty-tie-b", 60, 9),
+    ];
+    assert_eq!(
+        select(
+            rows,
+            &ListOptions {
+                sort: Some(ListSort::Status),
+                ..Default::default()
+            }
+        ),
+        [
+            // Equal counts fall through to the name tie-break.
+            "dirty-big",
+            "dirty-tie-b",
+            "dirty-small",
+            "clean-a",
+            "clean-b",
+            "unknown",
+        ]
+    );
+}
+
+/// What it guarantees: a row with no age sorts LAST under `--sort age`, and
+/// stays last under `--reverse`. "The oldest worktrees" is a question about
+/// worktrees that have an age; a row with none is not an answer to it, in
+/// either direction.
+#[test]
+fn rows_without_an_age_stay_last_in_both_sort_directions() {
+    let rows = || {
+        vec![
+            clean_at("old", 30 * 86_400),
+            entry("unborn", None, Some(STATUS_CLEAN), Some(0), None),
+            clean_at("new", 60),
+        ]
+    };
+    assert_eq!(
+        select(
+            rows(),
+            &ListOptions {
+                sort: Some(ListSort::Age),
+                ..Default::default()
+            }
+        ),
+        ["new", "old", "unborn"]
+    );
+    assert_eq!(
+        select(
+            rows(),
+            &ListOptions {
+                sort: Some(ListSort::Age),
+                reverse: true,
+                ..Default::default()
+            }
+        ),
+        ["old", "new", "unborn"]
+    );
+}
+
+/// What it guarantees: an explicit `--sort` is fully deterministic even when
+/// every visible key ties. `name` is NOT unique — two detached worktrees in
+/// sibling directories sharing a basename produce identical names — so without
+/// the path tie-break their relative order fell through to the incoming MRU
+/// order, and `vibe list --sort name` would print the same repository
+/// differently depending on which worktree had been jumped to last.
+#[test]
+fn an_explicit_sort_is_deterministic_when_every_other_key_ties() {
+    // Two detached worktrees, same basename, same commit, same clean status:
+    // the path is the only thing telling them apart.
+    let twin = |path: &str| {
+        let mut e = clean_at("wt", 60);
+        e.branch = None;
+        e.path = path.to_string();
+        e
+    };
+    let a = "/repo/a/wt";
+    let b = "/repo/b/wt";
+
+    for sort in [ListSort::Age, ListSort::Name, ListSort::Status] {
+        let options = ListOptions {
+            sort: Some(sort),
+            ..Default::default()
+        };
+        // Both incoming orders — standing in either worktree, or any MRU
+        // history — must produce the same output.
+        let forward = select_entries(vec![twin(a), twin(b)], &options, NOW_SECS);
+        let backward = select_entries(vec![twin(b), twin(a)], &options, NOW_SECS);
+
+        let paths = |rows: &[ListEntry]| rows.iter().map(|e| e.path.clone()).collect::<Vec<_>>();
+        assert_eq!(
+            paths(&forward),
+            [a, b],
+            "{sort:?} must order the twins by path"
+        );
+        assert_eq!(
+            paths(&forward),
+            paths(&backward),
+            "{sort:?} depends on the incoming MRU order"
+        );
+    }
+}
+
+/// What it guarantees: `--reverse` on its own reverses whatever the final
+/// display order would have been, rather than being rejected as meaningless.
+#[test]
+fn reverse_alone_flips_the_default_order() {
+    let rows = vec![clean_at("a", 60), clean_at("b", 60), clean_at("c", 60)];
+    assert_eq!(
+        select(
+            rows,
+            &ListOptions {
+                reverse: true,
+                ..Default::default()
+            }
+        ),
+        ["c", "b", "a"]
+    );
+}
+
+/// What it guarantees: `--limit` truncates the final list, keeping the rows
+/// that sorted first.
+#[test]
+fn limit_truncates_after_sorting() {
+    let rows = vec![
+        clean_at("old", 30 * 86_400),
+        clean_at("mid", 86_400),
+        clean_at("new", 60),
+    ];
+    assert_eq!(
+        select(
+            rows,
+            &ListOptions {
+                sort: Some(ListSort::Age),
+                limit: Some(2),
+                ..Default::default()
+            }
+        ),
+        ["new", "mid"]
+    );
+}
+
+/// What it guarantees: a limit larger than the listing is not an error and does
+/// not pad — it simply returns everything.
+#[test]
+fn a_limit_larger_than_the_listing_returns_everything() {
+    let rows = vec![clean_at("a", 60), clean_at("b", 60)];
+    assert_eq!(
+        select(
+            rows,
+            &ListOptions {
+                limit: Some(99),
+                ..Default::default()
+            }
+        ),
+        ["a", "b"]
+    );
+}
+
+/// What it guarantees: the pipeline order is filter → sort → **reverse** →
+/// limit. This is the "five oldest" idiom: reversing before limiting is what
+/// makes `--sort age --reverse --limit 2` return the two OLDEST rows. Limiting
+/// first would return the two newest, printed backwards — a different set.
+#[test]
+fn reverse_is_applied_before_limit_so_oldest_n_is_expressible() {
+    let rows = vec![
+        clean_at("newest", 60),
+        clean_at("mid", 86_400),
+        clean_at("oldest", 30 * 86_400),
+        clean_at("older", 10 * 86_400),
+    ];
+    assert_eq!(
+        select(
+            rows,
+            &ListOptions {
+                sort: Some(ListSort::Age),
+                reverse: true,
+                limit: Some(2),
+                ..Default::default()
+            }
+        ),
+        ["oldest", "older"]
+    );
+}
+
+/// What it guarantees: filtering happens BEFORE limiting, so `--limit 2` on a
+/// filtered listing yields two MATCHES, not two rows of which some were
+/// filtered away.
+#[test]
+fn filtering_happens_before_limiting() {
+    let rows = vec![
+        clean_at("c1", 60),
+        dirty_at("d1", 60, 1),
+        clean_at("c2", 60),
+        dirty_at("d2", 60, 1),
+        dirty_at("d3", 60, 1),
+    ];
+    assert_eq!(
+        select(
+            rows,
+            &ListOptions {
+                filter: ListFilter {
+                    dirty: true,
+                    ..Default::default()
+                },
+                limit: Some(2),
+                ..Default::default()
+            }
+        ),
+        ["d1", "d2"]
+    );
+}
+
+/// What it guarantees: a requested sort replaces the default ordering
+/// completely, including the current-worktree-first rule. `--sort age` promises
+/// the newest row first; exempting one row would make the output impossible to
+/// reason about and would move whichever worktree you happen to be in.
+#[test]
+fn an_explicit_sort_drops_the_current_first_rule() {
+    let io = no_home();
+    let git = ListGit::with(&[("/repo/main", "main"), ("/repo/feat", "feat/x")])
+        .with_ref("main", 60, None)
+        .with_ref("feat/x", 30 * 86_400, None);
+    // Standing in the OLD worktree: without a sort it would be listed first.
+    run_with(
+        &io,
+        &git,
+        "/repo/feat",
+        false,
+        &ListOptions {
+            sort: Some(ListSort::Age),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let lines: Vec<String> = io.stderr.borrow().clone();
+    assert!(lines[0].contains("main"), "got: {lines:?}");
+    assert!(lines[1].contains("feat/x"), "got: {lines:?}");
+}
+
+/// What it guarantees: the same selection applies to `--json`. A script and a
+/// human passing identical flags must be looking at the same worktrees.
+#[test]
+fn json_output_reflects_the_same_selection_as_the_table() {
+    let io = no_home();
+    let git = ListGit::with(&[("/repo/main", "main"), ("/repo/dirty", "feat/x")])
+        .with_ref("main", 60, None)
+        .with_ref("feat/x", 60, None)
+        .with_status("/repo/dirty", b" M a.txt\0");
+    run_with(
+        &io,
+        &git,
+        "/repo/main",
+        true,
+        &filter_only(ListFilter {
+            dirty: true,
+            ..Default::default()
+        }),
+    )
+    .unwrap();
+
+    let parsed: serde_json::Value = serde_json::from_str(&io.stderr_text()).unwrap();
+    let rows = parsed.as_array().expect("payload is an array");
+    assert_eq!(rows.len(), 1, "got: {parsed}");
+    assert_eq!(rows[0]["path"], "/repo/dirty");
+    assert_eq!(rows[0]["status"], "dirty");
+}
+
+/// What it guarantees: a filter that matches nothing still produces a valid,
+/// empty JSON document rather than an error or a stray message.
+#[test]
+fn a_filter_matching_nothing_is_an_empty_json_array() {
+    let io = no_home();
+    let git = ListGit::with(&[("/repo/main", "main")]).with_ref("main", 60, None);
+    run_with(
+        &io,
+        &git,
+        "/repo/main",
+        true,
+        &filter_only(ListFilter {
+            dirty: true,
+            ..Default::default()
+        }),
+    )
+    .unwrap();
+    assert_eq!(io.stderr_text(), "[]");
+}
+
+/// What it guarantees: in text mode, "your filter matched nothing" is reported
+/// differently from "this repository has no worktrees" — the two call for
+/// different next actions, and the wrong one reads as a broken repository.
+#[test]
+fn an_empty_filtered_listing_says_the_filter_matched_nothing() {
+    let io = no_home();
+    let git = ListGit::with(&[("/repo/main", "main")]).with_ref("main", 60, None);
+    run_with(
+        &io,
+        &git,
+        "/repo/main",
+        false,
+        &filter_only(ListFilter {
+            dirty: true,
+            ..Default::default()
+        }),
+    )
+    .unwrap();
+    let text = io.stderr_text();
+    assert!(
+        text.contains("No worktrees matched the given filters."),
+        "got: {text}"
+    );
+    assert!(!text.contains("No worktrees found."), "got: {text}");
+}
+
+/// What it guarantees: the enrichment still records the epoch seconds the age
+/// filters compare against, so `--recent`/`--stale` and the AGE column can
+/// never disagree about the same worktree.
+#[test]
+fn recent_filters_against_the_real_commit_time_end_to_end() {
+    let io = no_home();
+    let git = ListGit::with(&[("/repo/new", "feat/new"), ("/repo/old", "feat/old")])
+        .with_ref("feat/new", 3_600, None)
+        .with_ref("feat/old", 30 * 86_400, None);
+    run_with(
+        &io,
+        &git,
+        "/repo/new",
+        true,
+        &filter_only(ListFilter {
+            recent: Some(dur(7 * 86_400)),
+            ..Default::default()
+        }),
+    )
+    .unwrap();
+
+    let parsed: serde_json::Value = serde_json::from_str(&io.stderr_text()).unwrap();
+    let rows = parsed.as_array().expect("payload is an array");
+    assert_eq!(rows.len(), 1, "got: {parsed}");
+    assert_eq!(rows[0]["path"], "/repo/new");
 }
 
 #[test]
