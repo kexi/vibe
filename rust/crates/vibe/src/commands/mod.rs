@@ -8,6 +8,7 @@
 
 use vibe_core::clock::{RealClock, RealRandom};
 use vibe_core::commands::clean::{clean_command, CleanDeps, CleanFlags};
+use vibe_core::commands::list::ListOptions;
 use vibe_core::commands::scratch::scratch_command;
 use vibe_core::commands::start::{start_command, StartDeps, StartFlags};
 use vibe_core::commands::{Outcome, ProcessControl, RealProcessControl, RealStart};
@@ -23,6 +24,7 @@ use vibe_core::prompt::RealPrompt;
 use vibe_core::repo_info::RealRepoResolver;
 use vibe_core::shell::EvalDialect;
 use vibe_core::stdin::RealStdinReader;
+use vibe_core::summary::RealSummaryRunner;
 use vibe_core::worktree_path::RealScriptRunner;
 use vibe_core::{commands, Result};
 
@@ -73,8 +75,8 @@ pub fn jump(branch_name: &str, opts: OutputOptions) -> Result<Outcome> {
     commands::jump::jump_command(&deps, branch_name, opts)
 }
 
-/// `vibe list [--json]`.
-pub fn list(json: bool, opts: OutputOptions) -> Result<Outcome> {
+/// `vibe list [--json] [filters/sort/limit]`.
+pub fn list(json: bool, options: &ListOptions, opts: OutputOptions) -> Result<Outcome> {
     let io = RealIo;
     let git = RealGit;
     // Through the `ProcessControl` seam, and propagating rather than defaulting:
@@ -82,12 +84,18 @@ pub fn list(json: bool, opts: OutputOptions) -> Result<Outcome> {
     // normalizes to `"."` and so silently marks *no* worktree as current —
     // a wrong listing presented as a correct one.
     let cwd = RealProcessControl.current_dir()?;
+    let resolver = RealRepoResolver::new(&git);
+    let summary_runner = RealSummaryRunner;
     let deps = commands::list::ListDeps {
         io: &io,
         git: &git,
+        resolver: &resolver,
+        summary_runner: &summary_runner,
         cwd: &cwd,
+        now_ms: now_ms(),
+        version: version::VERSION,
     };
-    commands::list::list_command(&deps, json, opts)
+    commands::list::list_command(&deps, json, options, opts)
 }
 
 /// `vibe trust`.

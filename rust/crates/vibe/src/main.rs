@@ -159,7 +159,10 @@ fn dispatch(
             let branch = args.branch_name.unwrap_or_default();
             commands::jump(&branch, opts)
         }
-        Command::List(args) => commands::list(args.json, opts),
+        Command::List(args) => {
+            let json = args.json;
+            commands::list(json, &list_options(args), opts)
+        }
         Command::Rename(args) => {
             let new_name = args.new_name.unwrap_or_default();
             commands::rename(&new_name, args.dry_run, args.allow_default_branch, opts)
@@ -174,6 +177,29 @@ fn dispatch(
         Command::ShellSetup(args) => {
             commands::shell_setup(args.shell.as_deref(), args.with_completion, opts)
         }
+    }
+}
+
+/// Translate the parsed `list` flags into the core's selection request.
+///
+/// A plain move across the crate boundary, with no validation: clap already
+/// enforced everything that can be enforced statically — `--dirty`/`--clean` and
+/// `--recent`/`--stale` exclusivity via `conflicts_with`, the duration grammar
+/// and `--limit >= 1` via their value parsers — so re-checking here would be a
+/// second, drift-prone copy of the same rules.
+fn list_options(args: cli::ListArgs) -> vibe_core::commands::list::ListOptions {
+    use vibe_core::commands::list::{ListFilter, ListOptions};
+    ListOptions {
+        filter: ListFilter {
+            dirty: args.dirty,
+            clean: args.clean,
+            base: args.base,
+            recent: args.recent,
+            stale: args.stale,
+        },
+        sort: args.sort.map(Into::into),
+        reverse: args.reverse,
+        limit: args.limit,
     }
 }
 

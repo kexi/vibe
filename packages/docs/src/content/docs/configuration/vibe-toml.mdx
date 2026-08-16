@@ -187,6 +187,110 @@ configs = ["libs/foo", "vendor/bar"]
 - `--no-copy` skips submodule copy rules
 - Submodule update, trust, path validation, or setup failures abort `vibe start` and leave the created worktree available for inspection
 
+## Summary Configuration <Badge text="v3.2.0+" />
+
+Add a SUMMARY column to [`vibe list`](/commands/list/), filled in by a command you provide:
+
+```toml
+[summary]
+command = "./examples/summary/last-commit.sh"
+timeout_seconds = 30
+```
+
+- `command` — a shell command line. Required for the column to appear at all.
+- `timeout_seconds` — how long the command may run before it is killed. **Default**: `30`. **Range**: `1` to `3600`.
+
+The column exists whenever `command` is set, whether or not the command answers for a given worktree. A worktree it stays silent about simply shows an empty cell.
+
+:::caution[The command runs on your machine]
+`[summary] command` is executed with your shell and your permissions on every `vibe list`. It is covered by the [trust mechanism](/configuration/settings/): editing it — even changing nothing else in `.vibe.toml` — invalidates the file's SHA-256 and `vibe list` fails until you run `vibe trust` again and re-approve what will run. Review a `[summary]` section you did not write before trusting it.
+:::
+
+### The contract
+
+The command is run **once per `vibe list`**, from the **main worktree**, with the batch of worktrees on **stdin**:
+
+```json
+{
+  "worktrees": [
+    {
+      "name": "feat/login",
+      "path": "/abs/path/to/wt",
+      "base": "develop",
+      "head": "0f1e2d3c…"
+    }
+  ]
+}
+```
+
+`name` and `path` are always strings; `base` and `head` are `null` when unknown. Only worktrees whose summary is **not already cached** appear here.
+
+It must print a JSON object on **stdout**, mapping `name` to the summary text:
+
+```json
+{ "feat/login": "Adds the login form" }
+```
+
+A name the command omits gets no summary and is not cached, so the next run asks about it again.
+
+**One batch, not one call per worktree**: the interesting summary commands are LLM calls and repository-wide queries, where N invocations cost N times the latency. A single call also lets the command answer comparatively across the whole set.
+
+**Duplicate names are skipped**: answers are keyed by `name`, and two detached-HEAD worktrees can share a directory basename. When a batch contains a duplicate, those worktrees are excluded from the request entirely (reported under `--verbose`) — a missing summary is safer than one shown on the wrong row.
+
+### Limits on the output
+
+The command's stdout is untrusted input and is bounded before anything is stored or displayed:
+
+| Limit                  | Behaviour                                                     |
+| ---------------------- | ------------------------------------------------------------- |
+| 1 MiB of stdout        | Reading stops at the cap; the over-long answer is rejected    |
+| 64 KiB of stderr       | Reading stops at the cap (only the first line is ever quoted) |
+| 4 entries per worktree | An answer far larger than the request is rejected             |
+| JSON object of strings | An array, a number or a nested object is a contract violation |
+| First line only        | A multi-line summary is cut at the first line break           |
+| 500 characters         | Longer text is truncated with `…`                             |
+| Terminal control chars | Neutralized before display, exactly as branch names are       |
+
+### Timeout and failure
+
+If the command exits non-zero, cannot be spawned, times out, or prints something that violates the contract, `vibe list` **warns and keeps going**. Any previously cached summary is shown instead of a blank cell, since a slightly stale answer carries more than nothing. In `--json` mode the warning is withheld so the payload stays parseable.
+
+:::note[Killed commands and background work]
+The timeout always bounds how long `vibe list` itself waits — once it expires, vibe stops reading and reports the run as timed out, whatever the command is still doing.
+
+What it does **not** do is stop the work. `kill` signals the shell vibe spawned, not its descendants, so a command that backgrounds work (`something &`) keeps running in the background after vibe has moved on.
+:::
+
+### Cache
+
+Summaries are cached per repository at `$XDG_CACHE_HOME/vibe/summaries/` (or `$HOME/.cache/vibe/summaries/` when `XDG_CACHE_HOME` is unset or malformed). A second `vibe list` over an unchanged repository does **not** run the command at all.
+
+A cached summary is invalidated when:
+
+- the worktree's `HEAD` changes (a new commit, a checkout), **or**
+- the worktree's uncommitted changes change (`git status` reports something different), **or**
+- the worktree's **branch name** changes ([`vibe rename`](/commands/rename/)), **or**
+- the worktree's **base** changes (`git branch --set-upstream-to`), **or**
+- `[summary] command` itself changes — which discards **every** entry, since a summary produced by the old command says nothing about what the new one means.
+
+`timeout_seconds` is not part of the invalidation: it changes how long vibe waits, not what the answer is. Entries for worktrees that no longer exist are pruned on every run, and a corrupt or unreadable cache file simply regenerates.
+
+:::note[Two things the cache deliberately does not detect]
+**Re-editing a file that is already modified.** Invalidation uses `git status`'s _report_, not your files' contents: a tracked file that is already modified is reported as `M path` no matter how many more times you edit it. So a summary can stay put while you keep working in an already-dirty file; committing, or changing which files are dirty, updates it. Hashing the contents instead would mean reading every modified file on every `vibe list`, turning a listing into an I/O-bound operation.
+
+**Summaries that depend on the other worktrees.** Each summary is cached against _its own_ worktree, so a command whose answer is comparative ("the only branch touching the parser") can go stale when a different worktree changes and this one does not. Write commands that describe a worktree on its own terms; if you do want cross-worktree comparison, expect the column to lag.
+:::
+
+### Example scripts
+
+Ready-to-use scripts live in [`examples/summary/`](https://github.com/kexi/vibe/tree/main/examples/summary) (Unix; each carries its usage and a `[summary]` snippet in its header):
+
+| Script           | What the column shows                                     | Requires              |
+| ---------------- | --------------------------------------------------------- | --------------------- |
+| `last-commit.sh` | Each worktree's latest commit subject                     | `jq`, `git`           |
+| `note-file.sh`   | The first line of each worktree's `.vibe/note.txt`        | `jq`                  |
+| `claude.sh`      | An LLM-written description of what each worktree is doing | `jq`, `git`, `claude` |
+
 ## Worktree Configuration <Badge text="v0.6.0+" />
 
 Customize the worktree directory path using an external script.
@@ -249,6 +353,10 @@ post_clean = ["echo 'Cleanup complete'"]
 
 [submodules]
 configs = ["libs/foo"]
+
+[summary]
+command = "./examples/summary/last-commit.sh"
+timeout_seconds = 30
 
 [worktree]
 path_script = "~/.config/vibe/worktree-path.sh"

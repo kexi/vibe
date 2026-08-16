@@ -67,7 +67,15 @@ _vibe_jump() {
 
 _vibe_list() {
   _arguments \
-    '--json[Output the listing as JSON]'
+    '--json[Output the listing as JSON]' \
+    '--dirty[Only worktrees with uncommitted changes]' \
+    '--clean[Only worktrees with no uncommitted changes]' \
+    '--base=[Only worktrees based on this branch]:base:' \
+    '--recent=[Only worktrees committed to within this duration]:recent:' \
+    '--stale=[Only worktrees not committed to for this duration]:stale:' \
+    '--sort=[Sort the listing]:sort:(age name status)' \
+    '--reverse[Reverse the final display order]' \
+    '--limit=[Show at most this many worktrees]:limit:'
 }
 
 _vibe_rename() {
