@@ -19,9 +19,12 @@ on:
     workflows: ["Release"]
     types: [completed]
 
+# Workflow-level default is read-only. id-token: write is granted per job, on
+# the two publish jobs only: a workflow-level grant would also hand an OIDC
+# token to jobs that run third-party code (cargo install, pnpm install), where
+# it is never used but is exfiltratable.
 permissions:
   contents: read
-  id-token: write # Required for npm provenance
 
 jobs:
   # Establish the release tag/version and enforce the publish gate. The Release
@@ -43,6 +46,8 @@ jobs:
   resolve-release:
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # gh release view only
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
       version: ${{ steps.meta.outputs.version }}
@@ -122,6 +127,8 @@ jobs:
     # dry_run rehearsal ends the whole workflow green with nothing published.
     if: needs.resolve-release.outputs.proceed == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
@@ -192,6 +199,8 @@ jobs:
   security-audit:
     needs: [resolve-release, verify-versions]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
@@ -222,6 +231,9 @@ jobs:
   publish-platform-packages:
     needs: [resolve-release, security-audit, verify-versions]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm OIDC trusted publishing + provenance
     strategy:
       fail-fast: false
       matrix:
@@ -364,6 +376,9 @@ jobs:
   publish-cli:
     needs: [resolve-release, publish-platform-packages]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm OIDC trusted publishing + provenance
 
     steps:
       - name: Harden Runner
