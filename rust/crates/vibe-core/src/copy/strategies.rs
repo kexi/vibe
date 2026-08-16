@@ -272,6 +272,10 @@ impl<N: NativeClone> CopyExecutor for RealCopyExecutor<'_, N> {
         validate_path(src)?;
         validate_path(dest)?;
 
+        // Whether `dest` predates this copy decides if the fallback may delete
+        // it: only debris WE produced is ours to remove.
+        let dest_preexisting = Path::new(dest).exists();
+
         let result = match self.selected {
             CopyStrategyKind::Clonefile => {
                 self.native.clone_directory(Path::new(src), Path::new(dest))
@@ -291,7 +295,27 @@ impl<N: NativeClone> CopyExecutor for RealCopyExecutor<'_, N> {
             Err(e) if self.selected == CopyStrategyKind::Standard => Err(e),
             // Other (soft) failures fall back to Standard, matching the TS
             // `CopyService.copyDirectory` catch.
-            Err(_) => standard_copy_directory(src, dest),
+            Err(root_cause) => {
+                // Discard whatever the failed strategy left behind first. Why
+                // not merge: `standard_copy_directory` copies over an existing
+                // tree, so half-written files from an aborted `cp -r` would
+                // survive as stale content, and the strategies disagree on
+                // shape anyway (`cp -r src dest` nests into `dest/src/` when
+                // dest exists, `rsync -a -- src/ dest` does not). Best-effort:
+                // if the removal fails, the merge is still better than no copy.
+                if !dest_preexisting {
+                    let _ = std::fs::remove_dir_all(dest);
+                }
+                // Fold the root cause in: the fallback's own error would
+                // otherwise be the only thing the caller warns about, hiding
+                // why the faster strategy was abandoned.
+                standard_copy_directory(src, dest).map_err(|fallback_err| {
+                    CopyError::Failed(format!(
+                        "{fallback_err} (after {:?} strategy failed: {root_cause})",
+                        self.selected
+                    ))
+                })
+            }
         }
     }
 
@@ -601,6 +625,88 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(dest.join("inner.txt")).unwrap(),
             "hello"
+        );
+    }
+
+    #[test]
+    fn soft_failure_discards_partial_copy_debris_before_falling_back() {
+        // A failed cp -r / rsync / clonefile can leave a half-written tree at
+        // dest. standard_copy_directory copies OVER an existing tree, so
+        // without cleanup the debris would survive as stale content that never
+        // existed in src. This guarantees the fallback produces src's contents
+        // exactly, with no leftovers.
+        let fx = Fixture::new();
+        let src = fx.mkdir("src");
+        fx.write("src/real.txt", "genuine");
+        let dest = fx.path().join("dest");
+
+        // The clone writes stale.txt into dest, then soft-fails.
+        let native = FakeNative::macos().failing_soft_leaving_debris("stale.txt");
+        let exec = RealCopyExecutor::new(&native, &FakeProbe::none());
+        assert_eq!(exec.directory_strategy(), CopyStrategyKind::Clonefile);
+
+        exec.copy_directory(src.to_str().unwrap(), dest.to_str().unwrap())
+            .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(dest.join("real.txt")).unwrap(),
+            "genuine"
+        );
+        assert!(
+            !dest.join("stale.txt").exists(),
+            "debris from the failed strategy must not survive into the fallback copy"
+        );
+    }
+
+    #[test]
+    fn fallback_preserves_a_destination_that_predates_the_copy() {
+        // Only debris WE produced is ours to delete: a dest that already held
+        // content before copy_directory ran must not be wiped by the fallback.
+        let fx = Fixture::new();
+        let src = fx.mkdir("src");
+        fx.write("src/real.txt", "genuine");
+        fx.write("dest/preexisting.txt", "user data");
+        let dest = fx.join("dest");
+
+        let native = FakeNative::macos().failing_soft();
+        let exec = RealCopyExecutor::new(&native, &FakeProbe::none());
+        exec.copy_directory(src.to_str().unwrap(), dest.to_str().unwrap())
+            .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(dest.join("preexisting.txt")).unwrap(),
+            "user data",
+            "a pre-existing destination must survive the fallback"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dest.join("real.txt")).unwrap(),
+            "genuine"
+        );
+    }
+
+    #[test]
+    fn fallback_failure_reports_the_original_strategy_error_too() {
+        // When the fallback ALSO fails, the caller's warning is the only place
+        // the failure surfaces; it must name why the fast strategy was
+        // abandoned, not just the fallback's own (often generic) error.
+        let fx = Fixture::new();
+        let missing_src = fx.path().join("does-not-exist");
+        let dest = fx.path().join("dest");
+
+        let native = FakeNative::macos().failing_soft();
+        let exec = RealCopyExecutor::new(&native, &FakeProbe::none());
+        let err = exec
+            .copy_directory(missing_src.to_str().unwrap(), dest.to_str().unwrap())
+            .unwrap_err();
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Standard directory copy failed"),
+            "must report the fallback's failure: {msg}"
+        );
+        assert!(
+            msg.contains("simulated ENOTSUP"),
+            "must also report the root cause: {msg}"
         );
     }
 

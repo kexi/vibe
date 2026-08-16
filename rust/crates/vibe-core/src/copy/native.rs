@@ -155,6 +155,8 @@ mod fake {
         platform: &'static str,
         /// When set, every `clone_file`/`clone_directory` returns this error.
         forced_error: Option<CopyError>,
+        /// When set, `clone_directory` writes `dest/<name>` before failing.
+        debris: Option<String>,
         pub clone_file_calls: RefCell<Vec<(String, String)>>,
         pub clone_dir_calls: RefCell<Vec<(String, String)>>,
         pub trash_calls: RefCell<Vec<String>>,
@@ -169,6 +171,7 @@ mod fake {
                 trash_available: true,
                 platform: "darwin",
                 forced_error: None,
+                debris: None,
                 clone_file_calls: RefCell::new(vec![]),
                 clone_dir_calls: RefCell::new(vec![]),
                 trash_calls: RefCell::new(vec![]),
@@ -183,6 +186,7 @@ mod fake {
                 trash_available: true,
                 platform: "linux",
                 forced_error: None,
+                debris: None,
                 clone_file_calls: RefCell::new(vec![]),
                 clone_dir_calls: RefCell::new(vec![]),
                 trash_calls: RefCell::new(vec![]),
@@ -199,6 +203,7 @@ mod fake {
                 trash_available: true,
                 platform: "windows",
                 forced_error: None,
+                debris: None,
                 clone_file_calls: RefCell::new(vec![]),
                 clone_dir_calls: RefCell::new(vec![]),
                 trash_calls: RefCell::new(vec![]),
@@ -213,6 +218,7 @@ mod fake {
                 trash_available: false,
                 platform: "unsupported",
                 forced_error: None,
+                debris: None,
                 clone_file_calls: RefCell::new(vec![]),
                 clone_dir_calls: RefCell::new(vec![]),
                 trash_calls: RefCell::new(vec![]),
@@ -231,6 +237,14 @@ mod fake {
         /// Force the clone to fail with a soft (fallback-eligible) error.
         pub fn failing_soft(mut self) -> Self {
             self.forced_error = Some(CopyError::Failed("simulated ENOTSUP".to_string()));
+            self
+        }
+
+        /// Soft-fail, but only after writing `dest/<name>` — the partially
+        /// copied debris a real aborted `cp -r`/`rsync` leaves behind.
+        pub fn failing_soft_leaving_debris(mut self, name: &str) -> Self {
+            self.forced_error = Some(CopyError::Failed("simulated ENOTSUP".to_string()));
+            self.debris = Some(name.to_string());
             self
         }
     }
@@ -252,6 +266,10 @@ mod fake {
                 src.to_string_lossy().into_owned(),
                 dest.to_string_lossy().into_owned(),
             ));
+            if let Some(name) = &self.debris {
+                let _ = std::fs::create_dir_all(dest);
+                let _ = std::fs::write(dest.join(name), b"truncated");
+            }
             if let Some(e) = &self.forced_error {
                 return Err(e.clone());
             }
