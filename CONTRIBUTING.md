@@ -161,6 +161,13 @@ See [AGENTS.md](./AGENTS.md) for detailed branching workflow.
    Re-run promptly, as update-homebrew skips with a warning once a newer
    release has superseded this one.
 
+   A run that never published cannot be resurrected later: `prepare` refuses
+   any version older than the newest existing release, because publishing it
+   would move the latest release, the Homebrew tap and the npm `latest`
+   dist-tag backwards. Dispatch a fresh release for the current version
+   instead. Should an older version still reach npm (a repair publish), it
+   lands under the `previous` dist-tag rather than `latest`.
+
 4. **Update Nix binary hashes, if needed:**
 
    The default Nix package builds from source. The prebuilt binary fast path

@@ -621,6 +621,22 @@ fresh dispatch fails with `::error::Release vX.Y.Z targets <sha> but this run
 is on <sha>` and exits 1, because hashing the old released binaries into a
 formula built from a newer tree would silently corrupt the tap.
 
+**A run that never published cannot be resurrected later.** `prepare` also
+refuses any version older than the newest existing stable release
+(`::error::refusing to release X: Y is already released`), and the `release`
+job re-asserts that immediately before `gh release edit --draft=false --latest`
+moves the pointer. Without it, re-running an old unpublished run would publish
+that old version as latest, and `update-homebrew`'s `isLatest` check — which
+reads GitHub's pointer *after* that edit — would happily mirror it. Nothing is
+built or tagged when this fires; dispatch a fresh release for the current
+version instead.
+
+`publish-npm.yml` publishes with an explicit `--tag`: `latest` only when the
+version is at least the registry's current `latest`, otherwise `previous`. A
+re-fired `workflow_run` for an old release therefore leaves `npm install
+@kexi/vibe` resolving the newest version, while the older bytes stay
+installable by exact version.
+
 ### 7.4 Generate Twitter Post Text
 
 Generate Twitter post text for the release announcement. Include Twitter mentions to thank contributors.
