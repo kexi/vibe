@@ -343,6 +343,28 @@ jobs:
           fi
           echo "Version validation passed: $TAG_VERSION"
 
+      # Dist-tag gate (#616). `npm publish` with no --tag writes `latest`, and
+      # this workflow is driven by `workflow_run` — an event that can be re-fired
+      # long after the release it followed. Re-running the 3.1.0 publish after
+      # 3.2.0 shipped would therefore move every `npm install @kexi/vibe`
+      # backwards, silently, with nothing in the publish path looking at the
+      # registry. `npm view <pkg> dist-tags.latest` prints nothing (exit 1) for a
+      # package that has none yet, which the resolver reads as "this publish
+      # creates latest"; `|| true` keeps that case out of `set -e`.
+      - name: Resolve dist-tag
+        id: dist_tag
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          PKG: "@kexi/${{ matrix.package }}"
+          VERSION: ${{ needs.resolve-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          REGISTRY_LATEST=$(npm view "$PKG" dist-tags.latest 2>/dev/null || true)
+          TAG=$(bun run scripts/resolve-npm-dist-tag.ts \
+            --version "$VERSION" --registry-latest "$REGISTRY_LATEST")
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Publishing $PKG@$VERSION under dist-tag $TAG (registry latest: ${REGISTRY_LATEST:-<none>})"
+
       - name: Publish @kexi/${{ matrix.package }}
         if: steps.guard.outputs.skip != 'true'
         working-directory: packages/vibe-${{ matrix.platform }}-${{ matrix.arch }}
@@ -352,7 +374,13 @@ jobs:
         # so a stale secret would break the publish. Caveat: OIDC cannot CREATE
         # a brand-new package (it 404s on the initial PUT) — any future new
         # package needs a one-off token for its first publish only.
-        run: npm publish --provenance --access public
+        #
+        # --tag is always explicit: relying on npm's default would restore the
+        # rollback the step above exists to prevent the moment someone edits
+        # this line.
+        env:
+          DIST_TAG: ${{ steps.dist_tag.outputs.tag }}
+        run: npm publish --provenance --access public --tag "$DIST_TAG"
 
   # Publish @kexi/vibe (the launcher shim). It needs ALL five platform packages
   # to be published first (security D-1) so a freshly published shim never
@@ -429,9 +457,27 @@ jobs:
         # unit-tested script the platform packages use.
         run: bun run scripts/verify-platform-tarball.ts --package npm
 
+      # Dist-tag gate (#616), same reasoning as the platform packages — and the
+      # one that actually decides what `npm install @kexi/vibe` resolves to.
+      - name: Resolve dist-tag
+        id: dist_tag
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          VERSION: ${{ needs.resolve-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          REGISTRY_LATEST=$(npm view "@kexi/vibe" dist-tags.latest 2>/dev/null || true)
+          TAG=$(bun run scripts/resolve-npm-dist-tag.ts \
+            --version "$VERSION" --registry-latest "$REGISTRY_LATEST")
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Publishing @kexi/vibe@$VERSION under dist-tag $TAG (registry latest: ${REGISTRY_LATEST:-<none>})"
+
       - name: Publish @kexi/vibe
         if: steps.guard.outputs.skip != 'true'
         working-directory: packages/npm
         # See the platform publish step: auth is OIDC trusted publishing;
-        # deliberately no NODE_AUTH_TOKEN.
-        run: npm publish --provenance --access public
+        # deliberately no NODE_AUTH_TOKEN. --tag is always explicit so npm's
+        # `latest` default cannot reintroduce the rollback (#616).
+        env:
+          DIST_TAG: ${{ steps.dist_tag.outputs.tag }}
+        run: npm publish --provenance --access public --tag "$DIST_TAG"
