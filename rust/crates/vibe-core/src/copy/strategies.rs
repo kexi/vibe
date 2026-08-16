@@ -273,8 +273,11 @@ impl<N: NativeClone> CopyExecutor for RealCopyExecutor<'_, N> {
         validate_path(dest)?;
 
         // Whether `dest` predates this copy decides if the fallback may delete
-        // it: only debris WE produced is ours to remove.
-        let dest_preexisting = Path::new(dest).exists();
+        // it: only debris WE produced is ours to remove. Why `symlink_metadata`
+        // and not `Path::exists()`: the latter follows links, so a pre-existing
+        // DANGLING symlink at `dest` reads as absent and the fallback would
+        // delete it as if it were our own debris.
+        let dest_preexisting = std::fs::symlink_metadata(dest).is_ok();
 
         let result = match self.selected {
             CopyStrategyKind::Clonefile => {
@@ -681,6 +684,31 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(dest.join("real.txt")).unwrap(),
             "genuine"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fallback_preserves_a_preexisting_dangling_symlink_destination() {
+        // A dangling symlink at dest predates the copy, so it is NOT our debris
+        // to delete — even though it resolves to nothing. `Path::exists()`
+        // follows links and would call it absent, letting the cleanup unlink
+        // it; the pre-existence check must therefore not dereference.
+        let fx = Fixture::new();
+        let src = fx.mkdir("src");
+        fx.write("src/real.txt", "genuine");
+        let dest = fx.path().join("dest");
+        std::os::unix::fs::symlink(fx.path().join("no-such-target"), &dest).unwrap();
+
+        let native = FakeNative::macos().failing_soft();
+        let exec = RealCopyExecutor::new(&native, &FakeProbe::none());
+        let _ = exec.copy_directory(src.to_str().unwrap(), dest.to_str().unwrap());
+
+        assert!(
+            std::fs::symlink_metadata(&dest)
+                .map(|m| m.file_type().is_symlink())
+                .unwrap_or(false),
+            "a pre-existing dangling symlink must not be removed as debris"
         );
     }
 
