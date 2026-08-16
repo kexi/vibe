@@ -640,6 +640,10 @@ Markers:
 | `✗`    | Failed (red); the reason follows as `(failed: …)`            |
 | `⊘`    | Abandoned (dim) — still pending when the run ended           |
 
+A phase line (the outer `┗`) reports no result of its own; it aggregates the
+tasks below it. It shows `⊘` if any task was still pending, otherwise `✗` with
+`(failed: N task(s) failed)` if any task failed, otherwise `☒`.
+
 **Note**: Progress display auto-disables in non-TTY environments (e.g., CI/CD), and hook output will be shown normally.
 
 ### Environment Variables

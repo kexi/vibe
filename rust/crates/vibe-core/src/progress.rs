@@ -18,6 +18,24 @@
 //! `indicatif` renders `{spinner}` on a finished bar as the last `tick_strings`
 //! entry and would otherwise stamp a running glyph in front of every outcome.
 //!
+//! A phase never reports an outcome of its own — nothing calls `complete_task`
+//! or `fail_task` on a phase id — so `finish()` derives it from the children,
+//! in this precedence order:
+//!
+//! 1. a child is still pending → `⊘` Abandoned (the run ended mid-flight, so the
+//!    phase's own result was never determined);
+//! 2. otherwise a child failed → `✗` Failed, with `(failed: N task(s) failed)`
+//!    as the reason;
+//! 3. otherwise → `☒` Completed.
+//!
+//! Why failure does not outrank pending: `⊘` already says "we stopped before
+//! knowing", and promoting the phase to `✗` would assert the remaining children
+//! failed too. Why the phase reason counts tasks instead of quoting a child's
+//! error: the child line right below already carries the verbatim text, and a
+//! phase with several failures has no single reason to quote. Skipped children
+//! (`☐`) are deliberately not failures — nothing ran, so they leave the phase's
+//! verdict to the tasks that did.
+//!
 //! SECURITY/contract: the live renderer draws to `ProgressDrawTarget::stderr()`
 //! so stdout stays clean for the eval'd `cd` line. Node labels and error texts
 //! are attacker-influenced (hook command strings and copy patterns come from
@@ -206,6 +224,11 @@ struct BarNode {
     prefix: String,
     label: String,
     done: bool,
+    /// Whether this node closed with [`TaskOutcome::Failed`]. Kept next to
+    /// `done` rather than recovered from the rendered message so the phase
+    /// verdict never depends on parsing a line that carries attacker-influenced
+    /// text.
+    failed: bool,
 }
 
 impl IndicatifTracker {
@@ -249,6 +272,7 @@ impl IndicatifTracker {
             prefix: prefix.to_string(),
             label,
             done: false,
+            failed: false,
         });
         id
     }
@@ -283,6 +307,7 @@ fn closed_style() -> indicatif::ProgressStyle {
 /// through the spinner template.
 fn close_bar(node: &mut BarNode, outcome: TaskOutcome<'_>, color: bool) {
     node.done = true;
+    node.failed = matches!(outcome, TaskOutcome::Failed { .. });
     node.bar.set_style(closed_style());
     node.bar.set_prefix("");
     let line = render_line(outcome, &node.prefix, &node.label, color);
@@ -294,19 +319,51 @@ fn close_bar(node: &mut BarNode, outcome: TaskOutcome<'_>, color: bool) {
     }
 }
 
+/// A [`TaskOutcome`] that owns its failure reason, so `closing_outcomes` can
+/// synthesize a phase-level reason (`"2 tasks failed"`) that no node holds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ClosingOutcome {
+    Completed,
+    Failed(String),
+    Abandoned,
+}
+
+impl ClosingOutcome {
+    fn as_task_outcome(&self) -> TaskOutcome<'_> {
+        match self {
+            ClosingOutcome::Completed => TaskOutcome::Completed,
+            ClosingOutcome::Failed(error) => TaskOutcome::Failed { error },
+            ClosingOutcome::Abandoned => TaskOutcome::Abandoned,
+        }
+    }
+}
+
+/// How the tasks under one phase ended, as far as the phase's own verdict cares.
+#[derive(Debug, Default, Clone, Copy)]
+struct PhaseTally {
+    pending: bool,
+    failed: usize,
+}
+
 /// Decide how each still-open node is closed by `finish()`.
 ///
 /// `None` = already closed by its own caller, leave the line alone. Split out
 /// of `finish` (and driven by a unit test) because the phase rule is the part
-/// that regressed: a phase is a header, so it is `Completed` unless a task
-/// under it was still pending when the run ended.
-fn closing_outcomes(bars: &[BarNode]) -> Vec<Option<TaskOutcome<'static>>> {
-    let mut phase_has_pending_task = vec![false; bars.len()];
+/// that regressed: a phase is a header, so its outcome is aggregated from the
+/// tasks below it (see the module header for the precedence).
+fn closing_outcomes(bars: &[BarNode]) -> Vec<Option<ClosingOutcome>> {
+    let mut tallies = vec![PhaseTally::default(); bars.len()];
     for node in bars.iter() {
-        if let (NodeKind::Task { phase }, false) = (node.kind, node.done) {
-            if let Some(flag) = phase_has_pending_task.get_mut(phase) {
-                *flag = true;
-            }
+        let NodeKind::Task { phase } = node.kind else {
+            continue;
+        };
+        let Some(tally) = tallies.get_mut(phase) else {
+            continue;
+        };
+        if !node.done {
+            tally.pending = true;
+        } else if node.failed {
+            tally.failed += 1;
         }
     }
     bars.iter()
@@ -315,9 +372,20 @@ fn closing_outcomes(bars: &[BarNode]) -> Vec<Option<TaskOutcome<'static>>> {
             if node.done {
                 return None;
             }
-            match node.kind {
-                NodeKind::Phase if !phase_has_pending_task[i] => Some(TaskOutcome::Completed),
-                _ => Some(TaskOutcome::Abandoned),
+            let NodeKind::Phase = node.kind else {
+                return Some(ClosingOutcome::Abandoned);
+            };
+            let tally = tallies[i];
+            if tally.pending {
+                Some(ClosingOutcome::Abandoned)
+            } else if tally.failed > 0 {
+                let plural = if tally.failed == 1 { "task" } else { "tasks" };
+                Some(ClosingOutcome::Failed(format!(
+                    "{} {plural} failed",
+                    tally.failed
+                )))
+            } else {
+                Some(ClosingOutcome::Completed)
             }
         })
         .collect()
@@ -365,13 +433,14 @@ impl ProgressTracker for IndicatifTracker {
         let mut bars = self.bars.lock().expect("progress mutex poisoned");
         let outcomes = closing_outcomes(&bars);
         for (node, outcome) in bars.iter_mut().zip(outcomes) {
-            // A phase header is not a unit of work: `closing_outcomes` gives it
-            // `Completed` once nothing under it is still pending, so an all-green
-            // run keeps rendering `☒ <phase>` as the README documents. Why not
-            // finish a still-pending *task* as completed: it never succeeded, and
+            // A phase header is not a unit of work: `closing_outcomes` folds the
+            // tasks under it into one verdict, so an all-green run keeps
+            // rendering `☒ <phase>` as the README documents while a phase with a
+            // failed child stops claiming success. Why not finish a
+            // still-pending *task* as completed: it never succeeded, and
             // painting it `☒` is the ambiguity this rendering exists to remove.
             let Some(outcome) = outcome else { continue };
-            close_bar(node, outcome, color);
+            close_bar(node, outcome.as_task_outcome(), color);
         }
     }
 }
@@ -699,8 +768,11 @@ mod tests {
         );
     }
 
+    /// Guarantees a phase with a failed child does not close with the success
+    /// glyph: the phase reports `✗` with a count, and `finish()` still does not
+    /// repaint over the `✗` line `fail_task` already produced.
     #[test]
-    fn finish_keeps_a_failed_task_and_still_closes_its_phase() {
+    fn finish_fails_a_phase_whose_task_failed() {
         let lines = finish_lines(|t| {
             let phase = t.add_phase("Post-start hooks");
             let task = t.add_task(phase, "sh -c 'exit 3'");
@@ -708,14 +780,134 @@ mod tests {
             t.fail_task(task, "Exit code 3");
         });
 
-        // The phase header must not steal the failure marker, and finish() must
-        // not repaint over the ✗ line fail_task already produced.
+        assert_eq!(
+            lines,
+            vec![
+                "┗ ✗ Post-start hooks (failed: 1 task failed)",
+                "<kept:   ┗ ✗ sh -c 'exit 3' (failed: Exit code 3)>",
+            ]
+        );
+    }
+
+    /// Guarantees one success next to one failure still fails the phase, and
+    /// that the phase's reason counts the failures instead of quoting a child's
+    /// error (which the child line already carries verbatim).
+    #[test]
+    fn finish_fails_a_phase_that_mixes_success_and_failure() {
+        let lines = finish_lines(|t| {
+            let phase = t.add_phase("Copying files");
+            let ok = t.add_task(phase, ".env");
+            t.complete_task(ok);
+            let bad = t.add_task(phase, "node_modules/");
+            t.fail_task(bad, "Permission denied");
+        });
+
+        assert_eq!(
+            lines,
+            vec![
+                "┗ ✗ Copying files (failed: 1 task failed)",
+                "<kept:   ┗ ☒ .env>",
+                "<kept:   ┗ ✗ node_modules/ (failed: Permission denied)>",
+            ]
+        );
+    }
+
+    /// Guarantees the phase reason pluralizes on the number of failed children.
+    #[test]
+    fn finish_counts_every_failed_task_in_the_phase_reason() {
+        let lines = finish_lines(|t| {
+            let phase = t.add_phase("Copying files");
+            let first = t.add_task(phase, ".env");
+            t.fail_task(first, "Permission denied");
+            let second = t.add_task(phase, "node_modules/");
+            t.fail_task(second, "No such file");
+        });
+
+        assert_eq!(lines[0], "┗ ✗ Copying files (failed: 2 tasks failed)");
+    }
+
+    /// Guarantees a still-pending child outranks a failed one: the run ended
+    /// before the phase's result was known, so `⊘` is the honest marker and `✗`
+    /// would assert something about the task that never ran.
+    #[test]
+    fn finish_abandons_a_phase_that_has_both_a_failure_and_a_pending_task() {
+        let lines = finish_lines(|t| {
+            let phase = t.add_phase("Copying files");
+            let bad = t.add_task(phase, ".env");
+            t.fail_task(bad, "Permission denied");
+            let pending = t.add_task(phase, "node_modules/");
+            t.start_task(pending);
+        });
+
+        assert_eq!(
+            lines,
+            vec![
+                "┗ ⊘ Copying files",
+                "<kept:   ┗ ✗ .env (failed: Permission denied)>",
+                "   ┗ ⊘ node_modules/",
+            ]
+        );
+    }
+
+    /// Guarantees a failure in one phase does not leak into a sibling phase.
+    #[test]
+    fn finish_scopes_failed_tasks_to_their_own_phase() {
+        let lines = finish_lines(|t| {
+            let first = t.add_phase("Pre-start hooks");
+            let bad = t.add_task(first, "sh -c 'exit 3'");
+            t.fail_task(bad, "Exit code 3");
+            let second = t.add_phase("Post-start hooks");
+            let ok = t.add_task(second, "echo hi");
+            t.complete_task(ok);
+        });
+
+        assert_eq!(
+            lines,
+            vec![
+                "┗ ✗ Pre-start hooks (failed: 1 task failed)",
+                "<kept:   ┗ ✗ sh -c 'exit 3' (failed: Exit code 3)>",
+                "┗ ☒ Post-start hooks",
+                "<kept:   ┗ ☒ echo hi>",
+            ]
+        );
+    }
+
+    /// Guarantees a skipped task is not counted as a failure: nothing ran, so it
+    /// leaves the phase's verdict to the tasks that did.
+    #[test]
+    fn finish_completes_a_phase_whose_only_other_task_was_skipped() {
+        let lines = finish_lines(|t| {
+            let phase = t.add_phase("Post-start hooks");
+            let ok = t.add_task(phase, "echo hi");
+            t.complete_task(ok);
+            let skipped = t.add_task(phase, "npm install");
+            t.skip_task(skipped);
+        });
+
         assert_eq!(
             lines,
             vec![
                 "┗ ☒ Post-start hooks",
-                "<kept:   ┗ ✗ sh -c 'exit 3' (failed: Exit code 3)>",
+                "<kept:   ┗ ☒ echo hi>",
+                "<kept:   ┗ ☐ npm install (skipped)>",
             ]
+        );
+    }
+
+    /// Guarantees the failed phase line is painted red like any other failure,
+    /// so the aggregated outcome is legible on a color terminal too.
+    #[test]
+    fn a_failed_phase_line_is_colored_like_a_failed_task() {
+        let tracker = IndicatifTracker::with_color(true);
+        let phase = tracker.add_phase("Post-start hooks");
+        let task = tracker.add_task(phase, "npm install");
+        tracker.fail_task(task, "Exit code 1");
+        tracker.finish();
+
+        let bars = tracker.bars.lock().unwrap();
+        assert_eq!(
+            bars[0].bar.message(),
+            format!("┗ {RED}✗ Post-start hooks (failed: 1 task failed){RESET}")
         );
     }
 
