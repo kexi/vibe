@@ -153,6 +153,8 @@ mod tests {
             relative_path: ".vibe.toml".into(),
             hashes: vec!["h".into()],
             skip_hash_check: None,
+            config_semantics_rev: None,
+            config_semantics_revs: None,
         });
         save_user_settings(&io, &settings, V).unwrap();
 
@@ -218,6 +220,8 @@ mod tests {
                 relative_path: file.into(),
                 hashes: vec!["h".into()],
                 skip_hash_check: None,
+                config_semantics_rev: None,
+                config_semantics_revs: None,
             });
         }
         save_user_settings(&io, &settings, V).unwrap();

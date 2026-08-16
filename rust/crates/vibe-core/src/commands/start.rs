@@ -9,7 +9,29 @@
 //! outputs the worktree PATH to stdout (not a `cd`), with non-fatal post-setup.
 //!
 //! The single stdout write stays in the binary: a normal run returns
-//! `Outcome::cd(path)`; the hook mode returns `Outcome::stdout(path)`.
+//! `Outcome::cd(path)`; the hook mode returns `Outcome::stdout(path)`. A hook
+//! failure is non-fatal in NORMAL mode too, not just in hook mode, but its
+//! effect on the `cd` depends on WHERE in the sequence it happened (issue #601),
+//! mirroring `clean`'s `pre_clean`/`post_clean` split:
+//!
+//! - `pre_start` runs before the copy and is therefore a GATE. A failure warns
+//!   and returns `Outcome::none()`: the copy and `post_start` are skipped, so
+//!   the worktree is unprovisioned and the shell must stay where it is. This
+//!   keeps a `pre_start` usable as a precondition check (secrets reachable,
+//!   licence valid, …) that blocks entry.
+//! - `post_start` runs after the worktree is fully provisioned, so a failure
+//!   only warns and the `cd` is still returned — that is the actual #601 fix.
+//!
+//! The gate is DURABLE, which it only is because every path that hands back an
+//! existing worktree re-runs the sequence first: creation, same-branch re-entry,
+//! `--reuse`, and — the case that made it one-shot until the #601 review — the
+//! "branch is already used in worktree X, navigate?" path. A gated run leaves
+//! the worktree directory on disk, so the retry necessarily arrives through one
+//! of those; if any of them cd'd without re-running the hooks, the precondition
+//! would be enforced exactly once and bypassed forever after.
+//!
+//! Only `HookExecution` is downgraded — a failed copy or submodule step stays
+//! fatal, so no `cd` into a half-built worktree is ever emitted.
 //!
 //! Seam strategy (architect's hybrid): the small, ubiquitous seams (`Io`,
 //! `GitRunner`, `Prompt`, `RepoResolver`, `ScriptRunner`, `ProcessControl`) are
@@ -28,9 +50,11 @@ use crate::error::{Result, VibeError};
 use crate::git::{get_repo_name, get_repo_root, revision_exists, sanitize_branch_name, GitRunner};
 use crate::git_copy::{collect_git_copy_files, resolve_selection, GitCopySelection};
 use crate::glob::expand_copy_patterns;
-use crate::hooks::{run_hooks, HookEnv, HookRunner, HookTrackerInfo};
+use crate::hooks::{run_hooks, warn_on_hook_failure, HookEnv, HookRunner, HookTrackerInfo};
 use crate::io::Io;
-use crate::output::{error_log, log, log_dry_run, verbose_log, warn_log, OutputOptions};
+use crate::output::{
+    error_log, log, log_dry_run, sanitize_for_display, verbose_log, warn_log, OutputOptions,
+};
 use crate::progress::ProgressTracker;
 use crate::prompt::Prompt;
 use crate::settings::RepoResolver;
@@ -110,6 +134,30 @@ struct ConfigAndHooks {
     copy_untracked: bool,
     copy_modified: bool,
     dry_run: bool,
+    /// Carried so the hook-failure summary can honour `--quiet`. `run_config_*`
+    /// deliberately has no `OutputOptions` param of its own (TS parity: the inner
+    /// copy/hook helpers own their progress output), so the one message that must
+    /// respect the flag rides along in the options bundle instead.
+    opts: OutputOptions,
+}
+
+/// Whether the config-and-hooks sequence left the worktree usable.
+///
+/// Only a `pre_start` failure yields `Gated`: it runs BEFORE the copy, so the
+/// copy and `post_start` are skipped and the worktree is unprovisioned. A
+/// `post_start` failure yields `Provisioned` — everything the worktree needs is
+/// already in place (issue #601).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Provisioning {
+    Provisioned,
+    Gated,
+}
+
+impl Provisioning {
+    /// Whether a caller holding a worktree path may return a `cd` into it.
+    fn allows_cd(self) -> bool {
+        self == Provisioning::Provisioned
+    }
 }
 
 /// Run `vibe start <branch_name>`.
@@ -155,15 +203,34 @@ where
 
     let validation = validate_branch_for_worktree(deps.git, branch_name)?;
 
+    // The branch is already checked out somewhere else. Resolved BEFORE the
+    // config load below so the "cancelled"/dry-run answers cost nothing, but the
+    // accepted answer is deliberately NOT returned here: re-entry has to go
+    // through `run_config_and_hooks` like every other navigate path (see
+    // `navigate_to_existing_branch_worktree`).
+    let mut existing_branch_worktree = None;
     if !validation.is_valid {
         let Some(existing) = validation.existing_worktree_path.clone() else {
             return Err(VibeError::Worktree(
                 "Branch is in use but worktree path is unknown".to_string(),
             ));
         };
-        if let Some(outcome) = handle_existing_branch_worktree(deps, branch_name, &existing, flags)?
-        {
-            return Ok(outcome);
+        match handle_existing_branch_worktree(deps, branch_name, &existing, flags)? {
+            ExistingBranchDecision::Done(outcome) => return Ok(outcome),
+            ExistingBranchDecision::Navigate(path) => {
+                // Standing in the worktree we would navigate to: there is no
+                // entry to provision and nothing to gate, so return before the
+                // config load below. Deferring this to
+                // `navigate_to_existing_branch_worktree` (which repeats the
+                // check for its other callers) would make an untrusted or
+                // modified `.vibe.toml` fail a self-navigation that needs no
+                // config at all — on develop this path returned the cd before
+                // `load_vibe_config` ever ran, and that must stay true.
+                if same_worktree(&repo_root, &path) {
+                    return Ok(Outcome::cd(path));
+                }
+                existing_branch_worktree = Some(path);
+            }
         }
     }
 
@@ -183,6 +250,17 @@ where
 
     let settings = load_user_settings(deps.io, deps.resolver, deps.version)?;
     let config = load_vibe_config(deps.io, deps.resolver, deps.version, &repo_root)?;
+
+    if let Some(existing) = existing_branch_worktree {
+        return navigate_to_existing_branch_worktree(
+            deps,
+            config.as_ref(),
+            &repo_root,
+            &existing,
+            flags,
+            opts,
+        );
+    }
 
     let worktree_path = resolve_worktree_path(
         deps.io,
@@ -219,6 +297,7 @@ where
             &worktree_path,
             &existing_branch,
             flags,
+            opts,
         )? {
             ConflictDecision::Continue => {}
             ConflictDecision::Done(outcome) => return Ok(outcome),
@@ -249,7 +328,10 @@ where
         run_create_worktree_with_progress(deps, branch_name, &create_opts)?;
     }
 
-    run_config_and_hooks(
+    // The worktree now exists, so a failing `post_start` must not suppress the
+    // `cd` (issue #601); a failing `pre_start` gates it, and non-hook failures
+    // still propagate and stay fatal.
+    let provisioning = run_config_and_hooks(
         deps,
         config.as_ref(),
         &repo_root,
@@ -260,8 +342,18 @@ where
             copy_untracked: flags.copy_untracked,
             copy_modified: flags.copy_modified,
             dry_run: flags.dry_run,
+            opts,
         },
     )?;
+    if !provisioning.allows_cd() {
+        // The worktree stays created (as it did before #601) — only the cd is
+        // withheld, so the user lands back in the repo they started from and
+        // can act on the warning. Re-running after the fix reaches the same
+        // sequence via `navigate_to_existing_branch_worktree` (the branch is now
+        // checked out here), so the gate is re-evaluated and the copy and
+        // `post_start` finally run.
+        return Ok(Outcome::none());
+    }
 
     if flags.dry_run {
         log_dry_run(
@@ -352,14 +444,28 @@ where
     BaseRef::Present(trimmed.to_string())
 }
 
-/// Handle a branch already used by another worktree. Returns `Some(outcome)`
-/// when fully handled.
+/// What the caller should do about a branch already checked out elsewhere.
+///
+/// Split from the `Outcome` on purpose: the accepted answer is a *request* to
+/// navigate, not a finished result. Returning `Outcome::cd` straight from here
+/// is what made the `pre_start` gate one-shot (issue #601 review) — the second
+/// `vibe start` for the same branch matched this path and cd'd in without ever
+/// re-running the hook that had gated the first one.
+enum ExistingBranchDecision {
+    /// Fully handled (dry-run, or the user declined): return this outcome as-is.
+    Done(Outcome),
+    /// The user wants the existing worktree at this path; the caller must still
+    /// run the config-and-hooks sequence against it before emitting a `cd`.
+    Navigate(String),
+}
+
+/// Handle a branch already used by another worktree: decide whether to navigate.
 fn handle_existing_branch_worktree<I, G, R, S, P, Sr>(
     deps: &StartDeps<I, G, R, S, P, Sr>,
     branch_name: &str,
     existing: &str,
     flags: &StartFlags,
-) -> Result<Option<Outcome>>
+) -> Result<ExistingBranchDecision>
 where
     I: Io,
     G: GitRunner,
@@ -374,22 +480,73 @@ where
             &format!("Branch '{branch_name}' is already used in worktree '{existing}'"),
         );
         log_dry_run(deps.io, &format!("Would navigate to: {existing}"));
-        return Ok(Some(Outcome::none()));
+        return Ok(ExistingBranchDecision::Done(Outcome::none()));
     }
 
     if flags.force {
-        return Ok(Some(Outcome::cd(existing.to_string())));
+        return Ok(ExistingBranchDecision::Navigate(existing.to_string()));
     }
 
     let navigate = deps.prompt.confirm(&format!(
         "Branch '{branch_name}' is already used in worktree '{existing}'.\nNavigate to the existing worktree? (Y/n)"
     ));
     if navigate {
-        Ok(Some(Outcome::cd(existing.to_string())))
+        Ok(ExistingBranchDecision::Navigate(existing.to_string()))
     } else {
         log(deps.io, "Cancelled", OutputOptions::new(false, false));
-        Ok(Some(Outcome::none()))
+        Ok(ExistingBranchDecision::Done(Outcome::none()))
     }
+}
+
+/// Re-entry into the worktree a branch is already checked out in: run the
+/// config-and-hooks sequence against it, then cd (or gate).
+///
+/// Why the hooks run again on a pure navigate: a `pre_start` is a PRECONDITION,
+/// and a precondition that is only checked on the run that happens to create the
+/// worktree is not a precondition at all. Before this, a gated first run left the
+/// worktree on disk, so every retry took this path and walked straight in with
+/// the gate never re-evaluated. Re-running also re-does the copy and
+/// `post_start`, which is what makes "fix the cause and re-run `vibe start`"
+/// actually provision the worktree — the same semantics
+/// `handle_same_branch_worktree` and `reuse_existing_worktree` already have.
+///
+/// `existing` is never the caller's own worktree: `start_command` returns the
+/// self-navigation cd before the config load, so this function only ever
+/// provisions a DIFFERENT worktree (see the `same_worktree` guard there).
+fn navigate_to_existing_branch_worktree<I, G, R, S, P, Sr>(
+    deps: &StartDeps<I, G, R, S, P, Sr>,
+    config: Option<&VibeConfig>,
+    repo_root: &str,
+    existing: &str,
+    flags: &StartFlags,
+    opts: OutputOptions,
+) -> Result<Outcome>
+where
+    I: Io,
+    G: GitRunner,
+    R: RepoResolver,
+    S: ScriptRunner,
+    P: Prompt,
+    Sr: StdinReader,
+{
+    let provisioning = run_config_and_hooks(
+        deps,
+        config,
+        repo_root,
+        existing,
+        &ConfigAndHooks {
+            skip_hooks: flags.no_hooks,
+            skip_copy: flags.no_copy,
+            copy_untracked: flags.copy_untracked,
+            copy_modified: flags.copy_modified,
+            dry_run: false,
+            opts,
+        },
+    )?;
+    if !provisioning.allows_cd() {
+        return Ok(Outcome::none());
+    }
+    Ok(Outcome::cd(existing.to_string()))
 }
 
 /// Same-branch worktree: idempotent re-entry (run hooks/config, then cd).
@@ -418,6 +575,10 @@ where
             deps.io,
             "Would run hooks and config, then navigate to worktree",
         );
+        // The `Provisioning` verdict is ignored on purpose: dry-run never
+        // reaches `run_hooks` (every lifecycle step short-circuits to
+        // `log_dry_run`), so no hook can gate here, and the outcome below is
+        // `Outcome::none()` either way.
         run_config_and_hooks(
             deps,
             config,
@@ -429,6 +590,7 @@ where
                 copy_untracked: flags.copy_untracked,
                 copy_modified: flags.copy_modified,
                 dry_run: true,
+                opts,
             },
         )?;
         log_dry_run(
@@ -443,7 +605,16 @@ where
         &format!("Note: Worktree already exists at '{worktree_path}'"),
         opts,
     );
-    run_config_and_hooks(
+    // Re-entry into an existing worktree: a failing `post_start` warns but still
+    // cds, a failing `pre_start` gates the cd (issue #601).
+    //
+    // No regression test guards this specific branch: the same-branch case is
+    // currently unreachable through `start_command` because
+    // `validate_branch_for_worktree` matches before `check_worktree_conflict`
+    // (see `start_tests.rs::same_branch_at_target_is_idempotent_cd`). The
+    // `--reuse`/interactive-reuse sibling below IS covered. If that precedence
+    // ever changes, wire a case here.
+    let provisioning = run_config_and_hooks(
         deps,
         config,
         repo_root,
@@ -454,8 +625,12 @@ where
             copy_untracked: flags.copy_untracked,
             copy_modified: flags.copy_modified,
             dry_run: false,
+            opts,
         },
     )?;
+    if !provisioning.allows_cd() {
+        return Ok(Outcome::none());
+    }
     Ok(Outcome::cd(worktree_path.to_string()))
 }
 
@@ -475,6 +650,7 @@ fn handle_different_branch_conflict<I, G, R, S, P, Sr>(
     worktree_path: &str,
     existing_branch: &str,
     flags: &StartFlags,
+    opts: OutputOptions,
 ) -> Result<ConflictDecision>
 where
     I: Io,
@@ -500,7 +676,7 @@ where
 
     if flags.reuse {
         // --reuse auto-selects the Reuse choice (the --force opposite): no prompt.
-        return reuse_existing_worktree(deps, config, repo_root, worktree_path, flags);
+        return reuse_existing_worktree(deps, config, repo_root, worktree_path, flags, opts);
     }
 
     let choice = deps.prompt.select(
@@ -518,7 +694,7 @@ where
             remove_worktree(deps.git, worktree_path, true)?;
             Ok(ConflictDecision::Continue)
         }
-        1 => reuse_existing_worktree(deps, config, repo_root, worktree_path, flags),
+        1 => reuse_existing_worktree(deps, config, repo_root, worktree_path, flags, opts),
         _ => {
             // Cancel.
             log(deps.io, "Cancelled", OutputOptions::new(false, false));
@@ -535,6 +711,7 @@ fn reuse_existing_worktree<I, G, R, S, P, Sr>(
     repo_root: &str,
     worktree_path: &str,
     flags: &StartFlags,
+    opts: OutputOptions,
 ) -> Result<ConflictDecision>
 where
     I: Io,
@@ -544,7 +721,10 @@ where
     P: Prompt,
     Sr: StdinReader,
 {
-    run_config_and_hooks(
+    // The reused worktree exists, so a failing `post_start` warns but still cds;
+    // a failing `pre_start` gates the cd, since the reuse never got past its
+    // precondition (issue #601).
+    let provisioning = run_config_and_hooks(
         deps,
         config,
         repo_root,
@@ -555,8 +735,12 @@ where
             copy_untracked: flags.copy_untracked,
             copy_modified: flags.copy_modified,
             dry_run: false,
+            opts,
         },
     )?;
+    if !provisioning.allows_cd() {
+        return Ok(ConflictDecision::Done(Outcome::none()));
+    }
     Ok(ConflictDecision::Done(Outcome::cd(
         worktree_path.to_string(),
     )))
@@ -570,7 +754,7 @@ fn run_config_and_hooks<I, G, R, S, P, Sr>(
     repo_root: &str,
     worktree_path: &str,
     options: &ConfigAndHooks,
-) -> Result<()>
+) -> Result<Provisioning>
 where
     I: Io,
     G: GitRunner,
@@ -591,7 +775,7 @@ where
     let config = match config {
         Some(config) => config,
         None if options.skip_copy || !(options.copy_untracked || options.copy_modified) => {
-            return Ok(())
+            return Ok(Provisioning::Provisioned)
         }
         None => {
             empty_config = VibeConfig::default();
@@ -620,23 +804,39 @@ where
         deps.tracker.start();
     }
 
-    run_submodule_configs(deps, config, repo_root, worktree_path, options)?;
+    let result = run_submodule_configs(deps, config, repo_root, worktree_path, options).and_then(
+        |submodules| {
+            if submodules == Provisioning::Gated {
+                return Ok(Provisioning::Gated);
+            }
+            run_config_body(
+                deps,
+                config,
+                repo_root,
+                worktree_path,
+                repo_root,
+                git_selection,
+                options,
+            )
+        },
+    );
 
-    run_config_body(
-        deps,
-        config,
-        repo_root,
-        worktree_path,
-        repo_root,
-        git_selection,
-        options,
-    )?;
-
-    if has_ops {
+    // Finished on every non-fatal end, gated included: those return to the user
+    // with the run over, and an unfinished tracker would leave a live progress
+    // display in front of the prompt. Safe on the gated path because `run_hooks`
+    // closes the commands it skipped as SKIPPED before returning, so `finish`
+    // has no never-run bar left to stamp with the success glyph.
+    //
+    // Why not on every error: `IndicatifTracker::finish` closes each still-open
+    // bar with the SUCCESS glyph and no annotation, so finishing after a fatal
+    // copy/submodule failure would render its pending COPY tasks as completed
+    // right above the `Error:` line. Those bars are deliberately left abandoned
+    // until issue #600 adds a distinct abort glyph.
+    if has_ops && result.is_ok() {
         deps.tracker.finish();
     }
 
-    Ok(())
+    result
 }
 
 /// Run hooks/copy for one already-loaded config. Submodule configs use this
@@ -653,7 +853,7 @@ fn run_config_body<I, G, R, S, P, Sr>(
     // submodule bodies (see `run_config_and_hooks`).
     git_selection: GitCopySelection,
     options: &ConfigAndHooks,
-) -> Result<()>
+) -> Result<Provisioning>
 where
     I: Io,
     G: GitRunner,
@@ -662,18 +862,30 @@ where
     P: Prompt,
     Sr: StdinReader,
 {
-    // pre_start hooks (in repo_root).
-    if !options.skip_hooks {
-        run_lifecycle_hooks(
-            deps,
-            config.hooks.as_ref().and_then(|h| h.pre_start.as_deref()),
-            "Pre-start hooks",
-            "pre-start",
-            repo_root,
-            worktree_path,
-            repo_root,
-            options.dry_run,
-        )?;
+    // pre_start hooks (in repo_root). A failure is a GATE: warn, then stop
+    // before the copy so the caller emits no cd (issue #601).
+    //
+    // Why not warn-and-continue like `post_start`: `pre_start` is the only
+    // lifecycle point a user can express a precondition at, and the copy and
+    // `post_start` below are skipped anyway, so continuing would hand back a
+    // worktree the config never finished setting up.
+    if !options.skip_hooks
+        && !warn_on_hook_failure(
+            deps.io,
+            run_lifecycle_hooks(
+                deps,
+                config.hooks.as_ref().and_then(|h| h.pre_start.as_deref()),
+                "Pre-start hooks",
+                "pre-start",
+                repo_root,
+                worktree_path,
+                repo_root,
+                options.dry_run,
+            ),
+            options.opts,
+        )?
+    {
+        return Ok(Provisioning::Gated);
     }
 
     // Enumerate the git-derived sources HERE — after `pre_start`, immediately
@@ -785,21 +997,26 @@ where
         }
     }
 
-    // post_start hooks (in worktree_path).
+    // post_start hooks (in worktree_path). The worktree is fully provisioned by
+    // now, so a failure only warns and the caller still cds (issue #601).
     if !options.skip_hooks {
-        run_lifecycle_hooks(
-            deps,
-            config.hooks.as_ref().and_then(|h| h.post_start.as_deref()),
-            "Post-start hooks",
-            "post-start",
-            worktree_path,
-            worktree_path,
-            repo_root,
-            options.dry_run,
+        warn_on_hook_failure(
+            deps.io,
+            run_lifecycle_hooks(
+                deps,
+                config.hooks.as_ref().and_then(|h| h.post_start.as_deref()),
+                "Post-start hooks",
+                "post-start",
+                worktree_path,
+                worktree_path,
+                repo_root,
+                options.dry_run,
+            ),
+            options.opts,
         )?;
     }
 
-    Ok(())
+    Ok(Provisioning::Provisioned)
 }
 
 /// Whether config has any hook/copy operation (drives starting the tracker).
@@ -858,7 +1075,7 @@ fn run_submodule_configs<I, G, R, S, P, Sr>(
     repo_root: &str,
     worktree_path: &str,
     options: &ConfigAndHooks,
-) -> Result<()>
+) -> Result<Provisioning>
 where
     I: Io,
     G: GitRunner,
@@ -868,7 +1085,7 @@ where
     Sr: StdinReader,
 {
     let Some(paths) = submodule_config_paths(config).filter(|paths| !paths.is_empty()) else {
-        return Ok(());
+        return Ok(Provisioning::Provisioned);
     };
 
     let paths = validate_submodule_config_paths(deps, repo_root, paths)?;
@@ -890,7 +1107,10 @@ where
             )));
         };
 
-        run_config_body(
+        // A submodule's own `pre_start` gate stops the whole run: its copy and
+        // `post_start` were skipped, so the parent worktree is no more usable
+        // than if the parent's own gate had failed.
+        if run_config_body(
             deps,
             &submodule_config,
             config_root,
@@ -901,10 +1121,13 @@ where
             // the parent repo, not this submodule.
             GitCopySelection::default(),
             options,
-        )?;
+        )? == Provisioning::Gated
+        {
+            return Ok(Provisioning::Gated);
+        }
     }
 
-    Ok(())
+    Ok(Provisioning::Provisioned)
 }
 
 fn init_submodules<I, G, R, S, P, Sr>(
@@ -1112,6 +1335,23 @@ fn resolve_submodule_roots(
     })
 }
 
+/// Whether two paths name the same worktree directory.
+///
+/// Why the canonicalization is best-effort rather than `?`: this only decides
+/// whether to SKIP redundant work, so a path that cannot be resolved (removed
+/// under us, permission denied) must fall back to the raw string compare and let
+/// the normal provisioning path report the real error, not turn a comparison
+/// into a fatal one of its own.
+fn same_worktree(a: &str, b: &str) -> bool {
+    if a == b {
+        return true;
+    }
+    match (Path::new(a).canonicalize(), Path::new(b).canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
+}
+
 fn canonicalize_existing(path: &Path, label: &str) -> Result<PathBuf> {
     path.canonicalize().map_err(|e| {
         VibeError::Configuration(format!(
@@ -1164,15 +1404,21 @@ where
     if dry_run {
         log_dry_run(deps.io, &format!("Would run {dry_label} hooks:"));
         for hook in hooks {
-            log_dry_run(deps.io, &format!("  - {hook}"));
+            // Sanitized for the same reason the failure summary is: the command
+            // is verbatim `.vibe.toml` content, trusted by content HASH rather
+            // than by judgement, so an ESC or bidi override in it would rewrite
+            // the terminal around the dry-run report.
+            log_dry_run(deps.io, &format!("  - {}", sanitize_for_display(hook)));
         }
         return Ok(());
     }
 
     let phase = deps.tracker.add_phase(phase_label);
+    // Only the progress LABEL is sanitized — `hooks` is passed to `run_hooks`
+    // untouched below, so the command still EXECUTES verbatim.
     let task_ids: Vec<_> = hooks
         .iter()
-        .map(|h| deps.tracker.add_task(phase, h))
+        .map(|h| deps.tracker.add_task(phase, &sanitize_for_display(h)))
         .collect();
     let info = HookTrackerInfo {
         tracker: deps.tracker,
@@ -1305,6 +1551,7 @@ where
                 copy_untracked: flags.copy_untracked,
                 copy_modified: flags.copy_modified,
                 dry_run: flags.dry_run,
+                opts,
             },
         );
         if flags.dry_run {
@@ -1350,7 +1597,12 @@ where
         create_worktree(deps.git, &create_opts)?;
     }
 
-    // Post-setup is NON-FATAL in hook mode (warn but still output the path).
+    // Post-setup is NON-FATAL in hook mode (warn but still output the path),
+    // including a FATAL copy/submodule error — Claude Code has no shell to leave
+    // in the wrong place, so the path is always emitted. A `Provisioning::Gated`
+    // verdict is likewise ignored: the `pre_start` gate only decides whether a
+    // `cd` is safe, which this mode never emits (the hook failure itself has
+    // already been warned about by `warn_on_hook_failure`).
     if let Err(e) = run_config_and_hooks(
         deps,
         config.as_ref(),
@@ -1362,6 +1614,7 @@ where
             copy_untracked: flags.copy_untracked,
             copy_modified: flags.copy_modified,
             dry_run: flags.dry_run,
+            opts,
         },
     ) {
         warn_log(deps.io, &format!("Warning: Post-setup failed: {e}"));
