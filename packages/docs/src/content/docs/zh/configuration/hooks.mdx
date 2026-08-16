@@ -124,6 +124,27 @@ vibe 会在钩子执行期间显示实时的进度树：
 重新运行还会补上被闸门拦下那次所跳过的复制和 `post_start`，因此你最终进入的 worktree
 是配置完整的。
 
+### Claude Code 钩子模式
+
+`vibe start --claude-code-worktree-hook` 没有需要留在原地的 shell，因此 `pre_start`
+闸门无法通过阻止目录切换来体现。该模式会保持既有约定——把 worktree 路径写入 stdout、
+退出状态为 0——并改为在 stderr 上输出一行固定的、机器可读的信息来报告闸门：
+
+```
+vibe: pre_start hook failed; worktree is not provisioned
+```
+
+该行在每次调用中最多出现一次，不带任何样式（没有颜色码），且仅在 `pre_start` 被闸门
+拦下时出现；`post_start` 失败只会产生常规的 `Warning: Hook "..." failed: ...`。请把
+它当作一个信号：你刚拿到的路径指向的 worktree 跳过了复制和 `post_start`。
+
+有两点需要注意：
+
+- 下文的[设置示例](#设置)在命令末尾使用了 `2>/dev/null`，这会丢弃 stderr，也就一并
+  丢弃了该信号。如果你想观察到闸门，请去掉这个重定向。
+- 该信号只伴随创建 worktree 的那次运行。如果对已经存在 worktree 的分支再次调用钩子，
+  它会直接返回已有路径而不重新运行钩子，因此第二次调用不会输出该信号。
+
 ## 常见模式
 
 ### Node.js 项目

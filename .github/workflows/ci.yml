@@ -11,10 +11,30 @@ on:
     # point of being able to opt a finished PR into the Windows leg.
     #
     # The cost is a duplicate full run whenever ANY label is added to an open PR
-    # (the filter is per-event, not per-label). There is no `concurrency` group on
-    # this workflow, so those runs do not cancel each other; labels are applied
-    # rarely enough here that this is cheaper than the alternative.
+    # (the filter is per-event, not per-label). The `concurrency` group below
+    # cancels the superseded run, so the duplicate is bounded to whatever the
+    # older run had already spent.
     types: [opened, synchronize, reopened, labeled]
+
+# One run per PR ref: a new push to a PR makes the older run's verdict
+# irrelevant, so cancelling it frees the runners (notably the `macos-latest`
+# rust-macos job) immediately.
+#
+# (The full macOS/arm64/Windows matrix runs on pushes AND on PRs targeting
+# `main` — see the `github.event_name == 'push' || github.base_ref == 'main'`
+# guards below — so a cancelled PR run can be expensive too.)
+#
+# Push runs deliberately get a per-run group key instead of the shared ref key.
+# `cancel-in-progress: false` alone is NOT enough to protect them: a concurrency
+# group holds at most ONE pending run, so a third push landing while one run is
+# in progress and another is still queued would evict — and mark as cancelled —
+# the queued middle commit. Every push to develop/main is a distinct commit that
+# must keep its own verdict (`build` is a required check, and pushes to develop
+# do arrive in bursts), so pushes must not share a group at all. `github.run_id`
+# is unique per run, which opts them out of grouping entirely.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Least privilege: CI only reads the repository. Jobs that need more must
 # request it explicitly at the job level.

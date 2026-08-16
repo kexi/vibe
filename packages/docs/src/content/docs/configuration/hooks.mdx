@@ -129,6 +129,32 @@ path, so a `pre_start` that still fails still keeps you out. Once the cause is
 fixed, the re-run also performs the copy and the `post_start` that the gated run
 skipped, so the worktree you finally enter is fully provisioned.
 
+### Claude Code hook mode
+
+`vibe start --claude-code-worktree-hook` has no shell to keep in place, so a
+`pre_start` gate cannot express itself by withholding a directory change there.
+The mode keeps its contract instead — the worktree path on stdout and exit
+status 0 — and reports the gate on stderr as a fixed, machine-readable line:
+
+```
+vibe: pre_start hook failed; worktree is not provisioned
+```
+
+The line is emitted at most once per invocation, unstyled (no color codes), and
+only for a `pre_start` gate; a failing `post_start` produces the usual
+`Warning: Hook "..." failed: ...` and nothing more. Treat it as the signal that
+the path you just received points at a worktree whose copy and `post_start` were
+skipped.
+
+Two caveats:
+
+- The [setup example](#setup) below ends the command with `2>/dev/null`, which
+  discards stderr and therefore this signal too. Drop that redirection if you
+  want to observe the gate.
+- The signal accompanies the run that creates the worktree. Invoking the hook
+  again for a branch that already has a worktree returns the existing path
+  without re-running hooks, so no signal is emitted on that second call.
+
 ## Common Patterns
 
 ### Node.js Project
