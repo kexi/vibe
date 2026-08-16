@@ -59,6 +59,11 @@ pub trait ProgressTracker {
     fn complete_task(&self, id: NodeId);
     /// Mark a task failed with an error message.
     fn fail_task(&self, id: NodeId, err: &str);
+    /// Mark a task as never-run: it was queued but an earlier step aborted the
+    /// sequence. Distinct from [`ProgressTracker::complete_task`] because
+    /// [`ProgressTracker::finish`] closes every still-open bar with the success
+    /// glyph, which would render a hook that never executed as if it had.
+    fn skip_task(&self, id: NodeId);
     /// Begin rendering (no-op for non-live trackers).
     fn start(&self);
     /// Finish rendering and restore the terminal (no-op for non-live trackers).
@@ -83,6 +88,9 @@ impl<T: ProgressTracker + ?Sized> ProgressTracker for &T {
     fn fail_task(&self, id: NodeId, err: &str) {
         (**self).fail_task(id, err)
     }
+    fn skip_task(&self, id: NodeId) {
+        (**self).skip_task(id)
+    }
     fn start(&self) {
         (**self).start()
     }
@@ -105,6 +113,7 @@ impl ProgressTracker for NullTracker {
     fn start_task(&self, _id: NodeId) {}
     fn complete_task(&self, _id: NodeId) {}
     fn fail_task(&self, _id: NodeId, _err: &str) {}
+    fn skip_task(&self, _id: NodeId) {}
     fn start(&self) {}
     fn finish(&self) {}
 }
@@ -339,6 +348,17 @@ impl ProgressTracker for IndicatifTracker {
             close_bar(node, TaskOutcome::Failed { error: err }, color);
         });
     }
+    fn skip_task(&self, id: NodeId) {
+        // `☐` (empty box), not the `☒` the other two terminal states share: a
+        // skipped task is the one case where nothing ran, and `finish` would
+        // otherwise close the bar with the completed glyph.
+        self.with_bar(id, |node| {
+            node.done = true;
+            node.bar.set_prefix("");
+            node.bar
+                .abandon_with_message(format!("{}☐ {} (skipped)", node.prefix, node.label));
+        });
+    }
     fn start(&self) {}
     fn finish(&self) {
         let color = self.color;
@@ -372,6 +392,7 @@ mod recording {
         Start(NodeId),
         Complete(NodeId),
         Fail(NodeId, String),
+        Skip(NodeId),
         Started,
         Finished,
     }
@@ -427,6 +448,9 @@ mod recording {
         fn fail_task(&self, id: NodeId, err: &str) {
             self.push(TrackerEvent::Fail(id, err.to_string()));
         }
+        fn skip_task(&self, id: NodeId) {
+            self.push(TrackerEvent::Skip(id));
+        }
         fn start(&self) {
             self.push(TrackerEvent::Started);
         }
@@ -450,8 +474,21 @@ mod tests {
         t.start_task(task);
         t.complete_task(task);
         t.fail_task(task, "x");
+        t.skip_task(task);
         t.finish();
         // No panic, no state — the point is it does nothing.
+    }
+
+    /// A skipped task is recorded as its own event, so a never-run task can be
+    /// told apart from a completed one.
+    #[test]
+    fn recording_tracker_records_skip() {
+        let t = RecordingTracker::new();
+        let phase = t.add_phase("p");
+        let task = t.add_task(phase, "t");
+        t.skip_task(task);
+        assert!(t.events().contains(&TrackerEvent::Skip(task)));
+        assert!(!t.events().contains(&TrackerEvent::Complete(task)));
     }
 
     #[test]

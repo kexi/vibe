@@ -40,6 +40,10 @@ pub enum VibeError {
     Worktree(String),
 
     /// Hook execution failure. Non-fatal: warns and continues (exit code 0).
+    /// Commands downgrade it via `hooks::warn_on_hook_failure` before returning;
+    /// it must not escape a command function, because an `Err` reaching the
+    /// binary discards the command's `Outcome` and with it the `cd` line
+    /// (issue #601).
     #[error("Hook \"{hook_command}\" failed: {message}")]
     HookExecution {
         hook_command: String,
