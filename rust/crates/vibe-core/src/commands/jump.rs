@@ -329,16 +329,35 @@ fn is_scratch(branch: &str) -> bool {
 
 /// Whether `search` appears at a word boundary in `branch` (start, or after
 /// `/`, `-`, `_`).
+///
+/// Every occurrence is considered, not just the first. Checking only
+/// `branch.find(search)` demoted a branch to the substring tier whenever its
+/// earliest occurrence sat mid-word even though a later one began a segment —
+/// e.g. `superuser/user` or `relogin-login` for the queries `user` / `login`.
 fn is_word_boundary_match(branch: &str, search: &str) -> bool {
-    let Some(index) = branch.find(search) else {
-        return false;
-    };
-    if index == 0 {
+    if search.is_empty() {
+        // Why not fall through to the scan: an empty needle matches at every
+        // position including byte 0, so the loop below would report `true` for
+        // any branch anyway. Preserves the original `find("") == Some(0)`
+        // behaviour explicitly rather than by accident.
         return true;
     }
-    // Char immediately before the match must be a boundary character.
-    let char_before = branch[..index].chars().next_back();
-    char_before.is_some_and(|c| WORD_BOUNDARY_CHARS.contains(&c))
+    // Why not `match_indices`: it yields only NON-OVERLAPPING matches, resuming
+    // each search after the end of the previous hit. When an earlier mid-word
+    // occurrence overlaps a later boundary one, the boundary occurrence is never
+    // reported — e.g. `("xa/a/a", "a/a")` yields only index 1, hiding the match
+    // at index 3 that follows `/`. Scanning every char boundary sees all of them.
+    branch
+        .char_indices()
+        .map(|(index, _)| index)
+        .filter(|&index| branch[index..].starts_with(search))
+        .any(|index| {
+            index == 0
+                || branch[..index]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|c| WORD_BOUNDARY_CHARS.contains(&c))
+        })
 }
 
 #[cfg(test)]
@@ -549,6 +568,69 @@ mod tests {
         assert!(is_word_boundary_match("login", "login"));
         assert!(!is_word_boundary_match("relogin", "login"));
         assert!(is_word_boundary_match("a-login", "login"));
+    }
+
+    #[test]
+    fn word_boundary_helper_checks_every_occurrence() {
+        // A later boundary occurrence counts even when the earliest occurrence
+        // sits mid-word, for each of the three boundary characters.
+        assert!(is_word_boundary_match("superuser/user", "user"));
+        assert!(is_word_boundary_match("relogin-login", "login"));
+        assert!(is_word_boundary_match("myuser_user", "user"));
+        // Repeated segments where the first occurrence is already a boundary
+        // stay matches (the issue's `feat/login-page-login` case).
+        assert!(is_word_boundary_match("feat/login-page-login", "login"));
+        // Still false when NO occurrence is at a boundary.
+        assert!(!is_word_boundary_match("relogin-xlogin", "login"));
+    }
+
+    #[test]
+    fn word_boundary_helper_finds_overlapping_occurrence() {
+        // The boundary occurrence OVERLAPS an earlier mid-word one, so a
+        // non-overlapping scan (`match_indices`) never reports it: for
+        // ("xa/a/a", "a/a") it yields only index 1, hiding the match at index 3
+        // that follows `/`.
+        assert!(is_word_boundary_match("xa/a/a", "a/a"));
+        // Same shape with `-` and `_` as the boundary character.
+        assert!(is_word_boundary_match("xa-a-a", "a-a"));
+        assert!(is_word_boundary_match("xa_a_a", "a_a"));
+        // A query that only ever overlaps mid-word is still rejected.
+        assert!(!is_word_boundary_match("xaaa", "aa"));
+    }
+
+    #[test]
+    fn word_boundary_helper_handles_multibyte_branches() {
+        // Slicing at a non-char boundary would panic, so scan positions must be
+        // char boundaries: `é` is two bytes and precedes the match.
+        assert!(!is_word_boundary_match("café-au", "é-au"));
+        assert!(is_word_boundary_match("café/feature", "feature"));
+        assert!(is_word_boundary_match("日本語/ブランチ", "ブランチ"));
+        assert!(!is_word_boundary_match("日本語ブランチ", "ブランチ"));
+    }
+
+    #[test]
+    fn tier_word_boundary_reached_when_only_later_occurrence_is_at_boundary() {
+        // "superuser/user" has "user" mid-word at index 5 and at a `/` boundary
+        // at index 10, so it belongs to the word-boundary tier, not substring.
+        assert!(is_word_boundary_match("superuser/user", "user"));
+        assert_tier_match("superuser/user", "user", "/wt/wb-late");
+    }
+
+    #[test]
+    fn word_boundary_tier_outranks_substring_for_later_occurrence() {
+        // Two candidates both contain "user"; only "superuser/user" has an
+        // occurrence at a boundary, so it wins outright at the word-boundary
+        // tier instead of both landing in the substring tier and prompting.
+        let io = FakeIo::new().with_env("HOME", "/nonexistent-home");
+        let git = ListGit {
+            porcelain: porcelain(&[("/wt/wb", "superuser/user"), ("/wt/sub", "poweruserx")]),
+        };
+        let prompt = ScriptPrompt::new(false, &[]);
+        let start = UnimplementedStart;
+        let d = deps(&io, &git, &prompt, &start);
+        let outcome = jump_command(&d, "user", OutputOptions::default()).unwrap();
+        assert_eq!(outcome, Outcome::cd("/wt/wb"));
+        assert!(prompt.offered().is_empty(), "no selection prompt expected");
     }
 
     // --- Cascade-tier isolation ---------------------------------------------

@@ -2743,6 +2743,182 @@ fn worktree_hook_mode_post_setup_failure_is_non_fatal() {
     assert!(git.calls_contain(&["worktree", "add"]));
 }
 
+/// Drive hook mode over a trusted config, failing every hook whose command ends
+/// with `fail_suffix` (pass `""`-free text that matches nothing to fail none).
+fn hook_mode_start_with_config(
+    content: &str,
+    fail_suffix: &str,
+) -> (Fixture, FakeIo, MockGit, Fakes, Result<Outcome>) {
+    let (fx, io, resolver, repo_root) = trusted_config_repo_with_content(content);
+    let git = MockGit::new(
+        &repo_root,
+        &format!("worktree {repo_root}\nbranch refs/heads/main\n\n"),
+    );
+    let (s, p) = (NoScript, ScriptPrompt::confirming(true));
+    let sin = FakeStdin::text(r#"{"name": "hooked"}"#);
+    let fk = Fakes {
+        hooks: FakeHookRunner::failing_on(fail_suffix, 3, "hook stderr detail"),
+        ..Fakes::new()
+    };
+    let result = {
+        let d = StartDeps {
+            io: &io,
+            git: &git,
+            resolver: &resolver,
+            script_runner: &s,
+            prompt: &p,
+            stdin: &sin,
+            hook_runner: &fk.hooks,
+            executor: &fk.exec,
+            symlink_creator: &fk.symlinks,
+            tracker: &fk.tracker,
+            version: V,
+        };
+        let flags = StartFlags {
+            worktree_hook: true,
+            ..Default::default()
+        };
+        start_command(&d, "", &flags, OutputOptions::default())
+    };
+    (fx, io, git, fk, result)
+}
+
+/// A `pre_start` gate in hook mode keeps the stdout/exit contract — the caller
+/// still gets the worktree path and a success exit — but the unprovisioned state
+/// is announced on stderr as the fixed [`HOOK_MODE_GATED_SIGNAL`] line, exactly
+/// once, so an agent can key on it (issue #615).
+#[test]
+fn worktree_hook_mode_gated_pre_start_emits_the_signal_and_still_outputs_the_path() {
+    let content =
+        "[hooks]\npre_start = [\"boom\"]\npost_start = [\"echo post\"]\n[copy]\nfiles = [\".env\"]\n";
+    let (_fx, io, git, fk, result) = hook_mode_start_with_config(content, "boom");
+
+    let outcome = result.expect("a gated hook must not fail hook mode");
+    // The stdout contract is unchanged: the path, never a cd.
+    assert_eq!(outcome.cd_path, None);
+    let wt = outcome.stdout.clone().expect("must output a path");
+    assert!(wt.ends_with("-hooked"), "unexpected path: {wt}");
+    // The worktree exists on disk; only its provisioning was skipped.
+    assert!(git.calls_contain(&["worktree", "add"]));
+    assert_eq!(
+        fk.hooks.calls.borrow().len(),
+        1,
+        "post_start must not run after pre_start failed"
+    );
+    assert!(fk.exec.file_copies.lock().unwrap().is_empty());
+
+    let stderr = io.stderr_text();
+    assert_eq!(
+        stderr.matches(HOOK_MODE_GATED_SIGNAL).count(),
+        1,
+        "the gated signal must appear exactly once: {stderr}"
+    );
+    // The signal is a whole line of its own, unadorned by color codes.
+    assert!(
+        stderr.lines().any(|l| l == HOOK_MODE_GATED_SIGNAL),
+        "the gated signal must be a bare line: {stderr}"
+    );
+}
+
+/// The complement: a fully provisioned hook-mode run must stay silent about
+/// gating, so the signal is unambiguous when it does appear.
+#[test]
+fn worktree_hook_mode_successful_pre_start_emits_no_gated_signal() {
+    let content =
+        "[hooks]\npre_start = [\"echo pre\"]\npost_start = [\"echo post\"]\n[copy]\nfiles = [\".env\"]\n";
+    let (_fx, io, _git, fk, result) = hook_mode_start_with_config(content, "nothing-matches-this");
+
+    let outcome = result.expect("hook mode must succeed");
+    assert!(outcome.stdout.is_some());
+    assert_eq!(
+        fk.hooks.calls.borrow().len(),
+        2,
+        "both pre_start and post_start must run"
+    );
+    assert!(
+        !io.stderr_text().contains(HOOK_MODE_GATED_SIGNAL),
+        "no gated signal on a provisioned run: {}",
+        io.stderr_text()
+    );
+}
+
+/// A failing `post_start` is NOT a gate: the worktree is fully provisioned, so
+/// the run must warn without claiming the worktree is unprovisioned.
+#[test]
+fn worktree_hook_mode_failing_post_start_emits_no_gated_signal() {
+    let content =
+        "[hooks]\npre_start = [\"echo pre\"]\npost_start = [\"echo post\"]\n[copy]\nfiles = [\".env\"]\n";
+    let (_fx, io, _git, _fk, result) = hook_mode_start_with_config(content, "post");
+
+    let outcome = result.expect("a failing post_start must not fail hook mode");
+    assert!(outcome.stdout.is_some());
+    let stderr = io.stderr_text();
+    assert!(
+        stderr.contains("Warning: Hook \"echo post\" failed"),
+        "the generic warning is still expected: {stderr}"
+    );
+    assert!(
+        !stderr.contains(HOOK_MODE_GATED_SIGNAL),
+        "post_start failure must not be reported as a gate: {stderr}"
+    );
+}
+
+/// Pins the documented boundary of the signal: it accompanies the run that
+/// creates the worktree. When the branch is ALREADY in a worktree, hook mode
+/// hands the existing path straight back — no config load, no hooks, and so no
+/// gated signal, even if the earlier run was the one that got gated. This is
+/// pre-existing hook-mode behavior; the test exists so the docs and the code
+/// cannot drift apart on it.
+#[test]
+fn worktree_hook_mode_reentry_on_existing_worktree_emits_no_gated_signal() {
+    let (_fx, io, resolver, repo_root) = trusted_config_repo_with_content(
+        "[hooks]\npre_start = [\"boom\"]\npost_start = [\"echo post\"]\n[copy]\nfiles = [\".env\"]\n",
+    );
+    // "hooked" is already checked out in a worktree, as it would be after a
+    // first (gated) run created it.
+    let git = MockGit::new(
+        &repo_root,
+        &two_worktrees(&repo_root, "/wt/hooked", "hooked"),
+    );
+    let (s, p) = (NoScript, ScriptPrompt::confirming(true));
+    let sin = FakeStdin::text(r#"{"name": "hooked"}"#);
+    let fk = Fakes {
+        hooks: FakeHookRunner::failing_on("boom", 3, "hook stderr detail"),
+        ..Fakes::new()
+    };
+    let d = StartDeps {
+        io: &io,
+        git: &git,
+        resolver: &resolver,
+        script_runner: &s,
+        prompt: &p,
+        stdin: &sin,
+        hook_runner: &fk.hooks,
+        executor: &fk.exec,
+        symlink_creator: &fk.symlinks,
+        tracker: &fk.tracker,
+        version: V,
+    };
+    let flags = StartFlags {
+        worktree_hook: true,
+        ..Default::default()
+    };
+    let outcome = start_command(&d, "", &flags, OutputOptions::default()).unwrap();
+
+    assert_eq!(outcome.cd_path, None);
+    assert_eq!(outcome.stdout.as_deref(), Some("/wt/hooked"));
+    assert!(!git.calls_contain(&["worktree", "add"]));
+    assert!(
+        fk.hooks.calls.borrow().is_empty(),
+        "re-entry must not re-run hooks"
+    );
+    assert!(
+        !io.stderr_text().contains(HOOK_MODE_GATED_SIGNAL),
+        "re-entry emits no gated signal: {}",
+        io.stderr_text()
+    );
+}
+
 #[test]
 fn worktree_hook_mode_cli_name_wins_over_stdin() {
     let (_fx, io) = io_with_home();
