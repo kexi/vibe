@@ -5,7 +5,7 @@
   "private": true,
   "description": "E2E tests for vibe CLI",
   "scripts": {
-    "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true",
+    "postinstall": "bun run ../../scripts/fix-node-pty-spawn-helper.ts .",
     "test": "vitest run",
     "test:watch": "vitest"
   },
