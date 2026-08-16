@@ -22,7 +22,8 @@ on:
 # `nix build` on `macos-latest` is one of the most expensive jobs in the repo),
 # while push runs get a per-run key so they are never grouped — and therefore
 # never evicted from the single pending slot a shared group would give them.
-# Every merged commit keeps its own source-build verdict.
+# Every push run this workflow actually starts — i.e. one whose commit matched
+# the `paths` filter above — therefore keeps its own source-build verdict.
 concurrency:
   group: nix-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
