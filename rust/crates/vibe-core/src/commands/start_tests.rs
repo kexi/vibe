@@ -2863,6 +2863,62 @@ fn worktree_hook_mode_failing_post_start_emits_no_gated_signal() {
     );
 }
 
+/// Pins the documented boundary of the signal: it accompanies the run that
+/// creates the worktree. When the branch is ALREADY in a worktree, hook mode
+/// hands the existing path straight back — no config load, no hooks, and so no
+/// gated signal, even if the earlier run was the one that got gated. This is
+/// pre-existing hook-mode behavior; the test exists so the docs and the code
+/// cannot drift apart on it.
+#[test]
+fn worktree_hook_mode_reentry_on_existing_worktree_emits_no_gated_signal() {
+    let (_fx, io, resolver, repo_root) = trusted_config_repo_with_content(
+        "[hooks]\npre_start = [\"boom\"]\npost_start = [\"echo post\"]\n[copy]\nfiles = [\".env\"]\n",
+    );
+    // "hooked" is already checked out in a worktree, as it would be after a
+    // first (gated) run created it.
+    let git = MockGit::new(
+        &repo_root,
+        &two_worktrees(&repo_root, "/wt/hooked", "hooked"),
+    );
+    let (s, p) = (NoScript, ScriptPrompt::confirming(true));
+    let sin = FakeStdin::text(r#"{"name": "hooked"}"#);
+    let fk = Fakes {
+        hooks: FakeHookRunner::failing_on("boom", 3, "hook stderr detail"),
+        ..Fakes::new()
+    };
+    let d = StartDeps {
+        io: &io,
+        git: &git,
+        resolver: &resolver,
+        script_runner: &s,
+        prompt: &p,
+        stdin: &sin,
+        hook_runner: &fk.hooks,
+        executor: &fk.exec,
+        symlink_creator: &fk.symlinks,
+        tracker: &fk.tracker,
+        version: V,
+    };
+    let flags = StartFlags {
+        worktree_hook: true,
+        ..Default::default()
+    };
+    let outcome = start_command(&d, "", &flags, OutputOptions::default()).unwrap();
+
+    assert_eq!(outcome.cd_path, None);
+    assert_eq!(outcome.stdout.as_deref(), Some("/wt/hooked"));
+    assert!(!git.calls_contain(&["worktree", "add"]));
+    assert!(
+        fk.hooks.calls.borrow().is_empty(),
+        "re-entry must not re-run hooks"
+    );
+    assert!(
+        !io.stderr_text().contains(HOOK_MODE_GATED_SIGNAL),
+        "re-entry emits no gated signal: {}",
+        io.stderr_text()
+    );
+}
+
 #[test]
 fn worktree_hook_mode_cli_name_wins_over_stdin() {
     let (_fx, io) = io_with_home();

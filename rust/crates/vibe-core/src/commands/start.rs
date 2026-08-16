@@ -1560,10 +1560,19 @@ where
 
     if conflict.conflict_type == ConflictType::SameBranch {
         // Same non-fatal contract as the creation path below, including the
-        // gated signal: re-entry hands back an existing worktree that a failing
-        // `pre_start` left unprovisioned, so the caller must hear about it here
-        // too. An `Err` is swallowed (only the path matters to the caller);
-        // `warn_on_hook_failure` has already reported the cause.
+        // gated signal, so the two provisioning sites cannot drift. An `Err` is
+        // swallowed (only the path matters to the caller); `warn_on_hook_failure`
+        // has already reported the cause.
+        //
+        // NOTE: this is *not* the re-entry path. A worktree already on
+        // `branch_name` is found by `find_worktree_by_branch` first, so
+        // `validation.is_valid` is false and the early return above hands the
+        // path back without loading the config or running any hook — hence
+        // without a gated signal either. Both lookups parse the same
+        // `git worktree list`, so reaching `SameBranch` here would require a
+        // worktree at this path on this branch that the branch lookup missed;
+        // the arm is kept in sync deliberately rather than relied upon. The
+        // re-entry gap itself predates this change and is tracked separately.
         if let Ok(provisioning) = run_config_and_hooks(
             deps,
             config.as_ref(),

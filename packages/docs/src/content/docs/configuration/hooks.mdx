@@ -142,6 +142,15 @@ only for a `pre_start` gate; a failing `post_start` produces the usual
 the path you just received points at a worktree whose copy and `post_start` were
 skipped.
 
+Two caveats:
+
+- The [setup example](#setup) below ends the command with `2>/dev/null`, which
+  discards stderr and therefore this signal too. Drop that redirection if you
+  want to observe the gate.
+- The signal accompanies the run that creates the worktree. Invoking the hook
+  again for a branch that already has a worktree returns the existing path
+  without re-running hooks, so no signal is emitted on that second call.
+
 ## Common Patterns
 
 ### Node.js Project
