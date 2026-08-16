@@ -336,18 +336,28 @@ fn is_scratch(branch: &str) -> bool {
 /// e.g. `superuser/user` or `relogin-login` for the queries `user` / `login`.
 fn is_word_boundary_match(branch: &str, search: &str) -> bool {
     if search.is_empty() {
-        // Why not fall through to `match_indices`: an empty needle matches at
-        // byte 0 of every string, so the loop below would report `true` for any
-        // branch. Preserves the original `find("") == Some(0)` behaviour.
+        // Why not fall through to the scan: an empty needle matches at every
+        // position including byte 0, so the loop below would report `true` for
+        // any branch anyway. Preserves the original `find("") == Some(0)`
+        // behaviour explicitly rather than by accident.
         return true;
     }
-    branch.match_indices(search).any(|(index, _)| {
-        index == 0
-            || branch[..index]
-                .chars()
-                .next_back()
-                .is_some_and(|c| WORD_BOUNDARY_CHARS.contains(&c))
-    })
+    // Why not `match_indices`: it yields only NON-OVERLAPPING matches, resuming
+    // each search after the end of the previous hit. When an earlier mid-word
+    // occurrence overlaps a later boundary one, the boundary occurrence is never
+    // reported — e.g. `("xa/a/a", "a/a")` yields only index 1, hiding the match
+    // at index 3 that follows `/`. Scanning every char boundary sees all of them.
+    branch
+        .char_indices()
+        .map(|(index, _)| index)
+        .filter(|&index| branch[index..].starts_with(search))
+        .any(|index| {
+            index == 0
+                || branch[..index]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|c| WORD_BOUNDARY_CHARS.contains(&c))
+        })
 }
 
 #[cfg(test)]
@@ -572,6 +582,30 @@ mod tests {
         assert!(is_word_boundary_match("feat/login-page-login", "login"));
         // Still false when NO occurrence is at a boundary.
         assert!(!is_word_boundary_match("relogin-xlogin", "login"));
+    }
+
+    #[test]
+    fn word_boundary_helper_finds_overlapping_occurrence() {
+        // The boundary occurrence OVERLAPS an earlier mid-word one, so a
+        // non-overlapping scan (`match_indices`) never reports it: for
+        // ("xa/a/a", "a/a") it yields only index 1, hiding the match at index 3
+        // that follows `/`.
+        assert!(is_word_boundary_match("xa/a/a", "a/a"));
+        // Same shape with `-` and `_` as the boundary character.
+        assert!(is_word_boundary_match("xa-a-a", "a-a"));
+        assert!(is_word_boundary_match("xa_a_a", "a_a"));
+        // A query that only ever overlaps mid-word is still rejected.
+        assert!(!is_word_boundary_match("xaaa", "aa"));
+    }
+
+    #[test]
+    fn word_boundary_helper_handles_multibyte_branches() {
+        // Slicing at a non-char boundary would panic, so scan positions must be
+        // char boundaries: `é` is two bytes and precedes the match.
+        assert!(!is_word_boundary_match("café-au", "é-au"));
+        assert!(is_word_boundary_match("café/feature", "feature"));
+        assert!(is_word_boundary_match("日本語/ブランチ", "ブランチ"));
+        assert!(!is_word_boundary_match("日本語ブランチ", "ブランチ"));
     }
 
     #[test]
