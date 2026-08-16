@@ -119,9 +119,10 @@ mod platform_tests {
 
     #[test]
     fn is_darwin_recognises_only_the_darwin_platform_name() {
-        // The macOS predicate is keyed on the exact `get_platform()` vocabulary,
-        // so a rename in vibe-native cannot silently make macOS look like Linux
-        // and flip the Clone strategy to `cp --reflink=auto`.
+        // Pins the predicate's vocabulary: only the exact string `darwin` counts,
+        // so near-misses cannot be treated as macOS. This is a statement about
+        // `is_darwin` alone — the binding to the real host is asserted by
+        // `is_darwin_agrees_with_the_host_target_os` below.
         assert!(is_darwin("darwin"));
         for other in ["linux", "windows", "unsupported", "macos", "Darwin"] {
             assert!(!is_darwin(other), "{other} must not be treated as macOS");
@@ -134,6 +135,23 @@ mod platform_tests {
         // report the same platform, or the probe could test a `cp` argv the
         // strategy never runs.
         assert_eq!(host_platform(), RealNativeClone.get_platform());
+    }
+
+    #[test]
+    fn is_darwin_agrees_with_the_host_target_os() {
+        // The test that actually catches a rename in vibe-native. Comparing the
+        // two wrappers against each other cannot: both call
+        // `vibe_native::get_platform()`, so renaming "darwin" to "macos" keeps
+        // them equal while `is_darwin(host_platform())` silently goes false and
+        // the Clone strategy flips to `cp --reflink=auto` on macOS. Anchoring to
+        // `cfg!(target_os)` — a fact the rename cannot move — makes that break
+        // the build's tests instead.
+        assert_eq!(
+            is_darwin(host_platform()),
+            cfg!(target_os = "macos"),
+            "is_darwin(host_platform()) must track the real host OS; \
+             a vibe-native platform-name change has to be mirrored in is_darwin"
+        );
     }
 }
 

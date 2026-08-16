@@ -93,6 +93,50 @@ fn standard_copy_directory(src: &str, dest: &str) -> CopyResult<()> {
     })
 }
 
+/// Best-effort removal of debris this process just wrote at `dest`.
+///
+/// Only ever called when `dest` did not exist when the copy started, so anything
+/// there now was produced by the strategy that just failed.
+///
+/// Why not a bare `remove_dir_all`: it does not follow a symlink in the FINAL
+/// component, but path resolution still traverses INTERMEDIATE ones. With
+/// concurrent workers on nested `copy.dirs`, a sibling copy can materialise
+/// `dest`'s parent as a symlink in the window after the pre-existence check;
+/// `remove_dir_all` would then walk through it and delete a real directory that
+/// was never ours (e.g. `a/link/subdir` reaching `target/subdir`). Checking
+/// `dest` alone cannot catch that — through such a link the final component IS a
+/// genuine directory — so the parent is checked too.
+///
+/// Why only the parent and not every ancestor up to the root: on macOS `/var`
+/// and `/tmp` are themselves symlinks, so a walk to the filesystem root would
+/// refuse every cleanup (including in this crate's own tests). The parent is the
+/// component a racing worker in this run could actually have just created.
+///
+/// This narrows rather than eliminates the race (a true fix needs `openat`-style
+/// no-follow descriptors). That is deliberate: when the assumption is already
+/// void the cleanup simply declines, leaving the fallback to merge exactly as it
+/// did before any cleanup existed — never worse than `develop`.
+fn discard_own_debris(dest: &str) {
+    let path = Path::new(dest);
+    match std::fs::symlink_metadata(path) {
+        // Nothing there (the common case): nothing to discard.
+        Err(_) => return,
+        // A link or a plain file at `dest` is not the debris tree we expected.
+        Ok(meta) if meta.file_type().is_symlink() || !meta.is_dir() => return,
+        Ok(_) => {}
+    }
+    if let Some(parent) = path.parent() {
+        match std::fs::symlink_metadata(parent) {
+            // The component `remove_dir_all` would silently follow elsewhere.
+            Ok(meta) if meta.file_type().is_symlink() => return,
+            // A parent we cannot stat cannot be vouched for either.
+            Err(_) => return,
+            Ok(_) => {}
+        }
+    }
+    let _ = std::fs::remove_dir_all(path);
+}
+
 /// Recursive directory copy. Symlinks are copied as-is (preserve link), matching
 /// node's `cp(..., { recursive: true })` default of not dereferencing.
 fn copy_dir_recursive(src: &Path, dest: &Path) -> std::io::Result<()> {
@@ -307,7 +351,7 @@ impl<N: NativeClone> CopyExecutor for RealCopyExecutor<'_, N> {
                 // dest exists, `rsync -a -- src/ dest` does not). Best-effort:
                 // if the removal fails, the merge is still better than no copy.
                 if !dest_preexisting {
-                    let _ = std::fs::remove_dir_all(dest);
+                    discard_own_debris(dest);
                 }
                 // Fold the root cause in: the fallback's own error would
                 // otherwise be the only thing the caller warns about, hiding
@@ -710,6 +754,50 @@ mod tests {
                 .unwrap_or(false),
             "a pre-existing dangling symlink must not be removed as debris"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn debris_cleanup_refuses_a_destination_reached_through_a_symlink() {
+        // `remove_dir_all` does not follow a link in the final component, but
+        // path resolution still traverses INTERMEDIATE ones: given
+        // dest = a/link/subdir with `a/link -> target`, a bare removal deletes
+        // the real `target/subdir`. A concurrent copy of a nested `copy.dirs`
+        // entry can create that link after the pre-existence check, so the
+        // cleanup must decline rather than delete a tree that was never ours.
+        // Note stat-ing dest alone cannot detect this — through the link the
+        // final component is a genuine directory — so the parent is what must
+        // be checked.
+        let fx = Fixture::new();
+        let target_subdir = fx.mkdir("target/subdir");
+        fx.write("target/subdir/new-only.txt", "branch data");
+        fx.mkdir("a");
+        std::os::unix::fs::symlink(fx.join("target"), fx.join("a").join("link")).unwrap();
+
+        let dest = fx.join("a").join("link").join("subdir");
+        // Sanity: dest really does resolve onto the unrelated real directory.
+        assert!(dest.join("new-only.txt").exists());
+
+        discard_own_debris(dest.to_str().unwrap());
+
+        assert!(
+            target_subdir.join("new-only.txt").exists(),
+            "cleanup must not follow an intermediate symlink into an unrelated tree"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn debris_cleanup_removes_a_genuine_directory() {
+        // The other half of the guard: when `dest` really is a plain directory,
+        // the debris is still discarded (the guard must not disable cleanup).
+        let fx = Fixture::new();
+        let debris = fx.mkdir("debris");
+        fx.write("debris/stale.txt", "half-written");
+
+        discard_own_debris(debris.to_str().unwrap());
+
+        assert!(!debris.exists(), "real debris must still be removed");
     }
 
     #[test]
