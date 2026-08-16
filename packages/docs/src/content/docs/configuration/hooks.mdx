@@ -71,6 +71,10 @@ vibe displays a real-time progress tree during hook execution:
 | `✗`    | Failed (red); the reason follows as `(failed: …)`        |
 | `⊘`    | Abandoned (dim) — still pending when the run ended       |
 
+A phase line (the outer `┗`) reports no result of its own; it aggregates the
+tasks below it. It shows `⊘` if any task was still pending, otherwise `✗` with
+`(failed: N task(s) failed)` if any task failed, otherwise `☒`.
+
 ### Output Handling
 
 | Situation                 | stdout            | stderr       |
