@@ -175,7 +175,7 @@ fn display_file_status(
         let is_current = hash == &current_hash;
         let marker = if is_current { "→" } else { " " };
         let status = if is_current { " (current)" } else { "" };
-        let prefix = &hash[..hash.len().min(16)];
+        let prefix = hash_prefix(hash);
         log(
             io,
             &format!("{marker} {}. {prefix}...{status}", index + 1),
@@ -186,6 +186,18 @@ fn display_file_status(
     if let Some(s) = entry.skip_hash_check {
         log(io, &format!("\nPath-level Skip Hash Check: {s}"), opts);
     }
+}
+
+/// The first 16 characters of a stored hash, for the Hash History display.
+///
+/// Why not `&hash[..hash.len().min(16)]`: `hashes` comes from `settings.json`
+/// and is deserialized as a plain `Vec<String>` with no hex validation, so a
+/// hand-edited or corrupted entry can hold multibyte text. A byte slice then
+/// lands mid-codepoint and panics, and the release profile's `panic = "abort"`
+/// bypasses `VibeError` formatting and exit-code handling entirely. Truncating
+/// by `chars()` is boundary-safe and identical for real (ASCII hex) hashes.
+fn hash_prefix(hash: &str) -> String {
+    hash.chars().take(16).collect()
 }
 
 #[cfg(test)]
@@ -515,11 +527,60 @@ mod tests {
         );
         // Entry 2 is the current hash: arrow marker, numbered 2, " (current)"
         // suffix (note the leading space in the suffix, per the format string).
-        let current_prefix = &current[..current.len().min(16)];
+        let current_prefix = hash_prefix(&current);
         assert!(
             text.contains(&format!("→ 2. {current_prefix}... (current)")),
             "expected arrow+current on entry 2; got: {text}"
         );
+    }
+
+    /// A multibyte `hashes` entry (hand-edited or corrupted `settings.json`)
+    /// renders as its first 16 CHARACTERS instead of panicking on a mid-codepoint
+    /// byte slice; `verify` still completes and reports the mismatch.
+    #[test]
+    fn multibyte_hash_history_entry_is_truncated_by_chars_without_panicking() {
+        let fx = Fixture::new();
+        // 11 chars / 33 bytes: a byte slice at 16 would land inside 'ッ'.
+        let multibyte = "日本語のハッシュ値です";
+        let (s, _) = scenario(&fx, "x\n", Some(&[multibyte]), None, None, None);
+        verify_command(&s.io, &s.git, &s.resolver, V, OutputOptions::default()).unwrap();
+        let text = s.io.stderr_text();
+        assert!(text.contains("Hash History (1 stored)"), "got: {text}");
+        // Shorter than 16 chars → shown in full, no truncation.
+        assert!(
+            text.contains(&format!("  1. {multibyte}...")),
+            "expected char-safe rendering; got: {text}"
+        );
+        // A non-hex value never equals the real content hash.
+        assert!(text.contains("❌ HASH MISMATCH"), "got: {text}");
+    }
+
+    /// A multibyte `hashes` entry longer than 16 characters is cut at the 16th
+    /// character boundary, not at byte 16.
+    #[test]
+    fn long_multibyte_hash_history_entry_is_cut_at_char_16() {
+        let fx = Fixture::new();
+        let multibyte = "日本語のハッシュ値ですこれは長いよ壊れている";
+        let (s, _) = scenario(&fx, "x\n", Some(&[multibyte]), None, None, None);
+        verify_command(&s.io, &s.git, &s.resolver, V, OutputOptions::default()).unwrap();
+        let text = s.io.stderr_text();
+        assert!(
+            text.contains("  1. 日本語のハッシュ値ですこれは長い..."),
+            "expected 16-char truncation; got: {text}"
+        );
+    }
+
+    /// `hash_prefix` truncates by character, leaving ASCII hashes byte-identical
+    /// to the previous byte-slice rendering.
+    #[test]
+    fn hash_prefix_truncates_by_chars_and_preserves_ascii_rendering() {
+        assert_eq!(hash_prefix("0000000000000000aaaa"), "0000000000000000");
+        assert_eq!(hash_prefix("abc"), "abc");
+        assert_eq!(hash_prefix(""), "");
+        // Exactly 16 chars but 48 bytes: all of it survives.
+        let sixteen_multibyte = "あいうえおかきくけこさしすせそた";
+        assert_eq!(hash_prefix(sixteen_multibyte), sixteen_multibyte);
+        assert_eq!(hash_prefix("日本語のハッシュ値です").chars().count(), 11);
     }
 
     #[test]
