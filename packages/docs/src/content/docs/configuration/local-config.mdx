@@ -29,13 +29,15 @@ files = [".env.local", ".secrets"]
 
 ## Configuration Merging
 
-When both `.vibe.toml` and `.vibe.local.toml` exist, they are merged according to these rules:
+Array fields are resolved within each file first, and the result is then merged across
+files. When both `.vibe.toml` and `.vibe.local.toml` exist, `.vibe.local.toml` is merged
+over the shared file according to these rules:
 
-| Method            | Syntax                       | Description                        |
-| ----------------- | ---------------------------- | ---------------------------------- |
-| Complete override | `field_name = [...]`         | Replaces the shared value entirely |
-| Prepend items     | `field_name_prepend = [...]` | Adds items before shared values    |
-| Append items      | `field_name_append = [...]`  | Adds items after shared values     |
+| Method            | Syntax                       | Description                                                                                     |
+| ----------------- | ---------------------------- | ----------------------------------------------------------------------------------------------- |
+| Complete override | `field_name = [...]`         | Replaces the shared value entirely (any `_prepend` / `_append` in the same file still wraps it) |
+| Prepend items     | `field_name_prepend = [...]` | Adds items before shared values                                                                 |
+| Append items      | `field_name_append = [...]`  | Adds items after shared values                                                                  |
 
 ### Merging Example
 
@@ -63,6 +65,60 @@ post_start = ["my-custom-script.sh"]
 
 # Result: ["my-custom-script.sh"]
 # (shared post_start is completely replaced)
+```
+
+### Within a Single File
+
+`_prepend` / `_append` are not limited to `.vibe.local.toml`. They also apply inside a
+single file, so a repository with only `.vibe.toml` (and no `.vibe.local.toml`) can use
+them too. Within one file the effective array is `prepend + field + append`:
+
+```toml
+# .vibe.toml only — no .vibe.local.toml
+[copy]
+files = [".env"]
+files_append = [".env.local"]
+
+# Result: [".env", ".env.local"]
+```
+
+Each file is resolved this way first; only then does `.vibe.local.toml` merge over the
+shared file's effective array (a local `field` replaces it, a local
+`field_prepend` / `field_append` wraps it).
+
+:::caution
+`files = []` is the idiom for disabling a list, but the extensions in the same source
+still apply: `files = []` together with `files_append = ["x"]` yields `["x"]`, not `[]`.
+Remove the `_append` line as well if you want an empty result.
+:::
+
+### Upgrading: one-time re-trust
+
+Older versions parsed these fields in the positions above but ignored them. A config file
+trusted back then could therefore contain `_prepend` / `_append` entries that never ran —
+and the trust hash covers the file's bytes, not how vibe interprets them.
+
+To avoid silently activating them, vibe refuses to load such a file and asks you to review
+it and run `vibe trust` again:
+
+```
+.vibe.toml was trusted under older configuration semantics.
+These fields were accepted but ignored back then and now take effect: hooks.post_start_append
+Review the file, then re-approve it with: vibe trust
+```
+
+This affects only files that actually use one of the newly effective positions. Every other
+config keeps working without any action.
+
+`vibe verify` reports the same thing before you hit it. When a file's trust predates the
+change, its status block shows the revision it was trusted at, plus a warning naming the
+fields if that file is one of the affected ones:
+
+```
+Config Semantics: trusted at revision 0 (current: 1)
+Status: ⚠️  STALE CONFIG SEMANTICS
+These fields were accepted but ignored when this file was trusted and now take effect: hooks.post_start_append
+Action: Review the file, then re-approve it with 'vibe trust' (other commands will refuse it until then)
 ```
 
 ## Worktree Path Override

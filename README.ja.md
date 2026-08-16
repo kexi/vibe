@@ -556,11 +556,27 @@ files = [".env.local", ".secrets"]
 
 ### 設定のマージ
 
-`.vibe.toml`と`.vibe.local.toml`の両方が存在する場合：
+配列フィールドは以下の書き方に対応しています：
 
 - **完全上書き**: フィールド名を直接使用（例: `post_start = [...]`）
 - **先頭に追加**: `_prepend`サフィックスを使用（例: `post_start_prepend = [...]`）
 - **末尾に追加**: `_append`サフィックスを使用（例: `post_start_append = [...]`）
+
+`_prepend` / `_append`は`.vibe.local.toml`専用ではありません。単一ファイル内（`.vibe.toml`だけのリポジトリを含む）でも、実効値は`prepend + フィールド + append`になります：
+
+```toml
+# .vibe.toml のみ — .vibe.local.toml なし
+[copy]
+files = [".env"]
+files_append = [".env.local"]
+
+# 結果: [".env", ".env.local"]
+```
+
+各ファイルはまずこの方法で解決され、その後で`.vibe.local.toml`が共有ファイルの実効配列に対してマージされます（ローカルのフィールドは置き換え、ローカルの`_prepend` / `_append`は前後に追加）。
+
+> [!IMPORTANT]
+> 以前のバージョンは上記の位置にあるこれらのフィールドを解析はするものの無視していました。当時に信頼登録した設定ファイルはそのまま動作しますが、新たに有効化された位置を実際に使っている場合は、内容を確認したうえで一度`vibe trust`を実行するよう求められます。
 
 **例:**
 

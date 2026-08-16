@@ -29,13 +29,13 @@ files = [".env.local", ".secrets"]
 
 ## 配置合并
 
-当 `.vibe.toml` 和 `.vibe.local.toml` 同时存在时，它们会按照以下规则合并：
+数组字段会先在各自的文件内解析，然后再跨文件合并。当 `.vibe.toml` 和 `.vibe.local.toml` 同时存在时，`.vibe.local.toml` 会按照以下规则合并到共享文件之上：
 
-| 方式     | 语法                     | 说明                 |
-| -------- | ------------------------ | -------------------- |
-| 完全覆盖 | `字段名 = [...]`         | 完全替换共享的值     |
-| 前置追加 | `字段名_prepend = [...]` | 在共享值之前添加条目 |
-| 后置追加 | `字段名_append = [...]`  | 在共享值之后添加条目 |
+| 方式     | 语法                     | 说明                                                                     |
+| -------- | ------------------------ | ------------------------------------------------------------------------ |
+| 完全覆盖 | `字段名 = [...]`         | 完全替换共享的值（同一文件内的 `_prepend` / `_append` 仍会在其前后添加） |
+| 前置追加 | `字段名_prepend = [...]` | 在共享值之前添加条目                                                     |
+| 后置追加 | `字段名_append = [...]`  | 在共享值之后添加条目                                                     |
 
 ### 合并示例
 
@@ -63,6 +63,48 @@ post_start = ["my-custom-script.sh"]
 
 # 结果: ["my-custom-script.sh"]
 # （共享的 post_start 被完全替换）
+```
+
+### 单个文件内的合并
+
+`_prepend` / `_append` 并不局限于 `.vibe.local.toml`。它们在单个文件内同样生效，因此只有 `.vibe.toml`（没有 `.vibe.local.toml`）的仓库也可以使用。在一个文件内，实际生效的数组为 `prepend + 字段 + append`：
+
+```toml
+# 仅有 .vibe.toml —— 没有 .vibe.local.toml
+[copy]
+files = [".env"]
+files_append = [".env.local"]
+
+# 结果: [".env", ".env.local"]
+```
+
+每个文件都会先按这种方式解析，然后 `.vibe.local.toml` 才会合并到共享文件的实际数组之上（本地的 `字段` 会替换它，本地的 `字段_prepend` / `字段_append` 会在其前后添加）。
+
+:::caution
+`files = []` 是禁用列表的惯用写法，但同一来源中的扩展字段依然生效：`files = []` 与 `files_append = ["x"]` 同时存在时，结果是 `["x"]` 而不是 `[]`。如果希望得到空结果，请一并删除 `_append` 行。
+:::
+
+### 升级：一次性重新信任
+
+旧版本会解析上述位置的这些字段，但会忽略它们。因此，当时被信任的配置文件中可能残留着从未执行过的 `_prepend` / `_append` 条目——而信任哈希只覆盖文件的字节内容，并不包含 vibe 如何解释这些内容。
+
+为了避免悄然启用它们，vibe 会拒绝加载这类文件，并要求你先检查文件内容，然后重新运行 `vibe trust`：
+
+```
+.vibe.toml was trusted under older configuration semantics.
+These fields were accepted but ignored back then and now take effect: hooks.post_start_append
+Review the file, then re-approve it with: vibe trust
+```
+
+这只影响真正使用了新生效位置的文件。其他配置照常工作，无需任何操作。
+
+`vibe verify` 会在你真正遇到该错误之前报告同样的信息。如果某个文件的信任是在此变更之前授予的，它的状态块会显示授予信任时的修订号；若该文件正属于受影响的范围，还会给出列明相关字段的警告：
+
+```
+Config Semantics: trusted at revision 0 (current: 1)
+Status: ⚠️  STALE CONFIG SEMANTICS
+These fields were accepted but ignored when this file was trusted and now take effect: hooks.post_start_append
+Action: Review the file, then re-approve it with 'vibe trust' (other commands will refuse it until then)
 ```
 
 ## Worktree 路径覆盖

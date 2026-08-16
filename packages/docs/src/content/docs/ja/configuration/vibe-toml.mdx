@@ -47,6 +47,24 @@ files = [
 再帰的パターン（`**/*`）は、大規模リポジトリでは処理に時間がかかる場合があります。可能な限り具体的なパターンを使用してください（例：`**/*.json`より`config/**/*.json`）。
 :::
 
+#### prependとappend
+
+`files_prepend`と`files_append`（および`dirs`、`copy.symlink`、`[hooks]`の全配列に対応する`_prepend` / `_append`）は、`.vibe.local.toml`だけでなく`.vibe.toml`自身でも有効です。単一ファイル内での実効値は`prepend + フィールド + append`になります：
+
+```toml
+[copy]
+files = [".env"]
+files_append = [".env.local"]
+
+# 実効値: [".env", ".env.local"]
+```
+
+2つのファイル間でこれらのフィールドがどう作用するかは[.vibe.local.toml](/ja/configuration/local-config/)を参照してください。
+
+:::caution[アップグレード時]
+以前のバージョンはこれらのフィールドをここで受け付けつつ無視していました。当時に信頼登録した`.vibe.toml`がこれらを使っている場合、vibeは有効化する前に内容の確認と`vibe trust`の再実行を求めます。詳細は[アップグレード時の再信頼登録](/ja/configuration/local-config/)を参照してください。
+:::
+
 ### ディレクトリ <Badge text="v0.4.0+" />
 
 ディレクトリ全体を再帰的にコピー：
