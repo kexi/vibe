@@ -18,7 +18,7 @@ three must exist.
 ## Cross-Language Links
 
 Each markdown file must link to its two counterparts at the top, in a single
-line listing the other languages separated by ` | `:
+line listing the other languages separated by `|`:
 
 - **English version** (`*.md`): `> 🇯🇵 [日本語版](./filename.ja.md) | 🇨🇳 [简体中文](./filename.zh.md)`
 - **Japanese version** (`*.ja.md`): `> 🇺🇸 [English](./filename.md) | 🇨🇳 [简体中文](./filename.zh.md)`
@@ -45,7 +45,7 @@ are kept in sync:
 4. **Cross-language links**: Every version must link to the other two at the top
 5. **Deleting a file**: Delete all three versions
 
-`pnpm run check:i18n` (`just check-i18n`) enforces requirements 1, 4 and 5
+`just check-i18n` enforces requirements 1, 4 and 5
 mechanically; it is wired into `check:all` and CI.
 
 ## Diagrams

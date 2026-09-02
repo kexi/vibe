@@ -31,7 +31,7 @@ GitHub Flow: `main` is the only long-lived branch.
 
 ## PR/Commit Guidelines
 
-- **IMPORTANT**: Before creating a PR, always run `pnpm run check:all` and ensure all checks pass
+- **IMPORTANT**: Before creating a PR, always run `just check` and ensure all checks pass
 - **Title format**: `<type>: <description>`
   - Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
 - Write in English

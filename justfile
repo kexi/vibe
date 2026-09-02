@@ -30,7 +30,7 @@ build:
 
 # Run the Rust binary directly during development, e.g. `just run -- start`.
 run *args:
-    cargo run --manifest-path rust/Cargo.toml -p vibe -- {{args}}
+    cargo run --manifest-path rust/Cargo.toml -p vibe -- {{ args }}
 
 # --- Individual checks ---
 
@@ -42,6 +42,14 @@ check-rust:
 check-licenses:
     pnpm run check:licenses
 
+# Justfile hygiene — formatting plus a description comment on every recipe.
+check-just:
+    pnpm run check:just
+
+# Format this justfile in place.
+fmt-just:
+    pnpm run fmt:just
+
 # Documentation i18n — en/ja/zh triplets, docs-site locale mirrors, cross-language links.
 check-i18n:
     pnpm run check:i18n
@@ -50,17 +58,25 @@ check-i18n:
 check-docs:
     pnpm run check:docs
 
-# --- Format / lint (TS/JS via oxfmt/oxlint) ---
+# --- Format / lint ---
 
+# Format the TS scripts (oxfmt).
 fmt:
     pnpm run fmt
 
+# Check TS-script formatting without writing (oxfmt --check).
 fmt-check:
     pnpm run fmt:check
 
+# Format the Rust workspace (cargo fmt).
+fmt-rust:
+    pnpm run fmt:rust
+
+# Lint the TS scripts (oxlint).
 lint:
     pnpm run lint
 
+# Lint the TS scripts, applying the fixable findings (oxlint --fix).
 lint-fix:
     pnpm run lint:fix
 
@@ -78,17 +94,20 @@ test-e2e:
 
 # Version-bump / validate manifests via kt3k/bmp (no args = validate; -p/-m/-j to bump).
 bmp *args:
-    pnpm run bmp -- {{args}}
+    pnpm run bmp -- {{ args }}
 
 # --- Setup / chores ---
 
+# Install the workspace dependencies.
 install:
     pnpm install
 
+# Remove node_modules and dist from every workspace package.
 clean:
     pnpm run clean
 
 # --- Docs dev server (per-package) ---
 
+# Serve the docs site locally with hot reload.
 docs-dev:
     pnpm -C packages/docs dev

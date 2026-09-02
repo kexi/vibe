@@ -1,5 +1,6 @@
 # Git hooks managed by lefthook (provided by the Nix dev shell, see flake.nix).
-# Runs oxfmt/oxlint on staged TS scripts and Prettier on staged docs files.
+# Runs oxfmt/oxlint on staged TS scripts, Prettier on staged docs files, and
+# formats + validates the justfile when it is staged.
 # glob is a list because lefthook matches each pattern separately and does not
 # expand brace alternation like `{a,b}`. Patterns use `dir/**/*.ts` rooted at
 # the package dir (not `dir/sub/**/*.ts`) because lefthook's `**` does not match
@@ -18,6 +19,14 @@ pre-commit:
         - "packages/docs/**/*.astro"
         - "packages/docs/**/*.ts"
       run: pnpm exec prettier --write {staged_files}
+      stage_fixed: true
+    # `just --fmt` rewrites in place, so it runs in the fmt phase alongside
+    # oxfmt; the comment check that follows only reads. Both are scoped to the
+    # justfile itself, so a commit that does not touch it pays nothing.
+    justfile:
+      glob:
+        - "justfile"
+      run: just --fmt --unstable && bun run scripts/check-justfile-comments.ts
       stage_fixed: true
     oxlint:
       glob:
