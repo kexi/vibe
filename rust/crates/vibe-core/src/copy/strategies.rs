@@ -337,6 +337,18 @@ impl<N: NativeClone> CopyExecutor for RealCopyExecutor<'_, N> {
 
         let result = match self.selected {
             CopyStrategyKind::Clonefile => {
+                // Every other strategy creates the destination's parent before
+                // writing; clonefile needs it too, and needs it MORE, because
+                // its absence is a soft ENOENT that silently demotes the copy to
+                // the Standard fallback. A nested `[copy] dirs` entry
+                // (`packages/app/node_modules`) therefore lost CoW entirely
+                // while still reporting success — the monorepo case that
+                // benefits most from cloning was the one case that never got it.
+                //
+                // Only the PARENT is created, never `dest` itself: clonefile
+                // requires the destination not to exist, so a `create_dir_all`
+                // on `dest` would trade this bug for a permanent EEXIST.
+                ensure_parent(dest);
                 self.native.clone_directory(Path::new(src), Path::new(dest))
             }
             CopyStrategyKind::Clone => cp_clone(src, dest, true, self.is_macos()),
@@ -664,6 +676,58 @@ mod tests {
         assert!(
             !dest_parent.exists(),
             "no fallback copy should have run after a symlink rejection"
+        );
+    }
+
+    #[test]
+    fn clonefile_reaches_a_nested_destination_whose_parent_does_not_exist_yet() {
+        // A nested `[copy] dirs` entry lands in a worktree that has none of the
+        // intermediate directories yet. clonefile fails ENOENT on a missing
+        // parent, and ENOENT is a SOFT error, so without `ensure_parent` the
+        // copy silently demoted to the Standard fallback and reported success —
+        // CoW was never used for exactly the monorepo layout that needs it.
+        let fx = Fixture::new();
+        let src = fx.mkdir("src");
+        let dest = fx.path().join("packages").join("app").join("node_modules");
+        assert!(!dest.parent().unwrap().exists(), "precondition: parent absent");
+
+        let native = FakeNative::macos();
+        let exec = RealCopyExecutor::new(&native, &FakeProbe::none());
+        assert_eq!(exec.directory_strategy(), CopyStrategyKind::Clonefile);
+
+        exec.copy_directory(src.to_str().unwrap(), dest.to_str().unwrap())
+            .unwrap();
+
+        assert!(
+            dest.parent().unwrap().is_dir(),
+            "the destination's parent must be created before the clone"
+        );
+        assert_eq!(
+            native.clone_dir_calls.borrow().len(),
+            1,
+            "the clone must actually run, not be skipped in favour of a fallback"
+        );
+    }
+
+    #[test]
+    fn clonefile_does_not_create_the_destination_itself() {
+        // clonefile requires the destination NOT to exist. Creating `dest` (and
+        // not just its parent) would swap the ENOENT bug for a permanent EEXIST,
+        // so the guarantee is pinned rather than assumed.
+        let fx = Fixture::new();
+        let src = fx.mkdir("src");
+        let dest = fx.path().join("nested").join("target");
+
+        let native = FakeNative::macos();
+        let exec = RealCopyExecutor::new(&native, &FakeProbe::none());
+        exec.copy_directory(src.to_str().unwrap(), dest.to_str().unwrap())
+            .unwrap();
+
+        // FakeNative records the call without touching the filesystem, so
+        // anything at `dest` now could only have been created by the executor.
+        assert!(
+            !dest.exists(),
+            "only the parent may be created; the destination must be left to clonefile"
         );
     }
 
