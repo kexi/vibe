@@ -10,8 +10,9 @@
  * version already shipped, so the comparison has to happen before them.
  *
  * Why not a semver library: the only shapes this project publishes are
- * `X.Y.Z` (stable, release.yml) and `X.Y.Z-beta.N` (beta-release.yml, N =
- * github.run_number). A full semver implementation would accept build metadata
+ * `X.Y.Z` (stable, release.yml); the beta channel that once produced
+ * `X.Y.Z-beta.N` is gone, though such tags remain on GitHub and must still
+ * order correctly. A full semver implementation would accept build metadata
  * and arbitrary prerelease identifiers that no gate here should have to reason
  * about, and pulling a dependency into the release path widens its supply chain
  * for an ordering that fits in a numeric compare.

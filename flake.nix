@@ -24,19 +24,19 @@
       platforms = {
         x86_64-linux = {
           artifact = "vibe-linux-x64";
-          hash = "sha256-0MUqO5W1sVF/24taBzh/WGMC0Jmd395z9UzPoe3ZqFM=";
+          hash = "sha256-nfuO9Z4pxNVM9RqJa7VXt3GRuoZKvRnzhVVOGV4EIWc=";
         };
         aarch64-linux = {
           artifact = "vibe-linux-arm64";
-          hash = "sha256-oOMGDSNQozjvpUA7oYej/W4BgfDCc9gqNevWjJflS8U=";
+          hash = "sha256-Z5/qXwPfHmPOKCpn7M2Y/10TzV9Da80HBJ/mPyeJG3U=";
         };
         x86_64-darwin = {
           artifact = "vibe-darwin-x64";
-          hash = "sha256-Nh7GSq69Klq9hJ/qprKuME2Czo7Msr+4e+VLC+Q35Yo=";
+          hash = "sha256-KxpUkmp+hMWQ+3rgzeb2hVtwWuC+3chveDVfTfBu25A=";
         };
         aarch64-darwin = {
           artifact = "vibe-darwin-arm64";
-          hash = "sha256-TB1iq3FLazg2OoCTDjLWgzC/lruZ9ejjKTLO+d+QxlA=";
+          hash = "sha256-Klet6Trsysq7QZbbIur3MCrzD4RPlkH6DwXCU22PSys=";
         };
       };
 

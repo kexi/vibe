@@ -70,7 +70,7 @@ Determine what changed and what needs auditing:
 git diff --name-only HEAD~1 | grep -E '(Cargo\.toml|Cargo\.lock|package\.json|pnpm-lock\.yaml)'
 
 # Or for PR review
-git diff develop...HEAD --name-only | grep -E '(Cargo\.toml|Cargo\.lock|package\.json|pnpm-lock\.yaml)'
+git diff origin/main...HEAD --name-only | grep -E '(Cargo\.toml|Cargo\.lock|package\.json|pnpm-lock\.yaml)'
 ```
 
 A `Cargo.lock` / `Cargo.toml` change is high-priority (it alters the shipped binary). A
@@ -124,7 +124,7 @@ Identify packages that were added or had version changes, then check for known C
 
 ```bash
 # Crates added or version-bumped in this change
-git diff develop...HEAD -- rust/Cargo.lock | grep -E '^\+(name|version) = '
+git diff origin/main...HEAD -- rust/Cargo.lock | grep -E '^\+(name|version) = '
 ```
 
 `cargo audit` is not in the dev shell, so check the changed crates against the RustSec
@@ -135,7 +135,7 @@ advisory database. Do not claim a crate is clean without actually checking it.
 
 ```bash
 # Extract changed package names from lock file diff
-git diff develop...HEAD -- pnpm-lock.yaml \
+git diff origin/main...HEAD -- pnpm-lock.yaml \
   | grep -E '^\+\s+/' \
   | sed "s|^\+\s\+/||; s|@[^@]*$||" \
   | sort -u

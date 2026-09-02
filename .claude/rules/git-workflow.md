@@ -2,11 +2,17 @@
 
 ## Branch Strategy
 
-- `main`: Release versions only
-- `develop`: Main development branch
-- Topic branches should be created from `develop`
-- **IMPORTANT**: Never push directly to `main` or `develop` branches
-- PRs must always target the `develop` branch
+GitHub Flow: `main` is the only long-lived branch.
+
+- Topic branches are created from `main` and deleted when their PR merges
+- PRs must always target `main`
+- **IMPORTANT**: Never push directly to `main`
+- A release is a tag on `main`, created by the Release workflow — never a
+  long-lived branch. The version bump rides in on a `release/vX.Y.Z` topic
+  branch like any other PR.
+- The heavy CI matrix (Linux, Windows, binaries, `.deb`, e2e, npm) runs on the
+  push to `main` after a merge, not on the PR. Add the `ci-full` label to a PR
+  to run the Windows leg before merging.
 
 ## PR/Commit Guidelines
 

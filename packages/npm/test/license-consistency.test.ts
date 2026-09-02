@@ -141,7 +141,7 @@ describe("Rust workspace license", () => {
 });
 
 describe("Homebrew formula licenses", () => {
-  const formulae = ["Formula/vibe.rb", "Formula/vibe-beta.rb", "Formula/vibe-versioned.rb"];
+  const formulae = ["Formula/vibe.rb", "Formula/vibe-versioned.rb"];
 
   it.each(formulae)("%s declares an MIT license stanza", (rel) => {
     expect(readRepoFile(rel)).toContain('license "MIT"');

@@ -2,7 +2,7 @@ name: Nix
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
     paths: &nix-paths
       - "flake.nix"
       - "flake.lock"
@@ -16,7 +16,7 @@ on:
   # Do not use a pull_request paths filter here: branch protection requires the
   # nix-build check, and a workflow-level skip leaves that required check absent.
   pull_request:
-    branches: [main, develop]
+    branches: [main]
 
 # Same rationale as ci.yml: superseded PR runs are cancelled (a cold-store
 # `nix build` on `macos-latest` is one of the most expensive jobs in the repo),
