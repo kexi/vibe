@@ -15,11 +15,12 @@ vibe rename <new-name> [options]
 
 ## 选项
 
-| 选项              | 说明                 |
-| ----------------- | -------------------- |
-| `-n`, `--dry-run` | 预览操作而不实际执行 |
-| `-V`, `--verbose` | 显示详细输出         |
-| `-q`, `--quiet`   | 抑制非必要的输出     |
+| 选项                     | 说明                                |
+| ------------------------ | ----------------------------------- |
+| `-n`, `--dry-run`        | 预览操作而不实际执行                |
+| `--allow-default-branch` | 允许重命名仓库的默认分支（v3.1.0+） |
+| `-V`, `--verbose`        | 显示详细输出                        |
+| `-q`, `--quiet`          | 抑制非必要的输出                    |
 
 ## 示例
 
@@ -52,6 +53,21 @@ Directory: /path/to/scratch-20260427-143052 -> /path/to/repo-my-feature
 2. `git branch -m <old-name> <new-name>` —— 重命名分支
 
 两者都成功后，vibe 会更新内部的 MRU 记录，并向 shell 包装函数输出 `cd` 命令，把你带入重命名后的 worktree。
+
+### 默认分支受到保护
+
+`vibe rename` 会拒绝重命名仓库的默认分支，即使该分支从未被推送过：
+
+```
+$ vibe rename my-feature
+Error: 'main' is this repository's default branch
+Renaming it would break clones, open pull requests and CI references.
+Pass --allow-default-branch if you really want to rename it.
+```
+
+这种情况下不会有任何改动。如果仍要继续，请传入 `--allow-default-branch`。
+
+默认分支依次从 `refs/remotes/origin/HEAD`、`git config init.defaultBranch`、`master` 检测。`origin/HEAD` 只在 `git clone` 时写入；如果远程的默认分支之后发生了变化，请运行 `git remote set-head origin -a`。详情请参阅 [`vibe clean`](/zh/commands/clean/#默认分支保护)。
 
 ### 不支持已推送的分支
 
@@ -97,10 +113,10 @@ To rename manually:
 
 ## 退出码
 
-| 退出码 | 条件                                                            |
-| ------ | --------------------------------------------------------------- |
-| `0`    | 重命名成功，或同名的空操作                                      |
-| `1`    | 错误（名称为空、主 worktree、已推送的分支、冲突、git 执行失败） |
+| 退出码 | 条件                                                                      |
+| ------ | ------------------------------------------------------------------------- |
+| `0`    | 重命名成功，或同名的空操作                                                |
+| `1`    | 错误（名称为空、主 worktree、默认分支、已推送的分支、冲突、git 执行失败） |
 
 ## 相关内容
 

@@ -41,6 +41,16 @@ Worktree削除後もブランチを保持します。設定ファイルの`delet
 vibe clean --keep-branch
 ```
 
+### `--allow-default-branch` <Badge text="v3.1.0+" />
+
+`--delete-branch`はリポジトリのデフォルトブランチを削除しません。Worktreeは削除されますが、ブランチは残り、その理由が表示されます。本当に削除したい場合は`--allow-default-branch`を指定します。
+
+```bash
+vibe clean --delete-branch --allow-default-branch
+```
+
+デフォルトブランチの検出方法は[デフォルトブランチの保護](#デフォルトブランチの保護)を参照してください。
+
 ### `-V`, `--verbose`
 
 実行されるgitコマンドなど、詳細な出力を表示します。
@@ -143,6 +153,27 @@ $ vibe clean
 - 警告を表示
 - 確認を求める
 - 明示的に確認した場合のみ続行
+
+### デフォルトブランチの保護
+
+`--delete-branch`（または設定の`delete_branch = true`）の対象がリポジトリのデフォルトブランチだった場合、vibeはWorktreeを削除しつつブランチは残します：
+
+```
+$ vibe clean --delete-branch
+Worktree /path/to/repo-main has been removed.
+Skipped deleting branch main: it is this repository's default branch.
+Pass --allow-default-branch if you really want to delete it.
+```
+
+クリーンアップ自体は成功しているため、終了コードは0のままです。スキップされるのはブランチ削除だけです。
+
+デフォルトブランチは次の順序で検出され、最初に見つかったものが採用されます：
+
+1. `refs/remotes/origin/HEAD`（リポジトリをcloneしたときに設定される）
+2. `git config init.defaultBranch`
+3. `master`
+
+`origin/HEAD`は`git clone`のときにしか書き込まれないため、その後リモート側でデフォルトブランチを変更しても追従しません。`git remote set-head origin -a`を実行すると更新されます。`git init`で作成したリポジトリには`origin/HEAD`が存在せず、`init.defaultBranch`、次いで`master`にフォールバックします。
 
 ## フック
 

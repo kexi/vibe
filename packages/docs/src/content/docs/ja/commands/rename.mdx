@@ -15,11 +15,12 @@ vibe rename <new-name> [options]
 
 ## Options
 
-| Option            | 説明                     |
-| ----------------- | ------------------------ |
-| `-n`, `--dry-run` | 実行せずに操作を確認する |
-| `-V`, `--verbose` | 詳細出力を表示する       |
-| `-q`, `--quiet`   | 必須でない出力を抑制する |
+| Option                   | 説明                                                          |
+| ------------------------ | ------------------------------------------------------------- |
+| `-n`, `--dry-run`        | 実行せずに操作を確認する                                      |
+| `--allow-default-branch` | リポジトリのデフォルトブランチのリネームを許可する（v3.1.0+） |
+| `-V`, `--verbose`        | 詳細出力を表示する                                            |
+| `-q`, `--quiet`          | 必須でない出力を抑制する                                      |
 
 ## Examples
 
@@ -52,6 +53,21 @@ Directory: /path/to/scratch-20260427-143052 -> /path/to/repo-my-feature
 2. `git branch -m <old-name> <new-name>` — ブランチをリネーム
 
 両方が成功すると、内部の MRU 情報を更新し、shell wrapper 用の `cd` コマンドを出力してリネーム先へ移動します。
+
+### デフォルトブランチは保護される
+
+`vibe rename` はリポジトリのデフォルトブランチのリネームを拒否します。まだ push していないブランチであっても同様です:
+
+```
+$ vibe rename my-feature
+Error: 'main' is this repository's default branch
+Renaming it would break clones, open pull requests and CI references.
+Pass --allow-default-branch if you really want to rename it.
+```
+
+この場合、何も変更されません。それでも実行したい場合は `--allow-default-branch` を指定してください。
+
+デフォルトブランチは `refs/remotes/origin/HEAD`、次に `git config init.defaultBranch`、最後に `master` の順で検出されます。`origin/HEAD` は `git clone` のときにしか書き込まれないため、その後リモート側でデフォルトブランチが変わった場合は `git remote set-head origin -a` を実行してください。詳細は [`vibe clean`](/ja/commands/clean/#デフォルトブランチの保護) を参照してください。
 
 ### Push 済みブランチは対象外
 
@@ -97,10 +113,10 @@ To rename manually:
 
 ## Exit Codes
 
-| Code | 条件                                                               |
-| ---- | ------------------------------------------------------------------ |
-| `0`  | リネーム成功、または同名 no-op                                     |
-| `1`  | エラー（名前未指定、main worktree、push 済み、衝突、git 失敗など） |
+| Code | 条件                                                                                   |
+| ---- | -------------------------------------------------------------------------------------- |
+| `0`  | リネーム成功、または同名 no-op                                                         |
+| `1`  | エラー（名前未指定、main worktree、デフォルトブランチ、push 済み、衝突、git 失敗など） |
 
 ## 関連
 

@@ -894,8 +894,8 @@ pub struct DefaultBranch {
 
 /// [`get_default_branch`] with the resolution outcome attached.
 ///
-/// Split out rather than changing the existing signature: `clean`, `rename` and
-/// `start` use this as a guard, where a guessed name is exactly as usable as a
+/// Split out rather than changing the existing signature: `clean` and `rename`
+/// use this as a guard, where a guessed name is exactly as usable as a
 /// resolved one — only the summary cache needs to tell them apart.
 ///
 /// # The value and the confidence are computed separately

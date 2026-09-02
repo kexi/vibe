@@ -41,6 +41,16 @@ Keep the branch after removing the worktree. This overrides the `delete_branch` 
 vibe clean --keep-branch
 ```
 
+### `--allow-default-branch` <Badge text="v3.1.0+" />
+
+`--delete-branch` never deletes the repository's default branch: the worktree is still removed, but the branch is kept and vibe prints why. Pass `--allow-default-branch` when you really do want it deleted.
+
+```bash
+vibe clean --delete-branch --allow-default-branch
+```
+
+See [Default branch protection](#default-branch-protection) for how the default branch is detected.
+
 ### `-V`, `--verbose`
 
 Show detailed output including git commands being executed.
@@ -143,6 +153,27 @@ If you have uncommitted changes, vibe will:
 - Show a warning
 - Ask for confirmation
 - Only proceed if you explicitly confirm
+
+### Default branch protection
+
+When `--delete-branch` (or `delete_branch = true` in the config) targets the repository's default branch, vibe removes the worktree but keeps the branch:
+
+```
+$ vibe clean --delete-branch
+Worktree /path/to/repo-main has been removed.
+Skipped deleting branch main: it is this repository's default branch.
+Pass --allow-default-branch if you really want to delete it.
+```
+
+The command still exits with code 0: the cleanup succeeded, only the branch deletion was skipped.
+
+The default branch is detected in this order, first hit wins:
+
+1. `refs/remotes/origin/HEAD` (set when the repository was cloned)
+2. `git config init.defaultBranch`
+3. `master`
+
+`origin/HEAD` is only written by `git clone`, so it does not follow a later change of the default branch on the remote. Run `git remote set-head origin -a` to refresh it. A repository created with `git init` has no `origin/HEAD` at all and falls back to `init.defaultBranch`, then `master`.
 
 ## Hooks
 

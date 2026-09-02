@@ -41,6 +41,16 @@ vibe clean --delete-branch
 vibe clean --keep-branch
 ```
 
+### `--allow-default-branch` <Badge text="v3.1.0+" />
+
+`--delete-branch` 不会删除仓库的默认分支：worktree 仍会被删除，但分支会被保留，并由 vibe 说明原因。如果确实要删除它，请传入 `--allow-default-branch`。
+
+```bash
+vibe clean --delete-branch --allow-default-branch
+```
+
+默认分支的检测方式请参阅[默认分支保护](#默认分支保护)。
+
 ### `-V`, `--verbose`
 
 显示详细输出，包括所执行的 git 命令。
@@ -143,6 +153,27 @@ $ vibe clean
 - 显示警告
 - 请求确认
 - 只有在你明确确认后才继续
+
+### 默认分支保护
+
+当 `--delete-branch`（或配置中的 `delete_branch = true`）指向仓库的默认分支时，vibe 会删除 worktree 但保留该分支：
+
+```
+$ vibe clean --delete-branch
+Worktree /path/to/repo-main has been removed.
+Skipped deleting branch main: it is this repository's default branch.
+Pass --allow-default-branch if you really want to delete it.
+```
+
+命令仍以退出码 0 结束：清理本身已成功，只是跳过了分支删除。
+
+默认分支按以下顺序检测，最先命中的生效：
+
+1. `refs/remotes/origin/HEAD`（在克隆仓库时设置）
+2. `git config init.defaultBranch`
+3. `master`
+
+`origin/HEAD` 只在 `git clone` 时写入，因此不会跟随远程之后对默认分支的更改。运行 `git remote set-head origin -a` 可以刷新它。通过 `git init` 创建的仓库完全没有 `origin/HEAD`，会回退到 `init.defaultBranch`，然后是 `master`。
 
 ## 钩子
 
