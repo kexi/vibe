@@ -89,6 +89,12 @@ pub struct CommandSpec {
 
 const SHELL_CANDIDATES: [&str; 5] = ["bash", "zsh", "fish", "nushell", "powershell"];
 
+/// `vibe list --sort` values. Must stay in step with the `ListSortArg` value
+/// enum in the binary's `cli.rs`; the clap↔spec consistency test compares flag
+/// names, and this candidate list is what makes the completion offer the right
+/// values for one of them.
+const LIST_SORT_CANDIDATES: [&str; 3] = ["age", "name", "status"];
+
 /// All vibe subcommands, in display order (matches the TS array order).
 pub const SUBCOMMANDS: &[CommandSpec] = &[
     CommandSpec {
@@ -132,19 +138,27 @@ pub const SUBCOMMANDS: &[CommandSpec] = &[
         name: "list",
         description: "List all worktrees of the current repository",
         positional_completion: None,
-        flags: &[FlagSpec::flag("json", "Output the listing as JSON")],
+        flags: &[
+            FlagSpec::flag("json", "Output the listing as JSON"),
+            FlagSpec::flag("dirty", "Only worktrees with uncommitted changes"),
+            FlagSpec::flag("clean", "Only worktrees with no uncommitted changes"),
+            FlagSpec::value("base", "Only worktrees based on this branch"),
+            FlagSpec::value("recent", "Only worktrees committed to within this duration"),
+            FlagSpec::value("stale", "Only worktrees not committed to for this duration"),
+            FlagSpec::value_candidates("sort", "Sort the listing", &LIST_SORT_CANDIDATES),
+            FlagSpec::flag("reverse", "Reverse the final display order"),
+            FlagSpec::value("limit", "Show at most this many worktrees"),
+        ],
     },
     CommandSpec {
         name: "rename",
         description: "Rename the current worktree's branch and directory",
         positional_completion: None,
-        flags: &[
-            FlagSpec::flag_short("dry-run", "n", "Show what would be executed"),
-            FlagSpec::flag(
-                "allow-default-branch",
-                "Allow operating on the repository's default branch",
-            ),
-        ],
+        flags: &[FlagSpec::flag_short(
+            "dry-run",
+            "n",
+            "Show what would be executed",
+        )],
     },
     CommandSpec {
         name: "clean",
@@ -157,10 +171,6 @@ pub const SUBCOMMANDS: &[CommandSpec] = &[
                 "Delete the branch after removing the worktree",
             ),
             FlagSpec::flag("keep-branch", "Keep the branch after removing the worktree"),
-            FlagSpec::flag(
-                "allow-default-branch",
-                "Allow operating on the repository's default branch",
-            ),
         ],
     },
     CommandSpec {

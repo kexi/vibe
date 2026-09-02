@@ -67,21 +67,27 @@ _vibe_jump() {
 
 _vibe_list() {
   _arguments \
-    '--json[Output the listing as JSON]'
+    '--json[Output the listing as JSON]' \
+    '--dirty[Only worktrees with uncommitted changes]' \
+    '--clean[Only worktrees with no uncommitted changes]' \
+    '--base=[Only worktrees based on this branch]:base:' \
+    '--recent=[Only worktrees committed to within this duration]:recent:' \
+    '--stale=[Only worktrees not committed to for this duration]:stale:' \
+    '--sort=[Sort the listing]:sort:(age name status)' \
+    '--reverse[Reverse the final display order]' \
+    '--limit=[Show at most this many worktrees]:limit:'
 }
 
 _vibe_rename() {
   _arguments \
-    '(-n --dry-run)'{-n,--dry-run}'[Show what would be executed]' \
-    '--allow-default-branch[Allow operating on the repository'\''s default branch]'
+    '(-n --dry-run)'{-n,--dry-run}'[Show what would be executed]'
 }
 
 _vibe_clean() {
   _arguments \
     '(-f --force)'{-f,--force}'[Skip confirmation prompts]' \
     '--delete-branch[Delete the branch after removing the worktree]' \
-    '--keep-branch[Keep the branch after removing the worktree]' \
-    '--allow-default-branch[Allow operating on the repository'\''s default branch]'
+    '--keep-branch[Keep the branch after removing the worktree]'
 }
 
 _vibe_home() {

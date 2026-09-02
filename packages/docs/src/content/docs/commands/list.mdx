@@ -1,0 +1,300 @@
+---
+title: vibe list
+description: List every worktree of the current repository with base, age and status
+sidebar:
+  order: 4
+---
+
+The `list` command shows every worktree of the current repository in one aligned table, together with the branch it is based on, how long ago its tip was committed, and whether it has uncommitted changes.
+
+## Usage
+
+```bash
+vibe list [options]
+```
+
+## Options
+
+| Option            | Description                                             |
+| ----------------- | ------------------------------------------------------- |
+| `--json`          | Emit the listing as a JSON array                        |
+| `--dirty`         | Only worktrees with uncommitted changes                 |
+| `--clean`         | Only worktrees with no uncommitted changes              |
+| `--base <branch>` | Only worktrees based on `<branch>`                      |
+| `--recent <dur>`  | Only worktrees committed to within `<dur>`              |
+| `--stale <dur>`   | Only worktrees not committed to for `<dur>`             |
+| `--sort <key>`    | Sort by `age`, `name` or `status`                       |
+| `--reverse`       | Reverse the final display order                         |
+| `--limit <n>`     | Show at most `<n>` worktrees (`<n>` must be at least 1) |
+| `-V`, `--verbose` | Show detailed output                                    |
+| `-q`, `--quiet`   | Suppress non-essential output                           |
+
+`--dirty` and `--clean` cannot be combined, and neither can `--recent` and `--stale`; either pair exits `2`.
+
+`--quiet` does **not** silence the listing itself: the table is the command's product, so `vibe list --quiet` would otherwise exit 0 having printed nothing. Only the surrounding diagnostics are suppressed.
+
+## Example
+
+```
+$ vibe list
+* feat/login    develop  2h    M 3    /path/to/repo-feat-login
+  fix/crash     develop  3d    clean  /path/to/repo-fix-crash
+  (detached)    -        1w    clean  /path/to/repo-detached
+  scratch/2026… develop  12m   clean  /path/to/scratch-20260101 (scratch)
+```
+
+## Columns
+
+| Column   | Meaning                                                                            |
+| -------- | ---------------------------------------------------------------------------------- |
+| (marker) | `*` marks the worktree you are currently standing in                               |
+| BRANCH   | The checked-out branch, or `(detached)` for a detached-HEAD worktree               |
+| BASE     | The branch this one is based on — see [BASE](#base) below                          |
+| AGE      | How long ago the tip commit was made (`now`, `12m`, `2h`, `3d`, `1w`, `5mo`, `2y`) |
+| STATUS   | `clean`, or `M <n>` — see [How changes are counted](#how-changes-are-counted)      |
+| SUMMARY  | Only when `[summary]` is configured — see [SUMMARY](#summary) below                |
+| PATH     | The worktree directory                                                             |
+
+A `(scratch)` label is appended to worktrees created by [`vibe scratch`](/commands/scratch/).
+
+### How changes are counted
+
+The number in `M <n>` (and the `dirty_files` field) is the number of entries `git status` reports, which is **not** always the number of changed files. git collapses a wholly untracked **directory** into a single entry, so a new directory containing five files counts as `1`, not `5`. Tracked modifications, staged changes and individually untracked files each count as one entry, and a rename counts once rather than twice.
+
+This is git's default reporting (`-unormal`). `vibe` deliberately does not pass `-uall`, which would expand every untracked directory: it makes git walk untracked trees in full on every row of the listing — unbounded work in exactly the repositories (a stale `node_modules`, a fat build output) where it is least wanted — to refine a number whose job is to convey "there is something here".
+
+Any cell whose value could not be determined renders as `-`. A worktree that git cannot read (for example one left behind by a deleted checkout) still appears as a row; only the affected cells degrade.
+
+A failure to read a worktree's **STATUS** is reported as a warning on stderr. A failure to resolve **AGE** or **BASE** (for example when `git log` cannot read a detached worktree's HEAD) degrades to `-` silently — it is expected often enough that warning about it would be noise.
+
+### BASE
+
+BASE is resolved as:
+
+1. The branch's configured **upstream**, with the remote prefix stripped (`origin/develop` → `develop`).
+2. Otherwise the repository's **default branch** (from `refs/remotes/origin/HEAD`, then `init.defaultBranch`).
+
+A branch is never shown as based on itself, so the main worktree — and any branch whose upstream is its own remote tracking ref — shows `-`. A detached HEAD also shows `-`: it is not based on a branch in any sense that can be stated truthfully.
+
+`vibe list` deliberately does **not** run `git merge-base` per worktree. That would cost one git invocation per row, and its answer is a _commit_, not a branch — mapping that commit back to a branch name is ambiguous whenever several branches share the merge point, which is the common case right after branching. An upstream is a fact you configured, and the default branch is the documented fallback, so both are explainable.
+
+### AGE
+
+AGE is the elapsed time since the tip commit's committer date, truncated (never rounded up) so it never claims more time than has actually passed. The `mo` and `y` units are display-only approximations (30 and 365 days); `--json` publishes the exact timestamp in `last_commit_at` instead.
+
+A branch with no commits yet (an unborn branch) has no tip to date, so its AGE reads `-` and its `last_commit_at` is `null`.
+
+### SUMMARY
+
+The SUMMARY column appears only when the repository's `.vibe.toml` sets `[summary] command`. vibe runs that command once per `vibe list`, hands it the batch of worktrees on stdin, and shows what it prints back:
+
+```toml
+[summary]
+command = "./examples/summary/last-commit.sh"
+timeout_seconds = 30
+```
+
+```
+$ vibe list
+* feat/login    develop  2h    M 3    Adds the login form         /path/to/repo-feat-login
+  fix/crash     develop  3d    clean  Fixes the startup panic     /path/to/repo-fix-crash
+```
+
+Results are cached per worktree, so a second `vibe list` over an unchanged repository does not run the command at all. If the command fails or times out, `vibe list` warns and shows the previously cached summary rather than failing.
+
+The column's presence follows the **configuration**, not the command's success: a worktree the command stayed silent about shows an empty cell, so an empty column never has to be read as "maybe the feature is off".
+
+Because the command runs with your shell and your permissions, it is covered by the trust mechanism — editing `[summary] command` invalidates `.vibe.toml`'s hash and `vibe list` fails until you run [`vibe trust`](/commands/trust/) again.
+
+See [`.vibe.toml` → Summary Configuration](/configuration/vibe-toml/#summary-configuration) for the full contract, the limits applied to the command's output, and the cache invalidation rules. Ready-to-use scripts live in [`examples/summary/`](https://github.com/kexi/vibe/tree/main/examples/summary).
+
+## Filtering, sorting and limiting
+
+The flags form a pipeline applied in a fixed order:
+
+```
+filter (AND) → sort → reverse → limit
+```
+
+Every stage runs on the fully resolved rows, so a filter and `--json` can never disagree about a worktree's base, age or status — and the same flags select the same worktrees in both output modes.
+
+### Examples
+
+```bash
+# What did I touch this week and leave unfinished?
+vibe list --recent 1w --dirty
+
+# What has been sitting untouched for a month?
+vibe list --stale 30d
+
+# The five oldest worktrees
+vibe list --sort age --reverse --limit 5
+
+# Everything branched off develop, messiest first
+vibe list --base develop --sort status
+
+# The three most recently committed, as JSON
+vibe list --json --sort age --limit 3 2>&1 | jq .
+```
+
+### Filters
+
+Filters combine with **AND**: each flag narrows the result, so adding one never returns more rows.
+
+| Flag              | Keeps                                               |
+| ----------------- | --------------------------------------------------- |
+| `--dirty`         | Worktrees whose STATUS is `dirty`                   |
+| `--clean`         | Worktrees whose STATUS is `clean`                   |
+| `--base <branch>` | Worktrees whose BASE is exactly `<branch>`          |
+| `--recent <dur>`  | Worktrees whose tip commit is at most `<dur>` old   |
+| `--stale <dur>`   | Worktrees whose tip commit is more than `<dur>` old |
+
+A worktree whose status could **not** be read (STATUS `-`) is excluded by `--dirty` _and_ by `--clean`. The two flags therefore do not partition the listing: a worktree git could not answer for belongs to neither answer, and presenting it as one or the other would be a confident guess. The unfiltered listing still shows it, with `-`, and warns.
+
+`--base` compares against the resolved [BASE](#base) column. The match is exact, not a prefix: `--base develop` does not match `develop-2`. A worktree with no base (the main worktree, or a detached HEAD) is never matched by `--base`.
+
+The argument is accepted **either verbatim or with a leading remote name removed**, so every spelling you might reasonably type works:
+
+| Argument              | Matches a base of                     |
+| --------------------- | ------------------------------------- |
+| `develop`             | `develop`                             |
+| `origin/develop`      | `origin/develop`, `develop`           |
+| `release/next`        | `release/next`                        |
+| `origin/release/next` | `origin/release/next`, `release/next` |
+
+Both readings are tried because they cannot be told apart from the argument alone: `origin/develop` is a remote-qualified `develop`, but `release/next` is a plain branch whose name happens to contain a slash, and both are spelled `<word>/<word>`. Trying only the stripped reading would turn `--base release/next` into `--base next` and match nothing.
+
+The cost of accepting both is that `--base origin/develop` also matches a local branch literally named `origin/develop`, if you have one. Surfacing an extra row is the deliberate trade against silently returning none.
+
+### Durations
+
+`--recent` and `--stale` take a duration written as a **positive integer followed by one unit**:
+
+| Unit | Meaning |
+| ---- | ------- |
+| `s`  | seconds |
+| `m`  | minutes |
+| `h`  | hours   |
+| `d`  | days    |
+| `w`  | weeks   |
+
+Examples: `90s`, `30m`, `12h`, `2d`, `1w`.
+
+Anything else exits `2` with an explanation: an empty value, a bare number with no unit (`30`), a compound form (`1h30m`), a fraction (`1.5d`), a zero (`0d`), or a value so large it would overflow.
+
+:::caution[The AGE column and the duration units are deliberately different]
+The AGE column displays `mo` (months) and `y` (years), but `--recent`/`--stale` do **not** accept them. Those display units are approximations (30 and 365 days), and a filter written against an approximate month would silently disagree with the calendar. Write the equivalent in weeks or days instead — "about six months" is `26w`, and "about a year" is `52w` (or `365d`).
+:::
+
+The boundary is exact and the two flags are complements of each other for any worktree with a known age:
+
+- `--recent <dur>` keeps rows where `now − commit ≤ dur` (**inclusive**)
+- `--stale <dur>` keeps rows where `now − commit > dur` (**exclusive**)
+
+So `vibe list --recent 1d` and `vibe list --stale 1d` together account for every worktree whose tip commit date is known, with no overlap.
+
+A commit dated in the **future** — routine when clock skew exists between the machine that made the commit and this one — counts as `--recent`, matching the `now` the AGE column already shows for it.
+
+A worktree with **no** tip commit (an unborn branch, or one whose log could not be read) matches **neither** `--recent` nor `--stale`. Both ask a question about a commit date that row does not have.
+
+### Sorting
+
+`--sort` takes one of three keys:
+
+| Key      | Order                                                      |
+| -------- | ---------------------------------------------------------- |
+| `age`    | Newest tip commit first; ties broken by name               |
+| `name`   | Lexicographic by name                                      |
+| `status` | Dirty first, then most changed entries first, then by name |
+
+Passing `--sort` **replaces the default order entirely**, including the current-worktree-first rule: `--sort age` promises the newest row first, and exempting one row from that would move whichever worktree you happen to be standing in.
+
+Under `--sort name`, a detached-HEAD worktree takes part using its directory basename (the same value `--json` publishes as `name`).
+
+Every sort ends in a final tie-break on the worktree **path**, so the output is fully deterministic: two detached worktrees in sibling directories can share a basename, and without it their order would depend on which one you jumped to more recently.
+
+Rows with an **unknown age** always sort last under `--sort age`, and stay last under `--reverse` too: "the oldest worktrees" is a question about worktrees that have an age, so `--sort age --reverse --limit 5` returns five actual answers rather than spending slots on rows the question does not apply to.
+
+### `--reverse` and `--limit`
+
+`--reverse` reverses whatever the final display order would have been, so it is meaningful on its own (it flips the default current-first MRU order) as well as after `--sort`.
+
+`--limit <n>` truncates **after** sorting and reversing. That order is what makes "the five oldest" expressible as `--sort age --reverse --limit 5`; limiting first would take the five newest and merely print them backwards, which is a different set. `--limit 0` is rejected (exit `2`) rather than printing nothing, because an empty listing is indistinguishable from a repository with no worktrees.
+
+When a filter matches nothing, `vibe list` says so explicitly (`No worktrees matched the given filters.`) rather than reporting `No worktrees found.` — the two call for different next actions. In `--json` mode the result is simply `[]`.
+
+## JSON output
+
+```bash
+vibe list --json 2>&1 | jq .
+```
+
+The `2>&1` is required. `vibe` writes the JSON payload to **stderr**, because stdout is the shell-eval channel: the shell wrapper runs `eval "$(command vibe "$@")"`, so anything written there would be executed as shell code. In `--json` mode the payload is the only thing `list` itself writes to stderr — even `--verbose` diagnostics and the command's own warnings are withheld so the document stays parseable.
+
+One exception is outside this command's control: a warning about conflicting **global** flags (`vibe --verbose --quiet list --json` prints `Warning: Both --verbose and --quiet specified.`) is emitted before any subcommand runs, and would precede the payload. Avoid combining conflicting global flags when parsing the output.
+
+### Schema
+
+Each array element is an object with these fields:
+
+| Field            | Type           | Description                                                                 |
+| ---------------- | -------------- | --------------------------------------------------------------------------- |
+| `branch`         | string \| null | The checked-out branch; `null` for a detached HEAD                          |
+| `path`           | string         | Absolute path to the worktree                                               |
+| `current`        | boolean        | Whether this is the worktree the command was invoked from                   |
+| `scratch`        | boolean        | Whether the branch is an auto-generated `scratch/<timestamp>` worktree      |
+| `name`           | string         | Always present: the branch, or the directory basename for a detached HEAD   |
+| `base`           | string \| null | The BASE column's value; `null` when it does not apply or could not be read |
+| `head`           | string \| null | The commit sha HEAD points at; `null` for an unborn branch (no commits yet) |
+| `last_commit_at` | string \| null | The tip's committer date in ISO 8601; `null` for an unborn branch           |
+| `status`         | string \| null | `"clean"` or `"dirty"`; `null` when git could not be asked                  |
+| `dirty_files`    | number \| null | How many entries `git status` reported; `null` whenever `status` is `null`  |
+| `summary`        | string         | Present **only** when `[summary]` is configured; `""` when unanswered       |
+
+`branch`, `path`, `current` and `scratch` are the fields shipped in v3.1.0 and keep their names, types and position. New fields are only ever appended.
+
+`head` is always either a sha you can pass to `git show` or `null`. A worktree whose branch has no commits yet reports `null` rather than git's all-zero placeholder OID, so the field never carries a sha-shaped value that does not resolve.
+
+`summary` is omitted entirely when `[summary]` is not configured, so a repository not using the feature produces exactly the document it produced before the feature existed.
+
+The relative AGE string is not published. A consumer wanting "3 days ago" is better served computing it from `last_commit_at`, which is exact.
+
+### Examples
+
+```bash
+# Every dirty worktree — the filter does the selecting, jq only projects
+vibe list --json --dirty 2>&1 | jq -r '.[] | .path'
+
+# Branch and base, as a table
+vibe list --json 2>&1 | jq -r '.[] | "\(.name)\t\(.base // "-")"'
+
+# The worktree you are standing in
+vibe list --json 2>&1 | jq -r '.[] | select(.current) | .path'
+
+# The three worktrees you have not touched in longest
+vibe list --json --sort age --reverse --limit 3 2>&1 | jq -r '.[] | .name'
+```
+
+The [filter, sort and limit flags](#filtering-sorting-and-limiting) apply to `--json` exactly as they do to the table, so a script can push the selection into `vibe` instead of reimplementing it in `jq`. A filtered listing that matches nothing is `[]`.
+
+## Ordering
+
+Rows are ordered: the current worktree first, then the remaining worktrees most-recently-jumped-to first (the same MRU order [`vibe jump`](/commands/jump/) uses for its selection prompt), then any never-visited worktree in git's own order.
+
+A missing or corrupt MRU store degrades to git's order; it never fails the listing.
+
+This is the **default** order. [`--sort`](#sorting) replaces it, and `--reverse` flips whichever order is in effect.
+
+## Exit Codes
+
+| Code | Condition                                                                                      |
+| ---- | ---------------------------------------------------------------------------------------------- |
+| `0`  | The listing was produced (including when a filter matched nothing)                             |
+| `1`  | Not inside a git repository                                                                    |
+| `2`  | Invalid arguments: conflicting filters, a malformed duration, `--limit 0`, an unknown sort key |
+
+## Related
+
+- [jump](/commands/jump/) - Navigate to one of the listed worktrees
+- [start](/commands/start/) - Create a new worktree
+- [clean](/commands/clean/) - Remove the current worktree

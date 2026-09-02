@@ -154,8 +154,19 @@ See [AGENTS.md](./AGENTS.md) for detailed branching workflow.
    (`publish-npm.yml`) follows automatically once the Release workflow
    succeeds; a re-run of either workflow is safe (idempotency guards skip
    what is already published). To heal a post-publish mirror failure (e.g.
-   update-homebrew), use "Re-run failed jobs" — a full "Re-run all jobs"
-   skips the whole pipeline once the release is published.
+   update-homebrew), re-run the **original** run — either "Re-run failed jobs"
+   or "Re-run all jobs" now resumes against the published release instead of
+   skipping the pipeline green. Do not dispatch a fresh run to recover: the
+   workflow refuses one whose commit differs from the one the release targets.
+   Re-run promptly, as update-homebrew skips with a warning once a newer
+   release has superseded this one.
+
+   A run that never published cannot be resurrected later: `prepare` refuses
+   any version older than the newest existing release, because publishing it
+   would move the latest release, the Homebrew tap and the npm `latest`
+   dist-tag backwards. Dispatch a fresh release for the current version
+   instead. Should an older version still reach npm (a repair publish), it
+   lands under the `previous` dist-tag rather than `latest`.
 
 4. **Update Nix binary hashes, if needed:**
 

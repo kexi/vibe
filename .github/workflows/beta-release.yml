@@ -20,10 +20,13 @@ jobs:
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # bun, for the currency gate in "Check if release already exists" (#616).
+      - uses: ./.github/actions/setup-toolchain
 
       - name: Determine beta version
         id: version
@@ -51,16 +54,55 @@ jobs:
         id: check
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          set -euo pipefail
+          TAG="v${VERSION}"
           # `gh release view` falls back to searching drafts, so only a
           # published release counts as done; a draft leftover from a failed
           # attempt is deleted and recreated by the release job.
-          if [ "$(gh release view "v${VERSION}" --json isDraft --jq .isDraft 2>/dev/null)" = "false" ]; then
-            echo "Release v${VERSION} already published, skipping"
-            echo "should_release=false" >> $GITHUB_OUTPUT
+          if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null)" = "false" ]; then
+            # should_release=false lets the downstream jobs resume against the
+            # published prerelease (#598), and they check out this run's commit.
+            # Same tag from a different commit would hash the OLD binaries into
+            # a formula built from a NEWER tree, so fail closed instead. Belt
+            # and braces here, unlike its stable twin: the beta tag embeds
+            # github.run_number, which only repeats across re-runs of the run
+            # that published it, so the commit already cannot differ. Kept so
+            # the two workflows do not drift apart.
+            TARGET=$(gh release view "$TAG" --json targetCommitish --jq .targetCommitish)
+            if [ "$TARGET" != "$GITHUB_SHA" ]; then
+              echo "::error::Prerelease $TAG targets $TARGET but this run is on $GITHUB_SHA; use \"Re-run failed jobs\" on the original run instead of dispatching a fresh one."
+              exit 1
+            fi
+            echo "Prerelease $TAG already published at $TARGET, skipping build (re-run recovery path)"
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
           else
-            echo "should_release=true" >> $GITHUB_OUTPUT
+            # Currency gate (#616), mirroring release.yml. The check above only
+            # establishes that THIS tag was never published; a run that built
+            # its artifacts and died before publishing can be re-run at any
+            # later date, and from here it would publish an old -beta.N as a
+            # fresh prerelease. Its tap guard would then catch it downstream
+            # (ordinal comparison, #608) — but only after the prerelease is
+            # public and its tag burned, leaving an out-of-order beta on the
+            # release page forever. Refuse before anything is built.
+            #
+            # -beta.N ordering comes from the shared comparator, so a base
+            # version bump on develop (3.1.0-beta.9 -> 3.2.0-beta.1) still
+            # orders correctly, which a bare ordinal compare would not.
+            # --exclude-drafts: this workflow creates its prerelease as a draft
+            # first, so a newer run that died mid-flight must not read as a
+            # published newer beta. Prereleases only: a stable 3.1.0 outranks
+            # 3.1.0-beta.N by semver, and develop keeps the base version until
+            # the next bump, so comparing against stables would refuse every
+            # ordinary beta cut made after a release.
+            RELEASE_LIST=$(gh release list --exclude-drafts --limit 100 \
+              --json tagName,isPrerelease \
+              --jq '[.[] | select(.isPrerelease)]')
+            printf '%s' "$RELEASE_LIST" \
+              | bun run scripts/assert-release-currency.ts --version "$VERSION"
+
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
           fi
 
   build:
@@ -90,7 +132,7 @@ jobs:
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -171,11 +213,21 @@ jobs:
 
   release:
     needs: [prepare, build]
+    # Resume semantics (#598), mirroring release.yml: should_release=false means
+    # the prerelease is already published at THIS run's commit, so run anyway
+    # rather than skipping green with a failed downstream step never retried.
+    # !cancelled() keeps cancellation and a failed prepare fatal.
+    if: >-
+      !cancelled() && needs.prepare.result == 'success' &&
+      (needs.prepare.outputs.should_release == 'false' ||
+       needs.build.result == 'success')
     runs-on: ubuntu-latest
+    outputs:
+      verified: ${{ steps.verify.outputs.verified }}
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
           egress-policy: audit
       # The license files are uploaded as prerelease assets so every downloader
@@ -185,7 +237,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: ./.github/actions/setup-toolchain
+      # artifacts/ exists only on a fresh run: a resume (should_release=false)
+      # owns no build artifacts, and the script below exits before touching them.
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: needs.prepare.outputs.should_release == 'true'
         with:
           path: artifacts
           merge-multiple: true
@@ -197,24 +252,50 @@ jobs:
           # call in this job aimed at this repository regardless of what the
           # checkout's remote happens to say.
           GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          VERSION="${{ needs.prepare.outputs.version }}"
+          set -euo pipefail
           TAG="v${VERSION}"
+
+          # Re-check on re-runs: prepare's verdict may predate a publish that
+          # succeeded in the meantime (re-running this run keeps run_number,
+          # hence the same tag). First gh call, so a resume creates, deletes and
+          # uploads nothing.
+          if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null)" = "false" ]; then
+            echo "Prerelease $TAG already published; nothing to do."
+            exit 0
+          fi
 
           # Drop leftover drafts from failed attempts. Several drafts can share
           # one tag_name and `gh release delete` removes only the first match,
           # so delete by id. Drafts hold no tag, so this never burns one.
-          for id in $(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
-              --jq ".[] | select(.draft and .tag_name == \"$TAG\") | .id"); do
+          # Assignment form, not `for id in $(gh ...)`: a word list swallows the
+          # command's exit status even under `set -e`.
+          DRAFT_IDS=$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+            --jq ".[] | select(.draft and .tag_name == \"$TAG\") | .id")
+          for id in $DRAFT_IDS; do
             gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/${id}"
             echo "Deleted leftover draft release id=${id}"
           done
 
-          # The license files come from the checkout rather than artifacts/,
-          # which holds only the five built binaries.
-          ASSETS=(artifacts/* LICENSE THIRD-PARTY-LICENSES.md)
-          if [ "${#ASSETS[@]}" -ne 7 ]; then
-            echo "::error::Expected 7 release assets (5 binaries + 2 license files), found ${#ASSETS[@]}: ${ASSETS[*]}"
+          # Exact-name gate (#597): the script verifies every expected file by
+          # name and prints the verified paths, which become the upload list, so
+          # the checked set and the uploaded set cannot diverge. Why not
+          # `artifacts/*` plus a count: any stray file in the directory made the
+          # arithmetic work while a platform binary was absent. The license
+          # files come from the checkout, which artifacts/ never holds. Why the
+          # assignment and not `mapfile < <(...)`: process substitution swallows
+          # the gate's exit status under `set -e`.
+          ASSET_LIST=$(bun run scripts/verify-release-files.ts \
+            --channel beta --version "$VERSION" --artifacts-dir artifacts)
+          mapfile -t ASSETS <<<"$ASSET_LIST"
+          # Belt and braces: an empty ASSET_LIST would make mapfile produce a
+          # one-element array holding "", passing a bare empty argument to
+          # `gh release create`. Unreachable while the gate exits 1 on failure,
+          # so it must say so if it ever fires — a bare test would exit 1 with
+          # no annotation and no message.
+          if [ -z "$ASSET_LIST" ]; then
+            echo "::error::asset gate produced an empty upload list"
             exit 1
           fi
 
@@ -235,65 +316,142 @@ jobs:
             --prerelease \
             "${ASSETS[@]}"
 
-          COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
-          if [ "$COUNT" -ne 7 ]; then
-            echo "::error::Draft release has $COUNT assets, expected 7"
-            exit 1
-          fi
-          # Name-level gate: the count above would be satisfied by seven assets
-          # of any kind, including seven binaries and no license documents.
+          # Set-equality gate: every expected name present and usable, and
+          # nothing else attached — an extra asset can no longer stand in for a
+          # missing binary the way a bare count allowed.
           gh release view "$TAG" --json assets \
-            | bun run scripts/verify-release-assets.ts
+            | bun run scripts/verify-release-assets.ts --channel beta --version "$VERSION"
 
           # Everything verified: burn the tag and go public, still as a
           # prerelease (--prerelease was set at create time and survives).
           gh release edit "$TAG" --draft=false --prerelease
-          echo "Published $TAG with $COUNT assets."
+          echo "Published $TAG with ${#ASSETS[@]} assets."
 
       # Post-publish confirmation, distinct from the pre-publish gate inside the
       # step above: that one decides whether to publish at all, this one asserts
       # that undrafting did not change what the prerelease carries. It is the
-      # state downstream consumers actually see.
-      - name: Verify published prerelease carries the license documents
+      # state downstream consumers actually see, and on a resume run (#598) the
+      # only substantive verification — hence the `verified` output that
+      # update-homebrew gates on.
+      - name: Verify published prerelease carries the full asset set
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: v${{ needs.prepare.outputs.version }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --json assets \
+            | bun run scripts/verify-release-assets.ts --channel beta --version "$VERSION"
+          echo "verified=true" >> "$GITHUB_OUTPUT"
+
+  update-homebrew:
+    needs: [prepare, release]
+    # Explicit needs check because !cancelled() overrides the implicit gate;
+    # `verified` makes the post-publish asset check load-bearing for the tap
+    # (on a resume, `release` succeeds via its early exit without verifying).
+    if: >-
+      !cancelled() && needs.release.result == 'success' &&
+      needs.release.outputs.verified == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+      # Guard against rolling the beta tap backwards, mirroring release.yml.
+      # Making `release` resumable (#598) also made this job reachable on a
+      # re-run of an OLD run, and prepare's commit check cannot catch it: the
+      # beta tag embeds github.run_number, so an old run always re-derives its
+      # own tag and its own commit, both of which still agree. Without this,
+      # re-running beta.7 after beta.9 shipped would rewrite vibe-beta.rb back
+      # to beta.7. Why not isLatest: prereleases are never GitHub's "latest",
+      # so the newest prerelease tag is the equivalent question here.
+      - name: Confirm this prerelease is still the newest beta
+        id: latest
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: v${{ needs.prepare.outputs.version }}
         run: |
-          gh release view "$TAG" --json assets \
-            | bun run scripts/verify-release-assets.ts
+          set -euo pipefail
+          # `--limit 1` would fetch one release and only THEN filter, so a
+          # single newer stable at the head would report "no beta exists" and
+          # wave an old beta through. Fetch a window and filter inside jq.
+          # --exclude-drafts because an authenticated `release list` returns
+          # drafts too, and this workflow creates its prerelease as a draft
+          # first: a newer run that died before undrafting would otherwise read
+          # as "a newer beta shipped" and skip the tap repair this run is for.
+          #
+          # Compare the -beta.N ordinal rather than taking the head of the list:
+          # gh orders by creation time, and a re-run that deletes and recreates
+          # its release gets a fresh timestamp, so an old beta could sort first
+          # and defeat the guard. N is github.run_number, which only increases,
+          # so the numeric maximum is the newest beta whatever the list order.
+          ORDINAL=${TAG##*-beta.}
+          NEWEST=$(gh release list --exclude-drafts --limit 100 \
+            --json tagName,isPrerelease \
+            --jq '[.[] | select(.isPrerelease) | .tagName | capture("-beta\\.(?<n>[0-9]+)$") | .n | tonumber] | max // 0')
+          if [ "$ORDINAL" -lt "$NEWEST" ]; then
+            echo "::warning::$TAG is no longer the newest beta prerelease (beta.$NEWEST is); leaving the Homebrew tap untouched."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
 
-  update-homebrew:
-    needs: [prepare, release]
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
-        with:
-          egress-policy: audit
-      - name: Download artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          path: artifacts
-          merge-multiple: true
+      - name: Download released binaries
+        if: steps.latest.outputs.proceed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: v${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          # The tap must hash the bytes users actually download, and on a resume
+          # run (#598) this run holds no build artifacts — the published
+          # prerelease is the canonical source either way. Exact names rather
+          # than `vibe-darwin-*` globs, for the same reason the asset gate names
+          # every file (#597): a future asset must not silently join this set.
+          gh release download "$TAG" --dir artifacts \
+            --pattern vibe-darwin-arm64 --pattern vibe-darwin-x64 \
+            --pattern vibe-linux-arm64 --pattern vibe-linux-x64
+          # `gh release download` exits 0 as long as ANY --pattern matched, so
+          # name the missing file here rather than letting sha256sum fail one
+          # step later with the diagnostic pointing at the wrong place.
+          ls artifacts/vibe-darwin-arm64 artifacts/vibe-darwin-x64 \
+            artifacts/vibe-linux-arm64 artifacts/vibe-linux-x64 >/dev/null
 
       - name: Calculate SHA256
         id: sha256
+        if: steps.latest.outputs.proceed == 'true'
         run: |
-          echo "darwin_arm64=$(sha256sum artifacts/vibe-darwin-arm64 | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
-          echo "darwin_x64=$(sha256sum artifacts/vibe-darwin-x64 | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
-          echo "linux_arm64=$(sha256sum artifacts/vibe-linux-arm64 | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
-          echo "linux_x64=$(sha256sum artifacts/vibe-linux-x64 | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          # Assignment form: inside `echo "$(...)"` a sha256sum failure would be
+          # swallowed and write an empty output under `set -e`.
+          DARWIN_ARM64=$(sha256sum artifacts/vibe-darwin-arm64 | cut -d ' ' -f 1)
+          DARWIN_X64=$(sha256sum artifacts/vibe-darwin-x64 | cut -d ' ' -f 1)
+          LINUX_ARM64=$(sha256sum artifacts/vibe-linux-arm64 | cut -d ' ' -f 1)
+          LINUX_X64=$(sha256sum artifacts/vibe-linux-x64 | cut -d ' ' -f 1)
+          {
+            echo "darwin_arm64=$DARWIN_ARM64"
+            echo "darwin_x64=$DARWIN_X64"
+            echo "linux_arm64=$LINUX_ARM64"
+            echo "linux_x64=$LINUX_X64"
+          } >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.latest.outputs.proceed == 'true'
         with:
           path: vibe-source
 
       - name: Update Homebrew formula
+        if: steps.latest.outputs.proceed == 'true'
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
+          set -euo pipefail
           VERSION="${{ needs.prepare.outputs.version }}"
 
           # Validate version format

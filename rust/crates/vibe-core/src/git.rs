@@ -15,10 +15,20 @@ use std::process::Command;
 /// `branch` is `None` for a detached-HEAD worktree: git emits a bare `detached`
 /// line instead of `branch refs/heads/…` for those, and they are real worktrees
 /// a user can be standing in, so they must be representable rather than dropped.
+///
+/// `head` is the commit sha the porcelain already carries on its `HEAD <sha>`
+/// record. It is kept rather than re-resolved per worktree with `rev-parse`
+/// because the enumeration that produced this entry already paid for it, and a
+/// second resolution could disagree with the listing if a concurrent checkout
+/// lands between the two calls. It is the empty string when the payload carried
+/// no `HEAD` record (hand-written fixtures, and a `bare` entry before it is
+/// dropped), and the NULL OID when the worktree's branch has no commits yet —
+/// see [`is_resolved_oid`], which callers publishing the value must consult.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Worktree {
     pub path: String,
     pub branch: Option<String>,
+    pub head: String,
 }
 
 /// Repository information extracted from a file path.
@@ -233,10 +243,15 @@ pub fn parse_worktree_list(output: &str) -> Vec<Worktree> {
             current = Some(Worktree {
                 path: rest.to_string(),
                 branch: None,
+                head: String::new(),
             });
         } else if let Some(rest) = line.strip_prefix("branch refs/heads/") {
             if let Some(wt) = current.as_mut() {
                 wt.branch = Some(rest.to_string());
+            }
+        } else if let Some(rest) = line.strip_prefix("HEAD ") {
+            if let Some(wt) = current.as_mut() {
+                wt.head = rest.to_string();
             }
         } else if line.trim() == "bare" {
             is_bare = true;
@@ -469,6 +484,269 @@ pub fn has_uncommitted_changes(runner: &impl GitRunner) -> Result<bool> {
     Ok(!output.trim().is_empty())
 }
 
+/// Raw `git -C <path> status --porcelain=v1 -z` payload for one worktree.
+///
+/// Separate from [`has_uncommitted_changes`], which answers a yes/no question
+/// about the *current* directory: this one names the worktree explicitly (`list`
+/// reports on trees the process is not standing in) and needs the record payload
+/// rather than a boolean so [`count_status_entries_z`] can report a count.
+///
+/// `--porcelain=v1` is pinned rather than the bare `--porcelain`: the bare form
+/// means "the default version", which git documents as subject to change, and a
+/// silent switch to v2 would change the record shape under the parser.
+///
+/// `-z` for the same reason the worktree listing uses it — a changed file's path
+/// may contain a newline, and without `-z` git also quotes non-ASCII paths per
+/// `core.quotePath`, which would corrupt the record boundaries.
+///
+/// Why not `-uall`: git's default (`-unormal`) collapses a WHOLLY untracked
+/// directory into a single record, so a new directory holding five files counts
+/// as one entry. `-uall` would expand it, but it makes git walk every untracked
+/// tree in full on EVERY row of the listing — unbounded work in exactly the
+/// repositories (a stale `node_modules`, a fat build output) where it is least
+/// wanted, to refine a number that only has to convey "there is something
+/// here". The count is documented as counting an untracked directory once.
+///
+/// `--untracked-files=normal` is passed EXPLICITLY rather than relied on as the
+/// default: `status.showUntrackedFiles=no` is a real configuration people set to
+/// speed up `git status` in big repositories, and under it git reports a
+/// worktree holding nothing but new files as completely clean. `list` would then
+/// state "clean" about a tree with uncommitted work in it — the one answer this
+/// column exists to get right. Passing the flag pins the behaviour to what the
+/// docs describe, independent of the user's config.
+pub fn worktree_status_z(runner: &impl GitRunner, path: &str) -> Result<Vec<u8>> {
+    runner.run_raw(&[
+        "-C",
+        path,
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=normal",
+    ])
+}
+
+/// Number of changed entries in a `git status --porcelain=v1 -z` payload.
+///
+/// The `-z` form is NOT one record per change: a rename or copy (`R`/`C` in
+/// either status column) emits the new path and the original path as TWO
+/// NUL-terminated records, with no in-band marker on the second one. Counting
+/// records would therefore double-count every rename, so the second record is
+/// consumed here as part of its entry.
+///
+/// Why not `-z` with `--porcelain=v2`: v2 puts both paths of a rename in one
+/// record, but it also restructures every other line type, and nothing else in
+/// this crate reads v2 — pinning v1 keeps a single porcelain dialect in the
+/// codebase.
+///
+/// Whether an object id names an actual object, rather than "nothing yet".
+///
+/// git spells the absence of a commit as the NULL OID — all zeros — not as an
+/// empty field: `git worktree list --porcelain` reports
+/// `HEAD 0000000000000000000000000000000000000000` for a worktree whose branch
+/// has no commits (an unborn HEAD). That value looks exactly like a real sha to
+/// anything that only checks for emptiness, so a consumer handed it would run
+/// `git show <head>` and get `fatal: bad object`.
+///
+/// Tested by "every byte is `0`" rather than against a 40-character literal:
+/// the OID width is the repository's hash algorithm, so a SHA-256 repository
+/// (`git init --object-format=sha256`) emits 64 zeros instead. Matching on
+/// length would silently stop working there.
+///
+/// An empty string is not a resolved OID either, so callers get one predicate
+/// for both "no `HEAD` record" and "unborn HEAD".
+pub fn is_resolved_oid(oid: &str) -> bool {
+    !oid.is_empty() && !oid.bytes().all(|b| b == b'0')
+}
+
+/// Undecodable bytes are counted, not dropped: a file whose name is not valid
+/// UTF-8 is still a change, and the count is only ever displayed as a number.
+pub fn count_status_entries_z(payload: &[u8]) -> usize {
+    // `-z` terminates (not separates) every record, so the trailing empty slice
+    // after the final NUL is dropped rather than counted as an entry.
+    let mut records = payload.split(|b| *b == 0).filter(|r| !r.is_empty());
+    let mut count = 0;
+    while let Some(record) = records.next() {
+        count += 1;
+        if is_rename_or_copy_record(record) {
+            // The original path follows as its own record; it belongs to the
+            // entry just counted.
+            records.next();
+        }
+    }
+    count
+}
+
+/// Whether a porcelain-v1 status record announces a rename or copy, and so is
+/// followed by a second record holding the original path.
+///
+/// The first two bytes are the index/worktree status columns; `R`/`C` in either
+/// one means git emitted the `XY <new>\0<orig>\0` pair.
+fn is_rename_or_copy_record(record: &[u8]) -> bool {
+    record.iter().take(2).any(|b| *b == b'R' || *b == b'C')
+}
+
+/// Per-branch facts read in one `git for-each-ref`: commit time and upstream.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BranchRefInfo {
+    /// Epoch seconds of the branch tip's committer date.
+    pub committed_at_unix: i64,
+    /// The tip's committer date in ISO 8601 (`iso8601-strict`).
+    pub committed_at_iso: String,
+    /// The configured upstream in short form (e.g. `origin/develop`), or `None`
+    /// when the branch tracks nothing.
+    pub upstream: Option<String>,
+}
+
+/// NUL used as the field separator inside a `for-each-ref` record.
+///
+/// `%00` rather than a printable delimiter because every field except the
+/// timestamps is attacker-influenced: a branch named `a|b` or an upstream
+/// containing a tab would split into bogus fields under any delimiter that can
+/// appear in a ref name, and NUL is the one byte git forbids in one.
+const REF_FIELD_SEPARATOR: char = '\0';
+
+/// Read commit time and upstream for the given branches in ONE git call.
+///
+/// Branches are passed as fully-qualified `refs/heads/<name>` patterns. That is
+/// what makes the call injection-proof: a branch named `--format=…` would be a
+/// flag if passed bare, but `refs/heads/--format=…` is unambiguously a pattern
+/// operand, so no `--` separator or name validation is needed.
+///
+/// A branch with no commits (an unborn HEAD, e.g. right after `git worktree add
+/// -b` on an empty repository) has no ref to enumerate and is simply absent from
+/// the result. Callers must treat a missing key as "unknown", not as an error.
+///
+/// Returns entries keyed by short branch name, in git's emitted order.
+pub fn branch_ref_info(
+    runner: &impl GitRunner,
+    branches: &[String],
+) -> Result<Vec<(String, BranchRefInfo)>> {
+    if branches.is_empty() {
+        return Ok(Vec::new());
+    }
+    let patterns: Vec<String> = branches
+        .iter()
+        .map(|b| format!("{BRANCH_REF_PREFIX}{b}"))
+        .collect();
+    let mut args: Vec<&str> = vec![
+        "for-each-ref",
+        "--format=%(refname)%00%(committerdate:unix)%00%(committerdate:iso8601-strict)%00%(upstream)%00%(upstream:remotename)",
+    ];
+    args.extend(patterns.iter().map(String::as_str));
+    let output = runner.run(&args)?;
+    Ok(parse_ref_info(&output))
+}
+
+/// The namespace every local branch ref lives under.
+const BRANCH_REF_PREFIX: &str = "refs/heads/";
+
+/// The namespace remote-tracking refs live under.
+const REMOTE_REF_PREFIX: &str = "refs/remotes/";
+
+/// Reduce an upstream's FULL refname to a plain branch name.
+///
+/// `remote_name` is git's own `%(upstream:remotename)` for the same branch: `.`
+/// when the upstream is a local branch, otherwise the configured remote.
+///
+/// Why the full refname and the remote name rather than `%(upstream:short)`:
+/// the short form is genuinely ambiguous and cannot be undone by inspection.
+/// - A LOCAL upstream (`branch.<b>.remote=.`) shortens to `release/2.0`, which
+///   is indistinguishable from remote `release` + branch `2.0`. Treating the
+///   first segment as a remote turns the BASE into `2.0` — a wrong branch name
+///   presented as fact.
+/// - A remote name may itself CONTAIN a slash (`git remote add foo/bar` is
+///   accepted), so even for a genuine remote-tracking upstream the first
+///   segment is not reliably the remote.
+///
+/// Taking the remote name from git removes the guess in both cases. A local
+/// upstream keeps its name whole; a remote-tracking one has exactly its own
+/// remote stripped.
+///
+/// Returns `None` for an empty upstream (the branch tracks nothing) or a
+/// refname outside both namespaces, so the caller degrades to "unknown" rather
+/// than displaying a ref it could not interpret.
+fn upstream_branch_name(upstream: &str, remote_name: &str) -> Option<String> {
+    if upstream.is_empty() {
+        return None;
+    }
+    // A local upstream is an ordinary branch ref; nothing to strip.
+    if let Some(branch) = upstream.strip_prefix(BRANCH_REF_PREFIX) {
+        return Some(branch.to_string());
+    }
+    // A remote-tracking ref is `refs/remotes/<remote>/<branch>`, and only git
+    // knows where `<remote>` ends.
+    let tracking = upstream.strip_prefix(REMOTE_REF_PREFIX)?;
+    let branch = tracking
+        .strip_prefix(remote_name)
+        .and_then(|rest| rest.strip_prefix('/'))?;
+    if branch.is_empty() {
+        return None;
+    }
+    Some(branch.to_string())
+}
+
+/// Parse the [`branch_ref_info`] format into `(short name, info)` pairs.
+///
+/// Records are newline-separated (git's `for-each-ref` terminator) and fields
+/// are NUL-separated. A record whose timestamp does not parse, or which has too
+/// few fields, is skipped: it can only mean git emitted something this parser
+/// does not model, and dropping the row degrades to "age unknown" rather than
+/// failing the whole listing.
+///
+/// The key comes from `%(refname)` with [`BRANCH_REF_PREFIX`] stripped here,
+/// NOT from `%(refname:short)`. git's own shortening is ambiguity-aware: when a
+/// tag shares a branch's name it shortens `refs/heads/release` to `heads/release`
+/// rather than `release`, which would no longer match the branch name the caller
+/// looked up — the row would silently lose its AGE and upstream. Stripping a
+/// fixed prefix off the full refname is exact because the caller only ever asks
+/// for `refs/heads/` patterns.
+///
+/// The upstream is resolved the same way, by [`upstream_branch_name`], from the
+/// full refname plus git's own remote name rather than from `%(upstream:short)`.
+pub fn parse_ref_info(output: &str) -> Vec<(String, BranchRefInfo)> {
+    output
+        .lines()
+        .filter(|line| !line.is_empty())
+        .filter_map(|line| {
+            let mut fields = line.split(REF_FIELD_SEPARATOR);
+            let name = fields.next()?.strip_prefix(BRANCH_REF_PREFIX)?;
+            let unix = fields.next()?.parse::<i64>().ok()?;
+            let iso = fields.next()?;
+            // Both fields come straight from git; an unset upstream renders
+            // them empty, which `upstream_branch_name` reads as "tracks nothing".
+            let upstream_ref = fields.next().unwrap_or_default();
+            let remote_name = fields.next().unwrap_or_default();
+            Some((
+                name.to_string(),
+                BranchRefInfo {
+                    committed_at_unix: unix,
+                    committed_at_iso: iso.to_string(),
+                    upstream: upstream_branch_name(upstream_ref, remote_name),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Commit time of a detached worktree's HEAD (`git -C <path> log -1`).
+///
+/// A detached HEAD has no branch, so [`branch_ref_info`] cannot see it; this is
+/// the per-worktree fallback. It is `log -1` on the worktree rather than
+/// `for-each-ref` on the sha because `for-each-ref` enumerates refs, and a
+/// detached HEAD is by definition not one.
+///
+/// Returns `None` on any failure (broken worktree, unborn HEAD), so a single
+/// unreadable worktree degrades to "age unknown" instead of failing the listing.
+pub fn detached_head_info(runner: &impl GitRunner, path: &str) -> Option<(i64, String)> {
+    let out = runner
+        .run(&["-C", path, "log", "-1", "--format=%ct%x00%cI"])
+        .ok()?;
+    let mut fields = out.trim().split(REF_FIELD_SEPARATOR);
+    let unix = fields.next()?.parse::<i64>().ok()?;
+    let iso = fields.next()?;
+    Some((unix, iso.to_string()))
+}
+
 /// True if `refs/heads/<branch>` exists locally.
 pub fn branch_exists(runner: &impl GitRunner, branch_name: &str) -> bool {
     runner
@@ -558,6 +836,14 @@ pub fn list_modified_files(runner: &impl GitRunner) -> Result<Vec<GitPathRecord>
     Ok(split_nul(&out))
 }
 
+/// The remote HEAD symref every default-branch lookup starts from.
+///
+/// Named once because it is used three ways — as a `symbolic-ref` operand, as a
+/// `for-each-ref` pattern, and as the exact refname that pattern's output is
+/// compared against — and a typo in the third would silently turn every
+/// confirmation into "unconfirmed".
+const ORIGIN_HEAD_REF: &str = "refs/remotes/origin/HEAD";
+
 /// Last-resort default-branch name when git tells us nothing.
 ///
 /// `master` (not `main`): it is what git itself still falls back to when
@@ -565,33 +851,166 @@ pub fn list_modified_files(runner: &impl GitRunner) -> Result<Vec<GitPathRecord>
 /// is most likely an old-style one.
 const FALLBACK_DEFAULT_BRANCH: &str = "master";
 
-/// Resolve the repository's default branch NAME (no `origin/` prefix).
+/// A default-branch answer, plus whether it is REPEATABLE.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DefaultBranch {
+    pub name: String,
+    /// `true` when the answer will be the same on the next run; `false` when a
+    /// git command FAILED, so the same repository could answer differently a
+    /// moment later.
+    ///
+    /// Note what this is NOT: "git gave us a name". A repository with no remote
+    /// and no `init.defaultBranch` is answered from
+    /// [`FALLBACK_DEFAULT_BRANCH`], and that is still `resolved: true` — the
+    /// absence is a stable property of the repository, so the fallback is
+    /// deterministic and every run produces it. Treating it as unresolved would
+    /// permanently disable anything keyed on the answer for the very common
+    /// case of a purely local repository.
+    ///
+    /// What makes an answer unrepeatable is an ERROR: a probe that failed for a
+    /// reason unrelated to the value being absent (a locked index, a permission
+    /// problem, a corrupt ref store). Then the hardcoded name is standing in for
+    /// something git would normally have told us, and the next run may well
+    /// disagree.
+    pub resolved: bool,
+}
+
+/// Resolve the repository's default branch NAME (no `origin/` prefix), plus
+/// whether that answer is repeatable.
 ///
-/// Resolution order, first hit wins:
-/// 1. `git symbolic-ref refs/remotes/origin/HEAD --short` → `origin/<name>`,
-///    the authoritative answer for a cloned repo.
+/// Resolution order, first hit wins, each step tried whatever the previous one
+/// did:
+/// 1. `git symbolic-ref refs/remotes/origin/HEAD --short` → `origin/<name>`.
 /// 2. `git config --get init.defaultBranch` → what a fresh `git init` here would
-///    have created (covers repos with no remote).
+///    have created. Read with `--default ""` so an unset key is a successful
+///    empty answer rather than a non-zero exit.
 /// 3. [`FALLBACK_DEFAULT_BRANCH`].
 ///
-/// Never fails: every git call is best-effort, because this feeds a *guard*, and
-/// a guard that errors out would break `clean`/`rename` in repositories where
-/// git simply has no opinion.
-pub fn get_default_branch(runner: &impl GitRunner) -> String {
-    if let Ok(out) = runner.run(&["symbolic-ref", "refs/remotes/origin/HEAD", "--short"]) {
+/// Never fails: every git call is best-effort.
+///
+/// # This answer is a DISPLAY default, not an authority
+///
+/// The only caller is `vibe list`, which shows it in the BASE column for a row
+/// with no upstream. That is the whole contract, and it is deliberately narrow:
+/// `origin/HEAD` is written by `git clone` and is NOT updated by `git fetch`;
+/// refreshing it takes an explicit `git remote set-head origin --auto`, so it
+/// goes stale the moment the remote's default moves and nobody runs that. Measured across 109 local
+/// repositories it disagreed with the remote's real default in 7 — always the
+/// same shape, a repository whose default had moved to `develop` while
+/// `origin/HEAD` still said `main`. A wrong BASE label is a cosmetic defect.
+///
+/// A `clean`/`rename` guard keyed on this name existed (issue #578) and was
+/// removed for exactly that reason: the same staleness turns "protected" into a
+/// false promise, and the guard failed on precisely the `develop`-based
+/// workflows it mattered most for. Do not reintroduce a decision — anything that
+/// refuses, deletes, or rewrites — on top of this function.
+///
+/// # The value and the confidence are computed separately
+///
+/// `resolved` is computed ALONGSIDE the value, never in front of it: no probe
+/// may stand between the resolution steps and cost us an answer. It answers a
+/// narrower question — "would the next run get this same answer?" — which only
+/// the summary cache asks, and only to decide whether a key derived from the
+/// name is worth storing.
+///
+/// # Confirming an absence
+///
+/// `resolved` must distinguish "git says there is no value" from "git could not
+/// tell us", and the [`GitRunner`] seam makes that impossible to read off an
+/// exit code: every non-zero exit becomes an `Err`, so a missing ref and a
+/// locked ref store look identical. A command that signals absence by exiting
+/// non-zero (`show-ref --verify`, a bare `config --get`) therefore cannot answer
+/// it — one transient fault hitting both that command AND the reader makes a
+/// guessed `master` look confirmed.
+///
+/// The two confirmations used here exit ZERO in a working repository whether or
+/// not the value is set, and report absence as EMPTY OUTPUT:
+///
+/// - `for-each-ref refs/remotes/origin/HEAD` — consulted ONLY when
+///   `symbolic-ref` already failed, to tell "there is no such ref" from "there
+///   is one and it could not be read".
+/// - `config --default "" --get init.defaultBranch` — empty when unset
+///   (`--default` is git 2.18+, well below anything this project builds with).
+///
+/// Why `for-each-ref` cannot be trusted on its own: it enumerates refs that
+/// RESOLVE, so a `refs/remotes/origin/HEAD` whose target is momentarily missing
+/// (mid-fetch, mid-prune) is omitted and looks absent. `symbolic-ref` reads the
+/// symref's own contents regardless of its target, so asking it first both
+/// resolves that case correctly and keeps the enumeration's blind spot off the
+/// value path entirely.
+///
+/// # The one rule for everything below step 1
+///
+/// Every answer that is NOT `symbolic-ref`'s — the configured name and the
+/// hardcoded fallback alike — is only reached because step 1 produced nothing,
+/// so each is repeatable exactly when that nothing was CONFIRMED: the probe
+/// answered, and answered empty. If step 1 merely failed, the next run may read
+/// `origin/HEAD` perfectly well and return something else, which makes anything
+/// keyed on today's answer stale without a single visible change.
+pub fn resolve_default_branch(runner: &impl GitRunner) -> DefaultBranch {
+    let resolved = |name: String| DefaultBranch {
+        name,
+        resolved: true,
+    };
+
+    // Step 1: the authoritative source. Reads the symref's contents even when
+    // its target is missing, so a dangling origin/HEAD resolves correctly here
+    // and never reaches the enumeration below.
+    if let Ok(out) = runner.run(&["symbolic-ref", ORIGIN_HEAD_REF, "--short"]) {
         if let Some(name) = strip_remote_prefix(out.trim()) {
-            return name;
+            return resolved(name);
         }
     }
 
-    if let Ok(out) = runner.run(&["config", "--get", "init.defaultBranch"]) {
+    // Step 1 gave us nothing. Only NOW does it matter why: an absent ref makes
+    // the remaining fallbacks this repository's permanent answer, while a ref we
+    // could not read makes them a stand-in for something git would have told us.
+    //
+    // The pattern matches by PREFIX, so a ref named `refs/remotes/origin/HEAD/foo`
+    // is enumerated even when `refs/remotes/origin/HEAD` itself does not exist
+    // (verified against git: creating only the former makes the bare pattern
+    // report a hit). `--format=%(refname)` and an exact comparison make the
+    // answer mean what it is being asked to mean. Getting this wrong is a
+    // performance bug rather than a correctness one — a permanently
+    // "unconfirmed" absence re-runs the summary command every listing — but the
+    // fix costs nothing.
+    let origin_head_absent =
+        match runner.run(&["for-each-ref", "--format=%(refname)", ORIGIN_HEAD_REF]) {
+            // Enumerated nothing named exactly that: there is no such ref (or its
+            // target is missing, which step 1 would already have resolved).
+            Ok(out) => !out.lines().any(|line| line.trim() == ORIGIN_HEAD_REF),
+            // Cannot even ask, so nothing below can be called confirmed.
+            Err(_) => false,
+        };
+
+    // Step 2: what a fresh `git init` here would have created. Reached
+    // unconditionally — a failed probe must never cost us this answer.
+    let configured = runner.run(&["config", "--default", "", "--get", "init.defaultBranch"]);
+    if let Ok(out) = &configured {
         let trimmed = out.trim();
         if !trimmed.is_empty() {
-            return trimmed.to_string();
+            // The VALUE is this config's, whatever the probe said. Its
+            // REPEATABILITY, though, depends on origin/HEAD really being absent:
+            // this config is only the answer because step 1 produced nothing, so
+            // if step 1 merely FAILED, the next run may read origin/HEAD fine
+            // and return something else entirely. Re-pointing origin/HEAD at
+            // `develop` while `symbolic-ref` is momentarily unavailable would
+            // otherwise report the config's `main` as confirmed, and a cache key
+            // built on the old BASE would hit.
+            return DefaultBranch {
+                name: trimmed.to_string(),
+                resolved: origin_head_absent,
+            };
         }
     }
 
-    FALLBACK_DEFAULT_BRANCH.to_string()
+    // Step 3: the hardcoded fallback. Repeatable only when BOTH earlier sources
+    // confirmed — rather than merely failed to produce — an absence.
+    let config_absent = configured.is_ok();
+    DefaultBranch {
+        name: FALLBACK_DEFAULT_BRANCH.to_string(),
+        resolved: origin_head_absent && config_absent,
+    }
 }
 
 /// Strip the leading `origin/` from a `symbolic-ref --short` answer.
@@ -599,6 +1018,13 @@ pub fn get_default_branch(runner: &impl GitRunner) -> String {
 /// Returns `None` for an empty input or a bare `origin/` with nothing after it,
 /// so the caller falls through to the next resolution step instead of adopting
 /// an empty branch name (which would make the guard match every branch).
+///
+/// Scoped to [`resolve_default_branch`], whose single caller queries the literal
+/// `refs/remotes/origin/HEAD`: the remote is fixed at the call site, so the
+/// prefix is a known constant and not an inference. Do NOT reuse this for an
+/// arbitrary upstream — there the remote name is neither known to be `origin`
+/// nor guaranteed to be a single path segment (`git remote add foo/bar` is
+/// accepted); [`upstream_branch_name`] handles that case with git's own answer.
 fn strip_remote_prefix(short_ref: &str) -> Option<String> {
     let name = short_ref.strip_prefix("origin/").unwrap_or(short_ref);
     if name.is_empty() {
@@ -755,6 +1181,7 @@ mod tests {
             vec![Worktree {
                 path: "/repo/main".into(),
                 branch: Some("main".into()),
+                head: String::new(),
             }]
         );
     }
@@ -770,10 +1197,12 @@ mod tests {
                 Worktree {
                     path: "/repo/main".into(),
                     branch: Some("main".into()),
+                    head: "aaaa".into(),
                 },
                 Worktree {
                     path: "/repo/feat".into(),
                     branch: Some("feature".into()),
+                    head: "bbbb".into(),
                 },
             ]
         );
@@ -874,6 +1303,7 @@ mod tests {
             vec![Worktree {
                 path: "/repo/main".into(),
                 branch: Some("main".into()),
+                head: String::new(),
             }]
         );
         assert_eq!(git.calls().len(), 2);
@@ -1086,10 +1516,12 @@ detached
                 Worktree {
                     path: "/repo/main".into(),
                     branch: Some("main".into()),
+                    head: "aaaa".into(),
                 },
                 Worktree {
                     path: "/repo/detached".into(),
                     branch: None,
+                    head: "bbbb".into(),
                 },
             ],
             "detached entry must be reported with no branch"
@@ -1105,6 +1537,7 @@ detached
             vec![Worktree {
                 path: "/repo/detached".into(),
                 branch: None,
+                head: "bbbb".into(),
             }]
         );
     }
@@ -1123,6 +1556,7 @@ branch refs/heads/feat
             vec![Worktree {
                 path: "/repo/my worktree dir".into(),
                 branch: Some("feat".into()),
+                head: "cccc".into(),
             }]
         );
     }
@@ -1140,10 +1574,12 @@ branch refs/heads/feat
                 Worktree {
                     path: "/repo/main".into(),
                     branch: Some("main".into()),
+                    head: "aaaa".into(),
                 },
                 Worktree {
                     path: "/repo/detached".into(),
                     branch: None,
+                    head: "bbbb".into(),
                 },
             ]
         );
@@ -1160,6 +1596,7 @@ branch refs/heads/feat
             vec![Worktree {
                 path: "/repo/we\nird".into(),
                 branch: Some("feat".into()),
+                head: "aaaa".into(),
             }],
             "a newline in the path must not act as a record separator"
         );
@@ -1183,6 +1620,7 @@ branch refs/heads/main
             vec![Worktree {
                 path: "/repo/wt".into(),
                 branch: Some("main".into()),
+                head: "dddd".into(),
             }]
         );
     }
@@ -1201,11 +1639,13 @@ branch refs/heads/main
             vec![
                 Worktree {
                     path: "/a".into(),
-                    branch: Some("main".into())
+                    branch: Some("main".into()),
+                    head: String::new(),
                 },
                 Worktree {
                     path: "/b".into(),
-                    branch: Some("feat".into())
+                    branch: Some("feat".into()),
+                    head: String::new(),
                 },
             ]
         );
@@ -1352,38 +1792,633 @@ branch refs/heads/main
     }
 
     const SYMREF: &[&str] = &["symbolic-ref", "refs/remotes/origin/HEAD", "--short"];
-    const INIT_DEFAULT: &[&str] = &["config", "--get", "init.defaultBranch"];
+    const INIT_DEFAULT: &[&str] = &["config", "--default", "", "--get", "init.defaultBranch"];
+    /// The zero-exit probe that confirms whether `refs/remotes/origin/HEAD`
+    /// exists: empty output means confirmed-absent.
+    const ORIGIN_HEAD_PROBE: &[&str] = &[
+        "for-each-ref",
+        "--format=%(refname)",
+        "refs/remotes/origin/HEAD",
+    ];
+    /// A probe answer naming the ref exactly, i.e. it is present.
+    const ORIGIN_HEAD_PRESENT: &str = "refs/remotes/origin/HEAD\n";
 
     #[test]
     fn default_branch_comes_from_origin_head_without_the_remote_prefix() {
-        let git = ScriptedGit::new(&[(SYMREF, "origin/develop\n")]);
-        assert_eq!(get_default_branch(&git), "develop");
+        let git = ScriptedGit::new(&[
+            (ORIGIN_HEAD_PROBE, ORIGIN_HEAD_PRESENT),
+            (SYMREF, "origin/develop\n"),
+        ]);
+        assert_eq!(resolve_default_branch(&git).name, "develop");
     }
 
     #[test]
     fn default_branch_keeps_slashes_inside_the_branch_name() {
         // Only the leading `origin/` is stripped; `release/` is part of the name.
-        let git = ScriptedGit::new(&[(SYMREF, "origin/release/stable")]);
-        assert_eq!(get_default_branch(&git), "release/stable");
+        let git = ScriptedGit::new(&[
+            (ORIGIN_HEAD_PROBE, ORIGIN_HEAD_PRESENT),
+            (SYMREF, "origin/release/stable"),
+        ]);
+        assert_eq!(resolve_default_branch(&git).name, "release/stable");
     }
 
     #[test]
     fn default_branch_falls_back_to_init_default_branch_config() {
-        let git = ScriptedGit::new(&[(INIT_DEFAULT, "trunk\n")]);
-        assert_eq!(get_default_branch(&git), "trunk");
+        // The probe answers empty (no origin/HEAD), so resolution moves on to
+        // the config — which is where the answer is.
+        let git = ScriptedGit::new(&[(ORIGIN_HEAD_PROBE, ""), (INIT_DEFAULT, "trunk\n")]);
+        assert_eq!(resolve_default_branch(&git).name, "trunk");
     }
 
     #[test]
     fn default_branch_falls_back_to_master_when_git_knows_nothing() {
+        // Both probes answer, both are empty: a confirmed, stable absence.
+        let git = ScriptedGit::new(&[(ORIGIN_HEAD_PROBE, ""), (INIT_DEFAULT, "")]);
+        assert_eq!(resolve_default_branch(&git).name, "master");
+    }
+
+    /// (a) What it guarantees: a probe that ERRORS is degradation, not absence.
+    ///
+    /// This is the case an exit-code-based probe could not express: one
+    /// transient fault hitting both the probe and the reader made a guessed
+    /// `master` look confirmed. The probe exits zero in a working repository, so
+    /// an `Err` can only mean something went wrong.
+    #[test]
+    fn a_failing_origin_head_probe_is_degraded_not_absent() {
+        // Nothing scripted, so every command errors.
         let git = ScriptedGit::new(&[]);
-        assert_eq!(get_default_branch(&git), "master");
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "master", "the display fallback is unchanged");
+        assert!(
+            !answer.resolved,
+            "an unaskable probe cannot confirm absence"
+        );
+    }
+
+    /// What it guarantees: the precise hole the exit-code probe left open — ONE
+    /// transient fault taking out both the existence probe and the reader.
+    ///
+    /// With an `is_ok()`-style probe, the failure was read as "the ref is
+    /// absent", the config then legitimately answered empty, and the guessed
+    /// `master` was reported as confirmed. Both facts must come from a command
+    /// that SUCCEEDED for the answer to be repeatable.
+    #[test]
+    fn a_fault_hitting_both_the_probe_and_the_reader_is_degraded() {
+        // The probe and `symbolic-ref` both fail (unscripted); the config probe
+        // answers empty, exactly as it would in a healthy local repository.
+        let git = ScriptedGit::new(&[(INIT_DEFAULT, "")]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "master", "the display fallback is unchanged");
+        assert!(
+            !answer.resolved,
+            "a failed probe must never be read as a confirmed absence"
+        );
+    }
+
+    /// What it guarantees: the VALUE `resolve_default_branch` returns is unaffected
+    /// by the confirmation probe, in every combination of probe outcomes.
+    ///
+    /// When the probe was moved to the front of the chain, a `for-each-ref`
+    /// failure alone short-circuited resolution: a repository whose default
+    /// branch is `main` via `init.defaultBranch` reported `master`. Today that
+    /// costs `vibe list` a wrong BASE label; the probe is a confidence signal
+    /// for the summary cache and must never cost a resolution step.
+    #[test]
+    fn the_resolved_name_never_depends_on_the_confirmation_probe() {
+        // `init.defaultBranch` is the answer; vary only the probe's outcome.
+        for probe in [
+            None,                      // probe errors
+            Some(""),                  // probe says absent
+            Some(ORIGIN_HEAD_PRESENT), // probe says present
+        ] {
+            let mut script: Vec<(&[&str], &str)> = vec![(INIT_DEFAULT, "main\n")];
+            if let Some(answer) = probe {
+                script.push((ORIGIN_HEAD_PROBE, answer));
+            }
+            let git = ScriptedGit::new(&script);
+            assert_eq!(
+                resolve_default_branch(&git).name,
+                "main",
+                "the probe outcome must not change the VALUE (probe: {probe:?})"
+            );
+        }
+    }
+
+    /// What it guarantees: `symbolic-ref` still wins outright, and is consulted
+    /// FIRST — so a dangling `refs/remotes/origin/HEAD` resolves correctly.
+    ///
+    /// `for-each-ref` enumerates refs that RESOLVE, so an origin/HEAD whose
+    /// target is momentarily missing (mid-fetch, mid-prune) is omitted and looks
+    /// absent. Asking `symbolic-ref` first — it reads the symref's own contents
+    /// regardless of its target — keeps that blind spot off the value path.
+    #[test]
+    fn a_dangling_origin_head_still_resolves_through_symbolic_ref() {
+        // Exactly what git does in this state, measured: the enumeration is
+        // empty while `symbolic-ref` still reports the target.
+        let git = ScriptedGit::new(&[(SYMREF, "origin/main\n"), (ORIGIN_HEAD_PROBE, "")]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(
+            answer.name, "main",
+            "a dangling symref still names its target"
+        );
+        assert!(
+            answer.resolved,
+            "reading the symref succeeded, so the answer is repeatable"
+        );
+    }
+
+    /// What it guarantees: `init.defaultBranch` is reached even when the
+    /// confirmation probe failed — the probe may cost confidence, never a step.
+    #[test]
+    fn a_failing_probe_does_not_skip_the_config_source() {
+        // symbolic-ref and the probe both error; the config still answers.
+        let git = ScriptedGit::new(&[(INIT_DEFAULT, "trunk\n")]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(
+            answer.name, "trunk",
+            "the config source must still be tried"
+        );
+        // But NOT repeatable: the config is only the answer because step 1
+        // produced nothing, and a failed probe cannot confirm that nothing was
+        // real. See `a_config_name_is_unconfirmed_while_origin_head_may_exist`.
+        assert!(
+            !answer.resolved,
+            "an unconfirmed step-1 absence cannot make step 2 repeatable"
+        );
+    }
+
+    /// What it guarantees: the probe's pattern is matched EXACTLY, so a ref that
+    /// merely starts with `refs/remotes/origin/HEAD` does not make an absent
+    /// origin/HEAD look present.
+    ///
+    /// `for-each-ref` matches by prefix — verified against git: with only
+    /// `refs/remotes/origin/HEAD/foo` created, the bare pattern reports a hit.
+    /// Reading that as "present" would leave a repository's stable config-based
+    /// BASE permanently unconfirmed, re-running the summary command on every
+    /// listing. A performance bug rather than a correctness one, but a silent one.
+    #[test]
+    fn a_ref_merely_prefixed_by_origin_head_does_not_count_as_present() {
+        let git = ScriptedGit::new(&[
+            // Exactly what git enumerates in that state.
+            (ORIGIN_HEAD_PROBE, "refs/remotes/origin/HEAD/foo\n"),
+            (INIT_DEFAULT, "main\n"),
+        ]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "main");
+        assert!(
+            answer.resolved,
+            "origin/HEAD itself is absent, so the config is the stable answer"
+        );
+    }
+
+    /// The complement: the ref named exactly is still recognized as present.
+    #[test]
+    fn the_exact_origin_head_ref_counts_as_present() {
+        let git = ScriptedGit::new(&[
+            (ORIGIN_HEAD_PROBE, ORIGIN_HEAD_PRESENT),
+            (INIT_DEFAULT, "main\n"),
+        ]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "main");
+        assert!(
+            !answer.resolved,
+            "origin/HEAD exists but could not be read, so nothing below is confirmed"
+        );
+    }
+
+    /// And a mixture: the exact ref alongside a prefixed sibling still counts.
+    #[test]
+    fn the_exact_ref_is_found_among_prefixed_siblings() {
+        let git = ScriptedGit::new(&[(
+            ORIGIN_HEAD_PROBE,
+            "refs/remotes/origin/HEAD/foo\nrefs/remotes/origin/HEAD\n",
+        )]);
+        assert!(!resolve_default_branch(&git).resolved);
+    }
+
+    /// (a) What it guarantees: a config-sourced name is NOT repeatable while
+    /// `origin/HEAD` might still exist.
+    ///
+    /// The scenario: `origin/HEAD` is re-pointed at `develop`, then
+    /// `symbolic-ref` momentarily fails. The probe reports the ref is there, so
+    /// the config's `main` is only standing in for a value git would normally
+    /// have given — and treating it as confirmed lets a cache key built on the
+    /// OLD base hit, silently serving a summary for the wrong upstream.
+    #[test]
+    fn a_config_name_is_unconfirmed_while_origin_head_may_exist() {
+        // symbolic-ref unscripted (=> Err); the probe says the ref is present.
+        let git = ScriptedGit::new(&[
+            (ORIGIN_HEAD_PROBE, ORIGIN_HEAD_PRESENT),
+            (INIT_DEFAULT, "main\n"),
+        ]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "main", "the VALUE is still the config's");
+        assert!(
+            !answer.resolved,
+            "origin/HEAD exists but could not be read, so nothing below it is confirmed"
+        );
+    }
+
+    /// (b) What it guarantees: the same holds when the probe itself failed —
+    /// an unaskable probe confirms nothing either.
+    #[test]
+    fn a_config_name_is_unconfirmed_when_the_probe_cannot_answer() {
+        // Only the config is scripted: symbolic-ref AND the probe both error.
+        let git = ScriptedGit::new(&[(INIT_DEFAULT, "main\n")]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "main");
+        assert!(!answer.resolved);
+    }
+
+    /// (c) What it guarantees: a CONFIRMED absence still makes the config's name
+    /// repeatable — the purely local repository keeps its cache.
+    #[test]
+    fn a_config_name_is_confirmed_when_origin_head_is_confirmed_absent() {
+        let git = ScriptedGit::new(&[(ORIGIN_HEAD_PROBE, ""), (INIT_DEFAULT, "main\n")]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "main");
+        assert!(
+            answer.resolved,
+            "a confirmed absence makes the config the repository's stable answer"
+        );
+    }
+
+    /// (b) What it guarantees: both probes answering EMPTY is a confirmed,
+    /// repeatable absence — the purely local repository stays cacheable.
+    #[test]
+    fn a_confirmed_absence_is_resolved() {
+        let git = ScriptedGit::new(&[(ORIGIN_HEAD_PROBE, ""), (INIT_DEFAULT, "")]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "master");
+        assert!(
+            answer.resolved,
+            "a stable absence is repeatable and must stay cacheable"
+        );
+    }
+
+    /// (c) What it guarantees: a failing CONFIG probe is degradation too, even
+    /// though the first probe succeeded.
+    #[test]
+    fn a_failing_config_probe_is_degraded() {
+        // origin/HEAD confirmed absent, but the config probe cannot be read.
+        let git = ScriptedGit::new(&[(ORIGIN_HEAD_PROBE, "")]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "master");
+        assert!(!answer.resolved);
+    }
+
+    /// What it guarantees: an existing `origin/HEAD` that cannot be read through
+    /// is degradation — the exact combination the previous probe got wrong.
+    #[test]
+    fn an_unreadable_existing_origin_head_is_degraded() {
+        // The ref exists, but `symbolic-ref` fails (unscripted).
+        let git = ScriptedGit::new(&[(ORIGIN_HEAD_PROBE, ORIGIN_HEAD_PRESENT)]);
+        let answer = resolve_default_branch(&git);
+        assert_eq!(answer.name, "master");
+        assert!(!answer.resolved);
+    }
+
+    /// What it guarantees: a successfully resolved name is repeatable.
+    #[test]
+    fn a_resolved_name_is_repeatable() {
+        let git = ScriptedGit::new(&[
+            (ORIGIN_HEAD_PROBE, ORIGIN_HEAD_PRESENT),
+            (SYMREF, "origin/develop\n"),
+        ]);
+        assert!(resolve_default_branch(&git).resolved);
     }
 
     #[test]
     fn default_branch_ignores_empty_answers_and_keeps_resolving() {
         // A bare `origin/` and a blank config value must not become the answer.
-        let git = ScriptedGit::new(&[(SYMREF, "origin/"), (INIT_DEFAULT, "   ")]);
-        assert_eq!(get_default_branch(&git), "master");
+        let git = ScriptedGit::new(&[
+            (ORIGIN_HEAD_PROBE, ORIGIN_HEAD_PRESENT),
+            (SYMREF, "origin/"),
+            (INIT_DEFAULT, "   "),
+        ]);
+        assert_eq!(resolve_default_branch(&git).name, "master");
+    }
+
+    // --- status / ref parsing ----------------------------------------------
+
+    #[test]
+    fn status_count_treats_a_rename_as_one_entry() {
+        // `-z` emits a rename as TWO records (`R  <new>\0<orig>\0`) with no
+        // marker on the second, so counting records would double-count it.
+        let payload = b"R  new.txt\0old.txt\0 M other.txt\0";
+        assert_eq!(count_status_entries_z(payload), 2);
+    }
+
+    #[test]
+    fn status_count_treats_a_copy_as_one_entry() {
+        let payload = b"C  copy.txt\0src.txt\0";
+        assert_eq!(count_status_entries_z(payload), 1);
+    }
+
+    #[test]
+    fn status_count_sees_a_rename_marked_in_the_worktree_column() {
+        // The `R` can be in either status column; only `RM`/`R ` are common but
+        // ` R` is emitted for a worktree-side rename.
+        let payload = b" R new.txt\0old.txt\0";
+        assert_eq!(count_status_entries_z(payload), 1);
+    }
+
+    #[test]
+    fn status_count_keeps_a_newline_inside_a_path_in_one_record() {
+        // The reason `-z` is used at all: without it this path would be quoted
+        // or split, and the count would be wrong.
+        let payload = b" M we\nird.txt\0?? other.txt\0";
+        assert_eq!(count_status_entries_z(payload), 2);
+    }
+
+    #[test]
+    fn status_count_of_an_empty_payload_is_zero() {
+        assert_eq!(count_status_entries_z(b""), 0);
+        // A payload of nothing but the trailing terminator is still zero.
+        assert_eq!(count_status_entries_z(b"\0"), 0);
+    }
+
+    #[test]
+    fn status_count_treats_a_wholly_untracked_directory_as_one_entry() {
+        // What it guarantees: the count reflects git's DEFAULT (`-unormal`)
+        // reporting, where a wholly untracked directory arrives as a single
+        // `?? dir/` record no matter how many files are inside it. This is the
+        // documented meaning of the number, and the reason `-uall` is not used.
+        let payload = b"?? newdir/\0 M tracked.txt\0";
+        assert_eq!(count_status_entries_z(payload), 2);
+    }
+
+    #[test]
+    fn status_count_does_not_mistake_an_r_in_a_filename_for_a_rename() {
+        // Only the two STATUS columns are inspected; a path starting with `R`
+        // is at offset 3 and must not consume the next record.
+        let payload = b" M Readme.md\0?? Rust.toml\0";
+        assert_eq!(count_status_entries_z(payload), 2);
+    }
+
+    #[test]
+    fn ref_info_parses_the_nul_separated_fields() {
+        let out = "refs/heads/main\x001700000000\x002023-11-14T22:13:20+00:00\x00refs/remotes/origin/main\x00origin\n\
+                   refs/heads/feat/x\x001700000100\x002023-11-14T22:15:00+00:00\x00\x00\n";
+        assert_eq!(
+            parse_ref_info(out),
+            vec![
+                (
+                    "main".to_string(),
+                    BranchRefInfo {
+                        committed_at_unix: 1_700_000_000,
+                        committed_at_iso: "2023-11-14T22:13:20+00:00".to_string(),
+                        // Reduced to a plain branch name by the parser.
+                        upstream: Some("main".to_string()),
+                    }
+                ),
+                (
+                    "feat/x".to_string(),
+                    BranchRefInfo {
+                        committed_at_unix: 1_700_000_100,
+                        committed_at_iso: "2023-11-14T22:15:00+00:00".to_string(),
+                        // An unset upstream renders as an empty field, which is
+                        // NOT the ref named "".
+                        upstream: None,
+                    }
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn ref_info_keeps_a_branch_name_containing_a_pipe_in_one_field() {
+        // The reason the separator is NUL: any printable delimiter can appear
+        // in a branch name and would split the record into bogus fields.
+        let out = "refs/heads/feat|weird\x001700000000\x00iso\x00\n";
+        assert_eq!(parse_ref_info(out)[0].0, "feat|weird");
+    }
+
+    #[test]
+    fn ref_info_keys_stay_exact_when_a_tag_shares_the_branch_name() {
+        // What it guarantees: a repository holding both `refs/heads/release`
+        // and `refs/tags/release` still yields the key `release`.
+        //
+        // This is why the format asks for `%(refname)` and strips the prefix
+        // here. git's own `%(refname:short)` is ambiguity-aware and shortens
+        // that branch to `heads/release` instead, which would never match the
+        // branch name the caller looked up — the row would silently lose its
+        // AGE and its upstream.
+        let out =
+            "refs/heads/release\x001700000000\x00iso\x00refs/remotes/origin/release\x00origin\n";
+        let parsed = parse_ref_info(out);
+        assert_eq!(parsed[0].0, "release");
+        assert_eq!(parsed[0].1.upstream.as_deref(), Some("release"));
+    }
+
+    #[test]
+    fn upstream_from_a_local_branch_keeps_its_whole_name() {
+        // What it guarantees: `branch.<b>.remote=.` (a LOCAL upstream) does not
+        // lose its first path segment. `%(upstream:short)` renders this as
+        // `release/2.0`, which is indistinguishable from remote `release` +
+        // branch `2.0`; stripping there would report the BASE as `2.0` — a
+        // wrong branch name presented as fact.
+        assert_eq!(
+            upstream_branch_name("refs/heads/release/2.0", "."),
+            Some("release/2.0".to_string())
+        );
+    }
+
+    #[test]
+    fn upstream_from_a_remote_strips_exactly_that_remote() {
+        assert_eq!(
+            upstream_branch_name("refs/remotes/origin/develop", "origin"),
+            Some("develop".to_string())
+        );
+        // A branch name containing slashes keeps all of them.
+        assert_eq!(
+            upstream_branch_name("refs/remotes/origin/release/next", "origin"),
+            Some("release/next".to_string())
+        );
+    }
+
+    #[test]
+    fn upstream_handles_a_remote_name_containing_a_slash() {
+        // `git remote add foo/bar <url>` is ACCEPTED, so the remote is not
+        // reliably a single path segment. Taking the name from git rather than
+        // splitting on the first `/` is what makes this exact — a naive split
+        // would report `bar/develop`.
+        assert_eq!(
+            upstream_branch_name("refs/remotes/foo/bar/develop", "foo/bar"),
+            Some("develop".to_string())
+        );
+    }
+
+    #[test]
+    fn upstream_is_none_when_the_branch_tracks_nothing() {
+        assert_eq!(upstream_branch_name("", ""), None);
+    }
+
+    #[test]
+    fn upstream_is_none_for_a_ref_outside_both_namespaces() {
+        // Neither a local branch nor a remote-tracking ref: degrade to unknown
+        // rather than display something that was never interpreted.
+        assert_eq!(upstream_branch_name("refs/tags/v1", "origin"), None);
+        // A remote-tracking ref whose remote name does not actually prefix it
+        // cannot be split safely either.
+        assert_eq!(
+            upstream_branch_name("refs/remotes/other/develop", "origin"),
+            None
+        );
+        // Nothing left after the remote name is not a branch.
+        assert_eq!(upstream_branch_name("refs/remotes/origin/", "origin"), None);
+    }
+
+    #[test]
+    fn ref_info_resolves_a_local_upstream_end_to_end() {
+        // The parser path, not just the helper: a local upstream must survive
+        // the whole record parse intact.
+        let out = "refs/heads/feat/x\x001700000000\x00iso\x00refs/heads/release/2.0\x00.\n";
+        assert_eq!(
+            parse_ref_info(out)[0].1.upstream.as_deref(),
+            Some("release/2.0")
+        );
+    }
+
+    #[test]
+    fn ref_info_ignores_a_record_outside_the_branch_namespace() {
+        // Only `refs/heads/` patterns are ever asked for, so anything else is
+        // not a branch this listing can key on.
+        let out = "refs/tags/v1\x001700000000\x00iso\x00\n";
+        assert!(parse_ref_info(out).is_empty());
+    }
+
+    #[test]
+    fn ref_info_skips_a_record_it_cannot_model() {
+        // A malformed record degrades to "age unknown" for that branch rather
+        // than failing the whole listing.
+        let out = "refs/heads/main\x00not-a-number\x00iso\x00\n\
+                   refs/heads/good\x001700000000\x00iso\x00\n";
+        let parsed = parse_ref_info(out);
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].0, "good");
+    }
+
+    #[test]
+    fn ref_info_of_no_branches_asks_git_nothing() {
+        // `for-each-ref` with no patterns enumerates EVERY ref, so the call must
+        // be skipped rather than issued with an empty operand list.
+        let git = ScriptedGit::new(&[]);
+        assert_eq!(branch_ref_info(&git, &[]).unwrap(), Vec::new());
+    }
+
+    #[test]
+    fn ref_info_fully_qualifies_every_branch_operand() {
+        // What it guarantees: a branch named like a flag arrives as a pattern,
+        // not as an option git would parse.
+        struct Recorder(std::cell::RefCell<Vec<String>>);
+        impl GitRunner for Recorder {
+            fn run(&self, args: &[&str]) -> Result<String> {
+                *self.0.borrow_mut() = args.iter().map(|a| a.to_string()).collect();
+                Ok(String::new())
+            }
+        }
+        let git = Recorder(std::cell::RefCell::new(Vec::new()));
+        branch_ref_info(&git, &["--format=%(objectname)".to_string()]).unwrap();
+        let args = git.0.borrow().clone();
+        assert_eq!(args[0], "for-each-ref");
+        assert!(
+            args[1].starts_with("--format=%(refname)%00"),
+            "the key must come from the FULL refname, not %(refname:short): {:?}",
+            args[1]
+        );
+        assert_eq!(args[2], "refs/heads/--format=%(objectname)");
+    }
+
+    #[test]
+    fn detached_head_info_parses_the_log_output() {
+        let git = ScriptedGit::new(&[(
+            &["-C", "/repo/det", "log", "-1", "--format=%ct%x00%cI"],
+            "1700000000\u{0}2023-11-14T22:13:20+00:00",
+        )]);
+        assert_eq!(
+            detached_head_info(&git, "/repo/det"),
+            Some((1_700_000_000, "2023-11-14T22:13:20+00:00".to_string()))
+        );
+    }
+
+    #[test]
+    fn detached_head_info_is_none_when_git_fails() {
+        // An unborn HEAD or a broken worktree must degrade to "unknown", not
+        // propagate an error that would kill the listing.
+        let git = ScriptedGit::new(&[]);
+        assert_eq!(detached_head_info(&git, "/repo/det"), None);
+    }
+
+    #[test]
+    fn worktree_status_asks_for_the_pinned_porcelain_version() {
+        // `--porcelain` alone means "the default version", which git documents
+        // as subject to change; a silent switch to v2 would change the record
+        // shape under `count_status_entries_z`.
+        let git = LsFilesGit::new("");
+        worktree_status_z(&git, "/repo/x").unwrap();
+        assert_eq!(
+            git.recorded_args(),
+            vec![
+                "-C",
+                "/repo/x",
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=normal",
+            ]
+        );
+    }
+
+    #[test]
+    fn worktree_status_pins_untracked_reporting_against_user_config() {
+        // What it guarantees: `status.showUntrackedFiles=no` — a real setting
+        // people use to speed up `git status` in large repositories — cannot
+        // make a worktree holding nothing but new files report as clean. The
+        // flag is passed explicitly so the answer does not depend on config.
+        let git = LsFilesGit::new("");
+        worktree_status_z(&git, "/repo/x").unwrap();
+        assert!(
+            git.recorded_args()
+                .contains(&"--untracked-files=normal".to_string()),
+            "the untracked-files mode must be pinned, got: {:?}",
+            git.recorded_args()
+        );
+    }
+
+    #[test]
+    fn null_oid_is_not_a_resolved_object_at_either_hash_width() {
+        // What it guarantees: a worktree whose branch has no commits yet is
+        // recognised as having no HEAD. git reports that as the NULL OID, not
+        // as an empty field, and the width follows the repository's hash
+        // algorithm — 40 zeros for SHA-1, 64 for a `--object-format=sha256`
+        // repository. Both are verified against real `git worktree list`.
+        assert!(!is_resolved_oid(&"0".repeat(40)));
+        assert!(!is_resolved_oid(&"0".repeat(64)));
+        // Empty: no `HEAD` record at all.
+        assert!(!is_resolved_oid(""));
+    }
+
+    #[test]
+    fn a_real_sha_is_a_resolved_object() {
+        assert!(is_resolved_oid("93b07da74523635ff88ed6f5f17ea93a98e81bde"));
+        // A sha that merely BEGINS with zeros is a perfectly ordinary object,
+        // which is why the check is "every byte", not "starts with zero".
+        assert!(is_resolved_oid("0000000000000000000000000000000000000001"));
+    }
+
+    #[test]
+    fn parse_worktree_list_keeps_the_head_sha() {
+        // The sha is already in the porcelain; keeping it avoids a second
+        // resolution that could disagree with the listing.
+        let out = "worktree /repo/main\nHEAD abc123\nbranch refs/heads/main\n\n";
+        assert_eq!(parse_worktree_list(out)[0].head, "abc123");
+    }
+
+    #[test]
+    fn parse_worktree_list_leaves_head_empty_when_absent() {
+        let out = "worktree /repo/main\nbranch refs/heads/main\n\n";
+        assert_eq!(parse_worktree_list(out)[0].head, "");
     }
 
     #[test]

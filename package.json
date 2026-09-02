@@ -1,6 +1,6 @@
 {
   "name": "vibe-monorepo",
-  "version": "3.1.0",
+  "version": "4.0.0",
   "private": true,
   "type": "module",
   "description": "Monorepo for vibe CLI - Git worktree management tool",
@@ -33,7 +33,7 @@
     "test:npm": "pnpm -C packages/npm test",
     "test:e2e": "cargo build --manifest-path rust/Cargo.toml -p vibe && pnpm -C packages/e2e test",
     "clean": "pnpm -r exec rm -rf node_modules dist",
-    "check:docs": "pnpm -C packages/docs lint && pnpm -C packages/docs format && pnpm -C packages/docs check",
+    "check:docs": "pnpm -C packages/docs run ci",
     "check:all": "pnpm run fmt:check && pnpm run lint && pnpm run check:i18n && pnpm run check:rust && pnpm run check:licenses && pnpm run test:npm && pnpm run test:e2e && pnpm run check:docs"
   },
   "devDependencies": {
@@ -41,5 +41,12 @@
     "oxfmt": "^0.52.0",
     "oxlint": "^1.67.0",
     "prettier": "^3.8.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "vite@<6.4.3": "6.4.3",
+      "lodash@<4.18.1": "4.18.1",
+      "yaml@<2.8.3": "2.8.3"
+    }
   }
 }

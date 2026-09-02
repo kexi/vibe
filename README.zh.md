@@ -554,11 +554,27 @@ files = [".env.local", ".secrets"]
 
 ### 配置合并
 
-当 `.vibe.toml` 与 `.vibe.local.toml` 同时存在时：
+数组字段支持以下写法：
 
 - **完全覆盖**：直接使用字段名（例如 `post_start = [...]`）
 - **在前面插入**：使用 `_prepend` 后缀（例如 `post_start_prepend = [...]`）
 - **在后面追加**：使用 `_append` 后缀（例如 `post_start_append = [...]`）
+
+`_prepend` / `_append` 并不局限于 `.vibe.local.toml`。在单个文件内（包括只有 `.vibe.toml` 的仓库），实际生效的数组为 `prepend + 字段 + append`：
+
+```toml
+# 仅有 .vibe.toml —— 没有 .vibe.local.toml
+[copy]
+files = [".env"]
+files_append = [".env.local"]
+
+# 结果: [".env", ".env.local"]
+```
+
+每个文件都会先按这种方式解析，然后 `.vibe.local.toml` 才会合并到共享文件的实际数组之上（本地的字段会替换它，本地的 `_prepend` / `_append` 会在其前后添加）。
+
+> [!IMPORTANT]
+> 旧版本会解析上述位置的这些字段，但会忽略它们。当时被信任的配置文件仍可继续使用；但如果它确实使用了新生效的位置，vibe 会要求你先检查该文件并运行一次 `vibe trust`，之后才会生效。
 
 **示例：**
 
@@ -603,8 +619,19 @@ Vibe 会在钩子执行期间显示实时进度树来展示任务状态。钩子
      ☒ cargo build --release
   ⠋ Copying files
    ┗ ⠋ .env.local
-     ☐ node_modules/
+     ⠋ node_modules/
 ```
+
+标记含义：
+
+| 标记 | 含义                                        |
+| ---- | ------------------------------------------- |
+| `⠋`  | 排队中或正在执行（开始后指示器会转动）      |
+| `☒`  | 已成功完成                                  |
+| `✗`  | 失败（红色），随后以 `(failed: …)` 给出原因 |
+| `⊘`  | 已放弃（暗色）——运行结束时仍未完成          |
+
+阶段行（外层的 `┗`）本身没有结果，它汇总其下所有任务的状态：只要还有任务未完成就显示 `⊘`；否则若有任务失败则显示 `✗` 并附上 `(failed: N task(s) failed)`；两者都没有时显示 `☒`。
 
 **注意**：在非 TTY 环境（例如 CI/CD）中进度显示会自动关闭，钩子输出将正常展示。
 

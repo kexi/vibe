@@ -556,11 +556,34 @@ files = [".env.local", ".secrets"]
 
 ### Configuration Merging
 
-When both `.vibe.toml` and `.vibe.local.toml` exist:
+Array fields support these forms:
 
 - **Complete override**: Use the field name directly (e.g., `post_start = [...]`)
 - **Prepend items**: Use `_prepend` suffix (e.g., `post_start_prepend = [...]`)
 - **Append items**: Use `_append` suffix (e.g., `post_start_append = [...]`)
+
+`_prepend` / `_append` are not limited to `.vibe.local.toml`. Within a single file
+(including a repository that has only `.vibe.toml`) the effective array is
+`prepend + field + append`:
+
+```toml
+# .vibe.toml only — no .vibe.local.toml
+[copy]
+files = [".env"]
+files_append = [".env.local"]
+
+# Result: [".env", ".env.local"]
+```
+
+Each file is resolved that way first; only then is `.vibe.local.toml` merged over the
+shared file's effective array — a local field replaces it, and a local
+`_prepend` / `_append` wraps it.
+
+> [!IMPORTANT]
+> Older versions parsed these fields in the positions above but ignored them. A config
+> file trusted back then keeps working, but if it actually uses one of the newly
+> effective positions, vibe asks you to review it and run `vibe trust` once before it
+> takes effect.
 
 **Example:**
 
@@ -605,8 +628,21 @@ Example progress display:
      ☒ cargo build --release
   ⠋ Copying files
    ┗ ⠋ .env.local
-     ☐ node_modules/
+     ⠋ node_modules/
 ```
+
+Markers:
+
+| Marker | Meaning                                                     |
+| ------ | ----------------------------------------------------------- |
+| `⠋`    | Pending or running (the spinner animates once it starts)     |
+| `☒`    | Completed successfully                                       |
+| `✗`    | Failed (red); the reason follows as `(failed: …)`            |
+| `⊘`    | Abandoned (dim) — still pending when the run ended           |
+
+A phase line (the outer `┗`) reports no result of its own; it aggregates the
+tasks below it. It shows `⊘` if any task was still pending, otherwise `✗` with
+`(failed: N task(s) failed)` if any task failed, otherwise `☒`.
 
 **Note**: Progress display auto-disables in non-TTY environments (e.g., CI/CD), and hook output will be shown normally.
 

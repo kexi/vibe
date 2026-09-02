@@ -18,6 +18,16 @@ on:
   pull_request:
     branches: [main, develop]
 
+# Same rationale as ci.yml: superseded PR runs are cancelled (a cold-store
+# `nix build` on `macos-latest` is one of the most expensive jobs in the repo),
+# while push runs get a per-run key so they are never grouped — and therefore
+# never evicted from the single pending slot a shared group would give them.
+# Every push run this workflow actually starts — i.e. one whose commit matched
+# the `paths` filter above — therefore keeps its own source-build verdict.
+concurrency:
+  group: nix-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -37,7 +47,7 @@ jobs:
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

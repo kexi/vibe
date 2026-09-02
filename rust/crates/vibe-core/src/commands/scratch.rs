@@ -43,7 +43,18 @@ where
 {
     let branch_name = generate_scratch_name(deps.git, clock)?;
     let outcome = start_command(deps, &branch_name, flags, opts)?;
-    log(deps.io, "Promote with: vibe rename <new-name>", opts);
+    // Only once the shell is actually being moved into the scratch worktree.
+    // `vibe rename` acts on the CURRENT worktree, so printing this after a run
+    // that emitted no cd would aim the suggested command at whatever branch the
+    // user is still standing in. A gated `pre_start` used to propagate its error
+    // and skip this line; now that it is downgraded to `Ok(Outcome::none())`,
+    // the hint has to check the cd for itself.
+    //
+    // Dry-run is exempt rather than folded in: it emits no cd by design and the
+    // line is part of the preview it exists to show.
+    if outcome.cd_path.is_some() || flags.dry_run {
+        log(deps.io, "Promote with: vibe rename <new-name>", opts);
+    }
     Ok(outcome)
 }
 
@@ -298,5 +309,66 @@ mod tests {
         assert!(io
             .stderr_text()
             .contains("Promote with: vibe rename <new-name>"));
+    }
+
+    /// A prompt that cancels the worktree conflict (the last choice).
+    struct CancelPrompt;
+    impl Prompt for CancelPrompt {
+        fn confirm(&self, _m: &str) -> bool {
+            false
+        }
+        fn select(&self, _m: &str, choices: &[String]) -> Result<usize> {
+            Ok(choices.len() - 1)
+        }
+    }
+
+    /// The promote hint is withheld when no cd was emitted. `vibe rename` acts
+    /// on the CURRENT worktree, so suggesting it while the shell is still in the
+    /// original directory would aim it at the wrong branch. This covers the
+    /// gated-`pre_start` regression too: that path returns the same cd-less
+    /// `Outcome` rather than the error it used to propagate.
+    #[test]
+    fn no_promote_hint_when_no_cd_is_emitted() {
+        let (_fx, io) = io_with_home();
+        let repo = fake_root_str("home/u/repo");
+        let scratch_wt = fake_root_str("home/u/repo-scratch-20260606-090503");
+        // The target path is already occupied by a DIFFERENT branch, so start
+        // prompts Overwrite/Reuse/Cancel — and this prompt cancels.
+        let git = MockGit::new(
+            &repo,
+            &format!(
+                "worktree {repo}\nbranch refs/heads/main\n\nworktree {scratch_wt}\nbranch refs/heads/other\n\n"
+            ),
+            "",
+        );
+        let clock = FakeClock::new(0, lt());
+        let (r, s, p, sin) = (NoResolver, NoScript, CancelPrompt, FakeStdin::none());
+        let hooks = FakeHookRunner::ok();
+        let exec = FakeCopyExecutor::new(CopyStrategyKind::Standard);
+        let symlink_creator = FakeSymlinkCreator::new();
+        let tracker = NullTracker;
+        let d = StartDeps {
+            io: &io,
+            git: &git,
+            resolver: &r,
+            script_runner: &s,
+            prompt: &p,
+            stdin: &sin,
+            hook_runner: &hooks,
+            executor: &exec,
+            symlink_creator: &symlink_creator,
+            tracker: &tracker,
+            version: V,
+        };
+        let outcome =
+            scratch_command(&d, &clock, &StartFlags::default(), OutputOptions::default()).unwrap();
+
+        assert_eq!(outcome, Outcome::none());
+        assert!(
+            !io.stderr_text()
+                .contains("Promote with: vibe rename <new-name>"),
+            "stderr: {}",
+            io.stderr_text()
+        );
     }
 }

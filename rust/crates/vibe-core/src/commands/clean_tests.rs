@@ -24,7 +24,8 @@ struct MockGit {
     worktree_list: String,
     uncommitted: bool,
     /// What `symbolic-ref refs/remotes/origin/HEAD --short` answers; `None` →
-    /// the ref is missing, so `get_default_branch` falls through to `master`.
+    /// the ref is missing. Kept so a test can declare a branch "the default"
+    /// and prove `clean` deletes it anyway.
     origin_head: Option<String>,
     pub calls: RefCell<Vec<Vec<String>>>,
 }
@@ -70,6 +71,14 @@ impl GitRunner for MockGit {
         if args.contains(&"status") {
             return Ok(if self.uncommitted { " M file" } else { "" }.to_string());
         }
+        // The zero-exit probe `resolve_default_branch` uses to confirm whether
+        // refs/remotes/origin/HEAD exists: empty output = confirmed absent.
+        if args.first() == Some(&"for-each-ref") && args.contains(&"refs/remotes/origin/HEAD") {
+            return Ok(match &self.origin_head {
+                Some(_) => "refs/remotes/origin/HEAD".to_string(),
+                None => String::new(),
+            });
+        }
         if args.contains(&"symbolic-ref") {
             return match &self.origin_head {
                 Some(h) => Ok(h.clone()),
@@ -80,8 +89,7 @@ impl GitRunner for MockGit {
             };
         }
         if args.contains(&"init.defaultBranch") {
-            // Unconfigured → `get_default_branch` lands on `master`, which no
-            // fixture branch here is named.
+            // Unconfigured: no fixture branch here is named `master`.
             return Err(VibeError::GitOperation {
                 command: args.join(" "),
                 message: "failed: key missing".into(),
@@ -457,6 +465,48 @@ fn fast_remove_disabled_uses_traditional_remove() {
     assert!(git.calls_contain(&["-C", "/main", "worktree", "remove", "--", &wt_path]));
 }
 
+// --- fast-remove falls back (and says why) when `.git` cannot be read ---
+
+#[test]
+fn unreadable_git_file_falls_back_to_traditional_remove_with_verbose_reason() {
+    // Fast remove must read the worktree's `.git` link file so it can recreate
+    // it after the move; when that read fails it silently degrades to the
+    // traditional path. This guarantees the degradation still removes the
+    // worktree AND that --verbose names the unreadable path, so a slow clean is
+    // diagnosable. `.git` as a directory is the portable unreadable case.
+    let fx = Fixture::new();
+    let wt = fx.mkdir("wt-feat");
+    fx.mkdir("wt-feat/.git");
+    let wt_path = wt.to_string_lossy().into_owned();
+
+    let io = FakeIo::new().with_env("HOME", fx.path().to_str().unwrap());
+    let git = MockGit::new(&wt_path, "/main", &two_worktrees("/main", &wt_path, "feat"));
+    let (r, p, sin, fk) = (
+        NoResolver,
+        ScriptPrompt { confirm: true },
+        FakeStdin::none(),
+        Fakes::new(),
+    );
+    let proc = FakeProcess::new(&wt_path);
+    let d = deps(&io, &git, &r, &p, &proc, &sin, &fk, &wt_path);
+    clean_command(&d, &CleanFlags::default(), OutputOptions::new(true, false)).unwrap();
+
+    // Fast remove was entered but abandoned: nothing was trashed.
+    assert!(fk.native.trash_calls.borrow().is_empty());
+    // The worktree is still removed, via the traditional path.
+    assert!(git.calls_contain(&["-C", "/main", "worktree", "remove", "--", &wt_path]));
+    // And the reason is reported under --verbose, naming the offending path.
+    let stderr = io.stderr_text();
+    assert!(
+        stderr.contains("Fast remove unavailable: cannot read"),
+        "verbose output must explain the fallback, got: {stderr}"
+    );
+    assert!(
+        stderr.contains(&wt.join(".git").display().to_string()),
+        "verbose output must name the unreadable .git path, got: {stderr}"
+    );
+}
+
 // --- delete-branch precedence ---
 
 #[test]
@@ -525,12 +575,23 @@ fn default_does_not_delete_branch() {
     assert!(!git.calls_contain(&["-C", "/main", "branch", "-d"]));
 }
 
-// --- default-branch guard (#578) ---
+// --- no default-branch guard (#578 reverted) ---
 
+/// What it guarantees: `--delete-branch` deletes the branch even when it is the
+/// one `origin/HEAD` calls the repository's default.
+///
+/// The guard removed here (issue #578) soft-skipped that deletion. It inferred
+/// the default from `refs/remotes/origin/HEAD`, which `git clone` writes and
+/// `git fetch` never updates afterwards — refreshing it takes an explicit
+/// `git remote set-head origin --auto`. Across 109 measured repositories it
+/// disagreed with the remote's real default in 7, every one of them a
+/// repository whose default had moved to `develop` while `origin/HEAD` still
+/// said `main`. It therefore
+/// announced protection while protecting the wrong branch on exactly the
+/// workflow it mattered most for. `git branch -d` remains the real safety net —
+/// it refuses an unmerged branch, and git refuses one checked out elsewhere.
 #[test]
-fn delete_branch_is_skipped_for_the_default_branch_but_the_worktree_still_goes() {
-    // A worktree on the default branch: `--delete-branch` must remove the
-    // worktree and KEEP the branch, saying why, and still exit successfully.
+fn delete_branch_deletes_a_branch_origin_head_calls_the_default() {
     let fx = Fixture::new();
     let wt = fx.mkdir("wt-develop");
     let wt_path = wt.to_string_lossy().into_owned();
@@ -556,52 +617,18 @@ fn delete_branch_is_skipped_for_the_default_branch_but_the_worktree_still_goes()
     let outcome = clean_command(&d, &flags, OutputOptions::default()).unwrap();
 
     assert_eq!(outcome, Outcome::cd("/main"));
-    assert!(git.calls_contain(&["-C", "/main", "worktree", "remove"]));
-    assert!(
-        !git.calls_contain(&["-C", "/main", "branch", "-d"]),
-        "the default branch must survive"
-    );
+    assert!(git.calls_contain(&["-C", "/main", "branch", "-d", "--", "develop"]));
     let out = io.stderr_text();
     assert!(
-        out.contains("Skipped deleting branch develop"),
-        "stderr: {out}"
+        !out.contains("default branch"),
+        "no default-branch message may survive: {out}"
     );
-    assert!(out.contains("--allow-default-branch"), "stderr: {out}");
 }
 
+/// What it guarantees: the removal costs `clean` no git calls. The guard used to
+/// resolve the default branch on every `--delete-branch` run.
 #[test]
-fn allow_default_branch_deletes_the_default_branch() {
-    let fx = Fixture::new();
-    let wt = fx.mkdir("wt-develop");
-    let wt_path = wt.to_string_lossy().into_owned();
-    let io = FakeIo::new().with_env("HOME", fx.path().to_str().unwrap());
-    let git = MockGit::new(
-        &wt_path,
-        "/main",
-        &two_worktrees("/main", &wt_path, "develop"),
-    )
-    .with_default_branch("develop");
-    let (r, p, sin, fk) = (
-        NoResolver,
-        ScriptPrompt { confirm: true },
-        FakeStdin::none(),
-        Fakes::new(),
-    );
-    let proc = FakeProcess::new(&wt_path);
-    let d = deps(&io, &git, &r, &p, &proc, &sin, &fk, &wt_path);
-    let flags = CleanFlags {
-        delete_branch: true,
-        allow_default_branch: true,
-        ..Default::default()
-    };
-    clean_command(&d, &flags, OutputOptions::default()).unwrap();
-    assert!(git.calls_contain(&["-C", "/main", "branch", "-d", "--", "develop"]));
-}
-
-#[test]
-fn the_guard_leaves_non_default_branches_alone() {
-    // Regression fence: with `develop` declared default, deleting `feat` still
-    // happens exactly as before.
+fn delete_branch_does_not_consult_origin_head() {
     let fx = Fixture::new();
     let wt = fx.mkdir("wt-feat");
     let wt_path = wt.to_string_lossy().into_owned();
@@ -621,7 +648,12 @@ fn the_guard_leaves_non_default_branches_alone() {
         ..Default::default()
     };
     clean_command(&d, &flags, OutputOptions::default()).unwrap();
+
     assert!(git.calls_contain(&["-C", "/main", "branch", "-d", "--", "feat"]));
+    assert!(
+        !git.calls_contain(&["symbolic-ref"]),
+        "resolving the default branch is no longer part of clean"
+    );
 }
 
 // --- G-10: delete-branch 4-tier precedence boundaries ---
@@ -655,6 +687,8 @@ fn trusted_clean_config(
         relative_path: ".vibe.toml".into(),
         hashes: vec![hash_content(content.as_bytes())],
         skip_hash_check: None,
+        config_semantics_rev: None,
+        config_semantics_revs: None,
     });
     save_user_settings(&io, &settings, V).unwrap();
 
@@ -853,6 +887,8 @@ fn pre_clean_runs_in_worktree_post_clean_in_main() {
         relative_path: ".vibe.toml".into(),
         hashes: vec![hash_content(content.as_bytes())],
         skip_hash_check: None,
+        config_semantics_rev: None,
+        config_semantics_revs: None,
     });
     save_user_settings(&io, &settings, V).unwrap();
 
@@ -908,6 +944,279 @@ fn pre_clean_runs_in_worktree_post_clean_in_main() {
     assert_eq!(calls[0].1, wt_path);
     assert_eq!(calls[1].0, "echo post");
     assert_eq!(calls[1].1, "/main");
+}
+
+// --- issue #601: a failing hook must not swallow the cd ---
+
+struct TrustResolver {
+    repos: std::collections::HashMap<String, RepoInfo>,
+}
+impl RepoResolver for TrustResolver {
+    fn repo_info(&self, path: &str) -> Option<RepoInfo> {
+        self.repos.get(path).cloned()
+    }
+    fn hash_file(&self, path: &str) -> std::result::Result<String, String> {
+        crate::hash::hash_file(path).map_err(|e| e.to_string())
+    }
+}
+
+/// A worktree directory holding a TRUSTED `.vibe.toml` with `content`.
+/// Returns (fixture, io, resolver, worktree path).
+fn trusted_worktree_config(content: &str) -> (Fixture, FakeIo, TrustResolver, String) {
+    use crate::hash::hash_content;
+    use crate::settings::{AllowEntry, RepoId};
+    use std::collections::HashMap;
+
+    let fx = Fixture::new();
+    let wt = fx.mkdir("wt-feat");
+    let wt_path = wt.to_string_lossy().into_owned();
+    std::fs::write(wt.join(".vibe.toml"), content).unwrap();
+
+    let io = FakeIo::new().with_env("HOME", fx.path().to_str().unwrap());
+    let mut settings = VibeSettings::default_settings();
+    settings.permissions.allow.push(AllowEntry {
+        repo_id: RepoId {
+            remote_url: None,
+            repo_root: Some(wt_path.clone()),
+        },
+        relative_path: ".vibe.toml".into(),
+        hashes: vec![hash_content(content.as_bytes())],
+        skip_hash_check: None,
+        config_semantics_rev: None,
+        config_semantics_revs: None,
+    });
+    save_user_settings(&io, &settings, V).unwrap();
+
+    let mut repos = HashMap::new();
+    repos.insert(
+        wt.join(".vibe.toml").to_string_lossy().into_owned(),
+        RepoInfo {
+            remote_url: None,
+            repo_root: wt_path.clone(),
+            relative_path: ".vibe.toml".into(),
+        },
+    );
+    (fx, io, TrustResolver { repos }, wt_path)
+}
+
+/// Drive `clean` over a trusted config with a hook runner failing `fail_suffix`.
+fn clean_with_failing_hook(
+    content: &str,
+    fail_suffix: &str,
+    flags: &CleanFlags,
+) -> (Fixture, FakeIo, String, MockGit, Fakes, Result<Outcome>) {
+    let (fx, io, resolver, wt_path) = trusted_worktree_config(content);
+    let git = MockGit::new(&wt_path, "/main", &two_worktrees("/main", &wt_path, "feat"));
+    let p = ScriptPrompt { confirm: true };
+    let sin = FakeStdin::none();
+    let fk = Fakes {
+        hooks: FakeHookRunner::failing_on(fail_suffix, 3, "hook stderr detail"),
+        ..Fakes::new()
+    };
+    let proc = FakeProcess::new(&wt_path);
+    let result = {
+        let d = CleanDeps {
+            io: &io,
+            git: &git,
+            resolver: &resolver,
+            prompt: &p,
+            process: &proc,
+            stdin: &sin,
+            hook_runner: &fk.hooks,
+            native: &fk.native,
+            spawner: &fk.spawner,
+            tracker: &fk.tracker,
+            clock: &fk.clock,
+            random: &fk.random,
+            cwd: &wt_path,
+            version: V,
+        };
+        clean_command(&d, flags, OutputOptions::default())
+    };
+    (fx, io, wt_path, git, fk, result)
+}
+
+/// A failing `pre_clean` hook aborts before anything is destroyed: no removal,
+/// no cd (the shell stays in the still-existing worktree), exit 0.
+#[test]
+fn failing_pre_clean_hook_aborts_without_removal_and_returns_none() {
+    let content = "[hooks]\npre_clean = [\"boom\"]\npost_clean = [\"echo post\"]\n";
+    let (_fx, io, wt_path, git, fk, result) =
+        clean_with_failing_hook(content, "boom", &CleanFlags::default());
+
+    let outcome = result.expect("a failing hook must not fail the command");
+    assert_eq!(outcome, Outcome::none());
+    assert!(!git.calls_contain(&["-C", "/main", "worktree", "remove"]));
+    assert!(fk.native.trash_calls.borrow().is_empty());
+    assert_eq!(
+        fk.hooks.calls.borrow().len(),
+        1,
+        "post_clean must not run after the abort"
+    );
+    assert!(io
+        .stderr_text()
+        .contains("Warning: Hook \"boom\" failed: exit code 3"));
+    let _ = wt_path;
+}
+
+/// A failing `post_clean` hook only warns: the worktree is already gone, so the
+/// cd to main must still be emitted (issue #601).
+#[test]
+fn failing_post_clean_hook_still_returns_cd_to_main() {
+    let content = "[hooks]\npost_clean = [\"boom\"]\n";
+    let (_fx, io, _wt_path, git, _fk, result) =
+        clean_with_failing_hook(content, "boom", &CleanFlags::default());
+
+    let outcome = result.expect("a failing hook must not fail the command");
+    assert_eq!(outcome, Outcome::cd("/main"));
+    assert!(git.calls_contain(&["-C", "/main", "worktree", "remove"]));
+    let stderr = io.stderr_text();
+    assert!(
+        stderr.contains("Warning: Hook \"boom\" failed: exit code 3"),
+        "stderr: {stderr}"
+    );
+    assert!(stderr.contains("has been removed."), "stderr: {stderr}");
+}
+
+/// Branch deletion is part of the already-succeeded removal, so a failing
+/// `post_clean` hook must not skip it.
+#[test]
+fn failing_post_clean_hook_still_deletes_branch_when_configured() {
+    let content = "[hooks]\npost_clean = [\"boom\"]\n[clean]\ndelete_branch = true\n";
+    let (_fx, _io, _wt_path, git, _fk, result) =
+        clean_with_failing_hook(content, "boom", &CleanFlags::default());
+
+    result.expect("a failing hook must not fail the command");
+    assert!(git.calls_contain(&["-C", "/main", "branch", "-d", "--", "feat"]));
+}
+
+/// Hook mode keeps the same split: a failing `pre_clean` skips the removal.
+#[test]
+fn hook_mode_failing_pre_clean_skips_removal() {
+    let content = "[hooks]\npre_clean = [\"boom\"]\n";
+    let (_fx, io, resolver, wt_path) = trusted_worktree_config(content);
+    let git = MockGit::new("/main", "/main", &two_worktrees("/main", &wt_path, "feat"));
+    let p = ScriptPrompt { confirm: true };
+    let json = serde_json::json!({ "worktree_path": &wt_path }).to_string();
+    let sin = FakeStdin::text(&json);
+    let fk = Fakes {
+        hooks: FakeHookRunner::failing_on("boom", 3, "hook stderr detail"),
+        ..Fakes::new()
+    };
+    let proc = FakeProcess::new("/main");
+    let flags = CleanFlags {
+        worktree_hook: true,
+        ..Default::default()
+    };
+    let outcome = {
+        let d = CleanDeps {
+            io: &io,
+            git: &git,
+            resolver: &resolver,
+            prompt: &p,
+            process: &proc,
+            stdin: &sin,
+            hook_runner: &fk.hooks,
+            native: &fk.native,
+            spawner: &fk.spawner,
+            tracker: &fk.tracker,
+            clock: &fk.clock,
+            random: &fk.random,
+            cwd: "/main",
+            version: V,
+        };
+        clean_command(&d, &flags, OutputOptions::default())
+            .expect("a failing hook must not fail the command")
+    };
+    assert_eq!(outcome, Outcome::none());
+    assert!(!git.calls_contain(&["-C", "/main", "worktree", "remove"]));
+    assert!(io
+        .stderr_text()
+        .contains("Warning: Hook \"boom\" failed: exit code 3"));
+}
+
+/// Hook mode emits no cd either way, but a failing `post_clean` must still not
+/// skip the branch deletion.
+#[test]
+fn hook_mode_failing_post_clean_still_returns_none_and_deletes_branch() {
+    let content = "[hooks]\npost_clean = [\"boom\"]\n[clean]\ndelete_branch = true\n";
+    let (_fx, io, resolver, wt_path) = trusted_worktree_config(content);
+    let git = MockGit::new("/main", "/main", &two_worktrees("/main", &wt_path, "feat"));
+    let p = ScriptPrompt { confirm: true };
+    let json = serde_json::json!({ "worktree_path": &wt_path }).to_string();
+    let sin = FakeStdin::text(&json);
+    let fk = Fakes {
+        hooks: FakeHookRunner::failing_on("boom", 3, "hook stderr detail"),
+        ..Fakes::new()
+    };
+    let proc = FakeProcess::new("/main");
+    let flags = CleanFlags {
+        worktree_hook: true,
+        ..Default::default()
+    };
+    let outcome = {
+        let d = CleanDeps {
+            io: &io,
+            git: &git,
+            resolver: &resolver,
+            prompt: &p,
+            process: &proc,
+            stdin: &sin,
+            hook_runner: &fk.hooks,
+            native: &fk.native,
+            spawner: &fk.spawner,
+            tracker: &fk.tracker,
+            clock: &fk.clock,
+            random: &fk.random,
+            cwd: "/main",
+            version: V,
+        };
+        clean_command(&d, &flags, OutputOptions::default())
+            .expect("a failing hook must not fail the command")
+    };
+    assert_eq!(outcome, Outcome::none());
+    assert!(git.calls_contain(&["-C", "/main", "worktree", "remove"]));
+    assert!(git.calls_contain(&["-C", "/main", "branch", "-d", "--", "feat"]));
+    assert!(io
+        .stderr_text()
+        .contains("Warning: Hook \"boom\" failed: exit code 3"));
+}
+
+/// The downgrade is narrow: a non-hook fatal error from the same run (an
+/// untrusted config) still fails at exit 1 with no cd.
+#[test]
+fn untrusted_config_stays_fatal_after_hook_downgrade() {
+    let content = "[hooks]\npost_clean = [\"boom\"]\n";
+    let (fx, io, mut resolver, wt_path) = trusted_worktree_config(content);
+    let _ = &fx;
+    // Drop the trust entry so `load_vibe_config` refuses the file.
+    resolver.repos.clear();
+    let git = MockGit::new(&wt_path, "/main", &two_worktrees("/main", &wt_path, "feat"));
+    let p = ScriptPrompt { confirm: true };
+    let sin = FakeStdin::none();
+    let fk = Fakes::new();
+    let proc = FakeProcess::new(&wt_path);
+    let err = {
+        let d = CleanDeps {
+            io: &io,
+            git: &git,
+            resolver: &resolver,
+            prompt: &p,
+            process: &proc,
+            stdin: &sin,
+            hook_runner: &fk.hooks,
+            native: &fk.native,
+            spawner: &fk.spawner,
+            tracker: &fk.tracker,
+            clock: &fk.clock,
+            random: &fk.random,
+            cwd: &wt_path,
+            version: V,
+        };
+        clean_command(&d, &CleanFlags::default(), OutputOptions::default()).unwrap_err()
+    };
+    assert_eq!(err.exit_code(), 1);
+    assert!(!git.calls_contain(&["-C", "/main", "worktree", "remove"]));
 }
 
 // --- SECURITY #3: hook-mode containment check ---
