@@ -406,11 +406,22 @@ EOF
 
 ### 5.2 Merge it
 
-`main` is protected, so the PR needs its checks green. Prefer auto-merge:
+`main` is protected, so the PR needs its checks green.
 
-```bash
-gh pr merge <pr-number> --auto --merge
-```
+Ask before landing it, with `AskUserQuestion`:
+
+- `question`: "Merge the release PR for `v<resolvedVersion>` into `main`?"
+- `header`: "Merge release"
+- `options`:
+  - `Merge with auto-merge` (Recommended) — `gh pr merge <pr-number> --auto --merge`
+  - `Hold — I'll merge it myself` — stop here and report the PR URL
+
+Why ask when the user already confirmed a version in Step 2: that answer chose a
+number, not a merge. This is the last checkpoint before the change is on `main`
+and the release becomes reachable, so the general rule in
+`.claude/rules/git-workflow.md` (open the PR and stop) holds here too. It also
+covers resuming into this step on an existing release PR, where neither Step 2.2
+nor 2.3 ever ran.
 
 ### 5.3 Wait for the post-merge CI run
 
@@ -762,7 +773,9 @@ done
 nix build .#binary --no-link   # must exit 0
 ```
 
-Commit, open a PR to `main`, and merge it like any other change.
+Commit and open a PR to `main`. Like any other change, that is where you
+stop — see `.claude/rules/git-workflow.md`; report the URL and let the user
+merge or ask for auto-merge.
 
 ### 7.6 Cleanup
 
