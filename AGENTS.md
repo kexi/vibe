@@ -68,13 +68,32 @@ WSL2 is also supported via Linux binaries.
 - Nushell
 - PowerShell
 
+## Architecture
+
+- **Implementation**: Rust binary (`rust/crates/vibe`); the worktree-management
+  logic lives in `rust/crates/vibe-core`, with the CoW clone code in
+  `rust/crates/vibe-native` (statically linked). The dead TypeScript
+  implementation was removed in Phase 6.
+- **Distribution**: npm ships a thin launcher shim (`packages/npm/bin/vibe.cjs`)
+  whose `optionalDependencies` are the four per-platform binary packages
+  (`packages/vibe-{linux,darwin}-{x64,arm64}`); the shim execs the binary for the
+  host platform. Homebrew (`Formula/`) and a `.deb` are also published.
+- **Purpose**: Git worktree management (start, clean, trust, untrust, verify, config, upgrade)
+- **CoW Optimization**: Copy-on-Write support for APFS, Btrfs, XFS filesystems
+- **Package Manager**: pnpm (monorepo). The surviving TS release scripts under
+  `scripts/` are run by `bun` (kept in the Nix dev shell as the script runner).
+
 ## Development Environment
+
+`just` is the entrypoint for every task. Run it with no arguments to list the
+recipes with their descriptions. Do not invoke `pnpm run` or `cargo` directly:
+the recipes give one name per task, and they wrap the `package.json` scripts
+that CI invokes, so local and CI runs cannot drift.
 
 - Toolchain: provided by `nix develop` (Rust via rustup, plus pnpm/node/bun for
   the docs/e2e packages and the TS release scripts)
-- Run: `cargo run --manifest-path rust/Cargo.toml -p vibe -- <command>`
-- Build (release): `pnpm run build:rust`
-  (`cargo build --manifest-path rust/Cargo.toml -p vibe --release`)
+- Run: `just run -- <command>`
+- Build (release): `just build`
 
 ## CLI Guidelines
 
@@ -101,13 +120,15 @@ Code should follow SOLID principles:
 
 ## Testing
 
-- Lint check (TS scripts): `pnpm run lint`
-- Format check (TS scripts): `pnpm run fmt:check`
-- Rust checks (fmt + clippy + tests): `pnpm run check:rust`
-- npm shim / release-script tests: `pnpm run test:npm`
-- E2E tests: `pnpm run test:e2e`
-- Run all checks: `pnpm run check:all`
-  (fmt:check, lint, check:rust, test:npm, test:e2e, check:docs)
+Run tasks through `just`; `just` with no arguments lists every recipe.
+
+- Lint check (TS scripts): `just lint`
+- Format check (TS scripts): `just fmt-check`
+- Justfile hygiene (format + a comment on every recipe): `just check-just`
+- Rust checks (fmt + clippy + tests): `just check-rust`
+- npm shim / release-script tests: `just test-npm`
+- E2E tests: `just test-e2e`
+- Run all checks: `just check`
 - All checks must pass before committing
 
 ## Documentation
@@ -120,7 +141,7 @@ Code should follow SOLID principles:
 - Title format: `<type>: <description>`
   - type: feat, fix, docs, refactor, test, chore
 - PR title and description must be written in English
-- Must pass `pnpm run lint` and `pnpm run fmt:check`
+- Must pass `just lint` and `just fmt-check`
 - Add or update tests for changed code
 
 ## Release

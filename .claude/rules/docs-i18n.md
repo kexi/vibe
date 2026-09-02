@@ -48,7 +48,7 @@ When modifying any `.mdx` file under `packages/docs/src/content/docs/`, **always
 3. **Creating a new English file** → Also create the `ja/` and `zh/` versions with translations
 4. **Deleting a file** → Delete all three versions
 
-`pnpm run check:i18n` (`just check-i18n`) asserts that the three sets of
+`just check-i18n` asserts that the three sets of
 relative paths are identical, so an unmirrored page fails CI.
 
 ## Path Mapping

@@ -22,14 +22,14 @@ direnv allow
 vibe is a Rust binary. Run it directly with cargo:
 
 ```bash
-cargo run --manifest-path rust/Cargo.toml -p vibe -- start feat/my-feature
-cargo run --manifest-path rust/Cargo.toml -p vibe -- clean
+just run -- start feat/my-feature
+just run -- clean
 ```
 
 Build a release binary (the artifact that ships) with:
 
 ```bash
-pnpm run build:rust   # -> rust/target/release/vibe
+just build   # -> rust/target/release/vibe
 ```
 
 Note: `vibe start` outputs shell commands for directory navigation, so wrap it
@@ -37,41 +37,50 @@ in `eval "$(vibe start ...)"` when you want it to change the current directory.
 
 ## Available Tasks
 
-All tasks are defined in `package.json` to ensure consistency between local development and CI:
+`just` is the entrypoint for every task. Run it with no arguments to list the
+recipes with their descriptions:
 
 ```bash
-# Run all checks (same as CI runs)
-pnpm run check:all
+just
+
+# Run all checks (the same set CI runs)
+just check
 
 # Individual checks
-pnpm run fmt:check     # Check TS-script formatting (oxfmt)
-pnpm run lint          # Run linter (oxlint) on the TS scripts
-pnpm run check:rust    # Rust: cargo fmt --check + clippy -D warnings + workspace tests
-pnpm run test:npm      # npm launcher-shim + release-script tests
-pnpm run test:e2e      # Build and run E2E tests against the Rust debug binary
-pnpm run check:docs    # Docs package checks
+just fmt-check      # Check TS-script formatting (oxfmt)
+just lint           # Run linter (oxlint) on the TS scripts
+just check-rust     # Rust: cargo fmt --check + clippy -D warnings + workspace tests
+just test-npm       # npm launcher-shim + release-script tests
+just test-e2e       # Build and run E2E tests against the Rust debug binary
+just check-docs     # Docs package checks
 
 # Auto-fix formatting
-pnpm run fmt           # TS scripts (oxfmt)
-pnpm run fmt:rust      # Rust (cargo fmt)
+just fmt            # TS scripts (oxfmt)
+just fmt-rust       # Rust (cargo fmt)
 ```
+
+The recipes wrap the `package.json` scripts, which remain the implementation
+and are what CI invokes. Use `just` locally so there is one name per task to
+remember; reach for `pnpm run` directly only when adding or debugging a recipe.
 
 ## Running CI Checks Locally
 
 Before pushing, run the same checks that CI will run:
 
 ```bash
-pnpm run check:all
+just check
 ```
 
 This runs:
 
-1. Format check (`pnpm run fmt:check`)
-2. Linter (`pnpm run lint`)
-3. Rust checks (`pnpm run check:rust`)
-4. npm shim / release-script tests (`pnpm run test:npm`)
-5. E2E tests (`pnpm run test:e2e`)
-6. Docs checks (`pnpm run check:docs`)
+1. Format check (`just fmt-check`)
+2. Linter (`just lint`)
+3. i18n check (`just check-i18n`)
+4. Rust checks (`just check-rust`)
+5. License checks (`just check-licenses`)
+6. npm shim / release-script tests (`just test-npm`)
+7. E2E tests (`just test-e2e`)
+8. Docs checks (`just check-docs`)
 
 ## Release Process
 
@@ -96,7 +105,7 @@ See [AGENTS.md](./AGENTS.md) for detailed branching workflow.
    git checkout -b release/vX.Y.Z
 
    # Bump every manifest from .bmp.yml, the single source of truth
-   pnpm run bmp -M          # -M major, -m minor, -p patch
+   just bmp -M              # -M major, -m minor, -p patch
 
    git commit -am "chore: release vX.Y.Z"
    git push -u origin release/vX.Y.Z

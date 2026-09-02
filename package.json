@@ -34,7 +34,9 @@
     "test:e2e": "cargo build --manifest-path rust/Cargo.toml -p vibe && pnpm -C packages/e2e test",
     "clean": "pnpm -r exec rm -rf node_modules dist",
     "check:docs": "pnpm -C packages/docs run ci",
-    "check:all": "pnpm run fmt:check && pnpm run lint && pnpm run check:i18n && pnpm run check:rust && pnpm run check:licenses && pnpm run test:npm && pnpm run test:e2e && pnpm run check:docs"
+    "check:all": "pnpm run fmt:check && pnpm run check:just && pnpm run lint && pnpm run check:i18n && pnpm run check:rust && pnpm run check:licenses && pnpm run test:npm && pnpm run test:e2e && pnpm run check:docs",
+    "fmt:just": "just --fmt --unstable",
+    "check:just": "just --fmt --unstable --check && bun run scripts/check-justfile-comments.ts"
   },
   "devDependencies": {
     "@oxlint/plugins": "^1.67.0",

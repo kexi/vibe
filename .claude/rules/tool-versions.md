@@ -17,7 +17,7 @@ globs:
   its `oven-sh/setup-bun` / `actions/setup-node` / `pnpm/action-setup` versions
   must specify the full patch version (e.g., `1.3.8`). Using `latest` or
   major-only versions is prohibited due to supply chain attack risks.
-- When updating versions, verify functionality (`nix develop` + `pnpm run check:all`)
+- When updating versions, verify functionality (`nix develop` + `just check`)
   before committing.
 
 ## Fixed-output hashes
