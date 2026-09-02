@@ -9,6 +9,17 @@ All notable changes to vibe are documented here.
 
 **Unreleased**
 
+### Added
+
+- `vibe list` gains BASE, AGE and STATUS columns, so an abandoned dirty worktree is distinguishable from active work without `cd`-ing into each one. The same values appear additively in `--json` as `name`, `base`, `head`, `last_commit_at`, `status` and `dirty_files`; a value vibe cannot determine degrades to `null` rather than failing the listing.
+- `vibe list` gains filtering and sorting: `--dirty` / `--clean`, `--base`, `--recent` / `--stale`, `--limit`, `--sort age|name|status` and `--reverse`. Filters AND-compose and apply before the sort, and `--reverse` applies before `--limit`, so `--sort age --reverse --limit 5` means "the five oldest". The default most-recently-used ordering is unchanged.
+- An opt-in `[summary]` section in `.vibe.toml` lets `vibe list` show a SUMMARY column describing what each worktree is for. vibe pipes the cache-missed worktrees to your command as JSON on stdin and reads `{name: summary}` back from stdout. The command is arbitrary shell, so it rides the existing SHA-256 trust gate: changing it revokes trust. A content-addressed cache keys on each worktree's HEAD and status, so a steady-state listing spawns nothing.
+- `vibe clean --claude-code-worktree-hook` now writes a fixed line to stderr when `pre_start` gated the worktree, so an agent learns what a human learns from the withheld `cd`. The stdout path and the zero exit code are unchanged.
+
+### Changed
+
+- **Breaking:** `.vibe.toml` files using `*_prepend` / `*_append` in a position where those fields were previously parsed but ignored now require re-running `vibe trust`. Making those positions effective turns dormant config into config that executes, and the trust hash covers a file's bytes rather than how vibe interprets them — so an upgrade alone could have started running a `post_start_append` entry that had never run before. vibe now records a config-semantics revision alongside each trust entry and fails closed with a message naming the affected fields. Configs that do not use those positions are unaffected.
+
 ### Removed
 
 - **Breaking:** the default-branch protection added in v3.1.0 is gone, along with the `--allow-default-branch` flag on `vibe clean` and `vibe rename`. Passing that flag is now an error. The guard inferred the default branch from `refs/remotes/origin/HEAD`, a ref `git clone` writes once and never refreshes; measured across 109 local repositories it disagreed with the remote's real default in 7, and every disagreement was the same shape — a repository whose default had moved to `develop` while `origin/HEAD` still said `main`. It therefore announced protection while failing on the workflow it mattered most for. `git branch -d` still refuses to delete an unmerged branch or one checked out in another worktree, and `vibe rename` still refuses a branch that has been pushed, which covers every shared default branch.
