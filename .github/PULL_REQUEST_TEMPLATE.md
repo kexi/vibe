@@ -3,7 +3,7 @@
 
   - PR title format: `<type>: <description>`
     Types: feat, fix, docs, refactor, test, chore
-  - Target branch: `develop` (never push directly to main)
+  - Target branch: `main` (never push directly to it)
   - Run `pnpm run check:all` before submitting
 -->
 

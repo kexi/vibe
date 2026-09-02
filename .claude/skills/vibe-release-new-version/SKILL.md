@@ -1,5 +1,5 @@
 ---
-description: Release a new version of vibe. Use for ANY release work — version bump, release preparation, develop→main release PR, dispatching release.yml, release notes / announcement tweet, or post-release follow-ups (flake.nix hashes). Trigger on "release", "リリース", "version bump", "vX.Y.Z を出す", or a request to publish/announce a new version. Read this BEFORE starting any release step, even a partial one.
+description: Release a new version of vibe. Use for ANY release work — version bump, release preparation, the release PR into main, dispatching release.yml, release notes / announcement tweet, or post-release follow-ups (flake.nix hashes). Trigger on "release", "リリース", "version bump", "vX.Y.Z を出す", or a request to publish/announce a new version. Read this BEFORE starting any release step, even a partial one.
 argument-hint: "[patch|minor|major|X.Y.Z]"
 allowed-tools: Bash(git *), Bash(gh *), Bash(pnpm *), Bash(bun *), Read, Edit, AskUserQuestion
 context: fork
@@ -32,23 +32,23 @@ git status --porcelain
 git branch --show-current
 ```
 
-- Must be on the `develop` branch
+- Must be on the `main` branch
 - If on a different branch, use `AskUserQuestion` to warn and confirm:
-  - `question`: "Current branch is `<branch>`, not `develop`. Continue anyway?"
+  - `question`: "Current branch is `<branch>`, not `main`. Continue anyway?"
   - `header`: "Branch check"
   - `options`:
-    - `Switch to develop` (Recommended) — abort and have the user run `git checkout develop`
+    - `Switch to main` (Recommended) — abort and have the user run `git checkout main`
     - `Continue on this branch` — proceed with the release on the current branch
 
 ### 1.3 Remote Sync
 
 ```bash
 git fetch origin
-git log HEAD..origin/develop --oneline
+git log HEAD..origin/main --oneline
 ```
 
 - If output exists: Remote has newer commits. Use `AskUserQuestion` to decide:
-  - `question`: "origin/develop has newer commits. Pull before continuing?"
+  - `question`: "origin/main has newer commits. Pull before continuing?"
   - `header`: "Remote sync"
   - `options`:
     - `Pull and continue` (Recommended) — run `git pull` then proceed
@@ -199,7 +199,8 @@ pnpm run bmp -m   # minor
 pnpm run bmp -j   # major
 ```
 
-(Prereleases: add `--preid <label>`; finalize a prerelease with `-r`.)
+(Prereleases are not published by this project; release.yml rejects any
+version that is not `X.Y.Z`.)
 
 **After the bump, restore `.bmp.yml`'s formatting.** bmp re-serializes its own
 config on every bump, stripping all comments and normalizing YAML styles, which
@@ -367,12 +368,16 @@ git push -u origin release/vX.Y.Z
 
 ---
 
-## Step 5: Create PR (release → develop)
+## Step 5: Create the release PR (release/vX.Y.Z → main)
+
+Under GitHub Flow the bump lands through ONE pull request. There is no second
+PR and no branch to sync back — the previous two-step `release → develop →
+main` dance, and the `BEHIND` gotcha it created, are gone with `develop`.
 
 ### 5.1 Create PR
 
 ```bash
-gh pr create --base develop --title "chore: release vX.Y.Z" --body "$(cat <<'EOF'
+gh pr create --base main --title "chore: release vX.Y.Z" --body "$(cat <<'EOF'
 ## Summary
 
 - Release version X.Y.Z
@@ -387,87 +392,43 @@ gh pr create --base develop --title "chore: release vX.Y.Z" --body "$(cat <<'EOF
 ---
 
 After merging this PR:
-1. Create a PR from `develop` to `main`
-2. Merge the `develop` → `main` PR
-3. Run the Release workflow (`gh workflow run release.yml --ref main`)
-4. The workflow builds the binaries, publishes the GitHub Release (tag `vX.Y.Z`), and npm publish follows automatically
+
+1. Let the post-merge CI run on `main` finish — that push is what runs the full
+   matrix (Linux, Windows, binaries, .deb, e2e, npm install). A PR only gets the
+   light gate, so this is the first time the release commit is validated on
+   every platform.
+2. Run the Release workflow (`gh workflow run release.yml --ref main`)
+3. The workflow builds the binaries, publishes the GitHub Release (tag
+   `vX.Y.Z`), and npm publish follows automatically
 EOF
 )"
 ```
 
-### 5.2 Guide User
+### 5.2 Merge it
 
-Display the PR URL and inform the user:
+`main` is protected, so the PR needs its checks green. Prefer auto-merge:
 
-1. Review and merge the PR
-2. After merging, Step 6 will create the `develop` → `main` PR
+```bash
+gh pr merge <pr-number> --auto --merge
+```
 
-**Note**: Wait until the PR is merged. After merging, invoke `/vibe-release-new-version` again or manually execute Step 6.
+### 5.3 Wait for the post-merge CI run
+
+The merge pushes to `main`, which starts the full CI matrix. Do NOT dispatch the
+release until it is green: the PR itself never ran Linux, Windows, e2e or the
+npm install matrix, so this run is the release commit's first full validation.
+
+```bash
+# Wait for the CI run on the merge commit to finish
+gh run list --workflow=ci.yml --branch main --limit 1 \
+  --json databaseId,status,conclusion,headSha
+```
+
+If it fails, fix forward with another PR rather than releasing.
 
 ---
 
-## Step 6: Create develop → main PR (after release PR merge)
-
-After the release PR is merged into develop, execute the following:
-
-### 6.1 Switch to develop branch
-
-```bash
-git checkout develop
-git pull origin develop
-```
-
-### 6.2 Create PR
-
-```bash
-gh pr create --base main --head develop --title "chore: merge develop into main for vX.Y.Z" --body "$(cat <<'EOF'
-## Summary
-
-- Merge develop into main for release vX.Y.Z
-
----
-
-After merging this PR:
-1. Run the Release workflow (`gh workflow run release.yml --ref main`)
-2. The workflow builds the binaries, publishes the GitHub Release (tag `vX.Y.Z`), and npm publish follows automatically
-EOF
-)"
-```
-
-### 6.3 Enable auto-merge, with the admin fallback for BEHIND
-
-```bash
-gh pr merge <pr> --auto --merge
-```
-
-**Known gotcha (hit in v3.0.0):** this PR's head (develop) is always BEHIND main
-— main carries the previous releases' merge commits that develop does not have —
-and with "require branches to be up to date" protection, auto-merge then never
-fires even with every check green. Check `gh pr view <pr> --json
-mergeStateStatus`; if it reports `BEHIND` and all checks pass, merge with the
-documented fallback:
-
-```bash
-gh pr merge <pr> --admin --merge
-```
-
-Do NOT "update branch" (merging main back into develop) to clear BEHIND — it
-pollutes develop with main's merge commits for no benefit.
-
-### 6.4 Guide User
-
-Display the PR URL and inform the user:
-
-1. Review and merge the PR (or let auto-merge / the admin fallback complete)
-2. After merging, execute Step 7 to finalize the release
-
-**Note**: Wait until the PR is merged. After merging, invoke `/vibe-release-new-version` again or manually execute Step 7.
-
----
-
-## Step 7: Run the Release Workflow (after develop → main PR merge)
-
-After the PR is merged, execute the following:
+## Step 7: Run the Release Workflow (after the post-merge CI run is green)
 
 ### 7.1 Switch to main branch
 
@@ -792,7 +753,7 @@ release.yml despite an old comment in `flake.nix` suggesting otherwise). Added
 after v3.0.0, where this was done as PR #576.
 
 ```bash
-git checkout -b chore/flake-hashes-vX.Y.Z origin/develop
+git checkout -b chore/flake-hashes-vX.Y.Z origin/main
 for a in vibe-linux-x64 vibe-linux-arm64 vibe-darwin-x64 vibe-darwin-arm64; do
   nix store prefetch-file --json \
     "https://github.com/kexi/vibe/releases/download/vX.Y.Z/$a" | jq -r "\"$a \" + .hash"
@@ -801,7 +762,7 @@ done
 nix build .#binary --no-link   # must exit 0
 ```
 
-Commit, open a PR to develop, and merge it like any other change.
+Commit, open a PR to `main`, and merge it like any other change.
 
 ### 7.6 Cleanup
 
@@ -819,8 +780,8 @@ git push origin --delete release/vX.Y.Z
 | Check              | Condition                     | On Failure     |
 | ------------------ | ----------------------------- | -------------- |
 | Clean working tree | No uncommitted changes        | **Abort**      |
-| Correct branch     | On develop branch             | Warn & confirm |
-| Remote sync        | In sync with origin/develop   | Warn & confirm |
+| Correct branch     | On main branch                | Warn & confirm |
+| Remote sync        | In sync with origin/main      | Warn & confirm |
 | Version format     | Semantic versioning compliant | **Abort**      |
 | Tag duplicate      | Tag does not already exist    | **Abort**      |
 

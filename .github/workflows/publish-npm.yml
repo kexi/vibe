@@ -28,7 +28,7 @@ on:
 # scheduled, which is not a property this repo controls; one group makes it
 # unreachable by construction. cancel-in-progress: false because a publish that
 # has already pushed some platform packages must finish, not be killed halfway —
-# same reasoning as release.yml and beta-release.yml.
+# same reasoning as release.yml.
 #
 # queue: max because the group's default is `queue: single` — at most ONE run
 # may sit pending, and a later arrival EVICTS it. This workflow triggers on
@@ -66,7 +66,8 @@ jobs:
   #   - the release must exist and be published — "Release succeeded but no
   #     release exists" is reachable only via dry_run (which deletes its
   #     draft), so that case is a benign skip (proceed=false), not a failure,
-  #   - the release must NOT be a prerelease (beta releases are excluded), and
+  #   - the release must NOT be a prerelease (defense in depth: this project
+#     publishes none, but a hand-created one must not trigger a publish), and
   #   - the release's target commit must equal the commit that was built
   #     (release.yml passes --target "$GITHUB_SHA").
   # All downstream jobs consume `resolve-release.outputs.{tag,version}` instead

@@ -9,7 +9,7 @@ description: >-
   missing match would mean "allowed" instead of "stop". Requiring a positive
   match fails closed on both an unexpected version/license pairing and on
   wording drift. This action is the single home of the era rule so the stable
-  and beta release workflows cannot drift apart.
+  and its verification cannot drift apart.
 
 inputs:
   version:

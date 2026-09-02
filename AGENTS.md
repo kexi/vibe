@@ -2,24 +2,42 @@
 
 ## Branch Strategy
 
-| Branch    | Purpose                                           |
-| --------- | ------------------------------------------------- |
-| `main`    | For releases. Stable versions only.               |
-| `develop` | For development. Merge target for topic branches. |
+GitHub Flow: `main` is the only long-lived branch.
+
+| Branch | Purpose                                                 |
+| ------ | ------------------------------------------------------- |
+| `main` | The single long-lived branch. Every PR targets it.      |
+| topic  | Short-lived, branched from `main`, deleted when merged. |
 
 ### Workflow
 
-1. Create a topic branch from `develop`
-2. After completing work, merge into `develop`
-3. When releasing, merge `develop` into `main`
+1. Create a topic branch from `main`
+2. Open a PR into `main`; merge it once CI is green
+3. To release, bump the version on a `release/vX.Y.Z` branch, merge that PR,
+   then dispatch the Release workflow on `main` — it creates the tag
 
 ```
-main ────●─────────────────●────
-         │                 ↑
-develop ─┴──●──●──●──●─────┴────
-             ↑  ↑
-            feat/a feat/b
+main ──●──●──●──●──●──●────
+       ↑  ↑     ↑     ↑
+    feat/a  fix/b  release/v4.1.0
+                         │
+                      tag v4.1.0
 ```
+
+There is no `develop` branch and no release branch that outlives its PR. A
+release is a tag on `main`, never a separate line of history.
+
+### Why the heavy CI runs after the merge
+
+A PR gets the light gate (lint, macOS tests, docs, pinact, gitleaks). The full
+matrix — Linux, Windows, cross-built binaries, `.deb`, e2e, the npm install
+matrix — runs on the push to `main`, i.e. right after the merge. Add the
+`ci-full` label to a PR to pull the Windows leg forward when a change touches
+Windows-specific behavior.
+
+Nothing ships from `main` directly: the Release workflow rebuilds every artifact
+from the tag it creates, so a red post-merge run blocks a release rather than
+reaching users.
 
 ## Supported Platforms
 

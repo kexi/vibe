@@ -77,46 +77,38 @@ This runs:
 
 ### Branching Model
 
-This project follows the git-flow branching model:
+This project follows GitHub Flow: `main` is the only long-lived branch.
 
-- `develop` - Active development branch. All feature branches merge here.
-- `main` - Stable release branch. Only receives merges from develop during releases.
+- `main` - The single long-lived branch. Every PR targets it.
+- Topic branches - Short-lived, branched from `main`, deleted when merged.
+
+A release is a tag on `main` created by the Release workflow, not a branch.
 
 See [AGENTS.md](./AGENTS.md) for detailed branching workflow.
 
 ### Releasing a New Version
 
-1. **Prepare the release on develop:**
+1. **Bump the version on a release branch:**
 
    ```bash
-   # Ensure you're on develop and up to date
-   git checkout develop
-   git pull origin develop
+   git checkout main
+   git pull origin main
+   git checkout -b release/vX.Y.Z
 
-   # Update version in package.json
-   # Update CHANGELOG if you maintain one
+   # Bump every manifest from .bmp.yml, the single source of truth
+   pnpm run bmp -M          # -M major, -m minor, -p patch
 
-   # Commit version bump
-   git add package.json
-   git commit -m "chore: Bump version to vX.X.X"
-   git push origin develop
+   git commit -am "chore: release vX.Y.Z"
+   git push -u origin release/vX.Y.Z
+   gh pr create --base main --title "chore: release vX.Y.Z"
    ```
 
-2. **Sync main with develop:**
+2. **Merge the release PR:**
 
-   Since main branch has protection rules, you must create a pull request:
-
-   ```bash
-   # Create a sync branch from develop
-   git checkout -b chore/release-vX.X.X
-   git push origin chore/release-vX.X.X
-
-   # Create PR targeting main
-   gh pr create --base main --title "chore: Release vX.X.X" \
-     --body "Sync main with develop for vX.X.X release"
-   ```
-
-   After the PR is merged:
+   `main` is protected, so the bump lands through the PR like any other change.
+   Merging it also triggers the full CI matrix on the push to `main`; let that
+   finish before releasing, since it is what validates Linux, Windows and the
+   packaged artifacts.
 
 3. **Run the Release workflow:**
 
@@ -187,7 +179,7 @@ See [AGENTS.md](./AGENTS.md) for detailed branching workflow.
    ```
 
    Copy the SRI hashes into the matching `platforms.*.hash` entries in
-   `flake.nix`, then verify and open a PR against `develop`:
+   `flake.nix`, then verify and open a PR against `main`:
 
    ```fish
    nix build .#binary; and ./result/bin/vibe --help
@@ -195,7 +187,7 @@ See [AGENTS.md](./AGENTS.md) for detailed branching workflow.
    git add flake.nix
    git commit -m "chore: update Nix binary hashes for X.X.X"
    git push -u origin chore/update-nix-binary-hashes-vX.X.X
-   gh pr create --base develop --title "chore: update Nix binary hashes for X.X.X" --body "Updates flake.nix binary hashes for vX.X.X release assets."
+   gh pr create --base main --title "chore: update Nix binary hashes for X.X.X" --body "Updates flake.nix binary hashes for vX.X.X release assets."
    ```
 
    Do not update `flake.lock` as part of the release. Update `nixpkgs` in a

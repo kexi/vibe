@@ -64,14 +64,14 @@ jobs:
         run: |
           VERSION=$(bun run scripts/get-version.ts)
           if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::Invalid stable version: $VERSION (prerelease suffixes belong to beta-release.yml)"
+            echo "::error::Invalid release version: $VERSION (expected X.Y.Z; this project publishes no prereleases)"
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
       # The era rule (2.x = Apache-2.0, >=3.0.0 = MIT, #553) lives in the
-      # shared composite action so this workflow and beta-release.yml cannot
+      # shared composite action so the release path and its verification cannot
       # drift apart; see the action for the full fail-closed rationale.
       - name: Assert LICENSE matches the release version's licensing era
         uses: ./.github/actions/assert-license-era
@@ -129,9 +129,10 @@ jobs:
           # without --latest.
           #
           # --exclude-drafts because an authenticated listing includes this
-          # repo's own leftover drafts, and --exclude-pre-releases because a beta
-          # never supersedes a stable. Assignment form so a failed listing fails
-          # the step rather than reading as "no releases exist".
+          # repo's own leftover drafts, and --exclude-pre-releases so any legacy
+          # `-beta.N` release left on GitHub cannot enter the comparison.
+          # Assignment form so a failed listing fails the step rather than
+          # reading as "no releases exist".
           RELEASE_LIST=$(gh release list --exclude-drafts --exclude-pre-releases \
             --limit 100 --json tagName)
           printf '%s' "$RELEASE_LIST" \
@@ -479,8 +480,8 @@ jobs:
             printf '%s\n' "$NOTES" > notes.md
             NOTES_ARGS=(--notes-file notes.md)
           else
-            # Anchor auto-notes to the previous stable so a beta prerelease in
-            # between does not shrink the changelog range.
+            # Anchor auto-notes to the previous stable release so the changelog
+            # range spans everything since it.
             PREV=$(gh release list --exclude-pre-releases --limit 1 \
               --json tagName --jq '.[0].tagName')
             NOTES_ARGS=(--generate-notes)
@@ -665,8 +666,8 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
-          # This job only mirrors stable releases; the beta channel formula
-          # (vibe-beta.rb) is owned by beta-release.yml.
+          # The tap carries one formula; `vibe` is both its name (used in the
+          # commit message below) and its template filename.
           FORMULA_NAME="vibe"
           FORMULA_TEMPLATE="vibe.rb"
 
@@ -710,7 +711,7 @@ jobs:
 
           # The tap is a separately-published statement of vibe's license; a
           # formula still claiming the pre-v3 Apache-2.0 terms must not ship.
-          # The check itself is shared with beta-release.yml (../vibe-source is
+          # The check runs against the release's own source tree (../vibe-source is
           # this repo's checkout — the same tree the formula was copied from).
           bash ../vibe-source/scripts/assert-formula-license.sh "Formula/${FORMULA_TEMPLATE}"
 

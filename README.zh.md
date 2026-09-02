@@ -145,16 +145,6 @@ vibe start feat/new-feature --base origin/develop --track
 brew install kexi/tap/vibe
 ```
 
-### Homebrew Beta (macOS)
-
-用于测试最新的开发版本：
-
-```bash
-brew install kexi/tap/vibe-beta
-```
-
-> ⚠️ **警告**：Beta 版本基于 `develop` 分支构建，可能包含不稳定的功能。请仅用于测试。
-
 ### npm (Node.js 18+)
 
 ```bash

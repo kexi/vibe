@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
-    branches: [main, develop]
+    branches: [main]
     # `labeled` is not one of the default activity types (opened/synchronize/
     # reopened), so without it applying `ci-full` to an open PR would not start a
     # run — the label would only take effect on the next push, which defeats the
@@ -20,18 +20,18 @@ on:
 # irrelevant, so cancelling it frees the runners (notably the `macos-latest`
 # rust-macos job) immediately.
 #
-# (The full macOS/arm64/Windows matrix runs on pushes AND on PRs targeting
-# `main` — see the `github.event_name == 'push' || github.base_ref == 'main'`
-# guards below — so a cancelled PR run can be expensive too.)
+# (The full macOS/arm64/Windows matrix runs on pushes only — see the
+# `github.event_name == 'push'` guards below — so a PR run is the light gate
+# and a cancelled one is cheap.)
 #
 # Push runs deliberately get a per-run group key instead of the shared ref key.
 # `cancel-in-progress: false` alone is NOT enough to protect them: a concurrency
 # group holds at most ONE pending run, so a third push landing while one run is
 # in progress and another is still queued would evict — and mark as cancelled —
-# the queued middle commit. Every push to develop/main is a distinct commit that
-# must keep its own verdict (`build` is a required check, and pushes to develop
-# do arrive in bursts), so pushes must not share a group at all. `github.run_id`
-# is unique per run, which opts them out of grouping entirely.
+# the queued middle commit. Every push to `main` is a distinct commit that must
+# keep its own verdict (`build` is a required check, and merges do arrive in
+# bursts), so pushes must not share a group at all. `github.run_id` is unique
+# per run, which opts them out of grouping entirely.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -80,7 +80,7 @@ jobs:
         run: pnpm run check:licenses
 
   rust-linux:
-    if: github.event_name == 'push' || github.base_ref == 'main'
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
@@ -107,8 +107,8 @@ jobs:
 
   # macOS coverage matters because vibe-native's clonefile path and other
   # cfg(target_os = "macos") code is only compiled (and its tests only run) on a
-  # macOS runner. Keep it in the lightweight develop PR gate because macOS is the
-  # primary user platform; Linux still runs in the full validation path.
+  # macOS runner. Keep it in the lightweight PR gate because macOS is the primary
+  # user platform; Linux still runs in the post-merge validation path.
   rust-macos:
     runs-on: macos-latest
     steps:
@@ -150,12 +150,12 @@ jobs:
   # Windows runner, and they carry no cfg(windows) code of their own. Windows
   # PowerShell 5.1 is not exercised either (the wrapper targets pwsh 7).
   rust-windows:
-    # Normally full-run-only (push / release PRs into main), but the `ci-full`
-    # label opts a develop PR in, so a change touching Windows-only behavior can
-    # prove this leg BEFORE merge rather than discovering it on the push to
-    # develop. The workflow is read from the PR's merge commit, so labelling a PR
-    # that edits this file takes effect within that same PR.
-    if: github.event_name == 'push' || github.base_ref == 'main' || contains(github.event.pull_request.labels.*.name, 'ci-full')
+    # Normally post-merge only, but the `ci-full` label opts a PR in, so a change
+    # touching Windows-only behavior can prove this leg BEFORE merge rather than
+    # discovering it on the push to `main`. The workflow is read from the PR's
+    # merge commit, so labelling a PR that edits this file takes effect within
+    # that same PR.
+    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'ci-full')
     runs-on: windows-latest
     steps:
       - name: Harden Runner
@@ -180,7 +180,7 @@ jobs:
   # natively on a Windows runner (MSVC provides the C toolchain
   # aws-lc-sys/aws-lc-rs needs).
   build-rust-binaries:
-    if: github.event_name == 'push' || github.base_ref == 'main'
+    if: github.event_name == 'push'
     strategy:
       fail-fast: false
       matrix:
@@ -236,7 +236,7 @@ jobs:
           fi
 
   build-deb:
-    if: github.event_name == 'push' || github.base_ref == 'main'
+    if: github.event_name == 'push'
     strategy:
       matrix:
         include:
@@ -298,7 +298,7 @@ jobs:
           fi
 
   e2e-test:
-    if: github.event_name == 'push' || github.base_ref == 'main'
+    if: github.event_name == 'push'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -358,7 +358,7 @@ jobs:
   # package only: building all five targets per runner is unnecessary, and a
   # foreign-arch binary could not be smoke-run anyway.
   npm-install-matrix:
-    if: github.event_name == 'push' || github.base_ref == 'main'
+    if: github.event_name == 'push'
     needs: build-rust-binaries
     strategy:
       fail-fast: false
@@ -563,7 +563,11 @@ jobs:
         id: docs_changes
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" != "pull_request" ] || [ "${{ github.base_ref }}" = "main" ]; then
+          # A push to `main` always runs; a PR consults the path filter below.
+          # (This used to also run unconditionally for PRs into `main`, which
+          # meant release PRs. Under GitHub Flow every PR targets `main`, so
+          # keeping that clause would disable the filter for all of them.)
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -694,7 +698,7 @@ jobs:
           DOCS: ${{ needs.docs.result }}
           PINACT_VERIFY: ${{ needs.pinact-verify.result }}
           GITLEAKS: ${{ needs.gitleaks.result }}
-          LIGHT_DEVELOP_PR: ${{ github.event_name == 'pull_request' && github.base_ref == 'develop' }}
+          LIGHT_PR: ${{ github.event_name == 'pull_request' }}
         run: |
           set -euo pipefail
 
@@ -719,7 +723,7 @@ jobs:
                 echo "$job: $result"
                 ;;
               skipped)
-                if [ "$LIGHT_DEVELOP_PR" = "true" ] && [[ "$full_only_jobs" == *" $job "* ]]; then
+                if [ "$LIGHT_PR" = "true" ] && [[ "$full_only_jobs" == *" $job "* ]]; then
                   echo "$job: $result"
                 else
                   echo "::error::$job was skipped unexpectedly"
