@@ -686,12 +686,21 @@ mod tests {
         // parent, and ENOENT is a SOFT error, so without `ensure_parent` the
         // copy silently demoted to the Standard fallback and reported success —
         // CoW was never used for exactly the monorepo layout that needs it.
+        //
+        // `requiring_existing_parent` makes the fake enforce that precondition,
+        // so this asserts the clone SUCCEEDED rather than merely that it was
+        // attempted: a fake that always succeeds would pass even with
+        // `ensure_parent` moved after the native call.
         let fx = Fixture::new();
         let src = fx.mkdir("src");
+        fx.write("src/inner.txt", "cloned");
         let dest = fx.path().join("packages").join("app").join("node_modules");
-        assert!(!dest.parent().unwrap().exists(), "precondition: parent absent");
+        assert!(
+            !dest.parent().unwrap().exists(),
+            "precondition: parent absent"
+        );
 
-        let native = FakeNative::macos();
+        let native = FakeNative::macos().requiring_existing_parent();
         let exec = RealCopyExecutor::new(&native, &FakeProbe::none());
         assert_eq!(exec.directory_strategy(), CopyStrategyKind::Clonefile);
 
@@ -705,7 +714,36 @@ mod tests {
         assert_eq!(
             native.clone_dir_calls.borrow().len(),
             1,
-            "the clone must actually run, not be skipped in favour of a fallback"
+            "exactly one clone attempt, and it must not have needed a retry"
+        );
+        // The fallback would have copied the contents; the clone (a fake) does
+        // not. An empty destination is therefore the proof that the CLONE won.
+        assert!(
+            !dest.join("inner.txt").exists(),
+            "contents present means the Standard fallback ran, i.e. the clone failed"
+        );
+    }
+
+    #[test]
+    fn a_missing_parent_would_otherwise_defeat_the_clone() {
+        // Pins the failure this fix removes, so the regression above cannot
+        // silently become vacuous: with the same fake but no parent created,
+        // the clone fails soft and the Standard fallback copies every byte.
+        let fx = Fixture::new();
+        let src = fx.mkdir("src");
+        fx.write("src/inner.txt", "copied the slow way");
+        let dest = fx.path().join("packages").join("app").join("node_modules");
+
+        let native = FakeNative::macos().requiring_existing_parent();
+        // Call the strategy primitive directly, WITHOUT `ensure_parent`, to
+        // reproduce pre-fix behaviour.
+        let err = native
+            .clone_directory(Path::new(src.to_str().unwrap()), &dest)
+            .unwrap_err();
+        assert!(
+            matches!(err, CopyError::Failed(_)),
+            "a missing parent must be a SOFT error — that softness is what made \
+             the bug invisible: it fell back and reported success"
         );
     }
 

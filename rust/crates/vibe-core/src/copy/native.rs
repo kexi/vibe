@@ -175,6 +175,9 @@ mod fake {
         forced_error: Option<CopyError>,
         /// When set, `clone_directory` writes `dest/<name>` before failing.
         debris: Option<String>,
+        /// When set, a clone whose destination parent does not exist fails with
+        /// ENOENT, the way the real `clonefile(2)` does.
+        requires_existing_parent: bool,
         pub clone_file_calls: RefCell<Vec<(String, String)>>,
         pub clone_dir_calls: RefCell<Vec<(String, String)>>,
         pub trash_calls: RefCell<Vec<String>>,
@@ -190,6 +193,7 @@ mod fake {
                 platform: "darwin",
                 forced_error: None,
                 debris: None,
+                requires_existing_parent: false,
                 clone_file_calls: RefCell::new(vec![]),
                 clone_dir_calls: RefCell::new(vec![]),
                 trash_calls: RefCell::new(vec![]),
@@ -205,6 +209,7 @@ mod fake {
                 platform: "linux",
                 forced_error: None,
                 debris: None,
+                requires_existing_parent: false,
                 clone_file_calls: RefCell::new(vec![]),
                 clone_dir_calls: RefCell::new(vec![]),
                 trash_calls: RefCell::new(vec![]),
@@ -222,6 +227,7 @@ mod fake {
                 platform: "windows",
                 forced_error: None,
                 debris: None,
+                requires_existing_parent: false,
                 clone_file_calls: RefCell::new(vec![]),
                 clone_dir_calls: RefCell::new(vec![]),
                 trash_calls: RefCell::new(vec![]),
@@ -237,6 +243,7 @@ mod fake {
                 platform: "unsupported",
                 forced_error: None,
                 debris: None,
+                requires_existing_parent: false,
                 clone_file_calls: RefCell::new(vec![]),
                 clone_dir_calls: RefCell::new(vec![]),
                 trash_calls: RefCell::new(vec![]),
@@ -265,6 +272,15 @@ mod fake {
             self.debris = Some(name.to_string());
             self
         }
+
+        /// Model the real `clonefile(2)` precondition: a destination whose
+        /// parent does not exist fails with ENOENT. Without this the fake
+        /// succeeds no matter what the filesystem looks like, so a test cannot
+        /// tell a clone that ran from one that was skipped for the fallback.
+        pub fn requiring_existing_parent(mut self) -> Self {
+            self.requires_existing_parent = true;
+            self
+        }
     }
 
     impl NativeClone for FakeNative {
@@ -284,6 +300,13 @@ mod fake {
                 src.to_string_lossy().into_owned(),
                 dest.to_string_lossy().into_owned(),
             ));
+            let parent_missing = dest.parent().is_some_and(|p| !p.is_dir());
+            if self.requires_existing_parent && parent_missing {
+                // Soft, exactly like the real errno: the caller falls back.
+                return Err(CopyError::Failed(
+                    "simulated ENOENT: destination parent does not exist".into(),
+                ));
+            }
             if let Some(name) = &self.debris {
                 let _ = std::fs::create_dir_all(dest);
                 let _ = std::fs::write(dest.join(name), b"truncated");
