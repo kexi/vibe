@@ -627,7 +627,7 @@ refuses any version older than the newest existing stable release
 job re-asserts that immediately before `gh release edit --draft=false --latest`
 moves the pointer. Without it, re-running an old unpublished run would publish
 that old version as latest, and `update-homebrew`'s `isLatest` check — which
-reads GitHub's pointer *after* that edit — would happily mirror it. Nothing is
+reads GitHub's pointer _after_ that edit — would happily mirror it. Nothing is
 built or tagged when this fires; dispatch a fresh release for the current
 version instead.
 
@@ -639,7 +639,9 @@ installable by exact version.
 
 ### 7.4 Generate Twitter Post Text
 
-Generate Twitter post text for the release announcement. Include Twitter mentions to thank contributors.
+Generate Twitter post text for the release announcement, write it to a `.txt`
+file in the scratchpad (7.4.4), and include Twitter mentions to thank
+contributors.
 
 #### 7.4.1 Get Contributor Information
 
@@ -701,12 +703,12 @@ Example: `GitHub: 7tsuno → Twitter: @7_tsuno` → Use `@7_tsuno` for GitHub us
 - Key changes
 - Thanks to contributors (when applicable)
 - Link to release page
-- Hashtags
 
 **Do not include:**
 
 - Installation instructions (omit)
 - Website link (omit)
+- Hashtags (omit)
 
 **English version (main, with mentions):**
 
@@ -721,8 +723,6 @@ vibe is a super fast Git worktree management tool with Copy-on-Write optimizatio
 🙏 Thanks to @contributor!
 
 🔗 https://github.com/kexi/vibe/releases/tag/vX.Y.Z
-
-#vibe #git #worktree #devtools
 ```
 
 **When 3 or more contributors (reply tweet):**
@@ -736,7 +736,52 @@ Do not include mentions in the main tweet. Post the following as a reply:
 Your contributions make vibe better! 🎉
 ```
 
-**Note:** Be mindful of the 280 character limit. Adjust the summary as needed.
+#### 7.4.4 Write the post to a file and verify its length
+
+Write the finished post to a **`.txt` file in the scratchpad directory**, named
+`vibe-vX.Y.Z-tweet.txt` — do not deliver it only as chat text. The user copies
+it into X by hand, and a post pasted out of a terminal transcript picks up
+wrapping and indentation that are invisible until they reach the compose box.
+A file also survives the session.
+
+Then **measure it**; do not eyeball the 280-character limit. X counts every URL
+as 23 characters no matter its real length, and emoji count as 2, so a draft
+that looks short in the editor is routinely over.
+
+**Write each candidate to its own `.txt` and measure the files.** Do not hold
+drafts in shell variables: the post contains backticks, `*`, `#` and newlines,
+so every variant has to be re-quoted by hand and one missed escape silently
+changes the text being counted. Files are also what you hand the user, so the
+thing you measured is the thing they paste.
+
+```bash
+# One file per candidate: vibe-vX.Y.Z-tweet.txt, -tweet-b.txt, -tweet-c.txt …
+# Write them with the Write tool, then measure them all at once:
+URL_LEN=$(printf '%s' 'https://github.com/kexi/vibe/releases/tag/vX.Y.Z' | wc -m | tr -d ' ')
+for f in "$SCRATCHPAD"/vibe-vX.Y.Z-tweet*.txt; do
+  raw=$(wc -m < "$f" | tr -d ' ')
+  printf '%-40s %s / 280\n' "$(basename "$f")" "$((raw - URL_LEN + 23))"
+done
+```
+
+Keep the candidate that fits and delete the rest, so only the final post is left
+in the scratchpad.
+
+Aim for ~270 so a late edit does not push it over. If it does not fit, cut in
+this order — the link and the version are the parts that must survive:
+
+1. Shorten the description line (`vibe is a super fast Git worktree management
+tool with Copy-on-Write optimization` → `A super fast Git worktree tool with
+Copy-on-Write optimization`).
+2. Compress each highlight to a noun phrase; drop the third highlight before
+   dropping the breaking-change one.
+
+**Keep the template's structure.** The sections are the description, `✨
+Highlights:` (1-3 lines), the optional thanks, and the link. Do not invent new
+sections — a separate `⚠️ Breaking:` block, an install line, a website link,
+a hashtag footer. A breaking change is one of the highlight lines, prefixed
+`Breaking:`, and it outranks feature lines when space is short: it is the one
+thing a reader must act on.
 
 ### 7.5 Refresh flake.nix binary hashes (post-release PR)
 
@@ -787,7 +832,7 @@ workflow's `prepare` job, so a stale local check cannot slip through.
 ## Automated CI
 
 Releasing is workflow-first (Immutable Releases-safe): a GitHub Release is
-never a trigger, it is the *output* of the Release workflow.
+never a trigger, it is the _output_ of the Release workflow.
 
 - `release.yml` (dispatched via Step 7.3): builds the binaries and `.deb`s,
   then creates the GitHub Release as a **draft** with all assets attached,
