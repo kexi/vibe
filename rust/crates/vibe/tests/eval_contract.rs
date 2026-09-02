@@ -1086,9 +1086,9 @@ fn list_writes_the_table_to_stderr_leaving_stdout_empty() {
     // non-current row and so contributes no token.
     assert_eq!(cells[0], "feature", "unexpected row shape: {row:?}");
     // The fixture repo has no remote and no `init.defaultBranch`, so
-    // `get_default_branch` reaches its documented last-resort `master` — even
+    // `resolve_default_branch` reaches its documented last-resort `master` — even
     // though `git init -b main` named the branch differently. The assertion is
-    // that BASE resolved to a NAME at all; which name is `get_default_branch`'s
+    // that BASE resolved to a NAME at all; which name is `resolve_default_branch`'s
     // contract, covered by its own unit tests.
     assert_ne!(cells[1], "-", "BASE did not resolve: {row:?}");
     assert!(

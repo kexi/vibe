@@ -154,13 +154,11 @@ pub const SUBCOMMANDS: &[CommandSpec] = &[
         name: "rename",
         description: "Rename the current worktree's branch and directory",
         positional_completion: None,
-        flags: &[
-            FlagSpec::flag_short("dry-run", "n", "Show what would be executed"),
-            FlagSpec::flag(
-                "allow-default-branch",
-                "Allow operating on the repository's default branch",
-            ),
-        ],
+        flags: &[FlagSpec::flag_short(
+            "dry-run",
+            "n",
+            "Show what would be executed",
+        )],
     },
     CommandSpec {
         name: "clean",
@@ -173,10 +171,6 @@ pub const SUBCOMMANDS: &[CommandSpec] = &[
                 "Delete the branch after removing the worktree",
             ),
             FlagSpec::flag("keep-branch", "Keep the branch after removing the worktree"),
-            FlagSpec::flag(
-                "allow-default-branch",
-                "Allow operating on the repository's default branch",
-            ),
         ],
     },
     CommandSpec {

@@ -237,9 +237,6 @@ pub struct RenameArgs {
     pub new_name: Option<String>,
     #[arg(short = 'n', long = "dry-run")]
     pub dry_run: bool,
-    /// Allow operating on the repository's default branch.
-    #[arg(long = "allow-default-branch")]
-    pub allow_default_branch: bool,
 }
 
 #[derive(Debug, Args)]
@@ -253,9 +250,6 @@ pub struct CleanArgs {
     /// Keep the branch after removing the worktree.
     #[arg(long = "keep-branch")]
     pub keep_branch: bool,
-    /// Allow operating on the repository's default branch.
-    #[arg(long = "allow-default-branch")]
-    pub allow_default_branch: bool,
     /// Claude Code worktree-hook mode (reads JSON from stdin).
     #[arg(long = "claude-code-worktree-hook")]
     pub worktree_hook: bool,

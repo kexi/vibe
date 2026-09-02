@@ -4,16 +4,14 @@
 //! pushed-branch guard, path resolution (from the MAIN worktree), dry-run output
 //! and move→chdir→rename sequence (with rollback on failure) mirror the TS
 //! byte-for-byte on the success/normal paths. Two ERROR-ONLY divergences harden
-//! the move/chdir sequence — see the SECURITY notes at points 4a/4b. A third
-//! divergence refuses to rename the repository's default branch unless
-//! `--allow-default-branch` is given.
+//! the move/chdir sequence — see the SECURITY notes at points 4a/4b.
 
 use crate::commands::{Outcome, ProcessControl};
 use crate::config_loader::load_vibe_config;
 use crate::error::{Result, VibeError};
 use crate::git::{
-    branch_exists, find_worktree_by_branch, get_default_branch, get_main_worktree_path,
-    get_worktree_by_path, is_main_worktree, sanitize_branch_name, GitRunner,
+    branch_exists, find_worktree_by_branch, get_main_worktree_path, get_worktree_by_path,
+    is_main_worktree, sanitize_branch_name, GitRunner,
 };
 use crate::io::Io;
 use crate::mru::update_mru_branch;
@@ -53,8 +51,6 @@ where
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RenameFlags {
     pub dry_run: bool,
-    /// Opt out of the default-branch guard below.
-    pub allow_default_branch: bool,
 }
 
 /// Run `vibe rename <new_name>`.
@@ -109,32 +105,16 @@ where
         return Ok(Outcome::cd(old_path));
     }
 
-    // Default-branch guard. Renaming `main`/`develop` breaks every clone, PR and
-    // CI reference pointing at it, so this is a HARD error — unlike `clean`,
-    // where the branch is incidental and skipping its deletion still leaves a
-    // useful result. Placed BEFORE the pushed-branch guard so the message names
-    // the real problem: a default branch that happens to be unpushed (a fresh
-    // repo with no remote) must still be refused.
-    if !flags.allow_default_branch {
-        let default_branch = get_default_branch(deps.git);
-        if old_name == default_branch {
-            error_log(
-                deps.io,
-                &format!("Error: '{old_name}' is this repository's default branch"),
-            );
-            error_log(
-                deps.io,
-                "Renaming it would break clones, open pull requests and CI references.",
-            );
-            error_log(
-                deps.io,
-                "Pass --allow-default-branch if you really want to rename it.",
-            );
-            return Err(VibeError::AlreadyReported);
-        }
-    }
-
     // Pushed-branch guard: refuse to rename a branch tracking a remote.
+    //
+    // This is the guard that actually protects a shared branch, and it protects
+    // it for a reason git can verify locally: the branch has an upstream. A
+    // separate default-branch guard used to sit in front of it (issue #578) and
+    // was removed — it inferred the default from `refs/remotes/origin/HEAD`,
+    // which `git clone` writes and `git fetch` never updates afterwards, so it
+    // disagreed with the remote's real default in 7 of 109 measured
+    // repositories. Every shared default branch worth protecting is pushed, so
+    // this guard already covers the case the removed one was aiming at.
     if let BranchUpstream::Remote(remote) = get_branch_upstream(deps.git, &old_name)? {
         error_log(
             deps.io,
@@ -399,12 +379,6 @@ mod tests {
         /// What `symbolic-ref refs/remotes/origin/HEAD --short` returns, or
         /// `None` → the ref is missing (no remote HEAD configured).
         origin_head: Option<String>,
-        /// What `init.defaultBranch` is set to, if anything.
-        init_default_branch: Option<String>,
-        /// Make the `for-each-ref refs/remotes/origin/HEAD` confirmation probe
-        /// FAIL, standing in for a refs-backend hiccup. It must cost confidence
-        /// in the answer, never a resolution step.
-        fail_origin_head_probe: bool,
         /// Fail any call whose args START WITH this vector (e.g. ["branch","-m"]).
         fail_on: Option<Vec<String>>,
         /// Fail any call whose args EXACTLY equal this vector. Unlike `fail_on`'s
@@ -422,8 +396,6 @@ mod tests {
                 upstream_remote: None,
                 existing_branches: vec![],
                 origin_head: None,
-                init_default_branch: None,
-                fail_origin_head_probe: false,
                 fail_on: None,
                 fail_on_exact: None,
                 calls: RefCell::new(vec![]),
@@ -450,17 +422,6 @@ mod tests {
         /// Make `origin/HEAD` resolve to `branch`, i.e. declare it the default.
         fn with_default_branch(mut self, branch: &str) -> Self {
             self.origin_head = Some(format!("origin/{branch}"));
-            self
-        }
-        /// Declare the default branch through `init.defaultBranch` instead —
-        /// the shape of a repository with no remote.
-        fn with_init_default_branch(mut self, branch: &str) -> Self {
-            self.init_default_branch = Some(branch.to_string());
-            self
-        }
-        /// Break the origin/HEAD confirmation probe.
-        fn with_failing_origin_head_probe(mut self) -> Self {
-            self.fail_origin_head_probe = true;
             self
         }
         fn calls_contain(&self, prefix: &[&str]) -> bool {
@@ -500,15 +461,9 @@ mod tests {
             if args.contains(&"list") && args.contains(&"worktree") {
                 return Ok(self.worktree_list.clone());
             }
-            // The zero-exit probe `resolve_default_branch` uses to confirm whether
-            // refs/remotes/origin/HEAD exists: empty output = confirmed absent.
+            // Answered so a test can declare a branch "the default" and assert
+            // that `rename` now ignores it. Nothing in `rename` asks any more.
             if args.first() == Some(&"for-each-ref") && args.contains(&"refs/remotes/origin/HEAD") {
-                if self.fail_origin_head_probe {
-                    return Err(VibeError::GitOperation {
-                        command: args.join(" "),
-                        message: "failed: cannot enumerate refs".into(),
-                    });
-                }
                 return Ok(match &self.origin_head {
                     Some(_) => "refs/remotes/origin/HEAD".to_string(),
                     None => String::new(),
@@ -524,13 +479,8 @@ mod tests {
                 };
             }
             if args.contains(&"init.defaultBranch") {
-                return match &self.init_default_branch {
-                    // `--default ""` makes an unset key a successful, EMPTY
-                    // answer; `get_default_branch` then falls back to `master`,
-                    // which no fixture branch is named.
-                    Some(b) => Ok(b.clone()),
-                    None => Ok(String::new()),
-                };
+                // `--default ""` makes an unset key a successful, EMPTY answer.
+                return Ok(String::new());
             }
             if args.contains(&"--get") {
                 // branch.<name>.remote lookup.
@@ -810,10 +760,7 @@ mod tests {
         let outcome = rename_command(
             &d,
             "renamed",
-            RenameFlags {
-                dry_run: true,
-                ..RenameFlags::default()
-            },
+            RenameFlags { dry_run: true },
             OutputOptions::default(),
         )
         .unwrap();
@@ -1094,10 +1041,7 @@ mod tests {
         let outcome = rename_command(
             &d,
             "renamed",
-            RenameFlags {
-                dry_run: true,
-                ..RenameFlags::default()
-            },
+            RenameFlags { dry_run: true },
             OutputOptions::default(),
         )
         .unwrap();
@@ -1217,81 +1161,22 @@ mod tests {
         assert!(io.stderr_text().contains("Renamed feat -> renamed"));
     }
 
-    // --- default-branch guard (#578) ----------------------------------------
+    // --- no default-branch guard (#578 reverted) -----------------------------
 
-    /// What it guarantees: the default-branch guard still fires when the
-    /// origin/HEAD confirmation probe fails and the default branch is known only
-    /// from `init.defaultBranch`.
+    /// What it guarantees: `rename` no longer refuses a branch merely because it
+    /// looks like the repository's default.
     ///
-    /// This is the regression the probe introduced when it sat at the front of
-    /// the resolution chain: a `for-each-ref` failure short-circuited the whole
-    /// lookup, `get_default_branch` answered `master`, the guard no longer
-    /// recognized `develop` as the default, and the rename went through without
-    /// `--allow-default-branch`. The probe may cost CONFIDENCE in the name; it
-    /// may never cost a resolution step.
+    /// The guard removed here (issue #578) inferred the default branch from
+    /// `refs/remotes/origin/HEAD`, a ref `git clone` writes and `git fetch`
+    /// never updates afterwards — refreshing it takes an explicit
+    /// `git remote set-head origin --auto`. Measured across 109 local
+    /// repositories it disagreed with the remote's real default in 7 — every one
+    /// a repository whose default had moved to `develop` while `origin/HEAD`
+    /// still said `main`. The pushed
+    /// branch guard below already refuses every shared default branch, and it
+    /// does so on evidence git can verify locally.
     #[test]
-    fn the_default_branch_guard_survives_a_failing_origin_head_probe() {
-        let (_fx, io) = io_with_home();
-        let git = MockGit::new(&two_worktrees(&MAIN, &FEAT, "develop"), &FEAT)
-            // No remote HEAD; the default branch is known from config alone.
-            .with_init_default_branch("develop")
-            .with_failing_origin_head_probe();
-        let (r, s) = (NoResolver, NoScript);
-        let p = FakeProcessControl::new(&FEAT);
-        let d = deps(&io, &git, &r, &s, &p, &FEAT);
-        let err = rename_command(
-            &d,
-            "renamed",
-            RenameFlags::default(),
-            OutputOptions::default(),
-        )
-        .unwrap_err();
-        assert!(matches!(err, VibeError::AlreadyReported));
-
-        let out = io.stderr_text();
-        assert!(
-            out.contains("'develop' is this repository's default branch"),
-            "the guard must still recognize the default branch: {out}"
-        );
-        assert!(
-            !git.calls_contain(&["branch", "-m"]),
-            "nothing may be renamed"
-        );
-    }
-
-    #[test]
-    fn renaming_the_default_branch_errors_without_mutating() {
-        // A secondary worktree checked out on the repo's default branch: the
-        // rename must be refused outright, with nothing moved or renamed.
-        let (_fx, io) = io_with_home();
-        let git = MockGit::new(&two_worktrees(&MAIN, &FEAT, "develop"), &FEAT)
-            .with_default_branch("develop");
-        let (r, s) = (NoResolver, NoScript);
-        let p = FakeProcessControl::new(&FEAT);
-        let d = deps(&io, &git, &r, &s, &p, &FEAT);
-        let err = rename_command(
-            &d,
-            "renamed",
-            RenameFlags::default(),
-            OutputOptions::default(),
-        )
-        .unwrap_err();
-        assert!(matches!(err, VibeError::AlreadyReported));
-
-        let out = io.stderr_text();
-        assert!(
-            out.contains("'develop' is this repository's default branch"),
-            "stderr: {out}"
-        );
-        assert!(out.contains("--allow-default-branch"), "stderr: {out}");
-        assert!(!git.calls_contain(&["branch", "-m"]));
-        assert!(!git.calls_contain(&["worktree", "move"]));
-    }
-
-    #[test]
-    fn allow_default_branch_lets_the_rename_through() {
-        // The escape hatch must reach the normal success path, not merely
-        // downgrade the message.
+    fn an_unpushed_default_looking_branch_renames_normally() {
         let (_fx, io) = io_with_home();
         let git = MockGit::new(&two_worktrees(&MAIN, &FEAT, "develop"), &FEAT)
             .with_default_branch("develop");
@@ -1301,23 +1186,27 @@ mod tests {
         let outcome = rename_command(
             &d,
             "renamed",
-            RenameFlags {
-                allow_default_branch: true,
-                ..RenameFlags::default()
-            },
+            RenameFlags::default(),
             OutputOptions::default(),
         )
         .unwrap();
 
         assert_eq!(outcome, Outcome::cd(&**RENAMED));
         assert!(git.calls_contain(&["branch", "-m", "develop", "renamed"]));
-        assert!(io.stderr_text().contains("Renamed develop -> renamed"));
+        let out = io.stderr_text();
+        assert!(
+            !out.contains("default branch"),
+            "no default-branch message may survive: {out}"
+        );
     }
 
+    /// What it guarantees: a PUSHED default branch is still refused, and now the
+    /// pushed-branch guard is the one that says so.
+    ///
+    /// This is the case the removed guard was aiming at. It is covered without
+    /// inferring anything: a shared default branch has an upstream.
     #[test]
-    fn default_branch_guard_precedes_the_pushed_branch_guard() {
-        // Both guards apply to a pushed default branch. The default-branch one
-        // must win, because it names the actual reason the rename is refused.
+    fn a_pushed_default_branch_is_still_refused_as_pushed() {
         let (_fx, io) = io_with_home();
         let git = MockGit::new(&two_worktrees(&MAIN, &FEAT, "develop"), &FEAT)
             .with_default_branch("develop")
@@ -1335,32 +1224,9 @@ mod tests {
         assert!(matches!(err, VibeError::AlreadyReported));
 
         let out = io.stderr_text();
-        assert!(
-            out.contains("is this repository's default branch"),
-            "stderr: {out}"
-        );
-        assert!(!out.contains("is pushed to"), "stderr: {out}");
-    }
-
-    #[test]
-    fn a_non_default_branch_is_unaffected_by_the_guard() {
-        // Regression fence: declaring some OTHER branch the default must leave
-        // the ordinary rename path untouched.
-        let (_fx, io) = io_with_home();
-        let git =
-            MockGit::new(&two_worktrees(&MAIN, &FEAT, "feat"), &FEAT).with_default_branch("main");
-        let (r, s) = (NoResolver, NoScript);
-        let p = FakeProcessControl::new(&FEAT);
-        let d = deps(&io, &git, &r, &s, &p, &FEAT);
-        let outcome = rename_command(
-            &d,
-            "renamed",
-            RenameFlags::default(),
-            OutputOptions::default(),
-        )
-        .unwrap();
-        assert_eq!(outcome, Outcome::cd(&**RENAMED));
-        assert!(git.calls_contain(&["branch", "-m", "feat", "renamed"]));
+        assert!(out.contains("is pushed to 'origin'"), "stderr: {out}");
+        assert!(!git.calls_contain(&["branch", "-m"]));
+        assert!(!git.calls_contain(&["worktree", "move"]));
     }
 
     #[test]

@@ -15,10 +15,6 @@
 //! while a `post_clean` failure only warns — the worktree is already gone, so
 //! the `cd` to main and the branch deletion must still happen.
 //!
-//! One behavioral addition beyond the TS: branch deletion is SOFT-SKIPPED when
-//! the worktree's branch is the repository's default branch (see
-//! `maybe_delete_branch`), unless `--allow-default-branch` is given.
-//!
 //! `clean.fast_remove` is read from `VibeSettings.extra["clean"]["fast_remove"]`
 //! (default true), preserving the settings round-trip (the `clean` section stays
 //! in `extra`).
@@ -33,8 +29,8 @@ use crate::fast_remove::{
     cleanup_stale_trash, fast_remove_directory, is_fast_remove_supported, BackgroundSpawner,
 };
 use crate::git::{
-    detect_broken_worktree_link, get_default_branch, get_main_worktree_path, get_repo_root,
-    get_worktree_by_path, get_worktree_list, has_uncommitted_changes, is_main_worktree, GitRunner,
+    detect_broken_worktree_link, get_main_worktree_path, get_repo_root, get_worktree_by_path,
+    get_worktree_list, has_uncommitted_changes, is_main_worktree, GitRunner,
 };
 use crate::hooks::{run_hooks, warn_on_hook_failure, HookEnv, HookRunner, HookTrackerInfo};
 use crate::io::Io;
@@ -55,8 +51,6 @@ pub struct CleanFlags {
     pub delete_branch: bool,
     pub keep_branch: bool,
     pub worktree_hook: bool,
-    /// Opt out of the default-branch guard (see [`maybe_delete_branch`]).
-    pub allow_default_branch: bool,
 }
 
 /// Bundled seams for `clean`.
@@ -472,13 +466,19 @@ where
 /// Delete-branch precedence: CLI delete > CLI keep > config > default false.
 /// Best-effort: a failure warns, never errors.
 ///
-/// The default branch (`origin/HEAD`, else `init.defaultBranch`, else `master`)
-/// is SOFT-SKIPPED: the worktree is still removed, only the branch survives, and
-/// we say why. Deleting `main`/`develop` is disruptive to everyone on the repo
-/// and is almost never what the user meant, but it is also not a reason to fail
-/// a clean that has already succeeded — hence a skip with a message rather than
-/// an error (`rename`, whose whole product IS the branch change, hard-errors
-/// instead). `--allow-default-branch` opts out.
+/// `git branch -d` is deliberately the only safety net here. It refuses to
+/// delete a branch that is not merged, and git itself refuses to delete a branch
+/// that is checked out in another worktree — two checks that are always right
+/// because git answers them from local state it fully controls.
+///
+/// A default-branch guard used to sit here (issue #578) and was removed: it
+/// inferred the default branch from `refs/remotes/origin/HEAD`, which `git
+/// clone` writes and which `git fetch` never updates afterwards — refreshing it
+/// takes an explicit `git remote set-head origin --auto`. So it silently
+/// disagreed with the remote's real default in 7 of 109 measured repositories —
+/// every one of them a repository whose real default had moved to `develop`
+/// while `origin/HEAD` still said `main`. Guarding the wrong branch while
+/// announcing protection is worse than guarding nothing.
 #[allow(clippy::too_many_arguments)]
 fn maybe_delete_branch<I, G, R, P, Pc, Sr>(
     deps: &CleanDeps<I, G, R, P, Pc, Sr>,
@@ -509,23 +509,6 @@ fn maybe_delete_branch<I, G, R, P, Pc, Sr>(
 
     if !should_delete || branch.is_empty() {
         return;
-    }
-
-    if !flags.allow_default_branch {
-        let default_branch = get_default_branch(deps.git);
-        if branch == default_branch {
-            warn_log(
-                deps.io,
-                &format!(
-                    "Skipped deleting branch {branch}: it is this repository's default branch."
-                ),
-            );
-            warn_log(
-                deps.io,
-                "Pass --allow-default-branch if you really want to delete it.",
-            );
-            return;
-        }
     }
 
     match deps
