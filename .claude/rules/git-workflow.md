@@ -16,13 +16,19 @@ GitHub Flow: `main` is the only long-lived branch.
 
 ## Merging
 
-- Merge with `gh pr merge <pr> --auto --merge`. Auto-merge lands the PR the
-  moment its required checks go green, so there is no need to sit on a run.
+- **IMPORTANT**: opening the PR is where an agent stops. Do not merge, and do
+  not enable auto-merge on your own initiative. Landing a change on `main` is
+  the maintainer's call — they may still want to read the diff, wait on the
+  `ci-full` leg, or stack another PR on top.
+- When the maintainer asks for it, auto-merge is the right tool:
+  `gh pr merge <pr> --auto --merge` lands the PR the moment its required checks
+  go green, so nobody has to sit on a run. Asked for, never assumed.
 - `mergeStateStatus: BLOCKED` while checks are still pending is normal; it does
   not mean auto-merge failed.
 - `--admin` is a last resort, not the routine path. `main` requires a PR and
   seven passing checks but **no approving review**, precisely so a single
-  maintainer can use auto-merge instead of overriding protection on every merge.
+  maintainer can merge — with `--auto` or by hand — instead of overriding
+  protection on every merge.
 - The required checks are the seven that actually run on a PR: `build`, `lint`,
   `rust-macos`, `docs`, `pinact-verify`, `gitleaks`, `nix-build (ubuntu-latest)`.
   Never add a push-only job (`rust-linux`, `rust-windows`, `e2e-test`,

@@ -12,7 +12,7 @@ GitHub Flow: `main` is the only long-lived branch.
 ### Workflow
 
 1. Create a topic branch from `main`
-2. Open a PR into `main`; merge it once CI is green
+2. Open a PR into `main`; the maintainer merges it once CI is green
 3. To release, bump the version on a `release/vX.Y.Z` branch, merge that PR,
    then dispatch the Release workflow on `main` — it creates the tag
 
