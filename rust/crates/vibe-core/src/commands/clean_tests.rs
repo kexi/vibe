@@ -24,7 +24,8 @@ struct MockGit {
     worktree_list: String,
     uncommitted: bool,
     /// What `symbolic-ref refs/remotes/origin/HEAD --short` answers; `None` →
-    /// the ref is missing, so `get_default_branch` falls through to `master`.
+    /// the ref is missing. Kept so a test can declare a branch "the default"
+    /// and prove `clean` deletes it anyway.
     origin_head: Option<String>,
     pub calls: RefCell<Vec<Vec<String>>>,
 }
@@ -88,8 +89,7 @@ impl GitRunner for MockGit {
             };
         }
         if args.contains(&"init.defaultBranch") {
-            // Unconfigured → `get_default_branch` lands on `master`, which no
-            // fixture branch here is named.
+            // Unconfigured: no fixture branch here is named `master`.
             return Err(VibeError::GitOperation {
                 command: args.join(" "),
                 message: "failed: key missing".into(),
@@ -575,12 +575,21 @@ fn default_does_not_delete_branch() {
     assert!(!git.calls_contain(&["-C", "/main", "branch", "-d"]));
 }
 
-// --- default-branch guard (#578) ---
+// --- no default-branch guard (#578 reverted) ---
 
+/// What it guarantees: `--delete-branch` deletes the branch even when it is the
+/// one `origin/HEAD` calls the repository's default.
+///
+/// The guard removed here (issue #578) soft-skipped that deletion. It inferred
+/// the default from `refs/remotes/origin/HEAD`, which `git clone` writes once
+/// and never refreshes: across 109 measured repositories it disagreed with the
+/// remote's real default in 7, every one of them a repository whose default had
+/// moved to `develop` while `origin/HEAD` still said `main`. It therefore
+/// announced protection while protecting the wrong branch on exactly the
+/// workflow it mattered most for. `git branch -d` remains the real safety net —
+/// it refuses an unmerged branch, and git refuses one checked out elsewhere.
 #[test]
-fn delete_branch_is_skipped_for_the_default_branch_but_the_worktree_still_goes() {
-    // A worktree on the default branch: `--delete-branch` must remove the
-    // worktree and KEEP the branch, saying why, and still exit successfully.
+fn delete_branch_deletes_a_branch_origin_head_calls_the_default() {
     let fx = Fixture::new();
     let wt = fx.mkdir("wt-develop");
     let wt_path = wt.to_string_lossy().into_owned();
@@ -606,52 +615,18 @@ fn delete_branch_is_skipped_for_the_default_branch_but_the_worktree_still_goes()
     let outcome = clean_command(&d, &flags, OutputOptions::default()).unwrap();
 
     assert_eq!(outcome, Outcome::cd("/main"));
-    assert!(git.calls_contain(&["-C", "/main", "worktree", "remove"]));
-    assert!(
-        !git.calls_contain(&["-C", "/main", "branch", "-d"]),
-        "the default branch must survive"
-    );
+    assert!(git.calls_contain(&["-C", "/main", "branch", "-d", "--", "develop"]));
     let out = io.stderr_text();
     assert!(
-        out.contains("Skipped deleting branch develop"),
-        "stderr: {out}"
+        !out.contains("default branch"),
+        "no default-branch message may survive: {out}"
     );
-    assert!(out.contains("--allow-default-branch"), "stderr: {out}");
 }
 
+/// What it guarantees: the removal costs `clean` no git calls. The guard used to
+/// resolve the default branch on every `--delete-branch` run.
 #[test]
-fn allow_default_branch_deletes_the_default_branch() {
-    let fx = Fixture::new();
-    let wt = fx.mkdir("wt-develop");
-    let wt_path = wt.to_string_lossy().into_owned();
-    let io = FakeIo::new().with_env("HOME", fx.path().to_str().unwrap());
-    let git = MockGit::new(
-        &wt_path,
-        "/main",
-        &two_worktrees("/main", &wt_path, "develop"),
-    )
-    .with_default_branch("develop");
-    let (r, p, sin, fk) = (
-        NoResolver,
-        ScriptPrompt { confirm: true },
-        FakeStdin::none(),
-        Fakes::new(),
-    );
-    let proc = FakeProcess::new(&wt_path);
-    let d = deps(&io, &git, &r, &p, &proc, &sin, &fk, &wt_path);
-    let flags = CleanFlags {
-        delete_branch: true,
-        allow_default_branch: true,
-        ..Default::default()
-    };
-    clean_command(&d, &flags, OutputOptions::default()).unwrap();
-    assert!(git.calls_contain(&["-C", "/main", "branch", "-d", "--", "develop"]));
-}
-
-#[test]
-fn the_guard_leaves_non_default_branches_alone() {
-    // Regression fence: with `develop` declared default, deleting `feat` still
-    // happens exactly as before.
+fn delete_branch_does_not_consult_origin_head() {
     let fx = Fixture::new();
     let wt = fx.mkdir("wt-feat");
     let wt_path = wt.to_string_lossy().into_owned();
@@ -671,7 +646,12 @@ fn the_guard_leaves_non_default_branches_alone() {
         ..Default::default()
     };
     clean_command(&d, &flags, OutputOptions::default()).unwrap();
+
     assert!(git.calls_contain(&["-C", "/main", "branch", "-d", "--", "feat"]));
+    assert!(
+        !git.calls_contain(&["symbolic-ref"]),
+        "resolving the default branch is no longer part of clean"
+    );
 }
 
 // --- G-10: delete-branch 4-tier precedence boundaries ---

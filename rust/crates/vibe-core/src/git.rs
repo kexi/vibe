@@ -851,23 +851,6 @@ const ORIGIN_HEAD_REF: &str = "refs/remotes/origin/HEAD";
 /// is most likely an old-style one.
 const FALLBACK_DEFAULT_BRANCH: &str = "master";
 
-/// Resolve the repository's default branch NAME (no `origin/` prefix).
-///
-/// Resolution order, first hit wins:
-/// 1. `git symbolic-ref refs/remotes/origin/HEAD --short` → `origin/<name>`,
-///    the authoritative answer for a cloned repo.
-/// 2. `git config --get init.defaultBranch` → what a fresh `git init` here would
-///    have created (covers repos with no remote). Read with `--default ""` so an
-///    unset key is a successful empty answer rather than a non-zero exit.
-/// 3. [`FALLBACK_DEFAULT_BRANCH`].
-///
-/// Never fails: every git call is best-effort, because this feeds a *guard*, and
-/// a guard that errors out would break `clean`/`rename` in repositories where
-/// git simply has no opinion.
-pub fn get_default_branch(runner: &impl GitRunner) -> String {
-    resolve_default_branch(runner).name
-}
-
 /// A default-branch answer, plus whether it is REPEATABLE.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefaultBranch {
@@ -892,26 +875,42 @@ pub struct DefaultBranch {
     pub resolved: bool,
 }
 
-/// [`get_default_branch`] with the resolution outcome attached.
+/// Resolve the repository's default branch NAME (no `origin/` prefix), plus
+/// whether that answer is repeatable.
 ///
-/// Split out rather than changing the existing signature: `clean`, `rename` and
-/// `start` use this as a guard, where a guessed name is exactly as usable as a
-/// resolved one — only the summary cache needs to tell them apart.
+/// Resolution order, first hit wins, each step tried whatever the previous one
+/// did:
+/// 1. `git symbolic-ref refs/remotes/origin/HEAD --short` → `origin/<name>`.
+/// 2. `git config --get init.defaultBranch` → what a fresh `git init` here would
+///    have created. Read with `--default ""` so an unset key is a successful
+///    empty answer rather than a non-zero exit.
+/// 3. [`FALLBACK_DEFAULT_BRANCH`].
+///
+/// Never fails: every git call is best-effort.
+///
+/// # This answer is a DISPLAY default, not an authority
+///
+/// The only caller is `vibe list`, which shows it in the BASE column for a row
+/// with no upstream. That is the whole contract, and it is deliberately narrow:
+/// `origin/HEAD` is written once by `git clone` and never refreshed, so it goes
+/// stale the moment the remote's default moves. Measured across 109 local
+/// repositories it disagreed with the remote's real default in 7 — always the
+/// same shape, a repository whose default had moved to `develop` while
+/// `origin/HEAD` still said `main`. A wrong BASE label is a cosmetic defect.
+///
+/// A `clean`/`rename` guard keyed on this name existed (issue #578) and was
+/// removed for exactly that reason: the same staleness turns "protected" into a
+/// false promise, and the guard failed on precisely the `develop`-based
+/// workflows it mattered most for. Do not reintroduce a decision — anything that
+/// refuses, deletes, or rewrites — on top of this function.
 ///
 /// # The value and the confidence are computed separately
 ///
-/// The resolution ORDER is [`get_default_branch`]'s, unchanged and unconditional:
-/// `symbolic-ref` → `init.defaultBranch` → [`FALLBACK_DEFAULT_BRANCH`], each
-/// step tried whatever the previous one did. That matters because this name
-/// arms the default-branch guards in `clean` and `rename`: a step that gets
-/// skipped can turn a protected `main` into an unrecognized one and let
-/// `vibe rename` proceed on the branch it was supposed to refuse. No probe may
-/// stand between those steps.
-///
-/// `resolved` is therefore computed ALONGSIDE the value, never in front of it.
-/// It answers a narrower question — "would the next run get this same answer?" —
-/// which only the summary cache asks, and only to decide whether a key derived
-/// from the name is worth storing.
+/// `resolved` is computed ALONGSIDE the value, never in front of it: no probe
+/// may stand between the resolution steps and cost us an answer. It answers a
+/// narrower question — "would the next run get this same answer?" — which only
+/// the summary cache asks, and only to decide whether a key derived from the
+/// name is worth storing.
 ///
 /// # Confirming an absence
 ///
@@ -1019,7 +1018,7 @@ pub fn resolve_default_branch(runner: &impl GitRunner) -> DefaultBranch {
 /// so the caller falls through to the next resolution step instead of adopting
 /// an empty branch name (which would make the guard match every branch).
 ///
-/// Scoped to [`get_default_branch`], whose single caller queries the literal
+/// Scoped to [`resolve_default_branch`], whose single caller queries the literal
 /// `refs/remotes/origin/HEAD`: the remote is fixed at the call site, so the
 /// prefix is a known constant and not an inference. Do NOT reuse this for an
 /// arbitrary upstream — there the remote name is neither known to be `origin`
@@ -1809,7 +1808,7 @@ branch refs/heads/main
             (ORIGIN_HEAD_PROBE, ORIGIN_HEAD_PRESENT),
             (SYMREF, "origin/develop\n"),
         ]);
-        assert_eq!(get_default_branch(&git), "develop");
+        assert_eq!(resolve_default_branch(&git).name, "develop");
     }
 
     #[test]
@@ -1819,7 +1818,7 @@ branch refs/heads/main
             (ORIGIN_HEAD_PROBE, ORIGIN_HEAD_PRESENT),
             (SYMREF, "origin/release/stable"),
         ]);
-        assert_eq!(get_default_branch(&git), "release/stable");
+        assert_eq!(resolve_default_branch(&git).name, "release/stable");
     }
 
     #[test]
@@ -1827,14 +1826,14 @@ branch refs/heads/main
         // The probe answers empty (no origin/HEAD), so resolution moves on to
         // the config — which is where the answer is.
         let git = ScriptedGit::new(&[(ORIGIN_HEAD_PROBE, ""), (INIT_DEFAULT, "trunk\n")]);
-        assert_eq!(get_default_branch(&git), "trunk");
+        assert_eq!(resolve_default_branch(&git).name, "trunk");
     }
 
     #[test]
     fn default_branch_falls_back_to_master_when_git_knows_nothing() {
         // Both probes answer, both are empty: a confirmed, stable absence.
         let git = ScriptedGit::new(&[(ORIGIN_HEAD_PROBE, ""), (INIT_DEFAULT, "")]);
-        assert_eq!(get_default_branch(&git), "master");
+        assert_eq!(resolve_default_branch(&git).name, "master");
     }
 
     /// (a) What it guarantees: a probe that ERRORS is degradation, not absence.
@@ -1875,15 +1874,14 @@ branch refs/heads/main
         );
     }
 
-    /// What it guarantees: the VALUE `get_default_branch` returns is unaffected
+    /// What it guarantees: the VALUE `resolve_default_branch` returns is unaffected
     /// by the confirmation probe, in every combination of probe outcomes.
     ///
-    /// This is the invariant the `clean` and `rename` default-branch guards rest
-    /// on. When the probe was moved to the front of the chain, a `for-each-ref`
+    /// When the probe was moved to the front of the chain, a `for-each-ref`
     /// failure alone short-circuited resolution: a repository whose default
-    /// branch is `main` via `init.defaultBranch` reported `master`, the guard
-    /// stopped recognizing its own default branch, and `vibe rename` would
-    /// proceed on a branch it exists to refuse.
+    /// branch is `main` via `init.defaultBranch` reported `master`. Today that
+    /// costs `vibe list` a wrong BASE label; the probe is a confidence signal
+    /// for the summary cache and must never cost a resolution step.
     #[test]
     fn the_resolved_name_never_depends_on_the_confirmation_probe() {
         // `init.defaultBranch` is the answer; vary only the probe's outcome.
@@ -1898,7 +1896,7 @@ branch refs/heads/main
             }
             let git = ScriptedGit::new(&script);
             assert_eq!(
-                get_default_branch(&git),
+                resolve_default_branch(&git).name,
                 "main",
                 "the probe outcome must not change the VALUE (probe: {probe:?})"
             );
@@ -2097,7 +2095,7 @@ branch refs/heads/main
             (SYMREF, "origin/"),
             (INIT_DEFAULT, "   "),
         ]);
-        assert_eq!(get_default_branch(&git), "master");
+        assert_eq!(resolve_default_branch(&git).name, "master");
     }
 
     // --- status / ref parsing ----------------------------------------------
