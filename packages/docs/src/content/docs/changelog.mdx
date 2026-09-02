@@ -5,6 +5,16 @@ description: Version history and release notes for vibe
 
 All notable changes to vibe are documented here.
 
+## v4.1.0
+
+**Released:** 2026-09-03
+
+### Fixed
+
+- Copy-on-Write cloning now works for nested `[copy] dirs` entries on macOS. `clonefile(2)` fails with `ENOENT` when the destination's parent does not exist, and vibe treated that as a soft failure — so the copy fell back to a full recursive duplicate while still reporting success and still labelling the progress phase `clonefile`. Any entry whose intermediate directories are not yet present in a fresh worktree was affected — monorepo layouts such as `packages/app/node_modules`. Measured on APFS with a 360MB, 17,789-file `node_modules`, `vibe start` goes from 2.71s to 0.41s. Entries whose parent already exists were never affected and are unchanged.
+
+---
+
 ## v4.0.0
 
 **Released:** 2026-09-02
