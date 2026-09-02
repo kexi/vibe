@@ -23,7 +23,7 @@
 # commits itself); no --allow-net (module fetch is out-of-band); --frozen
 # requires the committed deno.lock so a release can never fetch an unpinned
 # transitive dep. Keep the flag list in sync with the `files:` map below.
-version: 4.0.0
+version: 4.1.0
 
 files:
   package.json: '"version": "%.%.%"'

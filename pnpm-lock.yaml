@@ -85,19 +85,19 @@ importers:
         version: 3.2.6(@types/debug@4.1.12)(@types/node@24.13.2)(@vitest/ui@3.2.6)(lightningcss@1.32.0)(terser@5.46.0)(yaml@2.8.3)
     optionalDependencies:
       '@kexi/vibe-darwin-arm64':
-        specifier: 4.0.0
+        specifier: 4.1.0
         version: link:../vibe-darwin-arm64
       '@kexi/vibe-darwin-x64':
-        specifier: 4.0.0
+        specifier: 4.1.0
         version: link:../vibe-darwin-x64
       '@kexi/vibe-linux-arm64':
-        specifier: 4.0.0
+        specifier: 4.1.0
         version: link:../vibe-linux-arm64
       '@kexi/vibe-linux-x64':
-        specifier: 4.0.0
+        specifier: 4.1.0
         version: link:../vibe-linux-x64
       '@kexi/vibe-win32-x64':
-        specifier: 4.0.0
+        specifier: 4.1.0
         version: link:../vibe-win32-x64
 
   packages/vibe-darwin-arm64: {}
