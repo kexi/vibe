@@ -581,10 +581,12 @@ fn default_does_not_delete_branch() {
 /// one `origin/HEAD` calls the repository's default.
 ///
 /// The guard removed here (issue #578) soft-skipped that deletion. It inferred
-/// the default from `refs/remotes/origin/HEAD`, which `git clone` writes once
-/// and never refreshes: across 109 measured repositories it disagreed with the
-/// remote's real default in 7, every one of them a repository whose default had
-/// moved to `develop` while `origin/HEAD` still said `main`. It therefore
+/// the default from `refs/remotes/origin/HEAD`, which `git clone` writes and
+/// `git fetch` never updates afterwards — refreshing it takes an explicit
+/// `git remote set-head origin --auto`. Across 109 measured repositories it
+/// disagreed with the remote's real default in 7, every one of them a
+/// repository whose default had moved to `develop` while `origin/HEAD` still
+/// said `main`. It therefore
 /// announced protection while protecting the wrong branch on exactly the
 /// workflow it mattered most for. `git branch -d` remains the real safety net —
 /// it refuses an unmerged branch, and git refuses one checked out elsewhere.

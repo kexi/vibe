@@ -892,8 +892,9 @@ pub struct DefaultBranch {
 ///
 /// The only caller is `vibe list`, which shows it in the BASE column for a row
 /// with no upstream. That is the whole contract, and it is deliberately narrow:
-/// `origin/HEAD` is written once by `git clone` and never refreshed, so it goes
-/// stale the moment the remote's default moves. Measured across 109 local
+/// `origin/HEAD` is written by `git clone` and is NOT updated by `git fetch`;
+/// refreshing it takes an explicit `git remote set-head origin --auto`, so it
+/// goes stale the moment the remote's default moves and nobody runs that. Measured across 109 local
 /// repositories it disagreed with the remote's real default in 7 — always the
 /// same shape, a repository whose default had moved to `develop` while
 /// `origin/HEAD` still said `main`. A wrong BASE label is a cosmetic defect.

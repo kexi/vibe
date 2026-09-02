@@ -473,11 +473,12 @@ where
 ///
 /// A default-branch guard used to sit here (issue #578) and was removed: it
 /// inferred the default branch from `refs/remotes/origin/HEAD`, which `git
-/// clone` writes once and never refreshes, so it silently disagreed with the
-/// remote's real default in 7 of 109 measured repositories — every one of them a
-/// repository whose real default had moved to `develop` while `origin/HEAD`
-/// still said `main`. Guarding the wrong branch while announcing protection is
-/// worse than guarding nothing.
+/// clone` writes and which `git fetch` never updates afterwards — refreshing it
+/// takes an explicit `git remote set-head origin --auto`. So it silently
+/// disagreed with the remote's real default in 7 of 109 measured repositories —
+/// every one of them a repository whose real default had moved to `develop`
+/// while `origin/HEAD` still said `main`. Guarding the wrong branch while
+/// announcing protection is worse than guarding nothing.
 #[allow(clippy::too_many_arguments)]
 fn maybe_delete_branch<I, G, R, P, Pc, Sr>(
     deps: &CleanDeps<I, G, R, P, Pc, Sr>,

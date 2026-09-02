@@ -111,10 +111,10 @@ where
     // it for a reason git can verify locally: the branch has an upstream. A
     // separate default-branch guard used to sit in front of it (issue #578) and
     // was removed — it inferred the default from `refs/remotes/origin/HEAD`,
-    // which `git clone` writes once and never refreshes, so it disagreed with
-    // the remote's real default in 7 of 109 measured repositories. Every shared
-    // default branch worth protecting is pushed, so this guard already covers
-    // the case the removed one was aiming at.
+    // which `git clone` writes and `git fetch` never updates afterwards, so it
+    // disagreed with the remote's real default in 7 of 109 measured
+    // repositories. Every shared default branch worth protecting is pushed, so
+    // this guard already covers the case the removed one was aiming at.
     if let BranchUpstream::Remote(remote) = get_branch_upstream(deps.git, &old_name)? {
         error_log(
             deps.io,
@@ -1167,10 +1167,12 @@ mod tests {
     /// looks like the repository's default.
     ///
     /// The guard removed here (issue #578) inferred the default branch from
-    /// `refs/remotes/origin/HEAD`, a ref `git clone` writes once and never
-    /// refreshes. Measured across 109 local repositories it disagreed with the
-    /// remote's real default in 7 — every one a repository whose default had
-    /// moved to `develop` while `origin/HEAD` still said `main`. The pushed
+    /// `refs/remotes/origin/HEAD`, a ref `git clone` writes and `git fetch`
+    /// never updates afterwards — refreshing it takes an explicit
+    /// `git remote set-head origin --auto`. Measured across 109 local
+    /// repositories it disagreed with the remote's real default in 7 — every one
+    /// a repository whose default had moved to `develop` while `origin/HEAD`
+    /// still said `main`. The pushed
     /// branch guard below already refuses every shared default branch, and it
     /// does so on evidence git can verify locally.
     #[test]
