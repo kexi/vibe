@@ -703,12 +703,12 @@ Example: `GitHub: 7tsuno → Twitter: @7_tsuno` → Use `@7_tsuno` for GitHub us
 - Key changes
 - Thanks to contributors (when applicable)
 - Link to release page
-- Hashtags
 
 **Do not include:**
 
 - Installation instructions (omit)
 - Website link (omit)
+- Hashtags (omit)
 
 **English version (main, with mentions):**
 
@@ -723,8 +723,6 @@ vibe is a super fast Git worktree management tool with Copy-on-Write optimizatio
 🙏 Thanks to @contributor!
 
 🔗 https://github.com/kexi/vibe/releases/tag/vX.Y.Z
-
-#vibe #git #worktree #devtools
 ```
 
 **When 3 or more contributors (reply tweet):**
@@ -777,12 +775,11 @@ tool with Copy-on-Write optimization` → `A super fast Git worktree tool with
 Copy-on-Write optimization`).
 2. Compress each highlight to a noun phrase; drop the third highlight before
    dropping the breaking-change one.
-3. Drop hashtags from the right (`#devtools`, then `#worktree`).
 
 **Keep the template's structure.** The sections are the description, `✨
-Highlights:` (1-3 lines), the optional thanks, the link, and the hashtags. Do
-not invent new sections — a separate `⚠️ Breaking:` block, an install line, a
-website link. A breaking change is one of the highlight lines, prefixed
+Highlights:` (1-3 lines), the optional thanks, and the link. Do not invent new
+sections — a separate `⚠️ Breaking:` block, an install line, a website link,
+a hashtag footer. A breaking change is one of the highlight lines, prefixed
 `Breaking:`, and it outranks feature lines when space is short: it is the one
 thing a reader must act on.
 
