@@ -182,9 +182,11 @@ fn filesystem_ignores_case(dir: &Path) -> bool {
     ignores
 }
 
-/// Normalize a relative pattern to its `Normal` components, or `None` when it is
-/// absolute, escapes with `..`, or is empty.
-fn normalize_relative(pattern: &str) -> Option<Vec<String>> {
+/// Normalize a relative pattern to its `Normal` components, or `None` when it
+/// carries any component that is not `Normal` or `.` — a root component, a `..`,
+/// or a Windows drive prefix (`C:foo` has one without being absolute) — or when
+/// no `Normal` component is left, as for `""` and `"."`.
+pub(crate) fn normalize_relative(pattern: &str) -> Option<Vec<String>> {
     let path = Path::new(pattern);
     if path.is_absolute() {
         return None;
