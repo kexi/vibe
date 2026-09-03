@@ -10,7 +10,7 @@
 
 use crate::config::VibeConfig;
 use crate::copy::strategies::CopyExecutor;
-use crate::copy::symlink::{without_symlinked, SymlinkedPaths};
+use crate::copy::symlink::{normalize_relative, without_symlinked, SymlinkedPaths};
 use crate::glob::{expand_copy_patterns, expand_directory_patterns};
 use crate::io::Io;
 use crate::output::{log_dry_run, sanitize_for_display, warn_log};
@@ -50,6 +50,81 @@ pub fn resolve_copy_concurrency(io: &impl Io, config: Option<&VibeConfig>) -> us
     }
 
     DEFAULT_COPY_CONCURRENCY as usize
+}
+
+/// Drop the directories another entry in the same list already contains.
+///
+/// `dirs = ["a", "a/b"]` asks for one tree twice: cloning `a` puts `a/b` there
+/// as part of it. The overlap is not merely redundant — `clonefile` refuses a
+/// destination that already exists, so one of the two fails EEXIST (which one is
+/// not fixed: the copies run concurrently, and a nested entry's `ensure_parent`
+/// can materialise the ancestor's destination first). EEXIST is a SOFT error, so
+/// [`crate::copy::strategies::CopyExecutor::copy_directory`] falls back to the
+/// Standard recursive copy and rewrites file-by-file what the clone had just
+/// placed. The result stays correct and nothing warns, which is why the cost is
+/// invisible: measured on a 360MB / 17,789-file `node_modules`, `vibe start`
+/// takes 3.0s with the overlap and 0.48s without it.
+///
+/// This is reached by ordinary config, not a contrived one. `dirs =
+/// ["**/node_modules"]` expands to the root `node_modules` plus every nested one
+/// npm and pnpm leave inside it, plus each workspace's own — 31 entries in this
+/// repository, 27 of them contained in the root one.
+///
+/// Applied AFTER glob expansion for the same reason as [`without_symlinked`]: a
+/// pattern only reveals the overlap once expanded.
+///
+/// Comparison is EXACT, deliberately, even though a case-insensitive volume
+/// (the APFS and NTFS default, though both can be case-sensitive) makes `A/b`
+/// and `a/b` one directory, an overlap this therefore misses. The two mistakes are not symmetric: failing to drop a
+/// contained entry costs the redundant copy that happens today, while dropping
+/// one that was NOT contained silently skips a directory the user asked for.
+/// The safe direction is therefore to under-drop. Note this inverts
+/// [`SymlinkedPaths`]'s choice, where folding case is the safe direction because
+/// there an over-broad match skips a copy while an under-broad one writes
+/// THROUGH the link into the origin repository.
+///
+/// An entry that cannot be normalized is kept rather than dropped, whatever made
+/// it unnormalizable. The common case is a pattern naming the repository root —
+/// anything built only from empty and `.` components (`""`, `"."`, `"./"`,
+/// `"./."`, …) reduces to no components at all — but the set is not enumerated
+/// here on purpose: a Windows drive-relative pattern (`C:foo`) is not absolute,
+/// so it too can reach this filter and normalize to `None`.
+///
+/// Keeping them is the conservative choice in every case. Whatever the copy
+/// layer does with such an entry today, it keeps doing; deciding their fate is
+/// not this filter's business, and dropping one here would silently alter
+/// behaviour that predates this change.
+fn without_contained_by_siblings(dirs: &[String]) -> Vec<String> {
+    let normalized: Vec<Option<Vec<String>>> = dirs.iter().map(|d| normalize_relative(d)).collect();
+
+    dirs.iter()
+        .enumerate()
+        .filter(|(i, _)| {
+            let Some(mine) = &normalized[*i] else {
+                return true;
+            };
+            // Kept unless some OTHER entry contains this one. A strict
+            // ancestor always wins; for two entries that normalize to the SAME
+            // path the tie is broken by index so exactly one survives — dropping
+            // on `<=` alone would discard both halves of the pair.
+            //
+            // The equal case is not hypothetical: `glob.rs` dedupes non-glob
+            // patterns by their literal string, so `dirs = ["a", "./a"]` and
+            // `["a", "a/"]` both reach here as two entries naming one directory,
+            // and would otherwise hit the very EEXIST fallback this removes.
+            !normalized.iter().enumerate().any(|(j, other)| {
+                if *i == j {
+                    return false;
+                }
+                let Some(other) = other else { return false };
+                if other.len() == mine.len() {
+                    return j < *i && other == mine;
+                }
+                other.len() < mine.len() && mine.starts_with(other.as_slice())
+            })
+        })
+        .map(|(_, d)| d.clone())
+        .collect()
 }
 
 /// Join two path segments with `/` (forward-slash join, like node `path.join`).
@@ -196,10 +271,14 @@ where
     E: CopyExecutor + Sync,
     T: ProgressTracker + Sync,
 {
-    let dirs = without_symlinked(
+    // Contained entries are dropped LAST: `without_symlinked` may remove the
+    // very ancestor that would have covered a nested entry, and dropping the
+    // nested one against an ancestor that is no longer being copied would leave
+    // it uncopied altogether.
+    let dirs = without_contained_by_siblings(&without_symlinked(
         symlinked,
         &expand_directory_patterns(io, patterns, repo_root),
-    );
+    ));
     if dirs.is_empty() {
         return Ok(());
     }
@@ -722,6 +801,121 @@ mod tests {
     }
 
     // --- copy_directories concurrency + error aggregation ---
+
+    // --- contained-entry elimination ---
+
+    #[test]
+    fn a_directory_contained_by_another_entry_is_dropped() {
+        // `a` already brings `a/b` and `a/b/c` with it. Copying them again is
+        // not free: clonefile fails EEXIST on a destination that already exists,
+        // and that soft error demotes the copy to the Standard recursive
+        // fallback, which rewrites every file the clone had just placed.
+        let kept = without_contained_by_siblings(&[
+            "a".to_string(),
+            "a/b".to_string(),
+            "a/b/c".to_string(),
+        ]);
+        assert_eq!(kept, vec!["a".to_string()]);
+    }
+
+    #[test]
+    fn siblings_and_partial_name_matches_are_all_kept() {
+        // Containment is by PATH COMPONENT, not by string prefix: `node_modules2`
+        // starts with `node_modules` as text but is a different directory, and
+        // dropping it would silently skip a copy the user asked for.
+        let kept = without_contained_by_siblings(&[
+            "node_modules".to_string(),
+            "node_modules2".to_string(),
+            "packages/a".to_string(),
+            "packages/b".to_string(),
+        ]);
+        assert_eq!(
+            kept,
+            vec![
+                "node_modules".to_string(),
+                "node_modules2".to_string(),
+                "packages/a".to_string(),
+                "packages/b".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_nested_entry_survives_when_a_symlink_removes_its_ancestor() {
+        // The two filters must run symlink-first, and this pins WHY by composing
+        // them in both orders over one input.
+        //
+        // `symlink = ["a/c"]` makes `without_symlinked` drop `a` — copying it
+        // would write through the created link into the origin — while keeping
+        // its sibling subtree `a/b`. Production order therefore ends at `a/b`,
+        // which still gets copied.
+        //
+        // Reversed, containment runs first and drops `a/b` (contained by `a`),
+        // then the symlink filter drops `a`, and NOTHING is copied: the user
+        // asked for `a/b` and silently got no directory at all.
+        let dirs = vec!["a".to_string(), "a/b".to_string()];
+        let symlinked = SymlinkedPaths::from_patterns(&["a/c".to_string()], false);
+
+        let production = without_contained_by_siblings(&without_symlinked(&symlinked, &dirs));
+        assert_eq!(
+            production,
+            vec!["a/b".to_string()],
+            "symlink-first must leave the nested entry to be copied"
+        );
+
+        let reversed = without_symlinked(&symlinked, &without_contained_by_siblings(&dirs));
+        assert!(
+            reversed.is_empty(),
+            "containment-first loses the directory entirely — this is what the \
+             ordering prevents, so if this ever becomes non-empty the two \
+             filters no longer conflict and the ordering comment is stale"
+        );
+    }
+
+    #[test]
+    fn entries_that_normalize_to_the_same_directory_collapse_to_one() {
+        // `glob.rs` dedupes non-glob patterns by their literal string, so these
+        // pairs each arrive as two entries naming one directory — exactly the
+        // EEXIST-then-fallback case this filter exists to remove. Exactly one
+        // must survive: dropping both would skip the copy altogether.
+        assert_eq!(
+            without_contained_by_siblings(&["a".to_string(), "./a".to_string()]),
+            vec!["a".to_string()]
+        );
+        assert_eq!(
+            without_contained_by_siblings(&["./a".to_string(), "a".to_string()]),
+            vec!["./a".to_string()],
+            "the first spelling wins, so the survivor is stable rather than \
+             depending on which form the user happened to write second"
+        );
+        assert_eq!(
+            without_contained_by_siblings(&["a/b".to_string(), "a/./b".to_string()]),
+            vec!["a/b".to_string()]
+        );
+    }
+
+    #[test]
+    fn case_differing_entries_are_both_kept() {
+        // Exact comparison, deliberately. On a case-insensitive volume these
+        // name one directory and the overlap is missed — costing the redundant
+        // copy that happens today. The alternative errs the other way: on a
+        // case-SENSITIVE volume folding case would drop a genuinely distinct
+        // directory, and a silently missing directory is worse than a slow one.
+        let kept = without_contained_by_siblings(&["a".to_string(), "A/b".to_string()]);
+        assert_eq!(kept, vec!["a".to_string(), "A/b".to_string()]);
+    }
+
+    #[test]
+    fn an_entry_that_cannot_be_normalized_is_passed_through_unchanged() {
+        // What this pins is that the filter has no opinion of its own about an
+        // entry it cannot normalize: whatever reaches it, reaches the copy layer
+        // unaltered. These two particular spellings are stopped earlier by
+        // `expand_directory_patterns`, but others are not (a Windows
+        // drive-relative `C:foo` is not absolute), so the pass-through is a
+        // property worth pinning rather than a vacuous one.
+        let kept = without_contained_by_siblings(&["/abs".to_string(), "../up".to_string()]);
+        assert_eq!(kept, vec!["/abs".to_string(), "../up".to_string()]);
+    }
 
     #[test]
     fn copy_directories_copies_all_dirs() {
