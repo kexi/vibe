@@ -5,6 +5,16 @@ description: Version history and release notes for vibe
 
 All notable changes to vibe are documented here.
 
+## v4.2.0
+
+**Released:** 2026-09-03
+
+### Changed
+
+- `[copy] dirs` entries that another entry already contains are no longer copied twice. Cloning `a` already places `a/b` inside it, so a second entry for `a/b` met an existing destination: `clonefile` failed with `EEXIST`, which vibe treats as a soft error, and the copy fell back to a standard recursive walk that rewrote file-by-file what the clone had just placed — correct, silent, and slow. Ordinary configuration reaches this: `dirs = ["**/node_modules"]` expands to the root `node_modules` plus every nested one the package managers leave inside it, 31 entries in a representative repository with 27 contained in the root. Measured on 360MB across 17,789 files, `vibe start` goes from 3.43s to 0.48s, with the resulting worktrees byte-for-byte identical. Entries that are not contained by another are unaffected.
+
+---
+
 ## v4.1.0
 
 **Released:** 2026-09-03
