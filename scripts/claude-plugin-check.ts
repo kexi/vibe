@@ -8,9 +8,12 @@
  *   1. `claude plugin validate --strict` on the plugin: the manifest plus the
  *      same static analysis Claude Code runs on the hooks module before it
  *      loads it (event names, `$` calls, imports).
- *   2. `claude plugin test` on the plugin: every `*.test.ts` under it, run in
+ *   2. `claude plugin validate --strict` on the repository root: the
+ *      marketplace manifest (.claude-plugin/marketplace.json) that users
+ *      install the plugin from.
+ *   3. `claude plugin test` on the plugin: every `*.test.ts` under it, run in
  *      Claude Code's own test kit with no session, sign-in or network.
- *   3. `tsc -p` on the plugin, only when the mod API declarations exist.
+ *   4. `tsc -p` on the plugin, only when the mod API declarations exist.
  *
  * Why the CLI runs through cli-wrapper.cjs rather than `node_modules/.bin/claude`:
  * the package's bin is a stub until its postinstall copies the native binary
@@ -19,7 +22,7 @@
  * ignoredBuiltDependencies). The wrapper resolves the native optional
  * dependency for this platform itself.
  *
- * Why step 3 is skipped rather than failed when the declarations are missing:
+ * Why step 4 is skipped rather than failed when the declarations are missing:
  * Claude Code writes them (to the plugin's .claude-plugin/types/) only when it
  * loads the mod in a signed-in session, e.g. `claude --plugin-dir <plugin>`.
  * There is no way to produce them headlessly, so CI cannot type-check; the
@@ -49,7 +52,14 @@ interface Step {
 /** The steps to run, given whether the mod API declarations are present. */
 function planSteps(hasDeclarations: boolean): Step[] {
   const steps: Step[] = [
-    { name: "validate", argv: ["node", CLAUDE_CLI, "plugin", "validate", "--strict", PLUGIN_DIR] },
+    {
+      name: "validate plugin",
+      argv: ["node", CLAUDE_CLI, "plugin", "validate", "--strict", PLUGIN_DIR],
+    },
+    {
+      name: "validate marketplace",
+      argv: ["node", CLAUDE_CLI, "plugin", "validate", "--strict", REPO_ROOT],
+    },
     { name: "test", argv: ["node", CLAUDE_CLI, "plugin", "test", PLUGIN_DIR] },
   ];
   if (hasDeclarations) {

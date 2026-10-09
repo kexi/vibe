@@ -1,10 +1,24 @@
 {
   "name": "vibe",
   "version": "4.2.0",
-  "description": "vibe for Claude Code: create and clean Claude's worktrees with vibe, and browse them in a /vibe pane",
-  "author": { "name": "kexi" },
+  "description": "vibe for Claude Code: create and clean the worktrees Claude Code makes with vibe",
+  "author": {
+    "name": "kexi"
+  },
   "homepage": "https://vibe.kexi.dev",
   "repository": "https://github.com/kexi/vibe",
   "license": "MIT",
-  "keywords": ["git", "worktree", "vibe"]
+  "keywords": [
+    "git",
+    "worktree",
+    "vibe"
+  ],
+  "userConfig": {
+    "worktreeHooks": {
+      "type": "boolean",
+      "title": "Create Claude Code's worktrees with vibe",
+      "description": "Answer Claude Code's WorktreeCreate and WorktreeRemove with `vibe start` and `vibe clean`. Turn off to let Claude Code manage its worktrees with git.",
+      "default": true
+    }
+  }
 }

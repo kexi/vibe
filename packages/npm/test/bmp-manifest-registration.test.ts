@@ -125,6 +125,12 @@ describe(".bmp.yml Claude Code plugin registration", () => {
   it("registers the plugin manifest so a release bumps it with everything else", () => {
     expect(bmpYml).toContain(`packages/claude-plugin/vibe/.claude-plugin/plugin.json: '"version": "%.%.%"'`);
   });
+
+  // The marketplace entry pins the plugin to a release tag, so the plugin
+  // ships from releases rather than from main; the tag has to follow releases.
+  it("registers the marketplace's release-tag pin so a release moves it to the new tag", () => {
+    expect(bmpYml).toContain(`.claude-plugin/marketplace.json: '"ref": "v%.%.%"'`);
+  });
 });
 
 describe("version coherence (drift visible in PR CI)", () => {
@@ -140,8 +146,10 @@ describe("version coherence (drift visible in PR CI)", () => {
       expect(readRepoJson<{ version: string }>(`packages/${p}/package.json`).version).toBe(version);
     }
 
-    // The Claude Code plugin manifest.
+    // The Claude Code plugin manifest, and the release tag its marketplace entry pins.
     expect(readRepoJson<{ version: string }>("packages/claude-plugin/vibe/.claude-plugin/plugin.json").version).toBe(version);
+    const marketplace = readRepoJson<{ plugins: { source: { ref?: string } }[] }>(".claude-plugin/marketplace.json");
+    expect(marketplace.plugins[0]?.source.ref).toBe(`v${version}`);
 
     // Every @kexi/vibe optionalDependency pin (security D-2: exact, not a range).
     const npm = readRepoJson<{ optionalDependencies: Record<string, string> }>(
