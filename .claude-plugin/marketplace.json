@@ -1,0 +1,17 @@
+{
+  "name": "vibe",
+  "description": "The vibe plugin for Claude Code, published from the vibe repository",
+  "owner": { "name": "kexi" },
+  "plugins": [
+    {
+      "name": "vibe",
+      "source": {
+        "source": "git-subdir",
+        "url": "kexi/vibe",
+        "path": "packages/claude-plugin/vibe",
+        "ref": "v4.2.0"
+      },
+      "description": "Create and clean Claude Code's worktrees with vibe"
+    }
+  ]
+}
