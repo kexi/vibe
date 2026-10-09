@@ -1,7 +1,7 @@
 {
   "name": "vibe",
   "version": "4.2.0",
-  "description": "vibe for Claude Code: create and clean the worktrees Claude Code makes with vibe",
+  "description": "vibe for Claude Code: create and clean the worktrees Claude Code makes with vibe, and list them in a /vibe pane",
   "author": {
     "name": "kexi"
   },

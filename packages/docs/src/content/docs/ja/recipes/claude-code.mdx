@@ -1,0 +1,43 @@
+---
+title: Claude Codeプラグイン
+description: Claude CodeのWorktreeをvibeで作成し、/vibeペインで一覧する
+sidebar:
+  order: 6
+---
+
+vibeは[Claude Codeのmod](https://code.claude.com/docs/ja/plugins/mods/overview)（Claude Codeの中で動くプラグイン）を提供しています。できることは2つです:
+
+- **セッション中にClaudeが作るWorktreeをvibeで作成・削除**します。vibeのCoWコピーと`.vibe.toml`のフックがそのまま効きます。対象は`EnterWorktree`ツールと、`isolation: "worktree"`を指定したサブエージェントです。
+- **`/vibe`コマンドを追加**します。このリポジトリのWorktreeを`vibe list`と同じ内容でペインに一覧し、パスのコピーとWorktreeの削除をボタンで行えます。
+
+## インストール
+
+先にvibe本体をインストールしてください。プラグインは`PATH`上の`vibe`を実行します。そのうえでシェルから:
+
+```bash
+claude plugin install vibe --marketplace kexi/vibe
+```
+
+Claude Codeのセッション内なら`/plugin install vibe --marketplace kexi/vibe`でも入ります。modにはClaude Code 2.1.287以降が必要です。プラグインはvibeのリリースと一緒に公開され、marketplaceは最新のリリースタグ時点のものをインストールします（リリース間の`main`からは配布しません）。
+
+## `claude --worktree`には引き続きsettingsのフックが必要
+
+`claude --worktree <name>`のWorktreeは、Claude Codeが起動中、プラグインを読み込む前に作成します。そのためプラグインでは肩代わりできません。これもvibeで作成したい場合は、[Claude Code連携](/ja/configuration/hooks/#claude-code連携)の`WorktreeCreate` / `WorktreeRemove`フックを`settings.json`に残してください。
+
+両方を入れても二重には実行されません。セッション中はプラグインが先にイベントへ応答し、Claude Codeはそのイベントについてsettingsのフックを実行しません。
+
+## vibeを実行できないとき
+
+`PATH`に`vibe`が無い場合、Claude Codeが自分でgitを使ってWorktreeを作成・削除し、プラグインは通知を表示します。vibeが実行されて失敗した場合（ベースブランチが存在しないなど）は、Worktreeは作成されず、Claude Codeがvibeのエラーを表示します。
+
+## 設定
+
+| オプション      | 既定値 | 内容                                                                           |
+| --------------- | ------ | ------------------------------------------------------------------------------ |
+| `worktreeHooks` | `true` | Claude CodeのWorktreeの作成・削除をvibeで行います。オフにするとgitに任せます。 |
+
+Claude Codeのセッションで`/config`から変更できます。`/vibe`ペインはどちらの設定でも使えます。
+
+:::caution
+modはサンドボックスなしで、あなたの権限で動作します。このプラグインが実行するのは`vibe`バイナリ（`vibe start`、`vibe clean`、`vibe list`）だけで、シェルは使いません。ペインからWorktreeを削除すると未コミットの変更は失われます。ペインは削除の前に確認し、変更の件数を表示します。
+:::

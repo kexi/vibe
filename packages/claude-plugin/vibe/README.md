@@ -3,7 +3,7 @@
 A [Claude Code mod](https://code.claude.com/docs/en/plugins/mods/overview) that
 lets [vibe](https://vibe.kexi.dev) create and clean the git worktrees Claude
 Code makes during a session, so they get vibe's copy-on-write file copies and
-your `.vibe.toml` hooks.
+your `.vibe.toml` hooks, and adds a `/vibe` pane that lists them.
 
 ## Install
 
@@ -26,6 +26,10 @@ The plugin runs the `vibe` binary on your `PATH`, so install vibe itself first
   vibe prints.
 - **WorktreeRemove**: when Claude Code removes such a worktree, the plugin runs
   `vibe clean --claude-code-worktree-hook` from the main worktree.
+- **`/vibe`**: opens a pane listing this repository's worktrees as `vibe list`
+  shows them, with a button to copy each path and one to remove a worktree
+  (it asks first, and says how many uncommitted changes a removal discards).
+  The pane reads the listing again after every turn while it is open.
 
 Before each event the plugin runs `vibe --version`. If vibe cannot run (for
 example, it is not on `PATH`), Claude Code creates or removes the worktree
@@ -49,7 +53,8 @@ and Claude Code then skips the settings hooks for it.
 | --------------- | ------- | -------------------------------------------------------------------------------- |
 | `worktreeHooks` | `true`  | Let vibe create and clean Claude Code's worktrees. Turn off to leave them to git. |
 
-Change it with `/config` in a Claude Code session.
+Change it with `/config` in a Claude Code session. The `/vibe` pane works
+either way.
 
 ## Compatibility
 
