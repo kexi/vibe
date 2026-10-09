@@ -72,6 +72,13 @@ jobs:
       # have broken them. This job already has pnpm install, so they gate the PR.
       - name: Run npm package tests
         run: pnpm run test:npm
+      # The Claude Code plugin (packages/claude-plugin/vibe): manifest + hooks
+      # module static analysis (validate --strict) and its tests, through the
+      # pinned @anthropic-ai/claude-code devDependency. Neither needs a sign-in
+      # or the network, and the plugin ships from main via the marketplace, so
+      # this belongs in a required job rather than a post-merge one.
+      - name: Validate and test the Claude Code plugin
+        run: pnpm run check:plugin
       # THIRD-PARTY-LICENSES.md freshness + the `ring` link guard. Needs cargo
       # (cargo metadata / cargo tree), which setup-toolchain provides here.
       # publish-npm.yml also runs --check, but only immediately before publish —

@@ -345,6 +345,7 @@ git add .bmp.yml \
   packages/vibe-darwin-x64/package.json packages/vibe-darwin-arm64/package.json \
   packages/vibe-win32-x64/package.json \
   rust/crates/vibe/Cargo.toml rust/crates/vibe-core/Cargo.toml rust/crates/vibe-test-support/Cargo.toml \
+  packages/claude-plugin/vibe/.claude-plugin/plugin.json \
   rust/Cargo.lock \
   pnpm-lock.yaml \
   packages/docs/src/content/docs/changelog.mdx packages/docs/src/content/docs/ja/changelog.mdx

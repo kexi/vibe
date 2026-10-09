@@ -118,6 +118,15 @@ describe(".bmp.yml non-platform target registration", () => {
   });
 });
 
+describe(".bmp.yml Claude Code plugin registration", () => {
+  // Claude Code caches an installed plugin by its manifest `version`, so a
+  // manifest left behind on an old version means users never receive the
+  // plugin changes a release carries.
+  it("registers the plugin manifest so a release bumps it with everything else", () => {
+    expect(bmpYml).toContain(`packages/claude-plugin/vibe/.claude-plugin/plugin.json: '"version": "%.%.%"'`);
+  });
+});
+
 describe("version coherence (drift visible in PR CI)", () => {
   it("the .bmp.yml version equals every committed manifest version and pin", () => {
     const match = bmpYml.match(/^version:\s*(\S+)$/m);
@@ -130,6 +139,9 @@ describe("version coherence (drift visible in PR CI)", () => {
     for (const p of PLATFORMS) {
       expect(readRepoJson<{ version: string }>(`packages/${p}/package.json`).version).toBe(version);
     }
+
+    // The Claude Code plugin manifest.
+    expect(readRepoJson<{ version: string }>("packages/claude-plugin/vibe/.claude-plugin/plugin.json").version).toBe(version);
 
     // Every @kexi/vibe optionalDependency pin (security D-2: exact, not a range).
     const npm = readRepoJson<{ optionalDependencies: Record<string, string> }>(

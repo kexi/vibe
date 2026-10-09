@@ -15,6 +15,9 @@
 #   pinned to a FULL X.Y.Z triple equal to the release version would also be
 #   rewritten — keep Cargo dep pins to 1-2 components (e.g. "3", "0.23") or
 #   tighten these patterns if a triple-pinned dep is ever added.
+# - The Claude Code plugin manifest rides the same version: Claude Code caches an
+#   installed plugin by its `version`, so users only receive a new plugin copy
+#   when it changes, and tying it to the release makes every release one.
 #
 # Security rationale for the `bmp` pnpm script (package.json has no comments):
 # the deno --allow-read/--allow-write scope is exactly the target files listed
@@ -42,6 +45,7 @@ files:
   rust/crates/vibe/Cargo.toml: 'version = "%.%.%"'
   rust/crates/vibe-core/Cargo.toml: 'version = "%.%.%"'
   rust/crates/vibe-test-support/Cargo.toml: 'version = "%.%.%"'
+  packages/claude-plugin/vibe/.claude-plugin/plugin.json: '"version": "%.%.%"'
   pnpm-lock.yaml:
     - "'@kexi/vibe-linux-x64':\n        specifier: %.%.%"
     - "'@kexi/vibe-linux-arm64':\n        specifier: %.%.%"

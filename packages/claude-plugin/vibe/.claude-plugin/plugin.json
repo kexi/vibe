@@ -1,0 +1,10 @@
+{
+  "name": "vibe",
+  "version": "4.2.0",
+  "description": "vibe for Claude Code: create and clean Claude's worktrees with vibe, and browse them in a /vibe pane",
+  "author": { "name": "kexi" },
+  "homepage": "https://vibe.kexi.dev",
+  "repository": "https://github.com/kexi/vibe",
+  "license": "MIT",
+  "keywords": ["git", "worktree", "vibe"]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "claude-plugin-dev",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Development harness for the vibe Claude Code plugin in ./vibe (the plugin itself ships from that directory, not from this package)",
+  "devDependencies": {
+    "@anthropic-ai/claude-code": "2.1.292",
+    "typescript": "^5.9.3"
+  }
+}

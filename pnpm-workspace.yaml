@@ -20,6 +20,17 @@ blockExoticSubdeps: true
 # the same allowlist.
 strictDepBuilds: true
 
+# The Claude Code CLI (packages/claude-plugin devDependency, used only to
+# validate and test the plugin) ships a postinstall that copies its native
+# binary over bin/claude. We never run that bin: scripts/claude-plugin-check.ts
+# calls cli-wrapper.cjs, which resolves the native optional dependency itself.
+# Why not allow the build (`onlyBuiltDependencies`): CI installs with
+# --ignore-scripts anyway, and a script that rewrites a ~235 MB binary is
+# exactly what strictDepBuilds guards against. Listing it here acknowledges the
+# script as reviewed-and-skipped, so strictDepBuilds does not fail the install.
+ignoredBuiltDependencies:
+  - "@anthropic-ai/claude-code"
+
 # Fail the install if a package transitions to a less-trusted state
 # (e.g. signed -> unsigned, public -> private) between resolutions.
 trustPolicy: no-downgrade

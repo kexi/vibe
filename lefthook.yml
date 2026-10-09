@@ -1,5 +1,6 @@
 # Git hooks managed by lefthook (provided by the Nix dev shell, see flake.nix).
-# Runs oxfmt/oxlint on staged TS scripts, Prettier on staged docs files, and
+# Runs oxfmt/oxlint on staged TS scripts and Claude Code plugin files, Prettier
+# on staged docs files, validates + tests the plugin when it is staged, and
 # formats + validates the justfile when it is staged.
 # glob is a list because lefthook matches each pattern separately and does not
 # expand brace alternation like `{a,b}`. Patterns use `dir/**/*.ts` rooted at
@@ -11,6 +12,7 @@ pre-commit:
     oxfmt:
       glob:
         - "scripts/**/*.ts"
+        - "packages/claude-plugin/**/*.ts"
       run: pnpm exec oxfmt {staged_files}
       stage_fixed: true
     prettier-docs:
@@ -31,9 +33,17 @@ pre-commit:
     oxlint:
       glob:
         - "scripts/**/*.ts"
+        - "packages/claude-plugin/**/*.ts"
         - "packages/docs/**/*.ts"
         - "packages/docs/**/*.astro"
       run: pnpm exec oxlint {staged_files}
+    # Validate and test the Claude Code plugin (plus tsc once a session has
+    # written its mod types). It checks the plugin as a whole rather than the
+    # staged files, because a manifest edit can break a hook it does not name.
+    claude-plugin:
+      glob:
+        - "packages/claude-plugin/**/*"
+      run: pnpm run check:plugin
     # Fast pre-commit check on staged changes only (--staged); gitleaks resolves
     # the staged set itself, so no glob/{staged_files} is passed. This is a
     # convenience tripwire that `git commit --no-verify` can bypass, so the CI
