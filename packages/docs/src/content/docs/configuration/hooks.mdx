@@ -229,6 +229,10 @@ vibe start feat/quick-fix --no-hooks
 
 vibe integrates with [Claude Code](https://claude.ai/code)'s `WorktreeCreate` and `WorktreeRemove` hooks. This replaces Claude Code's default `git worktree add` behavior with vibe's full workflow, including hooks, CoW file copying, and configuration.
 
+:::tip
+The [Claude Code plugin](/recipes/claude-code/) does the same for the worktrees Claude creates during a session, with no JSON to copy, and adds a `/vibe` pane. The settings below are still what covers `claude --worktree`, which Claude Code creates before it loads plugins. Keep both: during a session the plugin answers first, so vibe runs once.
+:::
+
 ### Setup
 
 Add the following to your Claude Code `settings.json`:

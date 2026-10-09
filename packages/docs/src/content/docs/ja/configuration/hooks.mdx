@@ -226,6 +226,10 @@ vibe start feat/quick-fix --no-hooks
 
 vibeは[Claude Code](https://claude.ai/code)の`WorktreeCreate`および`WorktreeRemove`フックと連携できます。これにより、Claude Codeのデフォルトの`git worktree add`動作をvibeのフルワークフロー（フック、CoWファイルコピー、設定を含む）に置き換えます。
 
+:::tip
+[Claude Codeプラグイン](/ja/recipes/claude-code/)を使うと、セッション中にClaudeが作るWorktreeに同じことをJSONのコピーなしで行え、`/vibe`ペインも使えます。Claude Codeがプラグインを読み込む前に作成する`claude --worktree`のWorktreeは、引き続き以下の設定が担います。両方を入れてください。セッション中はプラグインが先に応答するので、vibeは一度だけ実行されます。
+:::
+
 ### セットアップ
 
 Claude Codeの`settings.json`に以下を追加してください：

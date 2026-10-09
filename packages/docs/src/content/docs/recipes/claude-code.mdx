@@ -1,0 +1,43 @@
+---
+title: Claude Code plugin
+description: Let vibe create Claude Code's worktrees and browse them in a /vibe pane
+sidebar:
+  order: 6
+---
+
+vibe ships a [Claude Code mod](https://code.claude.com/docs/en/plugins/mods/overview), a plugin that runs inside Claude Code. It does two things:
+
+- **Creates and cleans the worktrees Claude makes during a session** with vibe, so they get vibe's CoW copies and your `.vibe.toml` hooks. That covers the `EnterWorktree` tool and subagents with `isolation: "worktree"`.
+- **Adds a `/vibe` command** that opens a pane listing this repository's worktrees, as `vibe list` shows them, with a button to copy each path and one to remove a worktree.
+
+## Install
+
+Install vibe itself first; the plugin runs the `vibe` on your `PATH`. Then, in your shell:
+
+```bash
+claude plugin install vibe --marketplace kexi/vibe
+```
+
+Or, inside a Claude Code session: `/plugin install vibe --marketplace kexi/vibe`. Mods need Claude Code 2.1.287 or later. The plugin is published with vibe's releases: the marketplace installs it as of the latest release tag, never from `main` in between.
+
+## `claude --worktree` still needs the settings hooks
+
+Claude Code creates the worktree for `claude --worktree <name>` while it starts, before it loads any plugin, so the plugin cannot take that one over. To have vibe create it too, keep the `WorktreeCreate` / `WorktreeRemove` hooks from [Claude Code Integration](/configuration/hooks/#claude-code-integration) in your `settings.json`.
+
+The two do not run twice: during a session the plugin answers the event first, and Claude Code then skips the settings hooks for it.
+
+## When vibe cannot run
+
+If `vibe` is not on `PATH`, Claude Code creates or removes the worktree itself with git and the plugin shows a notice. If vibe runs and fails (for example, the base branch does not exist), the worktree is not created and Claude Code shows vibe's error.
+
+## Settings
+
+| Option          | Default | What it does                                                                      |
+| --------------- | ------- | --------------------------------------------------------------------------------- |
+| `worktreeHooks` | `true`  | Let vibe create and clean Claude Code's worktrees. Turn off to leave them to git. |
+
+Change it with `/config` in a Claude Code session. The `/vibe` pane works either way.
+
+:::caution
+A mod runs with your permissions, without a sandbox. This one only runs the `vibe` binary (`vibe start`, `vibe clean`, `vibe list`), never a shell. Removing a worktree from the pane discards its uncommitted changes; the pane asks first and says how many there are.
+:::

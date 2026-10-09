@@ -219,6 +219,10 @@ vibe start feat/quick-fix --no-hooks
 
 vibe 可以与 [Claude Code](https://claude.ai/code) 的 `WorktreeCreate` 和 `WorktreeRemove` 钩子集成。这会把 Claude Code 默认的 `git worktree add` 行为替换为 vibe 的完整工作流，包括钩子、CoW 文件复制和配置。
 
+:::tip
+[Claude Code 插件](/zh/recipes/claude-code/) 无需复制 JSON，就能对 Claude 在会话中创建的 worktree 做同样的事，并提供 `/vibe` 面板。`claude --worktree` 的 worktree 由 Claude Code 在加载插件之前创建，仍由下面的设置负责。请两者都保留：在会话中插件会先响应，因此 vibe 只运行一次。
+:::
+
 ### 设置
 
 在 Claude Code 的 `settings.json` 中添加以下内容：

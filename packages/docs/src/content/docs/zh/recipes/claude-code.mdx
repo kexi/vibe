@@ -1,0 +1,43 @@
+---
+title: Claude Code 插件
+description: 用 vibe 创建 Claude Code 的 worktree，并在 /vibe 面板中浏览
+sidebar:
+  order: 6
+---
+
+vibe 提供一个 [Claude Code mod](https://code.claude.com/docs/zh-CN/plugins/mods/overview)，即在 Claude Code 内部运行的插件。它做两件事：
+
+- **用 vibe 创建和清理 Claude 在会话中创建的 worktree**，让它们获得 vibe 的 CoW 复制和 `.vibe.toml` 钩子。适用于 `EnterWorktree` 工具，以及设置了 `isolation: "worktree"` 的子代理。
+- **添加 `/vibe` 命令**，打开一个面板，按 `vibe list` 的内容列出本仓库的 worktree，并提供复制路径和删除 worktree 的按钮。
+
+## 安装
+
+请先安装 vibe 本身；插件会运行 `PATH` 上的 `vibe`。然后在 shell 中执行：
+
+```bash
+claude plugin install vibe --marketplace kexi/vibe
+```
+
+也可以在 Claude Code 会话中执行 `/plugin install vibe --marketplace kexi/vibe`。mod 需要 Claude Code 2.1.287 或更高版本。插件随 vibe 的发布一起发布：marketplace 安装的是最新发布标签时的版本，而不是两次发布之间的 `main`。
+
+## `claude --worktree` 仍需要 settings 钩子
+
+`claude --worktree <name>` 的 worktree 是 Claude Code 在启动时、加载任何插件之前创建的，因此插件无法接管。如果也希望由 vibe 创建它，请在 `settings.json` 中保留 [Claude Code 集成](/zh/configuration/hooks/#claude-code-集成) 中的 `WorktreeCreate` / `WorktreeRemove` 钩子。
+
+两者同时存在也不会重复执行：在会话中插件会先响应事件，Claude Code 随后不再为该事件运行 settings 钩子。
+
+## vibe 无法运行时
+
+如果 `PATH` 上没有 `vibe`，Claude Code 会自行用 git 创建或删除 worktree，插件会显示一条通知。如果 vibe 运行但失败（例如基础分支不存在），则不会创建 worktree，Claude Code 会显示 vibe 的错误。
+
+## 设置
+
+| 选项            | 默认值 | 作用                                                              |
+| --------------- | ------ | ----------------------------------------------------------------- |
+| `worktreeHooks` | `true` | 由 vibe 创建和清理 Claude Code 的 worktree。关闭后交给 git 处理。 |
+
+在 Claude Code 会话中通过 `/config` 修改。无论哪种设置，`/vibe` 面板都可以使用。
+
+:::caution
+mod 以你的权限运行，没有沙箱。此插件只运行 `vibe` 可执行文件（`vibe start`、`vibe clean`、`vibe list`），从不使用 shell。从面板删除 worktree 会丢弃其未提交的更改；面板会先确认，并显示更改的数量。
+:::
