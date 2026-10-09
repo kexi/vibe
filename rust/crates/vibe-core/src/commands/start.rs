@@ -1516,6 +1516,22 @@ where
             &format!("[cc-worktree-hook] Branch already in worktree: {existing}"),
             opts,
         );
+        // Handing back a linked worktree already on this branch is the re-entry
+        // path (a resumed session asks for the same name again). The main
+        // worktree is never one: it is the user's own checkout, and Claude Code
+        // would later run WorktreeRemove against it.
+        let main_path = crate::git::get_main_worktree_path(deps.git)?;
+        let is_main = crate::git::lexical_normalize_path(&existing)
+            == crate::git::lexical_normalize_path(&main_path);
+        if is_main {
+            error_log(
+                deps.io,
+                &format!(
+                    "Error: '{branch_name}' is checked out in the main worktree; Claude Code needs a worktree of its own. Choose another name."
+                ),
+            );
+            return Err(VibeError::AlreadyReported);
+        }
         if flags.dry_run {
             return Ok(Outcome::none());
         }
@@ -1598,8 +1614,22 @@ where
     }
 
     if conflict.has_conflict {
-        // Different branch at same path — force remove and recreate.
-        remove_worktree(deps.git, &worktree_path, true)?;
+        // A worktree on another branch (or a detached HEAD) already sits at the
+        // path this name resolves to. Normal mode asks before replacing it, or
+        // needs --force; hook mode has nobody to ask, and the name comes from
+        // the agent, so replacing it here would discard the user's uncommitted
+        // work on their say-so. Refuse instead and let Claude Code report it.
+        let occupant = conflict.existing_branch.as_deref().map_or_else(
+            || "a detached HEAD".to_string(),
+            |b| format!("branch '{b}'"),
+        );
+        error_log(
+            deps.io,
+            &format!(
+                "Error: {worktree_path} already holds a worktree on {occupant}; refusing to replace it. Remove it with vibe clean, or choose another name."
+            ),
+        );
+        return Err(VibeError::AlreadyReported);
     }
 
     let create_opts = CreateWorktreeOptions {

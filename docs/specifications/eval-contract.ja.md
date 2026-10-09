@@ -156,8 +156,8 @@ dialect 機構の導入以前、nushell と powershell のラッパーは壊れ�
 
 フィールド:
 
-- `start`: `{"name": "<branch>"}` — 空でない文字列でなければならず（**MUST**）、NUL バイトを含んではならず（**MUST NOT**）、`-` で始まってもなりません（**MUST NOT**、`--force` / `-b` を `git worktree add` のフラグ位置に紛れ込ませないため）。CLI 引数でブランチ名が与えられた場合はそちらが優先されます。
-- `clean`: `{"worktree_path": "<絶対パス>"}` — 空でない絶対パスで、`validate_path` を通過しなければなりません（**MUST**、NUL・`\n`/`\r`・`$(`・バッククォートを含まないこと）。さらに `clean` は、実際の git worktree 一覧に含まれないパスを拒否します。
+- `start`: `{"name": "<branch>"}` — 空でない文字列でなければならず（**MUST**）、NUL バイトを含んではならず（**MUST NOT**）、`-` で始まってもなりません（**MUST NOT**、`--force` / `-b` を `git worktree add` のフラグ位置に紛れ込ませないため）。CLI 引数でブランチ名が与えられた場合はそちらが優先されます。`start` はフック名のために何かを置き換えてはなりません（**MUST NOT**）。名前が解決するパスに別ブランチ（または detached HEAD）の worktree が既にある場合は、強制削除せずに `Error:` 行と exit 1 で拒否し、ブランチが main worktree でチェックアウトされている名前も拒否します。ブランチが既に *linked* worktree にある名前では、その worktree のパスを返します（再入経路）。
+- `clean`: `{"worktree_path": "<絶対パス>"}` — 空でない絶対パスで、`validate_path` を通過しなければなりません（**MUST**、NUL・`\n`/`\r`・`$(`・バッククォートを含まないこと）。さらに `clean` は、実際の git worktree 一覧に含まれないパスを拒否し、main worktree も `pre_clean` フックの実行前に拒否します（`Error:` 行と exit 1）。
 
 ### 7.2 レスポンス（stdout）
 
