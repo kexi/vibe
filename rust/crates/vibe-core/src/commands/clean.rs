@@ -597,6 +597,20 @@ where
         return Ok(Outcome::none());
     }
 
+    // The main worktree is in the set too. Normal mode refuses it through
+    // `is_main_worktree`; hook mode removes by path, so it needs its own guard,
+    // ahead of the pre_clean hooks and of fast-remove (which can move a checkout
+    // to the Trash before git itself would refuse).
+    let is_main = crate::git::lexical_normalize_path(&main_path)
+        == crate::git::lexical_normalize_path(&worktree_path);
+    if is_main {
+        error_log(
+            deps.io,
+            "Error: refusing to remove the main worktree in Claude Code hook mode.",
+        );
+        return Err(VibeError::AlreadyReported);
+    }
+
     let worktree_info = get_worktree_by_path(deps.git, &worktree_path)?;
     let Some(worktree_info) = worktree_info else {
         verbose_log(deps.io, "[cc-worktree-hook] Worktree already removed", opts);

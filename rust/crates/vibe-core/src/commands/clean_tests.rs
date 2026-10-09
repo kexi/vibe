@@ -1277,6 +1277,38 @@ fn hook_mode_cleans_a_contained_path() {
     assert!(git.calls_contain(&["-C", "/main", "worktree", "remove", "--force", "--", &wt_path]));
 }
 
+/// Hook mode removes by path, so unlike normal mode it has no `is_main_worktree`
+/// check of its own unless it adds one: the main worktree is in the worktree
+/// set, and handing it over must not remove the user's checkout.
+#[test]
+fn hook_mode_refuses_the_main_worktree() {
+    let fx = Fixture::new();
+    let main = fx.mkdir("main");
+    let main_path = main.to_string_lossy().into_owned();
+    let io = FakeIo::new().with_env("HOME", fx.path().to_str().unwrap());
+    let git = MockGit::new(
+        &main_path,
+        &main_path,
+        &two_worktrees(&main_path, "/wt/feat", "feat"),
+    );
+    let (r, p, fk) = (NoResolver, ScriptPrompt { confirm: true }, Fakes::new());
+    let json = serde_json::json!({ "worktree_path": &main_path }).to_string();
+    let sin = FakeStdin::text(&json);
+    let proc = FakeProcess::new(&main_path);
+    let d = deps(&io, &git, &r, &p, &proc, &sin, &fk, &main_path);
+    let flags = CleanFlags {
+        worktree_hook: true,
+        ..Default::default()
+    };
+    let err = clean_command(&d, &flags, OutputOptions::default()).unwrap_err();
+    assert!(matches!(err, VibeError::AlreadyReported));
+    assert!(io
+        .stderr_text()
+        .contains("refusing to remove the main worktree"));
+    assert!(!git.calls_contain(&["worktree", "remove"]));
+    assert!(fk.native.trash_calls.borrow().is_empty());
+}
+
 #[test]
 fn hook_mode_requires_path_via_stdin() {
     let (_fx, io) = io_with_home();
