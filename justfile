@@ -18,7 +18,7 @@ default:
 
 # --- Aggregate check ---
 
-# All checks required before opening a PR (fmt:check + lint + check:i18n + check:rust + check:licenses + test:npm + test:e2e + check:docs).
+# All checks required before opening a PR (fmt:check + lint + check:i18n + check:rust + check:licenses + test:npm + check:plugin + test:e2e + check:docs).
 check:
     pnpm run check:all
 
@@ -57,6 +57,10 @@ check-i18n:
 # Docs package checks only (lint + format + check).
 check-docs:
     pnpm run check:docs
+
+# Claude Code plugin — validate --strict + plugin tests, and tsc once a session has written the mod types.
+check-plugin:
+    pnpm run check:plugin
 
 # --- Format / lint ---
 
