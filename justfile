@@ -99,8 +99,28 @@ bmp *args:
 # --- Setup / chores ---
 
 # Install the workspace dependencies.
-install:
-    pnpm install
+install *args:
+    pnpm install {{ args }}
+
+# Update all external npm dependencies to their latest stable releases.
+update-dependencies *args:
+    pnpm update --recursive --latest '!@kexi/*' {{ args }}
+
+# Refresh the Rust dependency lockfile after updating manifest requirements.
+update-rust:
+    pnpm run update:rust
+
+# Regenerate the license notices after updating Rust dependencies.
+update-licenses:
+    pnpm run update:licenses
+
+# Refresh the pinned JSR dependency graph used by the release version tool.
+update-deno:
+    pnpm run update:deno
+
+# Apply the docs formatter after upgrading Prettier and its Astro plugin.
+fmt-docs:
+    pnpm -C packages/docs format:fix
 
 # Remove node_modules and dist from every workspace package.
 clean:

@@ -3,9 +3,11 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    # Intel Darwin needs the last supported branch after unstable dropped it.
+    nixpkgs-darwin.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
   };
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, nixpkgs-darwin }:
     let
       # Single source of truth: read the release version from package.json at
       # eval time instead of hardcoding it here. A literal duplicate drifts out
@@ -45,10 +47,15 @@
       # The system list is fixed (the keys of `platforms`), so plain
       # lib.genAttrs covers what flake-utils' eachSystem did without the extra
       # flake input.
-      eachSystem = f: nixpkgs.lib.genAttrs systems (system: f {
-        inherit system;
-        pkgs = nixpkgs.legacyPackages.${system};
-      });
+      eachSystem = f: nixpkgs.lib.genAttrs systems (system:
+        let
+          isIntelDarwin = system == "x86_64-darwin";
+          packageSet = if isIntelDarwin then nixpkgs-darwin else nixpkgs;
+        in
+        f {
+          inherit system;
+          pkgs = packageSet.legacyPackages.${system};
+        });
     in
     {
       packages = eachSystem ({ system, pkgs }:
@@ -149,44 +156,78 @@
       # (gcc/clang + binutils) on PATH. node-gyp (node-pty) and rustup link
       # against the system toolchain; a Nix `ld` here shadows it and fails to
       # find the system crti.o.
-      devShells = eachSystem ({ pkgs, ... }: {
-        default = pkgs.mkShellNoCC {
-          # Toolchain that replaces the former .mise.toml. Versions are pinned
-          # by flake.lock; node/pnpm follow the lockfile's major (pnpm_10), while
-          # Rust is managed by rustup (see rust-toolchain.toml) because the native
-          # module's cross-target builds need `rustup target add`.
-          packages = with pkgs; [
-            bun
-            nodejs_24
-            pnpm_10
-            ruby_3_4
-            rustup
-            deno # runs jsr:@kt3k/bmp for release version bumping (#541)
-            pinact
-            lefthook
-            git
-            gitleaks
-            just
-            # Shells driven by the wrapper round-trip tests
-            # (crates/vibe/tests/wrapper_round_trip.rs), which source the
-            # generated `vibe shell-setup` wrapper in a REAL shell and assert the
-            # cwd actually changed. bash is always present; pwsh comes from the
-            # GitHub runner image (nixpkgs' powershell is unfree-adjacent and
-            # heavyweight for a dev shell), so only these three are added here.
-            nushell
-            fish
-            zsh
-          ];
+      devShells = eachSystem ({ system, pkgs }:
+        let
+          # Keep the security fixes until nixpkgs packages this release.
+          bunVersion = "1.4.4";
+          bunArtifacts = {
+            aarch64-darwin = {
+              artifact = "bun-darwin-aarch64";
+              hash = "sha256-wkDX8My5DCY6hJ/NsJt+5iYw2SE0jtaq/ahrnVd7xRA=";
+            };
+            x86_64-darwin = {
+              artifact = "bun-darwin-x64-baseline";
+              hash = "sha256-1KFVrfv9CRVes7oFyeOlRPOSl9emhhbTx3WfZ6tcR9w=";
+            };
+            aarch64-linux = {
+              artifact = "bun-linux-aarch64";
+              hash = "sha256-uqa7NvUdblhWHgK76oJQOKnfRU9nPW13bou/hvjHhQ4=";
+            };
+            x86_64-linux = {
+              artifact = "bun-linux-x64-baseline";
+              hash = "sha256-4ERutVmVdy65iUvrrppr42jZhai5Jx7hJEhvmUbu3XY=";
+            };
+          };
+          bunSources = builtins.mapAttrs (_: info: pkgs.fetchurl {
+            url = "https://github.com/oven-sh/bun/releases/download/bun-v${bunVersion}/${info.artifact}.zip";
+            inherit (info) hash;
+          }) bunArtifacts;
+          bunRuntime = pkgs.bun.overrideAttrs (oldAttrs: {
+            version = bunVersion;
+            src = bunSources.${system};
+            sourceRoot = bunArtifacts.${system}.artifact;
+            passthru = oldAttrs.passthru // { sources = bunSources; };
+            meta = oldAttrs.meta // { platforms = systems; };
+          });
+        in
+        {
+          default = pkgs.mkShellNoCC {
+            # Toolchain that replaces the former .mise.toml. Versions are pinned
+            # by flake.lock; node/pnpm follow the lockfile's major (pnpm_12), while
+            # Rust is managed by rustup (see rust-toolchain.toml) because the native
+            # module's cross-target builds need `rustup target add`.
+            packages = with pkgs; [
+              bunRuntime
+              nodejs_26
+              pnpm_12
+              ruby_4_0
+              rustup
+              deno # runs jsr:@kt3k/bmp for release version bumping (#541)
+              pinact
+              lefthook
+              git
+              gitleaks
+              just
+              # Shells driven by the wrapper round-trip tests
+              # (crates/vibe/tests/wrapper_round_trip.rs), which source the
+              # generated `vibe shell-setup` wrapper in a REAL shell and assert the
+              # cwd actually changed. bash is always present; pwsh comes from the
+              # GitHub runner image (nixpkgs' powershell is unfree-adjacent and
+              # heavyweight for a dev shell), so only these three are added here.
+              nushell
+              fish
+              zsh
+            ];
 
-          # Formerly .mise.toml [env]; avoids sharp pulling in a global libvips.
-          # lefthook install registers the git hooks defined in lefthook.yml;
-          # done here (not via an npm "prepare" script) so hook setup is owned by
-          # the Nix dev shell and does not depend on the JS package lifecycle.
-          shellHook = ''
-            export SHARP_IGNORE_GLOBAL_LIBVIPS=1
-            lefthook install >/dev/null 2>&1 || true
-          '';
-        };
+            # Formerly .mise.toml [env]; avoids sharp pulling in a global libvips.
+            # lefthook install registers the git hooks defined in lefthook.yml;
+            # done here (not via an npm "prepare" script) so hook setup is owned by
+            # the Nix dev shell and does not depend on the JS package lifecycle.
+            shellHook = ''
+              export SHARP_IGNORE_GLOBAL_LIBVIPS=1
+              lefthook install >/dev/null 2>&1 || true
+            '';
+          };
       });
 
       overlays.default = final: prev: {

@@ -53,7 +53,7 @@ A comprehensive security checklist for the vibe CLI tool. Each category includes
 - **Mitigation** (layered):
   - **Registry hardening**: Takumi Guard proxy (`.github/actions/setup-takumi-guard`) intercepts known-malicious packages; `minimumReleaseAge: 4320` (72 h) quarantine in `pnpm-workspace.yaml` blocks freshly published versions
   - **No exotic sources**: `blockExoticSubdeps: true` rejects `github:user/repo`, `file:`, `http:` and other non-registry dependencies anywhere in the graph (defeats the wormable `optionalDependencies: github:<sha>` technique)
-  - **Lifecycle scripts off by default**: `strictDepBuilds: true` + explicit `only-built-dependencies` allowlist (currently `node-pty` only, see `.npmrc`); `--ignore-scripts` on every `pnpm install` and `pnpm publish` invocation in CI
+  - **Lifecycle scripts off by default**: `strictDepBuilds: true` + explicit `allowBuilds` allowlist in `pnpm-workspace.yaml` (`node-pty`, `esbuild`, and `sharp`); `--ignore-scripts` on every `pnpm install` and `pnpm publish` invocation in CI
   - **Trust monotonicity**: `trustPolicy: no-downgrade` aborts installation when a package transitions to a less-trusted state
   - **Lockfile pinning**: `--frozen-lockfile` in every CI install step
   - **Workflow integrity**: All third-party GitHub Actions pinned to full commit SHA (`pinact-verify` job blocks unpinned references); the toolchain is pinned reproducibly via `flake.lock` (and `rust-toolchain.toml` for Rust)

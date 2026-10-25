@@ -184,12 +184,14 @@ fn decode_profile_bytes(buf: &[u8]) -> String {
 }
 
 /// UTF-16 code units in `order`'s byte order, lossily decoded. A trailing odd
-/// byte (a truncated read cutting a code unit in half) is dropped by
-/// `chunks_exact`.
+/// byte (a truncated read cutting a code unit in half) is omitted from the
+/// complete code units.
 fn decode_utf16(bytes: &[u8], order: fn([u8; 2]) -> u16) -> String {
     let units: Vec<u16> = bytes
-        .chunks_exact(2)
-        .map(|pair| order([pair[0], pair[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| order(*pair))
         .collect();
     String::from_utf16_lossy(&units)
 }

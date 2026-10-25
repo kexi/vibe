@@ -53,7 +53,7 @@ vibe CLIツールの包括的なセキュリティチェックリストです。
 - **対策** (多層防御):
   - **レジストリ強化**: Takumi Guard プロキシ (`.github/actions/setup-takumi-guard`) が既知マルウェアを遮断。`pnpm-workspace.yaml` の `minimumReleaseAge: 4320` (72 時間) で新規公開直後のバージョンを隔離
   - **非標準ソース禁止**: `blockExoticSubdeps: true` で `github:user/repo`・`file:`・`http:` などレジストリ外依存を依存グラフ全域で拒否（自己伝播ペイロード `optionalDependencies: github:<sha>` を無効化）
-  - **ライフサイクルスクリプト既定オフ**: `strictDepBuilds: true` + 明示的な `only-built-dependencies` 許可リスト（現在 `node-pty` のみ、`.npmrc` を参照）。CI の全 `pnpm install` / `pnpm publish` に `--ignore-scripts`
+  - **ライフサイクルスクリプト既定オフ**: `strictDepBuilds: true` + `pnpm-workspace.yaml` の明示的な `allowBuilds` 許可リスト（`node-pty`、`esbuild`、`sharp`）。CI の全 `pnpm install` / `pnpm publish` に `--ignore-scripts`
   - **信頼レベル単調性**: `trustPolicy: no-downgrade` でパッケージが低信頼状態に遷移した場合にインストールを中断
   - **ロックファイル固定**: 全 CI install ステップで `--frozen-lockfile`
   - **ワークフロー完全性**: サードパーティ Actions は完全コミット SHA に固定 (`pinact-verify` job が未固定参照をブロック)。ツールチェーンは `flake.lock` (Rust は `rust-toolchain.toml`) で再現的に固定
