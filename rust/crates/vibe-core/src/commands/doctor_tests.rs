@@ -1581,6 +1581,21 @@ fn a_utf16le_shipped_wrapper_is_still_current() {
 }
 
 #[test]
+fn a_trailing_incomplete_utf16_code_unit_does_not_hide_a_stale_wrapper() {
+    for little_endian in [true, false] {
+        let mut bytes = utf16_bytes(OLD_PWSH_WRAPPER, little_endian);
+        bytes.push(0x41);
+
+        let decoded = decode_profile_bytes(&bytes);
+        assert_eq!(decoded, OLD_PWSH_WRAPPER);
+        assert_eq!(
+            classify(&decoded, ShellName::Powershell),
+            WrapperStatus::Stale
+        );
+    }
+}
+
+#[test]
 fn plain_utf8_without_a_bom_is_unchanged() {
     assert_eq!(
         decode_profile_bytes(OLD_NU_WRAPPER.as_bytes()),

@@ -26,146 +26,135 @@ every shipped binary; listing them all is intentionally conservative.
 
 | Crate | Version | License (SPDX) |
 | ----- | ------- | -------------- |
-| aho-corasick | 1.1.4 | Unlicense OR MIT |
-| android_system_properties | 0.1.5 | MIT/Apache-2.0 |
+| aho-corasick | 1.1.5 | Unlicense OR MIT |
+| android_system_properties | 0.1.6 | MIT OR Apache-2.0 |
 | anstream | 1.0.0 | MIT OR Apache-2.0 |
 | anstyle | 1.0.14 | MIT OR Apache-2.0 |
 | anstyle-parse | 1.0.0 | MIT OR Apache-2.0 |
 | anstyle-query | 1.1.5 | MIT OR Apache-2.0 |
 | anstyle-wincon | 3.0.11 | MIT OR Apache-2.0 |
-| anyhow | 1.0.102 | MIT OR Apache-2.0 |
+| anyhow | 1.0.104 | MIT OR Apache-2.0 |
 | autocfg | 1.5.1 | Apache-2.0 OR MIT |
-| aws-lc-rs | 1.17.0 | ISC AND (Apache-2.0 OR ISC) |
-| aws-lc-sys | 0.41.0 | ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0) |
-| base64 | 0.22.1 | MIT OR Apache-2.0 |
-| bitflags | 2.12.1 | MIT OR Apache-2.0 |
-| block-buffer | 0.10.4 | MIT OR Apache-2.0 |
-| bstr | 1.12.1 | MIT OR Apache-2.0 |
+| aws-lc-rs | 1.18.2 | ISC AND (Apache-2.0 OR ISC) |
+| aws-lc-sys | 0.46.0 | ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0) |
+| base64 | 0.23.1 | MIT OR Apache-2.0 |
+| bitflags | 2.13.2 | MIT OR Apache-2.0 |
+| block-buffer | 0.12.1 | MIT OR Apache-2.0 |
+| bstr | 1.13.1 | MIT OR Apache-2.0 |
 | bumpalo | 3.20.3 | MIT OR Apache-2.0 |
-| bytes | 1.11.1 | MIT |
-| cc | 1.2.63 | MIT OR Apache-2.0 |
-| cfg_aliases | 0.2.1 | MIT |
-| cfg-if | 1.0.4 | MIT OR Apache-2.0 |
+| bytes | 1.12.1 | MIT |
+| cc | 1.10.0 | MIT OR Apache-2.0 |
+| cfg_aliases | 0.2.2 | MIT |
+| cfg-if | 1.0.5 | MIT OR Apache-2.0 |
 | chrono | 0.4.45 | MIT OR Apache-2.0 |
-| clap | 4.6.1 | MIT OR Apache-2.0 |
-| clap_builder | 4.6.0 | MIT OR Apache-2.0 |
-| clap_derive | 4.6.1 | MIT OR Apache-2.0 |
-| clap_lex | 1.1.0 | MIT OR Apache-2.0 |
+| clap | 4.6.7 | MIT OR Apache-2.0 |
+| clap_builder | 4.6.7 | MIT OR Apache-2.0 |
+| clap_derive | 4.6.7 | MIT OR Apache-2.0 |
+| clap_lex | 1.1.1 | MIT OR Apache-2.0 |
 | cmake | 0.1.58 | MIT OR Apache-2.0 |
 | colorchoice | 1.0.5 | MIT OR Apache-2.0 |
-| console | 0.15.11 | MIT |
+| console | 0.16.6 | MIT |
+| const-oid | 0.10.2 | Apache-2.0 OR MIT |
 | core-foundation-sys | 0.8.7 | MIT OR Apache-2.0 |
-| cpufeatures | 0.2.17 | MIT OR Apache-2.0 |
-| crypto-common | 0.1.7 | MIT OR Apache-2.0 |
-| digest | 0.10.7 | MIT OR Apache-2.0 |
+| cpufeatures | 0.3.1 | MIT OR Apache-2.0 |
+| crypto-common | 0.2.2 | MIT OR Apache-2.0 |
+| digest | 0.11.3 | MIT OR Apache-2.0 |
 | dunce | 1.0.5 | CC0-1.0 OR MIT-0 OR Apache-2.0 |
 | encode_unicode | 1.0.0 | Apache-2.0 OR MIT |
-| equivalent | 1.0.2 | Apache-2.0 OR MIT |
+| equivalent | 1.0.3 | Apache-2.0 OR MIT |
 | errno | 0.3.14 | MIT OR Apache-2.0 |
-| fastrand | 2.4.1 | Apache-2.0 OR MIT |
-| find-msvc-tools | 0.1.9 | MIT OR Apache-2.0 |
-| foldhash | 0.1.5 | Zlib |
+| fastrand | 2.5.0 | Apache-2.0 OR MIT |
+| find-msvc-tools | 0.1.15 | MIT OR Apache-2.0 |
+| foldhash | 0.2.0 | Zlib |
 | fs_extra | 1.3.0 | MIT |
-| futures-core | 0.3.32 | MIT OR Apache-2.0 |
-| futures-task | 0.3.32 | MIT OR Apache-2.0 |
-| futures-util | 0.3.32 | MIT OR Apache-2.0 |
-| generic-array | 0.14.7 | MIT |
+| futures-core | 0.3.34 | MIT OR Apache-2.0 |
+| futures-task | 0.3.34 | MIT OR Apache-2.0 |
+| futures-util | 0.3.34 | MIT OR Apache-2.0 |
 | getrandom | 0.2.17 | MIT OR Apache-2.0 |
-| getrandom | 0.3.4 | MIT OR Apache-2.0 |
-| getrandom | 0.4.2 | MIT OR Apache-2.0 |
-| globset | 0.4.18 | Unlicense OR MIT |
-| hashbrown | 0.15.5 | MIT OR Apache-2.0 |
+| getrandom | 0.4.3 | MIT OR Apache-2.0 |
+| globset | 0.4.20 | Unlicense OR MIT |
 | hashbrown | 0.17.1 | MIT OR Apache-2.0 |
 | heck | 0.5.0 | MIT OR Apache-2.0 |
-| http | 1.4.1 | MIT OR Apache-2.0 |
+| http | 1.5.0 | MIT OR Apache-2.0 |
 | httparse | 1.10.1 | MIT OR Apache-2.0 |
+| hybrid-array | 0.4.15 | MIT OR Apache-2.0 |
 | iana-time-zone | 0.1.65 | MIT OR Apache-2.0 |
 | iana-time-zone-haiku | 0.1.2 | MIT OR Apache-2.0 |
-| id-arena | 2.3.0 | MIT/Apache-2.0 |
-| indexmap | 2.14.0 | Apache-2.0 OR MIT |
-| indicatif | 0.17.11 | MIT |
+| indexmap | 2.14.2 | Apache-2.0 OR MIT |
+| indicatif | 0.18.6 | MIT |
 | is_terminal_polyfill | 1.70.2 | MIT OR Apache-2.0 |
 | itoa | 1.0.18 | MIT OR Apache-2.0 |
-| jobserver | 0.1.34 | MIT OR Apache-2.0 |
-| js-sys | 0.3.99 | MIT OR Apache-2.0 |
-| leb128fmt | 0.1.0 | MIT OR Apache-2.0 |
-| libc | 0.2.186 | MIT OR Apache-2.0 |
+| jobserver | 0.1.35 | MIT OR Apache-2.0 |
+| js-sys | 0.3.106 | MIT OR Apache-2.0 |
+| libc | 0.2.191 | MIT OR Apache-2.0 |
 | linux-raw-sys | 0.12.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
-| log | 0.4.32 | MIT OR Apache-2.0 |
-| memchr | 2.8.1 | Unlicense OR MIT |
-| nix | 0.29.0 | MIT |
+| log | 0.4.34 | MIT OR Apache-2.0 |
+| memchr | 2.8.3 | Unlicense OR MIT |
+| nix | 0.31.3 | MIT |
 | num-traits | 0.2.19 | MIT OR Apache-2.0 |
-| number_prefix | 0.4.0 | MIT |
-| objc2 | 0.6.4 | MIT |
+| objc2 | 0.6.5 | MIT |
 | objc2-encode | 4.1.0 | MIT |
 | objc2-foundation | 0.3.2 | MIT |
 | once_cell | 1.21.4 | MIT OR Apache-2.0 |
 | once_cell_polyfill | 1.70.2 | MIT OR Apache-2.0 |
 | percent-encoding | 2.3.2 | MIT OR Apache-2.0 |
 | pin-project-lite | 0.2.17 | Apache-2.0 OR MIT |
-| portable-atomic | 1.13.1 | Apache-2.0 OR MIT |
-| prettyplease | 0.2.37 | MIT OR Apache-2.0 |
-| proc-macro2 | 1.0.106 | MIT OR Apache-2.0 |
-| quote | 1.0.45 | MIT OR Apache-2.0 |
-| r-efi | 5.3.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later |
+| pkg-config | 0.3.34 | MIT OR Apache-2.0 |
+| portable-atomic | 1.15.0 | Apache-2.0 OR MIT |
+| proc-macro2 | 1.0.107 | MIT OR Apache-2.0 |
+| quote | 1.0.47 | MIT OR Apache-2.0 |
 | r-efi | 6.0.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later |
-| regex-automata | 0.4.14 | MIT OR Apache-2.0 |
-| regex-syntax | 0.8.10 | MIT OR Apache-2.0 |
+| regex-automata | 0.4.18 | MIT OR Apache-2.0 |
+| regex-syntax | 0.8.11 | MIT OR Apache-2.0 |
 | ring | 0.17.14 | Apache-2.0 AND ISC |
-| rustix | 1.1.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
-| rustls | 0.23.40 | Apache-2.0 OR ISC OR MIT |
-| rustls-pki-types | 1.14.1 | MIT OR Apache-2.0 |
-| rustls-webpki | 0.103.13 | ISC |
-| rustversion | 1.0.22 | MIT OR Apache-2.0 |
+| rustix | 1.1.5 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
+| rustls | 0.23.46 | Apache-2.0 OR ISC OR MIT |
+| rustls-pki-types | 1.15.1 | MIT OR Apache-2.0 |
+| rustls-webpki | 0.103.16 | ISC |
+| rustversion | 1.0.23 | MIT OR Apache-2.0 |
 | same-file | 1.0.6 | Unlicense/MIT |
 | scopeguard | 1.2.0 | MIT OR Apache-2.0 |
-| semver | 1.0.28 | MIT OR Apache-2.0 |
-| serde | 1.0.228 | MIT OR Apache-2.0 |
-| serde_core | 1.0.228 | MIT OR Apache-2.0 |
-| serde_derive | 1.0.228 | MIT OR Apache-2.0 |
-| serde_json | 1.0.150 | MIT OR Apache-2.0 |
-| serde_spanned | 0.6.9 | MIT OR Apache-2.0 |
-| sha2 | 0.10.9 | MIT OR Apache-2.0 |
+| serde | 1.0.229 | MIT OR Apache-2.0 |
+| serde_core | 1.0.229 | MIT OR Apache-2.0 |
+| serde_derive | 1.0.229 | MIT OR Apache-2.0 |
+| serde_json | 1.0.154 | MIT OR Apache-2.0 |
+| serde_spanned | 1.1.2 | MIT OR Apache-2.0 |
+| sha2 | 0.11.1 | MIT OR Apache-2.0 |
 | shlex | 2.0.1 | MIT OR Apache-2.0 |
 | slab | 0.4.12 | MIT |
 | strsim | 0.11.1 | MIT |
 | subtle | 2.6.1 | BSD-3-Clause |
-| syn | 2.0.117 | MIT OR Apache-2.0 |
+| syn | 2.0.119 | MIT OR Apache-2.0 |
+| syn | 3.0.9 | MIT OR Apache-2.0 |
 | tempfile | 3.27.0 | MIT OR Apache-2.0 |
-| thiserror | 2.0.18 | MIT OR Apache-2.0 |
-| thiserror-impl | 2.0.18 | MIT OR Apache-2.0 |
-| toml | 0.8.23 | MIT OR Apache-2.0 |
-| toml_datetime | 0.6.11 | MIT OR Apache-2.0 |
-| toml_edit | 0.22.27 | MIT OR Apache-2.0 |
-| toml_write | 0.1.2 | MIT OR Apache-2.0 |
-| trash | 5.2.6 | MIT |
+| thiserror | 2.0.21 | MIT OR Apache-2.0 |
+| thiserror-impl | 2.0.21 | MIT OR Apache-2.0 |
+| toml | 1.1.8+spec-1.1.0 | MIT OR Apache-2.0 |
+| toml_datetime | 1.1.2+spec-1.1.0 | MIT OR Apache-2.0 |
+| toml_parser | 1.1.5+spec-1.1.0 | MIT OR Apache-2.0 |
+| toml_writer | 1.1.3+spec-1.1.0 | MIT OR Apache-2.0 |
+| trash | 5.2.9 | MIT |
 | typenum | 1.20.1 | MIT OR Apache-2.0 |
-| unicode-ident | 1.0.24 | (MIT OR Apache-2.0) AND Unicode-3.0 |
+| unicode-ident | 1.0.27 | (MIT OR Apache-2.0) AND Unicode-3.0 |
 | unicode-width | 0.2.2 | MIT OR Apache-2.0 |
-| unicode-xid | 0.2.6 | MIT OR Apache-2.0 |
+| unit-prefix | 0.5.2 | MIT |
 | untrusted | 0.9.0 | ISC |
-| ureq | 3.3.0 | MIT OR Apache-2.0 |
-| ureq-proto | 0.6.0 | MIT OR Apache-2.0 |
+| ureq | 3.5.0 | MIT OR Apache-2.0 |
+| ureq-proto | 0.6.5 | MIT OR Apache-2.0 |
 | urlencoding | 2.1.3 | MIT |
 | utf8-zero | 0.8.1 | MIT OR Apache-2.0 |
 | utf8parse | 0.2.2 | Apache-2.0 OR MIT |
-| uuid | 1.23.2 | Apache-2.0 OR MIT |
-| version_check | 0.9.5 | MIT/Apache-2.0 |
+| uuid | 1.29.0 | Apache-2.0 OR MIT |
 | walkdir | 2.5.0 | Unlicense/MIT |
 | wasi | 0.11.1+wasi-snapshot-preview1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
-| wasip2 | 1.0.3+wasi-0.2.9 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
-| wasip3 | 0.4.0+wasi-0.3.0-rc-2026-01-06 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
-| wasm-bindgen | 0.2.122 | MIT OR Apache-2.0 |
-| wasm-bindgen-macro | 0.2.122 | MIT OR Apache-2.0 |
-| wasm-bindgen-macro-support | 0.2.122 | MIT OR Apache-2.0 |
-| wasm-bindgen-shared | 0.2.122 | MIT OR Apache-2.0 |
-| wasm-encoder | 0.244.0 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
-| wasm-metadata | 0.244.0 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
-| wasmparser | 0.244.0 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
+| wasm-bindgen | 0.2.129 | MIT OR Apache-2.0 |
+| wasm-bindgen-macro | 0.2.129 | MIT OR Apache-2.0 |
+| wasm-bindgen-macro-support | 0.2.129 | MIT OR Apache-2.0 |
+| wasm-bindgen-shared | 0.2.129 | MIT OR Apache-2.0 |
 | web-time | 1.1.0 | MIT OR Apache-2.0 |
-| webpki-roots | 1.0.7 | CDLA-Permissive-2.0 |
+| webpki-roots | 1.0.11 | CDLA-Permissive-2.0 |
 | winapi-util | 0.1.11 | Unlicense OR MIT |
-| windows | 0.56.0 | MIT OR Apache-2.0 |
+| windows | 0.62.2 | MIT OR Apache-2.0 |
 | windows_aarch64_gnullvm | 0.52.6 | MIT OR Apache-2.0 |
 | windows_aarch64_msvc | 0.52.6 | MIT OR Apache-2.0 |
 | windows_i686_gnu | 0.52.6 | MIT OR Apache-2.0 |
@@ -174,30 +163,22 @@ every shipped binary; listing them all is intentionally conservative.
 | windows_x86_64_gnu | 0.52.6 | MIT OR Apache-2.0 |
 | windows_x86_64_gnullvm | 0.52.6 | MIT OR Apache-2.0 |
 | windows_x86_64_msvc | 0.52.6 | MIT OR Apache-2.0 |
-| windows-core | 0.56.0 | MIT OR Apache-2.0 |
+| windows-collections | 0.3.2 | MIT OR Apache-2.0 |
 | windows-core | 0.62.2 | MIT OR Apache-2.0 |
-| windows-implement | 0.56.0 | MIT OR Apache-2.0 |
+| windows-future | 0.3.2 | MIT OR Apache-2.0 |
 | windows-implement | 0.60.2 | MIT OR Apache-2.0 |
-| windows-interface | 0.56.0 | MIT OR Apache-2.0 |
 | windows-interface | 0.59.3 | MIT OR Apache-2.0 |
 | windows-link | 0.2.1 | MIT OR Apache-2.0 |
-| windows-result | 0.1.2 | MIT OR Apache-2.0 |
+| windows-numerics | 0.3.1 | MIT OR Apache-2.0 |
 | windows-result | 0.4.1 | MIT OR Apache-2.0 |
 | windows-strings | 0.5.1 | MIT OR Apache-2.0 |
 | windows-sys | 0.52.0 | MIT OR Apache-2.0 |
-| windows-sys | 0.59.0 | MIT OR Apache-2.0 |
 | windows-sys | 0.61.2 | MIT OR Apache-2.0 |
 | windows-targets | 0.52.6 | MIT OR Apache-2.0 |
-| winnow | 0.7.15 | MIT |
-| wit-bindgen | 0.51.0 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
-| wit-bindgen | 0.57.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
-| wit-bindgen-core | 0.51.0 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
-| wit-bindgen-rust | 0.51.0 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
-| wit-bindgen-rust-macro | 0.51.0 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
-| wit-component | 0.244.0 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
-| wit-parser | 0.244.0 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
-| zeroize | 1.8.2 | Apache-2.0 OR MIT |
-| zmij | 1.0.21 | MIT |
+| windows-threading | 0.2.1 | MIT OR Apache-2.0 |
+| winnow | 1.0.4 | MIT |
+| zeroize | 1.9.1 | Apache-2.0 OR MIT |
+| zmij | 1.0.23 | MIT |
 
 ## Appendix A: License texts and notices for non-electable obligations
 
@@ -212,7 +193,7 @@ dependency graph, so it may reproduce notices for crates that are not linked
 into any shipped binary. Reproducing a notice is not a representation that the
 crate is present in a given build.
 
-### aws-lc-rs 1.17.0 — ISC AND (Apache-2.0 OR ISC)
+### aws-lc-rs 1.18.2 — ISC AND (Apache-2.0 OR ISC)
 
 #### LICENSE
 
@@ -421,7 +402,7 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ```
 
-### aws-lc-sys 0.41.0 — ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0)
+### aws-lc-sys 0.46.0 — ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0)
 
 #### LICENSE
 
@@ -1055,7 +1036,7 @@ OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ```
 
-### unicode-ident 1.0.24 — (MIT OR Apache-2.0) AND Unicode-3.0
+### unicode-ident 1.0.27 — (MIT OR Apache-2.0) AND Unicode-3.0
 
 #### LICENSE-APACHE
 
@@ -1336,7 +1317,7 @@ line composed from that manifest's `authors` metadata rather than copied from
 an upstream notice — the published crate contains none to copy. Such sections
 are marked `(reconstructed)` and say so individually.
 
-### android_system_properties 0.1.5 — elected MIT (from MIT/Apache-2.0)
+### android_system_properties 0.1.6 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -1493,7 +1474,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### anyhow 1.0.102 — elected MIT (from MIT OR Apache-2.0)
+### anyhow 1.0.104 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -1555,14 +1536,14 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### base64 0.22.1 — elected MIT (from MIT OR Apache-2.0)
+### base64 0.23.1 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
 ```
 The MIT License (MIT)
 
-Copyright (c) 2015 Alice Maz
+Copyright (c) 2025 Alice Maz, Marshall Pierce
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -1583,7 +1564,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### bitflags 2.12.1 — elected MIT (from MIT OR Apache-2.0)
+### bitflags 2.13.2 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -1615,12 +1596,12 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### block-buffer 0.10.4 — elected MIT (from MIT OR Apache-2.0)
+### block-buffer 0.12.1 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
 ```
-Copyright (c) 2018-2019 The RustCrypto Project Developers
+Copyright (c) 2018-2025 The RustCrypto Project Developers
 
 Permission is hereby granted, free of charge, to any
 person obtaining a copy of this software and associated
@@ -1647,7 +1628,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### bstr 1.12.1 — elected MIT (from MIT OR Apache-2.0)
+### bstr 1.13.1 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -1707,7 +1688,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### bytes 1.11.1 — elected MIT (from MIT)
+### bytes 1.12.1 — elected MIT (from MIT)
 
 #### LICENSE
 
@@ -1739,7 +1720,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### cc 1.2.63 — elected MIT (from MIT OR Apache-2.0)
+### cc 1.10.0 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -1771,7 +1752,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### cfg_aliases 0.2.1 — elected MIT (from MIT)
+### cfg_aliases 0.2.2 — elected MIT (from MIT)
 
 #### LICENSE
 
@@ -1787,7 +1768,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### cfg-if 1.0.4 — elected MIT (from MIT OR Apache-2.0)
+### cfg-if 1.0.5 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -2065,7 +2046,7 @@ limitations under the License.
 ~~~~
 ```
 
-### clap 4.6.1 — elected MIT (from MIT OR Apache-2.0)
+### clap 4.6.7 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -2091,7 +2072,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### clap_builder 4.6.0 — elected MIT (from MIT OR Apache-2.0)
+### clap_builder 4.6.7 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -2117,7 +2098,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### clap_derive 4.6.1 — elected MIT (from MIT OR Apache-2.0)
+### clap_derive 4.6.7 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -2143,7 +2124,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### clap_lex 1.1.0 — elected MIT (from MIT OR Apache-2.0)
+### clap_lex 1.1.1 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -2227,7 +2208,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### console 0.15.11 — elected MIT (from MIT)
+### console 0.16.6 — elected MIT (from MIT)
 
 #### LICENSE
 
@@ -2253,6 +2234,38 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+```
+
+### const-oid 0.10.2 — elected MIT (from Apache-2.0 OR MIT)
+
+#### LICENSE-MIT
+
+```
+Copyright (c) 2020-2026 The RustCrypto Project Developers
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
 ```
 
 ### core-foundation-sys 0.8.7 — elected MIT (from MIT OR Apache-2.0)
@@ -2287,12 +2300,12 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### cpufeatures 0.2.17 — elected MIT (from MIT OR Apache-2.0)
+### cpufeatures 0.3.1 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
 ```
-Copyright (c) 2020-2025 The RustCrypto Project Developers
+Copyright (c) 2020-2026 The RustCrypto Project Developers
 
 Permission is hereby granted, free of charge, to any
 person obtaining a copy of this software and associated
@@ -2319,12 +2332,12 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### crypto-common 0.1.7 — elected MIT (from MIT OR Apache-2.0)
+### crypto-common 0.2.2 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
 ```
-Copyright (c) 2021 RustCrypto Developers
+Copyright (c) 2021-2026 RustCrypto Developers
 
 Permission is hereby granted, free of charge, to any
 person obtaining a copy of this software and associated
@@ -2351,11 +2364,12 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### digest 0.10.7 — elected MIT (from MIT OR Apache-2.0)
+### digest 0.11.3 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
 ```
+Copyright (c) 2017-2025 RustCrypto Developers
 Copyright (c) 2017 Artyom Pavlov
 
 Permission is hereby granted, free of charge, to any
@@ -2407,7 +2421,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE
 ```
 
-### equivalent 1.0.2 — elected MIT (from Apache-2.0 OR MIT)
+### equivalent 1.0.3 — elected MIT (from Apache-2.0 OR MIT)
 
 #### LICENSE-MIT
 
@@ -2471,7 +2485,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### fastrand 2.4.1 — elected MIT (from Apache-2.0 OR MIT)
+### fastrand 2.5.0 — elected MIT (from Apache-2.0 OR MIT)
 
 #### LICENSE-MIT
 
@@ -2501,7 +2515,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### find-msvc-tools 0.1.9 — elected MIT (from MIT OR Apache-2.0)
+### find-msvc-tools 0.1.15 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -2533,7 +2547,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### foldhash 0.1.5 — elected Zlib (from Zlib)
+### foldhash 0.2.0 — elected Zlib (from Zlib)
 
 #### LICENSE
 
@@ -2587,7 +2601,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### futures-core 0.3.32 — elected MIT (from MIT OR Apache-2.0)
+### futures-core 0.3.34 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -2620,7 +2634,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### futures-task 0.3.32 — elected MIT (from MIT OR Apache-2.0)
+### futures-task 0.3.34 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -2653,7 +2667,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### futures-util 0.3.32 — elected MIT (from MIT OR Apache-2.0)
+### futures-util 0.3.34 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -2684,34 +2698,6 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
-```
-
-### generic-array 0.14.7 — elected MIT (from MIT)
-
-#### LICENSE
-
-```
-The MIT License (MIT)
-
-Copyright (c) 2015 Bartłomiej Kamiński
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
 ```
 
 ### getrandom 0.2.17 — elected MIT (from MIT OR Apache-2.0)
@@ -2747,78 +2733,13 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### getrandom 0.3.4 — elected MIT (from MIT OR Apache-2.0)
-
-#### LICENSE-MIT
-
-```
-Copyright (c) 2018-2025 The rust-random Project Developers
-Copyright (c) 2014 The Rust Project Developers
-
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-```
-
-### getrandom 0.4.2 — elected MIT (from MIT OR Apache-2.0)
+### getrandom 0.4.3 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
 ```
 Copyright (c) 2018-2026 The rust-random Project Developers
 Copyright (c) 2014 The Rust Project Developers
-
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-```
-
-### hashbrown 0.15.5 — elected MIT (from MIT OR Apache-2.0)
-
-#### LICENSE-MIT
-
-```
-Copyright (c) 2016 Amanieu d'Antras
 
 Permission is hereby granted, free of charge, to any
 person obtaining a copy of this software and associated
@@ -2909,7 +2830,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### http 1.4.1 — elected MIT (from MIT OR Apache-2.0)
+### http 1.5.0 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -2965,6 +2886,38 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+```
+
+### hybrid-array 0.4.15 — elected MIT (from MIT OR Apache-2.0)
+
+#### LICENSE-MIT
+
+```
+Copyright (c) 2022-2026 The RustCrypto Project Developers
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
 ```
 
 ### iana-time-zone 0.1.65 — elected MIT (from MIT OR Apache-2.0)
@@ -3031,39 +2984,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### id-arena 2.3.0 — elected MIT (from MIT/Apache-2.0)
-
-#### LICENSE-MIT
-
-```
-Copyright (c) 2014 Alex Crichton
-
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-```
-
-### indexmap 2.14.0 — elected MIT (from Apache-2.0 OR MIT)
+### indexmap 2.14.2 — elected MIT (from Apache-2.0 OR MIT)
 
 #### LICENSE-MIT
 
@@ -3095,7 +3016,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### indicatif 0.17.11 — elected MIT (from MIT)
+### indicatif 0.18.6 — elected MIT (from MIT)
 
 #### LICENSE
 
@@ -3179,7 +3100,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### jobserver 0.1.34 — elected MIT (from MIT OR Apache-2.0)
+### jobserver 0.1.35 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -3211,7 +3132,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### js-sys 0.3.99 — elected MIT (from MIT OR Apache-2.0)
+### js-sys 0.3.106 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -3243,37 +3164,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### leb128fmt 0.1.0 — elected MIT (from MIT OR Apache-2.0)
-
-#### LICENSE-MIT
-
-```
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-```
-
-### libc 0.2.186 — elected MIT (from MIT OR Apache-2.0)
+### libc 0.2.191 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -3335,7 +3226,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### log 0.4.32 — elected MIT (from MIT OR Apache-2.0)
+### log 0.4.34 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -3367,7 +3258,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### nix 0.29.0 — elected MIT (from MIT)
+### nix 0.31.3 — elected MIT (from MIT)
 
 #### LICENSE
 
@@ -3427,42 +3318,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### number_prefix 0.4.0 — elected MIT (from MIT)
-
-This crate ships no license file, so the canonical MIT text is reproduced
-below from the license it declares in `Cargo.toml`. The copyright line is
-**not** a verbatim copy of an upstream notice: it is composed from that
-manifest's `authors` metadata, because the published crate contains no
-notice to copy. The upstream repository may carry a dated copyright line
-that differs from the one shown here.
-
-#### MIT (reconstructed)
-
-```
-MIT License
-
-Copyright (c) Benjamin Sago <ogham@bsago.me>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
-### objc2 0.6.4 — elected MIT (from MIT)
+### objc2 0.6.5 — elected MIT (from MIT)
 
 This crate ships no license file, so the canonical MIT text is reproduced
 below from the license it declares in `Cargo.toml`. The copyright line is
@@ -3685,7 +3541,39 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### portable-atomic 1.13.1 — elected MIT (from Apache-2.0 OR MIT)
+### pkg-config 0.3.34 — elected MIT (from MIT OR Apache-2.0)
+
+#### LICENSE-MIT
+
+```
+Copyright (c) 2014 Alex Crichton
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
+### portable-atomic 1.15.0 — elected MIT (from Apache-2.0 OR MIT)
 
 #### LICENSE-MIT
 
@@ -3715,7 +3603,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### prettyplease 0.2.37 — elected MIT (from MIT OR Apache-2.0)
+### proc-macro2 1.0.107 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -3745,7 +3633,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### proc-macro2 1.0.106 — elected MIT (from MIT OR Apache-2.0)
+### quote 1.0.47 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -3773,71 +3661,6 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
-```
-
-### quote 1.0.45 — elected MIT (from MIT OR Apache-2.0)
-
-#### LICENSE-MIT
-
-```
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-```
-
-### r-efi 5.3.0 — elected MIT (from MIT OR Apache-2.0 OR LGPL-2.1-or-later)
-
-This crate ships no license file, so the canonical MIT text is reproduced
-below from the license it declares in `Cargo.toml`. The copyright line is
-**not** a verbatim copy of an upstream notice: it is composed from that
-manifest's `authors` metadata, because the published crate contains no
-notice to copy. The upstream repository may carry a dated copyright line
-that differs from the one shown here.
-
-#### MIT (reconstructed)
-
-```
-MIT License
-
-Copyright (c) The r-efi Authors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
 ```
 
 ### r-efi 6.0.0 — elected MIT (from MIT OR Apache-2.0 OR LGPL-2.1-or-later)
@@ -3875,7 +3698,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### regex-automata 0.4.14 — elected MIT (from MIT OR Apache-2.0)
+### regex-automata 0.4.18 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -3907,7 +3730,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### regex-syntax 0.8.10 — elected MIT (from MIT OR Apache-2.0)
+### regex-syntax 0.8.11 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -3939,7 +3762,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### rustix 1.1.4 — elected MIT (from Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
+### rustix 1.1.5 — elected MIT (from Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
 
 #### LICENSE-MIT
 
@@ -3969,7 +3792,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### rustls 0.23.40 — elected MIT (from Apache-2.0 OR ISC OR MIT)
+### rustls 0.23.46 — elected MIT (from Apache-2.0 OR ISC OR MIT)
 
 #### LICENSE-MIT
 
@@ -4001,7 +3824,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### rustls-pki-types 1.14.1 — elected MIT (from MIT OR Apache-2.0)
+### rustls-pki-types 1.15.1 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -4033,7 +3856,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### rustls-webpki 0.103.13 — elected ISC (from ISC)
+### rustls-webpki 0.103.16 — elected ISC (from ISC)
 
 #### LICENSE
 
@@ -4059,7 +3882,7 @@ The files under third-party/chromium are licensed as described in
 third-party/chromium/LICENSE.
 ```
 
-### rustversion 1.0.22 — elected MIT (from MIT OR Apache-2.0)
+### rustversion 1.0.23 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -4121,7 +3944,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### semver 1.0.28 — elected MIT (from MIT OR Apache-2.0)
+### serde 1.0.229 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -4151,7 +3974,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### serde 1.0.228 — elected MIT (from MIT OR Apache-2.0)
+### serde_core 1.0.229 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -4181,7 +4004,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### serde_core 1.0.228 — elected MIT (from MIT OR Apache-2.0)
+### serde_derive 1.0.229 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -4211,7 +4034,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### serde_derive 1.0.228 — elected MIT (from MIT OR Apache-2.0)
+### serde_json 1.0.154 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -4241,37 +4064,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### serde_json 1.0.150 — elected MIT (from MIT OR Apache-2.0)
-
-#### LICENSE-MIT
-
-```
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-```
-
-### serde_spanned 0.6.9 — elected MIT (from MIT OR Apache-2.0)
+### serde_spanned 1.1.2 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -4297,14 +4090,15 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### sha2 0.10.9 — elected MIT (from MIT OR Apache-2.0)
+### sha2 0.11.1 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
 ```
-Copyright (c) 2006-2009 Graydon Hoare
-Copyright (c) 2009-2013 Mozilla Foundation
+Copyright (c) 2016-2026 The RustCrypto Project Developers
 Copyright (c) 2016 Artyom Pavlov
+Copyright (c) 2009-2013 Mozilla Foundation
+Copyright (c) 2006-2009 Graydon Hoare
 
 Permission is hereby granted, free of charge, to any
 person obtaining a copy of this software and associated
@@ -4457,7 +4251,37 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
 ```
 
-### syn 2.0.117 — elected MIT (from MIT OR Apache-2.0)
+### syn 2.0.119 — elected MIT (from MIT OR Apache-2.0)
+
+#### LICENSE-MIT
+
+```
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
+### syn 3.0.9 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -4519,7 +4343,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### thiserror 2.0.18 — elected MIT (from MIT OR Apache-2.0)
+### thiserror 2.0.21 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -4549,7 +4373,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### thiserror-impl 2.0.18 — elected MIT (from MIT OR Apache-2.0)
+### thiserror-impl 2.0.21 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -4579,7 +4403,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### toml 0.8.23 — elected MIT (from MIT OR Apache-2.0)
+### toml 1.1.8+spec-1.1.0 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -4605,7 +4429,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### toml_datetime 0.6.11 — elected MIT (from MIT OR Apache-2.0)
+### toml_datetime 1.1.2+spec-1.1.0 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -4631,7 +4455,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### toml_edit 0.22.27 — elected MIT (from MIT OR Apache-2.0)
+### toml_parser 1.1.5+spec-1.1.0 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -4657,7 +4481,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### toml_write 0.1.2 — elected MIT (from MIT OR Apache-2.0)
+### toml_writer 1.1.3+spec-1.1.0 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -4683,7 +4507,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### trash 5.2.6 — elected MIT (from MIT)
+### trash 5.2.9 — elected MIT (from MIT)
 
 #### LICENSE.txt
 
@@ -4766,36 +4590,32 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### unicode-xid 0.2.6 — elected MIT (from MIT OR Apache-2.0)
+### unit-prefix 0.5.2 — elected MIT (from MIT)
 
-#### LICENSE-MIT
+#### LICENSE
 
 ```
-Copyright (c) 2015 The Rust Project Developers
+MIT License
 
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
+Copyright (c) 2024 Benjamin Sago, Fabio Valentini
 
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
 
 ### untrusted 0.9.0 — elected ISC (from ISC)
@@ -4818,7 +4638,7 @@ DEALINGS IN THE SOFTWARE.
 // OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ```
 
-### ureq 3.3.0 — elected MIT (from MIT OR Apache-2.0)
+### ureq 3.5.0 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -4846,7 +4666,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### ureq-proto 0.6.0 — elected MIT (from MIT OR Apache-2.0)
+### ureq-proto 0.6.5 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT.txt
 
@@ -4949,7 +4769,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### uuid 1.23.2 — elected MIT (from Apache-2.0 OR MIT)
+### uuid 1.29.0 — elected MIT (from Apache-2.0 OR MIT)
 
 #### LICENSE-MIT
 
@@ -4982,32 +4802,6 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### version_check 0.9.5 — elected MIT (from MIT/Apache-2.0)
-
-#### LICENSE-MIT
-
-```
-The MIT License (MIT)
-Copyright (c) 2017-2018 Sergio Benitez
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
-COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-```
-
 ### wasi 0.11.1+wasi-snapshot-preview1 — elected MIT (from Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
 
 #### LICENSE-MIT
@@ -5038,72 +4832,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### wasip2 1.0.3+wasi-0.2.9 — elected MIT (from Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
-
-#### LICENSE-MIT
-
-```
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-```
-
-### wasip3 0.4.0+wasi-0.3.0-rc-2026-01-06 — elected MIT (from Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
-
-This crate ships no license file, so the canonical MIT text is reproduced
-below from the license it declares in `Cargo.toml`. The copyright line is
-**not** a verbatim copy of an upstream notice: it is composed from that
-manifest's `authors` metadata, because the published crate contains no
-notice to copy. The upstream repository may carry a dated copyright line
-that differs from the one shown here.
-
-#### MIT (reconstructed)
-
-```
-MIT License
-
-Copyright (c) The wasip3 Authors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
-### wasm-bindgen 0.2.122 — elected MIT (from MIT OR Apache-2.0)
+### wasm-bindgen 0.2.129 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -5135,7 +4864,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### wasm-bindgen-macro 0.2.122 — elected MIT (from MIT OR Apache-2.0)
+### wasm-bindgen-macro 0.2.129 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -5167,7 +4896,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### wasm-bindgen-macro-support 0.2.122 — elected MIT (from MIT OR Apache-2.0)
+### wasm-bindgen-macro-support 0.2.129 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -5199,7 +4928,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### wasm-bindgen-shared 0.2.122 — elected MIT (from MIT OR Apache-2.0)
+### wasm-bindgen-shared 0.2.129 — elected MIT (from MIT OR Apache-2.0)
 
 #### LICENSE-MIT
 
@@ -5229,111 +4958,6 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
-```
-
-### wasm-encoder 0.244.0 — elected MIT (from Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
-
-This crate ships no license file, so the canonical MIT text is reproduced
-below from the license it declares in `Cargo.toml`. The copyright line is
-**not** a verbatim copy of an upstream notice: it is composed from that
-manifest's `authors` metadata, because the published crate contains no
-notice to copy. The upstream repository may carry a dated copyright line
-that differs from the one shown here.
-
-#### MIT (reconstructed)
-
-```
-MIT License
-
-Copyright (c) Nick Fitzgerald <fitzgen@gmail.com>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
-### wasm-metadata 0.244.0 — elected MIT (from Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
-
-This crate ships no license file, so the canonical MIT text is reproduced
-below from the license it declares in `Cargo.toml`. The copyright line is
-**not** a verbatim copy of an upstream notice: it is composed from that
-manifest's `authors` metadata, because the published crate contains no
-notice to copy. The upstream repository may carry a dated copyright line
-that differs from the one shown here.
-
-#### MIT (reconstructed)
-
-```
-MIT License
-
-Copyright (c) The wasm-metadata Authors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
-### wasmparser 0.244.0 — elected MIT (from Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
-
-This crate ships no license file, so the canonical MIT text is reproduced
-below from the license it declares in `Cargo.toml`. The copyright line is
-**not** a verbatim copy of an upstream notice: it is composed from that
-manifest's `authors` metadata, because the published crate contains no
-notice to copy. The upstream repository may carry a dated copyright line
-that differs from the one shown here.
-
-#### MIT (reconstructed)
-
-```
-MIT License
-
-Copyright (c) Yury Delendik <ydelendik@mozilla.com>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
 ```
 
 ### web-time 1.1.0 — elected MIT (from MIT OR Apache-2.0)
@@ -5364,7 +4988,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### webpki-roots 1.0.7 — elected CDLA-Permissive-2.0 (from CDLA-Permissive-2.0)
+### webpki-roots 1.0.11 — elected CDLA-Permissive-2.0 (from CDLA-Permissive-2.0)
 
 #### LICENSE
 
@@ -5432,7 +5056,7 @@ of Data, including for example machine learning models and models'
 insights.
 ```
 
-### windows 0.56.0 — elected MIT (from MIT OR Apache-2.0)
+### windows 0.62.2 — elected MIT (from MIT OR Apache-2.0)
 
 #### license-mit
 
@@ -5684,7 +5308,7 @@ insights.
     SOFTWARE
 ```
 
-### windows-core 0.56.0 — elected MIT (from MIT OR Apache-2.0)
+### windows-collections 0.3.2 — elected MIT (from MIT OR Apache-2.0)
 
 #### license-mit
 
@@ -5740,7 +5364,7 @@ insights.
     SOFTWARE
 ```
 
-### windows-implement 0.56.0 — elected MIT (from MIT OR Apache-2.0)
+### windows-future 0.3.2 — elected MIT (from MIT OR Apache-2.0)
 
 #### license-mit
 
@@ -5769,34 +5393,6 @@ insights.
 ```
 
 ### windows-implement 0.60.2 — elected MIT (from MIT OR Apache-2.0)
-
-#### license-mit
-
-```
-    MIT License
-
-    Copyright (c) Microsoft Corporation.
-
-    Permission is hereby granted, free of charge, to any person obtaining a copy
-    of this software and associated documentation files (the "Software"), to deal
-    in the Software without restriction, including without limitation the rights
-    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-    copies of the Software, and to permit persons to whom the Software is
-    furnished to do so, subject to the following conditions:
-
-    The above copyright notice and this permission notice shall be included in all
-    copies or substantial portions of the Software.
-
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-    SOFTWARE
-```
-
-### windows-interface 0.56.0 — elected MIT (from MIT OR Apache-2.0)
 
 #### license-mit
 
@@ -5880,7 +5476,7 @@ insights.
     SOFTWARE
 ```
 
-### windows-result 0.1.2 — elected MIT (from MIT OR Apache-2.0)
+### windows-numerics 0.3.1 — elected MIT (from MIT OR Apache-2.0)
 
 #### license-mit
 
@@ -5992,34 +5588,6 @@ insights.
     SOFTWARE
 ```
 
-### windows-sys 0.59.0 — elected MIT (from MIT OR Apache-2.0)
-
-#### license-mit
-
-```
-    MIT License
-
-    Copyright (c) Microsoft Corporation.
-
-    Permission is hereby granted, free of charge, to any person obtaining a copy
-    of this software and associated documentation files (the "Software"), to deal
-    in the Software without restriction, including without limitation the rights
-    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-    copies of the Software, and to permit persons to whom the Software is
-    furnished to do so, subject to the following conditions:
-
-    The above copyright notice and this permission notice shall be included in all
-    copies or substantial portions of the Software.
-
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-    SOFTWARE
-```
-
 ### windows-sys 0.61.2 — elected MIT (from MIT OR Apache-2.0)
 
 #### license-mit
@@ -6076,7 +5644,35 @@ insights.
     SOFTWARE
 ```
 
-### winnow 0.7.15 — elected MIT (from MIT)
+### windows-threading 0.2.1 — elected MIT (from MIT OR Apache-2.0)
+
+#### license-mit
+
+```
+    MIT License
+
+    Copyright (c) Microsoft Corporation.
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE
+```
+
+### winnow 1.0.4 — elected MIT (from MIT)
 
 #### LICENSE-MIT
 
@@ -6101,11 +5697,13 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### wit-bindgen 0.51.0 — elected MIT (from Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
+### zeroize 1.9.1 — elected MIT (from Apache-2.0 OR MIT)
 
 #### LICENSE-MIT
 
 ```
+Copyright (c) 2018-2026 The RustCrypto Project Developers
+
 Permission is hereby granted, free of charge, to any
 person obtaining a copy of this software and associated
 documentation files (the "Software"), to deal in the
@@ -6131,225 +5729,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### wit-bindgen 0.57.1 — elected MIT (from Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
-
-#### LICENSE-MIT
-
-```
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-```
-
-### wit-bindgen-core 0.51.0 — elected MIT (from Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
-
-#### LICENSE-MIT
-
-```
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-```
-
-### wit-bindgen-rust 0.51.0 — elected MIT (from Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
-
-#### LICENSE-MIT
-
-```
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-```
-
-### wit-bindgen-rust-macro 0.51.0 — elected MIT (from Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
-
-#### LICENSE-MIT
-
-```
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-```
-
-### wit-component 0.244.0 — elected MIT (from Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
-
-This crate ships no license file, so the canonical MIT text is reproduced
-below from the license it declares in `Cargo.toml`. The copyright line is
-**not** a verbatim copy of an upstream notice: it is composed from that
-manifest's `authors` metadata, because the published crate contains no
-notice to copy. The upstream repository may carry a dated copyright line
-that differs from the one shown here.
-
-#### MIT (reconstructed)
-
-```
-MIT License
-
-Copyright (c) Peter Huene <peter@huene.dev>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
-### wit-parser 0.244.0 — elected MIT (from Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
-
-This crate ships no license file, so the canonical MIT text is reproduced
-below from the license it declares in `Cargo.toml`. The copyright line is
-**not** a verbatim copy of an upstream notice: it is composed from that
-manifest's `authors` metadata, because the published crate contains no
-notice to copy. The upstream repository may carry a dated copyright line
-that differs from the one shown here.
-
-#### MIT (reconstructed)
-
-```
-MIT License
-
-Copyright (c) Alex Crichton <alex@alexcrichton.com>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
-### zeroize 1.8.2 — elected MIT (from Apache-2.0 OR MIT)
-
-#### LICENSE-MIT
-
-```
-MIT License
-
-Copyright (c) 2018-2021 The RustCrypto Project Developers
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
-### zmij 1.0.21 — elected MIT (from MIT)
+### zmij 1.0.23 — elected MIT (from MIT)
 
 #### LICENSE-MIT
 

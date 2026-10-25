@@ -140,7 +140,7 @@ pub fn sort_by_mru<T: HasPath + Clone>(matches: &[T], mru_entries: &[MruEntry]) 
     }
 
     // Stable sort by timestamp descending.
-    in_mru.sort_by(|a, b| b.1.cmp(&a.1));
+    in_mru.sort_by_key(|entry| std::cmp::Reverse(entry.1));
 
     let mut out: Vec<T> = in_mru.into_iter().map(|(m, _)| m.clone()).collect();
     out.extend(not_in_mru);
@@ -281,6 +281,25 @@ mod tests {
         assert_eq!(entries[0].path, "/wt/new");
         assert_eq!(entries[0].branch, "new");
         assert_eq!(entries[0].timestamp, 500);
+    }
+
+    #[test]
+    fn sort_by_mru_preserves_input_order_for_equal_timestamps() {
+        let mru = vec![
+            MruEntry {
+                branch: "b".into(),
+                path: "/b".into(),
+                timestamp: 100,
+            },
+            MruEntry {
+                branch: "a".into(),
+                path: "/a".into(),
+                timestamp: 100,
+            },
+        ];
+        let matches = vec![m("/a"), m("/b")];
+
+        assert_eq!(sort_by_mru(&matches, &mru), matches);
     }
 
     #[test]

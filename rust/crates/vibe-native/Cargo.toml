@@ -16,14 +16,14 @@ workspace = true
 
 [dependencies]
 thiserror = { workspace = true }
-trash = "5.2"
+trash = "5.2.9"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-libc = "0.2.169"
+libc = "0.2.191"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-libc = "0.2.169"
-nix = { version = "0.29.0", features = ["ioctl", "fs"] }
+libc = "0.2.191"
+nix = { version = "0.31.3", features = ["ioctl", "fs"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

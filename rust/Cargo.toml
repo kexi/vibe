@@ -25,31 +25,31 @@ dbg_macro = "deny"
 vibe-core = { path = "crates/vibe-core" }
 vibe-native = { path = "crates/vibe-native" }
 vibe-test-support = { path = "crates/vibe-test-support" }
-clap = { version = "4.5", features = ["derive"] }
-serde = { version = "1", features = ["derive"] }
+clap = { version = "4.6.7", features = ["derive"] }
+serde = { version = "1.0.229", features = ["derive"] }
 # Copy subsystem (Phase 4): glob expansion + filesystem walk for copy patterns,
 # progress UI rendered to stderr, and v4 UUIDs for unique trash directory names.
-globset = "0.4"
-walkdir = "2.5"
-indicatif = "0.17"
-uuid = { version = "1", features = ["v4"] }
+globset = "0.4.20"
+walkdir = "2.5.0"
+indicatif = "0.18.6"
+uuid = { version = "1.29.0", features = ["v4"] }
 # `preserve_order` keeps JSON object keys in insertion order (struct-field /
 # input order) instead of sorting them alphabetically. This matches the TS
 # `JSON.stringify` on-disk shape (`$schema, version, skipHashCheck, ...,
 # permissions`) for settings.json and preserves a user's hand-edited key order in
 # the `extra`/round-tripped fields; without it serde_json's Map is a BTreeMap and
 # silently re-sorts keys, diverging from the shipping TS CLI's file format.
-serde_json = { version = "1", features = ["preserve_order"] }
-toml = "0.8"
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+toml = "1.1.8"
 # Terminal display width for column alignment (`vibe list`). Codepoint counts
 # misalign columns for CJK/emoji branch names, which occupy two cells. Already
 # in the tree transitively (indicatif -> console), so this adds no new
 # third-party code — only a direct edge to it.
-unicode-width = "0.2"
-sha2 = "0.10"
-thiserror = "2.0"
-anyhow = "1"
-tempfile = "3.15"
+unicode-width = "0.2.2"
+sha2 = "0.11.1"
+thiserror = "2.0.21"
+anyhow = "1.0.104"
+tempfile = "3.27.0"
 
 [profile.release]
 lto = "fat"

@@ -53,7 +53,7 @@
 - **缓解措施**（分层）：
   - **registry 加固**：Takumi Guard 代理（`.github/actions/setup-takumi-guard`）拦截已知的恶意包；`pnpm-workspace.yaml` 中的 `minimumReleaseAge: 4320`（72 小时）隔离期会阻止刚刚发布的版本
   - **不使用非常规来源**：`blockExoticSubdeps: true` 会在依赖图的任何位置拒绝 `github:user/repo`、`file:`、`http:` 等非 registry 依赖（可挫败可蠕虫化的 `optionalDependencies: github:<sha>` 手法）
-  - **默认关闭生命周期脚本**：`strictDepBuilds: true` + 显式的 `only-built-dependencies` 允许列表（目前仅有 `node-pty`，参见 `.npmrc`）；CI 中每次调用 `pnpm install` 和 `pnpm publish` 都带 `--ignore-scripts`
+  - **默认关闭生命周期脚本**：`strictDepBuilds: true` + `pnpm-workspace.yaml` 中显式的 `allowBuilds` 允许列表（`node-pty`、`esbuild` 和 `sharp`）；CI 中每次调用 `pnpm install` 和 `pnpm publish` 都带 `--ignore-scripts`
   - **信任单调性**：`trustPolicy: no-downgrade` 会在某个包转变为信任度更低的状态时中止安装
   - **锁文件固定**：CI 中的每个安装步骤都使用 `--frozen-lockfile`
   - **工作流完整性**：所有第三方 GitHub Actions 均固定到完整的 commit SHA（`pinact-verify` job 会阻止未固定的引用）；工具链通过 `flake.lock` 可复现地固定（Rust 则通过 `rust-toolchain.toml`）

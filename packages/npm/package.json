@@ -15,14 +15,14 @@
     "test:watch": "vitest"
   },
   "optionalDependencies": {
-    "@kexi/vibe-linux-x64": "4.2.0",
-    "@kexi/vibe-linux-arm64": "4.2.0",
-    "@kexi/vibe-darwin-x64": "4.2.0",
     "@kexi/vibe-darwin-arm64": "4.2.0",
+    "@kexi/vibe-darwin-x64": "4.2.0",
+    "@kexi/vibe-linux-arm64": "4.2.0",
+    "@kexi/vibe-linux-x64": "4.2.0",
     "@kexi/vibe-win32-x64": "4.2.0"
   },
   "devDependencies": {
-    "vitest": "^3.2.6"
+    "vitest": "^5.0.5"
   },
   "engines": {
     "node": ">=18.0.0"
