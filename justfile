@@ -94,7 +94,7 @@ test-e2e:
 
 # Version-bump / validate manifests via kt3k/bmp (no args = validate; -p/-m/-j to bump).
 bmp *args:
-    pnpm run bmp -- {{ args }}
+    pnpm run bmp {{ args }}
 
 # --- Setup / chores ---
 
