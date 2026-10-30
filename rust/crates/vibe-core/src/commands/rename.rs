@@ -15,7 +15,9 @@ use crate::git::{
 };
 use crate::io::Io;
 use crate::mru::update_mru_branch;
-use crate::output::{error_log, log, log_dry_run, success_log, verbose_log, OutputOptions};
+use crate::output::{
+    error_log, log, log_dry_run, sanitize_for_display, success_log, verbose_log, OutputOptions,
+};
 use crate::settings::RepoResolver;
 use crate::settings_io::load_user_settings;
 use crate::worktree_path::{resolve_worktree_path, ScriptRunner, WorktreePathContext};
@@ -100,8 +102,28 @@ where
     let new_name = trimmed.to_string();
     let sanitized_for_path = sanitize_branch_name(&new_name);
 
+    // Git's ref-name rules also reject leading options before any mutation.
+    if deps
+        .git
+        .run(&["check-ref-format", "--branch", &new_name])
+        .is_err()
+    {
+        error_log(
+            deps.io,
+            &format!(
+                "Error: invalid branch name: {}",
+                sanitize_for_display(&new_name)
+            ),
+        );
+        return Err(VibeError::AlreadyReported);
+    }
+
+    let display_name = sanitize_for_display(&new_name);
+    let display_old = sanitize_for_display(&old_name);
+    let display_old_path = sanitize_for_display(&old_path);
+
     if new_name == old_name {
-        log(deps.io, &format!("Already named '{old_name}'"), opts);
+        log(deps.io, &format!("Already named '{display_old}'"), opts);
         return Ok(Outcome::cd(old_path));
     }
 
@@ -116,18 +138,28 @@ where
     // repositories. Every shared default branch worth protecting is pushed, so
     // this guard already covers the case the removed one was aiming at.
     if let BranchUpstream::Remote(remote) = get_branch_upstream(deps.git, &old_name)? {
+        let display_remote = sanitize_for_display(&remote);
         error_log(
             deps.io,
-            &format!("Error: branch '{old_name}' is pushed to '{remote}'"),
+            &format!("Error: branch '{display_old}' is pushed to '{display_remote}'"),
         );
         error_log(
             deps.io,
             "vibe rename does not handle pushed branches to avoid remote divergence.",
         );
         error_log(deps.io, "To rename manually:");
-        error_log(deps.io, &format!("  git branch -m {old_name} {new_name}"));
-        error_log(deps.io, &format!("  git push {remote} -u {new_name}"));
-        error_log(deps.io, &format!("  git push {remote} --delete {old_name}"));
+        error_log(
+            deps.io,
+            &format!("  git branch -m {display_old} {display_name}"),
+        );
+        error_log(
+            deps.io,
+            &format!("  git push {display_remote} -u {display_name}"),
+        );
+        error_log(
+            deps.io,
+            &format!("  git push {display_remote} --delete {display_old}"),
+        );
         error_log(deps.io, "  # then move the worktree directory yourself");
         return Err(VibeError::AlreadyReported);
     }
@@ -138,14 +170,17 @@ where
     if target_branch_used {
         error_log(
             deps.io,
-            &format!("Error: branch '{new_name}' already exists"),
+            &format!("Error: branch '{display_name}' already exists"),
         );
         return Err(VibeError::AlreadyReported);
     }
     if let Some(path) = target_worktree {
         error_log(
             deps.io,
-            &format!("Error: a worktree using '{new_name}' already exists at {path}"),
+            &format!(
+                "Error: a worktree using '{display_name}' already exists at {}",
+                sanitize_for_display(&path)
+            ),
         );
         return Err(VibeError::AlreadyReported);
     }
@@ -169,12 +204,13 @@ where
             repo_root: main_worktree.clone(),
         },
     )?;
+    let display_new_path = sanitize_for_display(&new_path);
 
     let path_unchanged = new_path == old_path;
     if path_unchanged {
         verbose_log(
             deps.io,
-            &format!("Worktree directory unchanged: {old_path}"),
+            &format!("Worktree directory unchanged: {display_old_path}"),
             opts,
         );
     }
@@ -185,7 +221,7 @@ where
                 deps.io,
                 &format!(
                     "Would run: {}",
-                    get_move_worktree_command(&old_path, &new_path)
+                    get_move_worktree_command(&display_old_path, &display_new_path)
                 ),
             );
         }
@@ -193,10 +229,13 @@ where
             deps.io,
             &format!(
                 "Would run: {}",
-                get_rename_branch_command(&old_name, &new_name)
+                get_rename_branch_command(&display_old, &display_name)
             ),
         );
-        log_dry_run(deps.io, &format!("Would change directory to: {new_path}"));
+        log_dry_run(
+            deps.io,
+            &format!("Would change directory to: {display_new_path}"),
+        );
         // Dry-run performs no side effects and emits NO cd.
         return Ok(Outcome::none());
     }
@@ -207,7 +246,10 @@ where
         if let Err(e) = move_worktree(deps.git, &old_path, &new_path) {
             error_log(
                 deps.io,
-                &format!("Error: failed to move worktree directory: {e}"),
+                &format!(
+                    "Error: failed to move worktree directory: {}",
+                    sanitize_for_display(&e.to_string())
+                ),
             );
             return Err(VibeError::AlreadyReported);
         }
@@ -223,14 +265,23 @@ where
         if let Err(e) = deps.process.chdir(&new_path) {
             error_log(
                 deps.io,
-                &format!("Error: failed to enter moved worktree directory: {e}"),
+                &format!(
+                    "Error: failed to enter moved worktree directory: {}",
+                    sanitize_for_display(&e.to_string())
+                ),
             );
             // Best-effort rollback of the move; report manual recovery if it fails.
             if let Err(rb) = move_worktree(deps.git, &new_path, &old_path) {
-                error_log(deps.io, &format!("Error: rollback failed: {rb}"));
                 error_log(
                     deps.io,
-                    &format!("Manual recovery: git worktree move '{new_path}' '{old_path}'"),
+                    &format!(
+                        "Error: rollback failed: {}",
+                        sanitize_for_display(&rb.to_string())
+                    ),
+                );
+                error_log(
+                    deps.io,
+                    &format!("Manual recovery: git worktree move '{display_new_path}' '{display_old_path}'"),
                 );
             }
             return Err(VibeError::AlreadyReported);
@@ -242,13 +293,22 @@ where
         if let Err(e) = confirm_in_dir(deps.process, &new_path) {
             error_log(
                 deps.io,
-                &format!("Error: worktree directory check failed after move: {e}"),
+                &format!(
+                    "Error: worktree directory check failed after move: {}",
+                    sanitize_for_display(&e.to_string())
+                ),
             );
             if let Err(rb) = move_worktree(deps.git, &new_path, &old_path) {
-                error_log(deps.io, &format!("Error: rollback failed: {rb}"));
                 error_log(
                     deps.io,
-                    &format!("Manual recovery: git worktree move '{new_path}' '{old_path}'"),
+                    &format!(
+                        "Error: rollback failed: {}",
+                        sanitize_for_display(&rb.to_string())
+                    ),
+                );
+                error_log(
+                    deps.io,
+                    &format!("Manual recovery: git worktree move '{display_new_path}' '{display_old_path}'"),
                 );
             } else {
                 let _ = deps.process.chdir(&old_path);
@@ -258,7 +318,13 @@ where
     }
 
     if let Err(e) = rename_branch(deps.git, &old_name, &new_name) {
-        error_log(deps.io, &format!("Error: failed to rename branch: {e}"));
+        error_log(
+            deps.io,
+            &format!(
+                "Error: failed to rename branch: {}",
+                sanitize_for_display(&e.to_string())
+            ),
+        );
         if !path_unchanged {
             // Roll the directory back to where it was, then restore cwd.
             match move_worktree(deps.git, &new_path, &old_path) {
@@ -268,18 +334,30 @@ where
                     if let Err(cd) = deps.process.chdir(&old_path) {
                         error_log(
                             deps.io,
-                            &format!("Warning: could not return to original directory: {cd}"),
+                            &format!(
+                                "Warning: could not return to original directory: {}",
+                                sanitize_for_display(&cd.to_string())
+                            ),
                         );
-                        error_log(deps.io, &format!("Manual recovery: cd '{old_path}'"));
+                        error_log(
+                            deps.io,
+                            &format!("Manual recovery: cd '{display_old_path}'"),
+                        );
                     } else {
                         error_log(deps.io, "Worktree directory rolled back to original path.");
                     }
                 }
                 Err(rb) => {
-                    error_log(deps.io, &format!("Error: rollback failed: {rb}"));
                     error_log(
                         deps.io,
-                        &format!("Manual recovery: git worktree move '{new_path}' '{old_path}'"),
+                        &format!(
+                            "Error: rollback failed: {}",
+                            sanitize_for_display(&rb.to_string())
+                        ),
+                    );
+                    error_log(
+                        deps.io,
+                        &format!("Manual recovery: git worktree move '{display_new_path}' '{display_old_path}'"),
                     );
                 }
             }
@@ -290,11 +368,15 @@ where
     // MRU update is best-effort: a failure must not fail the rename.
     let _ = update_mru_branch(deps.io, &old_path, &new_path, &new_name);
 
-    success_log(deps.io, &format!("Renamed {old_name} -> {new_name}"), opts);
+    success_log(
+        deps.io,
+        &format!("Renamed {display_old} -> {display_name}"),
+        opts,
+    );
     if !path_unchanged {
         log(
             deps.io,
-            &format!("Directory: {old_path} -> {new_path}"),
+            &format!("Directory: {display_old_path} -> {display_new_path}"),
             opts,
         );
     }
@@ -647,6 +729,44 @@ mod tests {
     }
 
     #[test]
+    fn invalid_branch_is_rejected_before_mutation() {
+        let (_fx, io) = io_with_home();
+        let git = MockGit::new(&two_worktrees("/main", "/wt/feat", "feat"), "/wt/feat")
+            .fail_on(&["check-ref-format", "--branch"]);
+        let (r, s, p) = (NoResolver, NoScript, FakeProcessControl::new("/wt/feat"));
+        let d = deps(&io, &git, &r, &s, &p, "/wt/feat");
+        let result = rename_command(
+            &d,
+            "-f\x1b[2J",
+            RenameFlags::default(),
+            OutputOptions::default(),
+        );
+        assert!(matches!(result, Err(VibeError::AlreadyReported)));
+        assert!(io.stderr_text().contains("invalid branch name"));
+        assert!(!io.stderr_text().contains('\x1b'));
+        assert!(!git.calls_contain(&["worktree", "move"]));
+        assert!(!git.calls_contain(&["branch", "-m"]));
+    }
+
+    #[test]
+    fn dry_run_sanitizes_worktree_path_for_terminal() {
+        let (_fx, io) = io_with_home();
+        let path = "/wt/feat\x1b[2J";
+        let git = MockGit::new(&two_worktrees("/main", path, "feat"), path);
+        let (r, s, p) = (NoResolver, NoScript, FakeProcessControl::new(path));
+        let d = deps(&io, &git, &r, &s, &p, path);
+        rename_command(
+            &d,
+            "renamed",
+            RenameFlags { dry_run: true },
+            OutputOptions::default(),
+        )
+        .unwrap();
+        assert!(!io.stderr_text().contains('\x1b'));
+        assert!(io.stderr_text().contains("/wt/feat\u{fffd}[2J"));
+    }
+
+    #[test]
     fn not_in_worktree_errors() {
         let (_fx, io) = io_with_home();
         // The cwd is not any listed worktree path.
@@ -768,7 +888,7 @@ mod tests {
         assert_eq!(outcome, Outcome::none());
         let out = io.stderr_text();
         assert!(out.contains("[dry-run] Would run: git worktree move"));
-        assert!(out.contains("[dry-run] Would run: git branch -m feat renamed"));
+        assert!(out.contains("[dry-run] Would run: git branch -m -- feat renamed"));
         assert!(out.contains("[dry-run] Would change directory to:"));
         // No mutating git calls in dry-run.
         assert!(!git.calls_contain(&["worktree", "move"]));
@@ -793,7 +913,7 @@ mod tests {
         assert_eq!(outcome, Outcome::cd(&**RENAMED));
         // Moved, chdir'd into new, then renamed branch — in that order.
         assert!(git.calls_contain(&["worktree", "move", &FEAT, &RENAMED]));
-        assert!(git.calls_contain(&["branch", "-m", "feat", "renamed"]));
+        assert!(git.calls_contain(&["branch", "-m", "--", "feat", "renamed"]));
         assert_eq!(p.chdir_calls.borrow().as_slice(), [RENAMED.as_str()]);
         let out = io.stderr_text();
         assert!(out.contains("Renamed feat -> renamed"));
@@ -1011,7 +1131,7 @@ mod tests {
         assert!(!git.calls_contain(&["worktree", "move"]));
         assert!(p.chdir_calls.borrow().is_empty());
         // Branch IS renamed.
-        assert!(git.calls_contain(&["branch", "-m", "feat", "renamed"]));
+        assert!(git.calls_contain(&["branch", "-m", "--", "feat", "renamed"]));
 
         let out = io.stderr_text();
         assert!(
@@ -1052,7 +1172,7 @@ mod tests {
             !out.contains("Would run: git worktree move"),
             "move line must be omitted on the unchanged path: {out}"
         );
-        assert!(out.contains("[dry-run] Would run: git branch -m feat renamed"));
+        assert!(out.contains("[dry-run] Would run: git branch -m -- feat renamed"));
         assert!(out.contains(&format!(
             "[dry-run] Would change directory to: {}",
             *RENAMED
@@ -1192,7 +1312,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(outcome, Outcome::cd(&**RENAMED));
-        assert!(git.calls_contain(&["branch", "-m", "develop", "renamed"]));
+        assert!(git.calls_contain(&["branch", "-m", "--", "develop", "renamed"]));
         let out = io.stderr_text();
         assert!(
             !out.contains("default branch"),

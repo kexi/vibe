@@ -53,7 +53,7 @@ pub fn move_worktree(runner: &impl GitRunner, old: &str, new: &str) -> Result<()
 
 /// Rename a branch: `git branch -m <old> <new>`.
 pub fn rename_branch(runner: &impl GitRunner, old: &str, new: &str) -> Result<()> {
-    runner.run(&["branch", "-m", old, new]).map(|_| ())
+    runner.run(&["branch", "-m", "--", old, new]).map(|_| ())
 }
 
 /// Dry-run textual form of the worktree move command (single-quoted paths).
@@ -63,7 +63,7 @@ pub fn get_move_worktree_command(old: &str, new: &str) -> String {
 
 /// Dry-run textual form of the branch rename command.
 pub fn get_rename_branch_command(old: &str, new: &str) -> String {
-    format!("git branch -m {old} {new}")
+    format!("git branch -m -- {old} {new}")
 }
 
 #[cfg(test)]
@@ -154,7 +154,10 @@ mod tests {
     fn rename_branch_issues_expected_args() {
         let git = ScriptGit::new(None);
         rename_branch(&git, "old", "new").unwrap();
-        assert_eq!(git.calls.borrow()[0], vec!["branch", "-m", "old", "new"]);
+        assert_eq!(
+            git.calls.borrow()[0],
+            vec!["branch", "-m", "--", "old", "new"]
+        );
     }
 
     #[test]
@@ -165,7 +168,7 @@ mod tests {
         );
         assert_eq!(
             get_rename_branch_command("old", "new"),
-            "git branch -m old new"
+            "git branch -m -- old new"
         );
     }
 }

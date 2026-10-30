@@ -552,7 +552,7 @@ fn rename_dry_run_emits_no_cd_and_three_stderr_lines() {
         "missing move dry-run line: {stderr:?}"
     );
     assert!(
-        stderr.contains("Would run: git branch -m feat renamed"),
+        stderr.contains("Would run: git branch -m -- feat renamed"),
         "missing branch dry-run line: {stderr:?}"
     );
     assert!(
