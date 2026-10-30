@@ -20,6 +20,7 @@ use crate::output::{
 };
 use crate::settings::RepoResolver;
 use crate::settings_io::load_user_settings;
+use crate::shell::shell_escape;
 use crate::worktree_path::{resolve_worktree_path, ScriptRunner, WorktreePathContext};
 use crate::worktree_rename::{
     get_branch_upstream, get_move_worktree_command, get_rename_branch_command, move_worktree,
@@ -103,11 +104,9 @@ where
     let sanitized_for_path = sanitize_branch_name(&new_name);
 
     // Git's ref-name rules also reject leading options before any mutation.
-    if deps
-        .git
-        .run(&["check-ref-format", "--branch", &new_name])
-        .is_err()
-    {
+    let validated_name = deps.git.run(&["check-ref-format", "--branch", &new_name]);
+    let is_exact_branch_name = validated_name.is_ok_and(|name| name == new_name);
+    if !is_exact_branch_name {
         error_log(
             deps.io,
             &format!(
@@ -279,10 +278,7 @@ where
                         sanitize_for_display(&rb.to_string())
                     ),
                 );
-                error_log(
-                    deps.io,
-                    &format!("Manual recovery: git worktree move '{display_new_path}' '{display_old_path}'"),
-                );
+                error_log(deps.io, &recovery_move_message(&new_path, &old_path));
             }
             return Err(VibeError::AlreadyReported);
         }
@@ -306,10 +302,7 @@ where
                         sanitize_for_display(&rb.to_string())
                     ),
                 );
-                error_log(
-                    deps.io,
-                    &format!("Manual recovery: git worktree move '{display_new_path}' '{display_old_path}'"),
-                );
+                error_log(deps.io, &recovery_move_message(&new_path, &old_path));
             } else {
                 let _ = deps.process.chdir(&old_path);
             }
@@ -339,10 +332,7 @@ where
                                 sanitize_for_display(&cd.to_string())
                             ),
                         );
-                        error_log(
-                            deps.io,
-                            &format!("Manual recovery: cd '{display_old_path}'"),
-                        );
+                        error_log(deps.io, &recovery_cd_message(&old_path));
                     } else {
                         error_log(deps.io, "Worktree directory rolled back to original path.");
                     }
@@ -355,10 +345,7 @@ where
                             sanitize_for_display(&rb.to_string())
                         ),
                     );
-                    error_log(
-                        deps.io,
-                        &format!("Manual recovery: git worktree move '{display_new_path}' '{display_old_path}'"),
-                    );
+                    error_log(deps.io, &recovery_move_message(&new_path, &old_path));
                 }
             }
         }
@@ -381,6 +368,27 @@ where
         );
     }
     Ok(Outcome::cd(new_path))
+}
+
+/// Keep recovery commands copyable without sending control characters to the
+/// terminal. A path that cannot be shown exactly needs manual inspection.
+fn recovery_move_message(from: &str, to: &str) -> String {
+    if sanitize_for_display(from) != from || sanitize_for_display(to) != to {
+        return "Manual recovery: inspect worktree paths with git worktree list --porcelain -z, then move the directory manually".to_string();
+    }
+    format!(
+        "Manual recovery: git worktree move -- '{}' '{}'",
+        shell_escape(from),
+        shell_escape(to)
+    )
+}
+
+fn recovery_cd_message(path: &str) -> String {
+    if sanitize_for_display(path) != path {
+        return "Manual recovery: inspect the original worktree path before changing directory"
+            .to_string();
+    }
+    format!("Manual recovery: cd '{}'", shell_escape(path))
 }
 
 /// Confirm the process is now inside `expected` (point 4b detective layer).
@@ -535,6 +543,14 @@ mod tests {
                         message: "failed: simulated rollback".into(),
                     });
                 }
+            }
+
+            if args.first() == Some(&"check-ref-format") {
+                return Ok(if args.last() == Some(&"@{-1}") {
+                    "main".to_string()
+                } else {
+                    args.last().unwrap_or(&"").to_string()
+                });
             }
 
             if args.contains(&"--show-toplevel") {
@@ -746,6 +762,33 @@ mod tests {
         assert!(!io.stderr_text().contains('\x1b'));
         assert!(!git.calls_contain(&["worktree", "move"]));
         assert!(!git.calls_contain(&["branch", "-m"]));
+    }
+
+    #[test]
+    fn expanded_branch_shorthand_is_rejected_before_mutation() {
+        let (_fx, io) = io_with_home();
+        let git = MockGit::new(&two_worktrees("/main", "/wt/feat", "feat"), "/wt/feat");
+        let (r, s, p) = (NoResolver, NoScript, FakeProcessControl::new("/wt/feat"));
+        let d = deps(&io, &git, &r, &s, &p, "/wt/feat");
+        let result = rename_command(
+            &d,
+            "@{-1}",
+            RenameFlags::default(),
+            OutputOptions::default(),
+        );
+        assert!(matches!(result, Err(VibeError::AlreadyReported)));
+        assert!(!git.calls_contain(&["worktree", "move"]));
+        assert!(!git.calls_contain(&["branch", "-m"]));
+    }
+
+    #[test]
+    fn recovery_commands_quote_paths_or_require_manual_inspection() {
+        assert_eq!(
+            recovery_move_message("/tmp/it's", "/tmp/old"),
+            "Manual recovery: git worktree move -- '/tmp/it'\\''s' '/tmp/old'"
+        );
+        assert!(!recovery_move_message("/tmp/\x1b[2J", "/tmp/old").contains('\x1b'));
+        assert!(!recovery_cd_message("/tmp/\x1b[2J").contains('\x1b'));
     }
 
     #[test]
@@ -1016,7 +1059,7 @@ mod tests {
         // Exact TS message (byte-for-byte from rename.ts line 190).
         assert!(
             out.contains(&format!(
-                "Manual recovery: git worktree move '{}' '{}'",
+                "Manual recovery: git worktree move -- '{}' '{}'",
                 *RENAMED, *FEAT
             )),
             "stderr: {out}"
@@ -1058,7 +1101,7 @@ mod tests {
         assert!(out.contains("Error: rollback failed:"), "stderr: {out}");
         assert!(
             out.contains(&format!(
-                "Manual recovery: git worktree move '{}' '{}'",
+                "Manual recovery: git worktree move -- '{}' '{}'",
                 *RENAMED, *FEAT
             )),
             "stderr: {out}"
