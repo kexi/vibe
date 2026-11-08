@@ -156,8 +156,8 @@ sequenceDiagram
 
 字段：
 
-- `start`：`{"name": "<branch>"}` —— 必须是非空字符串（**MUST**），不得包含 NUL 字节（**MUST NOT**），也不得以 `-` 开头（**MUST NOT**，以免 `--force` / `-b` 被塞进 `git worktree add` 的标志位）。以 CLI 参数给出的分支名优先于 stdin。
-- `clean`：`{"worktree_path": "<绝对路径>"}` —— 必须是通过 `validate_path` 校验的非空绝对路径（**MUST**，不含 NUL、`\n`/`\r`、`$(`、反引号）。`clean` 还会额外拒绝不在实际 git worktree 集合中的路径。
+- `start`：`{"name": "<branch>"}` —— 必须是非空字符串（**MUST**），不得包含 NUL 字节（**MUST NOT**），也不得以 `-` 开头（**MUST NOT**，以免 `--force` / `-b` 被塞进 `git worktree add` 的标志位）。以 CLI 参数给出的分支名优先于 stdin。`start` 不得为了钩子名称替换任何东西（**MUST NOT**）：当名称解析到的路径上已存在另一分支（或 detached HEAD）的 worktree 时，它以 `Error:` 行和 exit 1 拒绝，而不是强制删除；分支已在主 worktree 中检出的名称同样被拒绝。分支已在某个 *linked* worktree 中的名称会返回该 worktree 的路径（重入路径）。
+- `clean`：`{"worktree_path": "<绝对路径>"}` —— 必须是通过 `validate_path` 校验的非空绝对路径（**MUST**，不含 NUL、`\n`/`\r`、`$(`、反引号）。`clean` 还会额外拒绝不在实际 git worktree 集合中的路径，并在任何 `pre_clean` 钩子运行之前拒绝主 worktree（`Error:` 行和 exit 1）。
 
 ### 7.2 响应（stdout）
 

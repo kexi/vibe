@@ -2691,6 +2691,56 @@ fn worktree_hook_mode_existing_branch_outputs_existing_path_without_creating() {
     assert!(!git.calls_contain(&["worktree", "add"]));
 }
 
+/// The main worktree is the user's own checkout, so a name that resolves to its
+/// branch must not be handed to Claude Code as an isolated worktree: Claude Code
+/// would later run WorktreeRemove against it.
+#[test]
+fn worktree_hook_mode_refuses_the_branch_of_the_main_worktree() {
+    let (_fx, io) = io_with_home();
+    let git = MockGit::new(&REPO, &main_only());
+    let s = NoScript;
+    let p = ScriptPrompt::confirming(true);
+    let sin = FakeStdin::text(r#"{"name": "main"}"#);
+    let fk = Fakes::new();
+    let d = deps(&io, &git, &NoResolver, &s, &p, &sin, &fk);
+    let flags = StartFlags {
+        worktree_hook: true,
+        ..Default::default()
+    };
+    let err = start_command(&d, "", &flags, OutputOptions::default()).unwrap_err();
+    assert!(matches!(err, VibeError::AlreadyReported));
+    assert!(io
+        .stderr_text()
+        .contains("'main' is checked out in the main worktree"));
+    assert!(!git.calls_contain(&["worktree", "add"]));
+}
+
+/// A worktree on another branch at the path a hook name resolves to may hold
+/// the user's uncommitted work; hook mode has nobody to ask, so it refuses
+/// rather than force-removing it the way an interactive overwrite would.
+#[test]
+fn worktree_hook_mode_refuses_to_replace_a_worktree_on_another_branch() {
+    let (_fx, io) = io_with_home();
+    // "from-stdin" resolves to REPO_FROM_STDIN, where branch "other" already lives.
+    let git = MockGit::new(&REPO, &two_worktrees(&REPO, &REPO_FROM_STDIN, "other"));
+    let s = NoScript;
+    let p = ScriptPrompt::confirming(true);
+    let sin = FakeStdin::text(r#"{"name": "from-stdin"}"#);
+    let fk = Fakes::new();
+    let d = deps(&io, &git, &NoResolver, &s, &p, &sin, &fk);
+    let flags = StartFlags {
+        worktree_hook: true,
+        ..Default::default()
+    };
+    let err = start_command(&d, "", &flags, OutputOptions::default()).unwrap_err();
+    assert!(matches!(err, VibeError::AlreadyReported));
+    assert!(io
+        .stderr_text()
+        .contains("already holds a worktree on branch 'other'"));
+    assert!(!git.calls_contain(&["worktree", "remove"]));
+    assert!(!git.calls_contain(&["worktree", "add"]));
+}
+
 // --- G-8: claude-hook mode, post-setup failure is NON-FATAL ---
 
 #[test]

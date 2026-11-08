@@ -156,8 +156,8 @@ Read by `rust/crates/vibe-core/src/stdin.rs`, the untrusted-input boundary.
 
 Fields:
 
-- `start`: `{"name": "<branch>"}` — **MUST** be a non-empty string, **MUST NOT** contain a NUL byte, and **MUST NOT** start with `-` (so `--force` / `-b` cannot be smuggled into a `git worktree add` flag slot). A branch given as a CLI argument takes precedence over stdin.
-- `clean`: `{"worktree_path": "<abs path>"}` — **MUST** be a non-empty absolute path that passes `validate_path` (no NUL, no `\n`/`\r`, no `$(`, no backtick). `clean` additionally refuses a path that is not in the actual git worktree set.
+- `start`: `{"name": "<branch>"}` — **MUST** be a non-empty string, **MUST NOT** contain a NUL byte, and **MUST NOT** start with `-` (so `--force` / `-b` cannot be smuggled into a `git worktree add` flag slot). A branch given as a CLI argument takes precedence over stdin. `start` **MUST NOT** replace anything to honor a hook name: when a worktree on another branch (or a detached HEAD) already sits at the path the name resolves to, it refuses with an `Error:` line and exit 1 instead of force-removing it, and it refuses a name whose branch is checked out in the main worktree. A name whose branch is already in a *linked* worktree returns that worktree's path (the re-entry path).
+- `clean`: `{"worktree_path": "<abs path>"}` — **MUST** be a non-empty absolute path that passes `validate_path` (no NUL, no `\n`/`\r`, no `$(`, no backtick). `clean` additionally refuses a path that is not in the actual git worktree set, and refuses the main worktree (an `Error:` line and exit 1) before any `pre_clean` hook runs.
 
 ### 7.2 Response (stdout)
 
